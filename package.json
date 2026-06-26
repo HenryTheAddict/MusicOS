@@ -1,17 +1,17 @@
 {
-  "name": "musicos-desktop-sync",
+  "name": "musicos-control-center",
   "version": "0.1.0",
   "private": true,
-  "description": "Electron sync companion for MusicOS.",
+  "description": "Electron Control Center for MusicOS.",
   "main": "electron/main.js",
   "scripts": {
     "build": "npm run build:desktop",
-    "build:desktop": "cargo build --bin musicos-mac --bin musicos-sync --bin musicos-desktop --features desktop-app",
-    "check": "cargo check --workspace --features desktop-app",
-    "desktop": "cargo run --bin musicos-desktop --features desktop-app",
+    "build:desktop": "cargo build --bin musicos-mac --bin musicos-sync --bin musicos-desktop --features desktop-app,desktop-audio",
+    "check": "cargo check --workspace --features desktop-app,desktop-audio",
+    "desktop": "npm run sync:electron",
     "sync:electron": "electron .",
     "sync:electron:dev": "node scripts/run-electron-dev.js",
-    "test": "cargo test --workspace --features desktop-app"
+    "test": "cargo test --workspace --features desktop-app,desktop-audio"
   },
   "devDependencies": {
     "electron": "^42.4.1"

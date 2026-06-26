@@ -1,6 +1,7 @@
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Row};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +13,12 @@ pub struct Track {
     pub album: String,
     pub track_number: i32,
     pub duration: i32, // in seconds
+    pub file_size: i64,
+    pub modified_at: i64,
+    pub indexed_at: i64,
+    pub cover_art_path: Option<String>,
+    pub cover_art_updated_at: Option<i64>,
+    pub cover_art_source_modified_at: Option<i64>,
     pub favorited: bool,
     pub play_count: i32,
     pub last_played: Option<i64>,
@@ -44,15 +51,20 @@ pub struct LibraryCounts {
 
 pub struct Db {
     conn: Connection,
+    path: PathBuf,
 }
 
 impl Db {
     pub fn open(path: &str) -> Result<Self> {
-        if let Some(parent) = std::path::Path::new(path).parent() {
+        let path_buf = PathBuf::from(path);
+        if let Some(parent) = path_buf.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(path)?;
-        let db = Self { conn };
+        let conn = Connection::open(&path_buf)?;
+        let db = Self {
+            conn,
+            path: path_buf,
+        };
         db.apply_pragmas()?;
         db.init_schema()?;
         Ok(db)
@@ -112,6 +124,9 @@ impl Db {
         self.ensure_column("tracks", "modified_at", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("tracks", "indexed_at", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("tracks", "track_number", "INTEGER NOT NULL DEFAULT 0")?;
+        self.ensure_column("tracks", "cover_art_path", "TEXT")?;
+        self.ensure_column("tracks", "cover_art_updated_at", "INTEGER")?;
+        self.ensure_column("tracks", "cover_art_source_modified_at", "INTEGER")?;
         self.conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title COLLATE NOCASE);
              CREATE INDEX IF NOT EXISTS idx_tracks_album_title ON tracks(album COLLATE NOCASE, track_number, title COLLATE NOCASE);
@@ -140,6 +155,39 @@ impl Db {
         Ok(())
     }
 
+    pub fn cover_art_dir(&self) -> PathBuf {
+        self.path
+            .parent()
+            .map(|parent| parent.join("cover-art"))
+            .unwrap_or_else(|| PathBuf::from("cover-art"))
+    }
+
+    pub fn set_track_cover_art(
+        &self,
+        id: i64,
+        cover_art_path: Option<&str>,
+        source_modified_at: i64,
+    ) -> Result<()> {
+        let updated_at = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;
+        self.conn.execute(
+            "UPDATE tracks
+             SET cover_art_path = ?1,
+                 cover_art_updated_at = ?2,
+                 cover_art_source_modified_at = ?3
+             WHERE id = ?4",
+            params![cover_art_path, updated_at, source_modified_at, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn cover_art_cache_count(&self) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM tracks WHERE cover_art_path IS NOT NULL AND cover_art_path != ''",
+            [],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn insert_track(
         &self,
         path: &str,
@@ -150,7 +198,16 @@ impl Db {
         file_size: i64,
         modified_at: i64,
     ) -> Result<i64> {
-        self.insert_track_with_number(path, title, artist, album, 0, duration, file_size, modified_at)
+        self.insert_track_with_number(
+            path,
+            title,
+            artist,
+            album,
+            0,
+            duration,
+            file_size,
+            modified_at,
+        )
     }
 
     pub fn insert_track_with_number(
@@ -212,23 +269,12 @@ impl Db {
 
     pub fn get_tracks(&self) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
+            "SELECT id, path, title, artist, album, track_number, duration, file_size, modified_at, indexed_at,
+                    cover_art_path, cover_art_updated_at, cover_art_source_modified_at,
+                    favorited, play_count, last_played
              FROM tracks ORDER BY title COLLATE NOCASE ASC",
         )?;
-        let track_iter = stmt.query_map([], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map([], track_from_row)?;
 
         let mut list = Vec::new();
         for t in track_iter {
@@ -239,23 +285,14 @@ impl Db {
 
     pub fn get_track_by_id(&self, id: i64) -> Result<Option<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
+            "SELECT id, path, title, artist, album, track_number, duration, file_size, modified_at, indexed_at,
+                    cover_art_path, cover_art_updated_at, cover_art_source_modified_at,
+                    favorited, play_count, last_played
              FROM tracks WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            }))
+            Ok(Some(track_from_row(row)?))
         } else {
             Ok(None)
         }
@@ -301,23 +338,12 @@ impl Db {
 
     pub fn get_favorites(&self) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
+            "SELECT id, path, title, artist, album, track_number, duration, file_size, modified_at, indexed_at,
+                    cover_art_path, cover_art_updated_at, cover_art_source_modified_at,
+                    favorited, play_count, last_played
              FROM tracks WHERE favorited = 1 ORDER BY title COLLATE NOCASE ASC",
         )?;
-        let track_iter = stmt.query_map([], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: true,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map([], track_from_row)?;
         let mut list = Vec::new();
         for t in track_iter {
             list.push(t?);
@@ -342,25 +368,15 @@ impl Db {
 
     pub fn get_history(&self, limit: i32) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.favorited, t.play_count, t.last_played
+            "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration,
+                    t.file_size, t.modified_at, t.indexed_at,
+                    t.cover_art_path, t.cover_art_updated_at, t.cover_art_source_modified_at,
+                    t.favorited, t.play_count, t.last_played
              FROM play_history h
              JOIN tracks t ON h.track_id = t.id
-             ORDER BY h.played_at DESC LIMIT ?1"
+             ORDER BY h.played_at DESC LIMIT ?1",
         )?;
-        let track_iter = stmt.query_map(params![limit], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map(params![limit], track_from_row)?;
         let mut list = Vec::new();
         for t in track_iter {
             list.push(t?);
@@ -450,6 +466,14 @@ impl Db {
         Ok(())
     }
 
+    pub fn playlist_track_count(&self, playlist_id: i64) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?)
+    }
+
     pub fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<()> {
         self.conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
@@ -460,26 +484,16 @@ impl Db {
 
     pub fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.favorited, t.play_count, t.last_played
+            "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration,
+                    t.file_size, t.modified_at, t.indexed_at,
+                    t.cover_art_path, t.cover_art_updated_at, t.cover_art_source_modified_at,
+                    t.favorited, t.play_count, t.last_played
              FROM playlist_tracks pt
              JOIN tracks t ON pt.track_id = t.id
              WHERE pt.playlist_id = ?1
              ORDER BY CASE WHEN t.track_number > 0 THEN 0 ELSE 1 END, t.track_number, t.title COLLATE NOCASE ASC"
         )?;
-        let track_iter = stmt.query_map(params![playlist_id], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map(params![playlist_id], track_from_row)?;
         let mut list = Vec::new();
         for t in track_iter {
             list.push(t?);
@@ -489,25 +503,14 @@ impl Db {
 
     pub fn get_album_tracks(&self, album: &str) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
+            "SELECT id, path, title, artist, album, track_number, duration, file_size, modified_at, indexed_at,
+                    cover_art_path, cover_art_updated_at, cover_art_source_modified_at,
+                    favorited, play_count, last_played
              FROM tracks
              WHERE album = ?1
              ORDER BY CASE WHEN track_number > 0 THEN 0 ELSE 1 END, track_number, title COLLATE NOCASE ASC",
         )?;
-        let track_iter = stmt.query_map(params![album], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map(params![album], track_from_row)?;
         let mut list = Vec::new();
         for t in track_iter {
             list.push(t?);
@@ -517,25 +520,14 @@ impl Db {
 
     pub fn get_artist_tracks(&self, artist: &str) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
+            "SELECT id, path, title, artist, album, track_number, duration, file_size, modified_at, indexed_at,
+                    cover_art_path, cover_art_updated_at, cover_art_source_modified_at,
+                    favorited, play_count, last_played
              FROM tracks
              WHERE artist = ?1
              ORDER BY album COLLATE NOCASE ASC, CASE WHEN track_number > 0 THEN 0 ELSE 1 END, track_number, title COLLATE NOCASE ASC",
         )?;
-        let track_iter = stmt.query_map(params![artist], |row| {
-            Ok(Track {
-                id: row.get(0)?,
-                path: row.get(1)?,
-                title: row.get(2)?,
-                artist: row.get(3)?,
-                album: row.get(4)?,
-                track_number: row.get(5)?,
-                duration: row.get(6)?,
-                favorited: row.get::<_, i32>(7)? != 0,
-                play_count: row.get(8)?,
-                last_played: row.get(9)?,
-            })
-        })?;
+        let track_iter = stmt.query_map(params![artist], track_from_row)?;
         let mut list = Vec::new();
         for t in track_iter {
             list.push(t?);
@@ -639,4 +631,25 @@ impl Db {
             )?,
         })
     }
+}
+
+fn track_from_row(row: &Row<'_>) -> rusqlite::Result<Track> {
+    Ok(Track {
+        id: row.get(0)?,
+        path: row.get(1)?,
+        title: row.get(2)?,
+        artist: row.get(3)?,
+        album: row.get(4)?,
+        track_number: row.get(5)?,
+        duration: row.get(6)?,
+        file_size: row.get(7)?,
+        modified_at: row.get(8)?,
+        indexed_at: row.get(9)?,
+        cover_art_path: row.get(10)?,
+        cover_art_updated_at: row.get(11)?,
+        cover_art_source_modified_at: row.get(12)?,
+        favorited: row.get::<_, i32>(13)? != 0,
+        play_count: row.get(14)?,
+        last_played: row.get(15)?,
+    })
 }

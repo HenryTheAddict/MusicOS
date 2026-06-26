@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
-use crate::database::Db;
+use crate::database::{Db, Track};
 use crate::renderer::{Color, CoverArt};
 use id3::Tag;
 use image::GenericImageView;
@@ -13,6 +13,7 @@ use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::tag::Accessor;
 
 static COVER_ART_CACHE: OnceLock<Mutex<HashMap<String, Option<CoverArt>>>> = OnceLock::new();
+static LAST_SCAN_ROOTS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
 pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
     let cache = COVER_ART_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
@@ -30,6 +31,40 @@ pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
         cache.insert(track_path.to_string(), art.clone());
     }
     art
+}
+
+pub fn cached_cover_art_for_track(db: &Db, track: &Track) -> Option<CoverArt> {
+    if track.cover_art_source_modified_at == Some(track.modified_at) {
+        if let Some(path) = track.cover_art_path.as_deref() {
+            if let Some(art) = load_cover_art_file(Path::new(path)) {
+                return Some(art);
+            }
+        } else {
+            return None;
+        }
+    }
+
+    let art = cached_cover_art(&track.path);
+    if let Some(ref art) = art {
+        let _ = persist_cover_art(db, track.id, art, track.modified_at);
+    } else {
+        let _ = db.set_track_cover_art(track.id, None, track.modified_at);
+    }
+    art
+}
+
+pub fn cover_art_memory_cache_len() -> usize {
+    COVER_ART_CACHE
+        .get()
+        .and_then(|cache| cache.lock().ok().map(|cache| cache.len()))
+        .unwrap_or(0)
+}
+
+pub fn last_scan_roots() -> Vec<String> {
+    LAST_SCAN_ROOTS
+        .get()
+        .and_then(|roots| roots.lock().ok().map(|roots| roots.clone()))
+        .unwrap_or_default()
 }
 
 pub fn extract_cover_art(track_path: &str) -> Option<CoverArt> {
@@ -104,6 +139,29 @@ fn cover_art_from_image(img: image::DynamicImage) -> CoverArt {
     }
 }
 
+fn persist_cover_art(
+    db: &Db,
+    track_id: i64,
+    art: &CoverArt,
+    source_modified_at: i64,
+) -> Result<()> {
+    let dir = db.cover_art_dir();
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{track_id}.png"));
+    let mut rgba = Vec::with_capacity(art.pixels.len() * 4);
+    for color in &art.pixels {
+        rgba.push(color.r);
+        rgba.push(color.g);
+        rgba.push(color.b);
+        rgba.push(color.a);
+    }
+    let image = image::RgbaImage::from_raw(art.width, art.height, rgba)
+        .ok_or_else(|| anyhow::anyhow!("invalid cover-art buffer"))?;
+    image.save(&path)?;
+    db.set_track_cover_art(track_id, path.to_str(), source_modified_at)?;
+    Ok(())
+}
+
 fn find_folder_cover_art(dir: &Path) -> Option<PathBuf> {
     const NAMES: &[&str] = &[
         "cover.jpg",
@@ -145,7 +203,10 @@ fn find_folder_cover_art(dir: &Path) -> Option<PathBuf> {
             continue;
         };
         let lowered = file_name.to_ascii_lowercase();
-        if NAMES.iter().any(|candidate| lowered == candidate.to_ascii_lowercase()) {
+        if NAMES
+            .iter()
+            .any(|candidate| lowered == candidate.to_ascii_lowercase())
+        {
             return Some(path);
         }
     }
@@ -173,6 +234,14 @@ pub fn index_default_locations(db: &Db) -> Result<usize> {
                 roots.push(mac_music);
             }
         }
+    }
+
+    let scanned_roots = roots.clone();
+    if let Ok(mut last) = LAST_SCAN_ROOTS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+    {
+        *last = scanned_roots;
     }
 
     let mut indexed = 0;
@@ -231,7 +300,7 @@ fn index_file(db: &Db, path: &Path, stats: FileStats) -> Result<()> {
         estimate_duration(stats.file_size)
     };
 
-    db.insert_track_with_number(
+    let track_id = db.insert_track_with_number(
         &path_str,
         &title,
         &artist,
@@ -241,7 +310,22 @@ fn index_file(db: &Db, path: &Path, stats: FileStats) -> Result<()> {
         stats.file_size,
         stats.modified_at,
     )?;
+    cache_cover_art_for_indexed_track(db, track_id, path, stats.modified_at);
     Ok(())
+}
+
+fn cache_cover_art_for_indexed_track(db: &Db, track_id: i64, path: &Path, source_modified_at: i64) {
+    let track_path = path.display().to_string();
+    if let Some(art) = extract_cover_art(&track_path) {
+        if let Err(err) = persist_cover_art(db, track_id, &art, source_modified_at) {
+            log::warn!("failed to cache cover art for {}: {err}", path.display());
+        }
+    } else if let Err(err) = db.set_track_cover_art(track_id, None, source_modified_at) {
+        log::warn!(
+            "failed to update empty cover-art cache for {}: {err}",
+            path.display()
+        );
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -552,10 +636,7 @@ mod tests {
 
     #[test]
     fn folder_cover_art_lookup_is_case_insensitive() {
-        let root = std::env::temp_dir().join(format!(
-            "musicos-cover-art-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("musicos-cover-art-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         let image_path = root.join("Cover.PNG");
         let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([20, 40, 60, 255]));
@@ -565,6 +646,48 @@ mod tests {
         assert_eq!(art.width, 600);
         assert_eq!(art.height, 600);
         assert_eq!(art.pixels[0], Color::rgba(20, 40, 60, 255));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cached_cover_art_is_persisted_and_reused() {
+        let root =
+            std::env::temp_dir().join(format!("musicos-cover-art-cache-{}", std::process::id()));
+        let music_dir = root.join("music");
+        let db_path = root.join("media.sqlite3");
+        std::fs::create_dir_all(&music_dir).unwrap();
+        let image_path = music_dir.join("cover.png");
+        let image = image::RgbaImage::from_pixel(2, 2, image::Rgba([80, 20, 120, 255]));
+        image.save(&image_path).unwrap();
+
+        let db = Db::open(db_path.to_str().unwrap()).unwrap();
+        let track_path = music_dir.join("01 - Cache Me.mp3");
+        let track_id = db
+            .insert_track_with_number(
+                track_path.to_str().unwrap(),
+                "Cache Me",
+                "MusicOS",
+                "Persistence",
+                1,
+                120,
+                1024,
+                55,
+            )
+            .unwrap();
+        let track = db.get_track_by_id(track_id).unwrap().unwrap();
+        let art = cached_cover_art_for_track(&db, &track).unwrap();
+        assert_eq!(art.width, 600);
+        assert_eq!(art.pixels[0], Color::rgba(80, 20, 120, 255));
+
+        let refreshed = db.get_track_by_id(track_id).unwrap().unwrap();
+        let cached_path = refreshed.cover_art_path.as_ref().unwrap();
+        assert!(Path::new(cached_path).exists());
+        assert_eq!(refreshed.cover_art_source_modified_at, Some(55));
+        assert_eq!(db.cover_art_cache_count().unwrap(), 1);
+
+        let reused = cached_cover_art_for_track(&db, &refreshed).unwrap();
+        assert_eq!(reused.pixels[0], Color::rgba(80, 20, 120, 255));
 
         let _ = std::fs::remove_dir_all(root);
     }

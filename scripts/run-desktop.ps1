@@ -22,4 +22,4 @@ if (-not (Test-Path "node_modules\electron")) {
     npm.cmd install
 }
 
-cargo run --bin musicos-desktop --features desktop-app
+npm.cmd run sync:electron

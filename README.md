@@ -18,8 +18,9 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
 - USB sync path that indexes mounted media and a Settings `Get Update` action
   that installs `musicos-init` updates from USB storage.
 - Native desktop app target for Windows/macOS/Linux UI testing.
-- Electron `MusicOS Sync` companion app for device mirror, keyboard input,
-  folder upload, and USB sync triggering.
+- Electron `MusicOS Control Center` for the Windows/macOS/Linux desktop
+  emulator, device mirror, library sync, playlists, diagnostics, logs, and
+  local emulator controls.
 - Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
 - QEMU launch script using `qemu-system-aarch64 -M virt -cpu cortex-a53`.
 
@@ -35,7 +36,7 @@ On Windows PowerShell:
 .\scripts\check-host.ps1
 ```
 
-For the normal desktop development loop, run the emulator and sync companion
+For the normal desktop development loop, run the emulator and Control Center
 together:
 
 ```sh
@@ -48,8 +49,9 @@ On Windows PowerShell:
 .\scripts\run-desktop.ps1
 ```
 
-That launches the desktop UI and the Electron sync app in parallel with one shared
-SQLite database, media folder, and companion API target:
+That launches the Electron Control Center with one shared SQLite database, media
+folder, and companion API target. Use the emulator controls inside the app to
+build and start the desktop MusicOS runtime:
 
 - API: `http://127.0.0.1:18080`
 - DB: `out/desktop-media.sqlite3`
@@ -61,20 +63,24 @@ Override with `MUSICOS_COMPANION_PORT`, `MUSICOS_MEDIA_DB`,
 For the desktop test app by itself:
 
 ```sh
-cargo run --bin musicos-mac --features desktop-app
+cargo run --bin musicos-mac --features desktop-app,desktop-audio
 ```
 
 The desktop target stores its default test database at `out/mac-media.sqlite3` and
 serves the device API on `http://127.0.0.1:18080`. Override that with
 `MUSICOS_MEDIA_DB` or `MUSICOS_COMPANION_PORT` when needed.
 
-For the Electron sync companion by itself:
+For the Electron Control Center by itself:
 
 ```sh
 npm run sync:electron
 ```
 
-The sync app targets `http://127.0.0.1:18080` by default. Use
+The Control Center starts `target/debug/musicos-mac.exe` on Windows when you use
+its emulator controls. If the binary is missing, it runs
+`cargo build --bin musicos-mac --features desktop-app,desktop-audio`, streams the
+build output into Logs, and then launches the emulator. The app targets
+`http://127.0.0.1:18080` by default. Use
 `MUSICOS_SYNC_TARGET=http://192.168.7.2:8080` for a USB-networked device, and
 `MUSICOS_SYNC_DIR=/path/to/music` to choose the folder uploaded by the app.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
@@ -110,7 +116,7 @@ exports so the live clock does not pollute visual diffs.
 To test USB media/update behavior on a host:
 
 ```sh
-MUSICOS_USB_ROOTS=/path/to/usb MUSICOS_UPDATE_STAGING=out/staged-update cargo test --workspace --features mac-app
+MUSICOS_USB_ROOTS=/path/to/usb MUSICOS_UPDATE_STAGING=out/staged-update cargo test --workspace --features desktop-app,desktop-audio
 ```
 
 On Windows PowerShell:
@@ -118,7 +124,7 @@ On Windows PowerShell:
 ```powershell
 $env:MUSICOS_USB_ROOTS = "E:\"
 $env:MUSICOS_UPDATE_STAGING = "out\staged-update"
-cargo test --workspace --features desktop-app
+cargo test --workspace --features desktop-app,desktop-audio
 ```
 
 For a USB update, put a new MusicOS image at one of these paths on the USB
@@ -136,14 +142,15 @@ scripts/build-qemu.sh
 scripts/run-qemu.sh
 ```
 
-To run QEMU and the Electron sync app together:
+To run QEMU and the Electron Control Center together:
 
 ```sh
 scripts/run-qemu-sync.sh
 ```
 
 `scripts/run-qemu.sh` defaults to `MUSICOS_QEMU_NET=sync`, which forwards the
-guest MusicOS API on port `8080` to `http://127.0.0.1:18080` for the sync app.
+guest MusicOS API on port `8080` to `http://127.0.0.1:18080` for the Control
+Center.
 Use `MUSICOS_QEMU_NET=none scripts/run-qemu.sh` for the fully offline QEMU run,
 or `MUSICOS_QEMU_HOST_PORT=18081 scripts/run-qemu-sync.sh` if port `18080` is
 already in use.
@@ -208,3 +215,11 @@ scripts/build-rg35xx.sh
 The RG35XX defconfig is a mainline-kernel starting point. Real hardware display
 and input bring-up may need the smallest available H700/RG35XX device-tree and
 driver patch set.
+
+## Audio Features
+
+Desktop builds use `desktop-audio`, which enables Rodio for the emulator and
+Control Center workflow. KNULLI/RG35XX payload builds use `pid1,device-audio`,
+which enables the ALSA probing and playback path used on device. The legacy
+`audio` feature remains available as a compatibility umbrella for both audio
+backends.

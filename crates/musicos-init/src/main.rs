@@ -55,7 +55,9 @@ fn run() -> Result<()> {
     }
     app.refresh_library();
 
+    let draw_start = Instant::now();
     renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
+    app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
 
     let mut last_frame = Instant::now();
     loop {
@@ -85,7 +87,9 @@ fn run() -> Result<()> {
             idle_frame_budget
         };
         if screen_changed || last_frame.elapsed() >= redraw_budget {
+            let draw_start = Instant::now();
             renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
+            app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
             last_frame = Instant::now();
         }
 

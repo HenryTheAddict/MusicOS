@@ -69,6 +69,7 @@ fn main() -> Result<()> {
 
         let mut canvas = Canvas::new(resolution, &mut bgra)?;
         app.draw(&mut canvas, started_at.elapsed().as_secs_f32());
+        app.set_last_frame_ms(frame_start.elapsed().as_secs_f32() * 1000.0);
         musicos_init::renderer::update_latest_screenshot(&bgra);
         bgra_to_minifb(&bgra, &mut pixels);
 

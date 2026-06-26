@@ -291,10 +291,8 @@ mod tests {
     #[test]
     fn old_settings_json_migrates_to_v2_defaults() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "musicos-prefs-migrate-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("musicos-prefs-migrate-{}", std::process::id()));
         let path = root.join("settings.json");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
@@ -320,10 +318,8 @@ mod tests {
     #[test]
     fn corrupt_settings_are_backed_up_and_defaults_load() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "musicos-prefs-corrupt-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("musicos-prefs-corrupt-{}", std::process::id()));
         let path = root.join("settings.json");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(&path, b"{not json").unwrap();

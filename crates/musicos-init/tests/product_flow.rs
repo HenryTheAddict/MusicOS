@@ -307,10 +307,7 @@ fn context_menu_actions_use_the_selected_library_item() {
 #[test]
 fn context_menu_only_opens_for_real_targets() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-context-targets-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("musicos-context-targets-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
 
@@ -387,11 +384,29 @@ fn album_order_and_favorites_match_music_player_expectations() {
         .unwrap();
     let first = app
         .db
-        .insert_track_with_number("/music/01-alpha.ogg", "Alpha", "Tanger", "Glow", 1, 120, 1, 1)
+        .insert_track_with_number(
+            "/music/01-alpha.ogg",
+            "Alpha",
+            "Tanger",
+            "Glow",
+            1,
+            120,
+            1,
+            1,
+        )
         .unwrap();
     let other = app
         .db
-        .insert_track_with_number("/music/01-gamma.ogg", "Gamma", "Tanger", "Night", 1, 160, 1, 1)
+        .insert_track_with_number(
+            "/music/01-gamma.ogg",
+            "Gamma",
+            "Tanger",
+            "Night",
+            1,
+            160,
+            1,
+            1,
+        )
         .unwrap();
 
     app.force_screen_for_snapshot(Screen::AlbumsList);
@@ -482,20 +497,33 @@ fn queue_screen_uses_the_real_player_queue() {
 #[test]
 fn persisted_queue_restores_paused_with_position() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-queue-restore-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("musicos-queue-restore-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let settings_path = root.join("settings.json");
     std::fs::create_dir_all(&root).unwrap();
 
     let db = Db::open(db_path.to_str().unwrap()).unwrap();
     let first = db
-        .insert_track("/music/restore-a.ogg", "Restore A", "Artist", "Album", 120, 1, 1)
+        .insert_track(
+            "/music/restore-a.ogg",
+            "Restore A",
+            "Artist",
+            "Album",
+            120,
+            1,
+            1,
+        )
         .unwrap();
     let second = db
-        .insert_track("/music/restore-b.ogg", "Restore B", "Artist", "Album", 150, 1, 1)
+        .insert_track(
+            "/music/restore-b.ogg",
+            "Restore B",
+            "Artist",
+            "Album",
+            150,
+            1,
+            1,
+        )
         .unwrap();
     drop(db);
 
@@ -524,10 +552,8 @@ fn persisted_queue_restores_paused_with_position() {
 #[test]
 fn settings_command_persists_validated_user_audio_and_library_values() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-settings-command-{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("musicos-settings-command-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let settings_path = root.join("settings.json");
     std::fs::create_dir_all(&root).unwrap();

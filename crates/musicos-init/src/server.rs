@@ -74,6 +74,16 @@ pub enum ControlCommand {
     CleanupMissingFiles,
 }
 
+#[derive(Deserialize)]
+struct PlaylistPayload {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct PlaylistTrackPayload {
+    track_id: i64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct RuntimeSnapshot {
     pub settings: Preferences,
@@ -86,6 +96,10 @@ pub struct RuntimeSnapshot {
     pub scan_status: String,
     pub usb_status: String,
     pub battery_status: String,
+    pub indexed_roots: Vec<String>,
+    pub cover_art_cache_count: i64,
+    pub cover_art_memory_cache_count: usize,
+    pub frame_ms: f32,
 }
 
 static RUNTIME_SNAPSHOT: OnceLock<Mutex<Option<RuntimeSnapshot>>> = OnceLock::new();
@@ -131,11 +145,12 @@ impl CompanionServer {
     fn run_loop(self) -> Result<()> {
         for mut request in self.server.incoming_requests() {
             let url = request.url().to_string();
+            let path = url.split('?').next().unwrap_or(&url).to_string();
             let method = request.method().as_str();
 
-            if url == "/" || url == "/index.html" {
+            if path == "/" || path == "/index.html" {
                 let response = Response::from_string(
-                    "{\"status\":\"ok\",\"app\":\"MusicOS API\",\"sync_app\":\"npm run sync:electron\"}",
+                    "{\"status\":\"ok\",\"app\":\"MusicOS API\",\"control_center\":\"npm run sync:electron\"}",
                 )
                 .with_header(
                     Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
@@ -147,19 +162,21 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/settings" && method == "GET" {
+            if path == "/api/settings" && method == "GET" {
                 let response = json_response(&crate::preferences::load());
                 let _ = request.respond(response);
                 continue;
             }
 
-            if url == "/api/settings" && method == "POST" {
+            if path == "/api/settings" && method == "POST" {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 if let Ok(settings) = serde_json::from_str::<SettingsUpdate>(&body) {
                     let _ = self
                         .tx
-                        .send(ServerEvent::Control(ControlCommand::SetSettings { settings }));
+                        .send(ServerEvent::Control(ControlCommand::SetSettings {
+                            settings,
+                        }));
                     let response = json_response(&serde_json::json!({"status": "ok"}));
                     let _ = request.respond(response);
                 } else {
@@ -172,7 +189,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/player" && method == "GET" {
+            if path == "/api/player" && method == "GET" {
                 let body = if let Some(snapshot) = runtime_snapshot() {
                     serde_json::json!({
                         "status": "ok",
@@ -193,7 +210,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/diagnostics" && method == "GET" {
+            if path == "/api/diagnostics" && method == "GET" {
                 let body = if let Some(snapshot) = runtime_snapshot() {
                     serde_json::json!({
                         "status": "ok",
@@ -203,13 +220,22 @@ impl CompanionServer {
                         "audio": crate::system::audio_diagnostics(),
                         "player": snapshot.player,
                         "scan_status": snapshot.scan_status,
+                        "indexed_roots": snapshot.indexed_roots,
                         "usb_status": snapshot.usb_status,
                         "battery_status": snapshot.battery_status,
+                        "cover_art_cache_count": snapshot.cover_art_cache_count,
+                        "cover_art_memory_cache_count": snapshot.cover_art_memory_cache_count,
+                        "frame_ms": snapshot.frame_ms,
                         "settings": snapshot.settings,
                     })
                 } else {
-                    let counts = crate::database::Db::open(&self.db_path)
-                        .and_then(|db| db.library_counts())
+                    let (counts, cover_art_cache_count) = crate::database::Db::open(&self.db_path)
+                        .map(|db| {
+                            (
+                                db.library_counts().unwrap_or_default(),
+                                db.cover_art_cache_count().unwrap_or_default(),
+                            )
+                        })
                         .unwrap_or_default();
                     serde_json::json!({
                         "status": "warming_up",
@@ -217,6 +243,9 @@ impl CompanionServer {
                         "settings_path": crate::preferences::path(),
                         "counts": counts,
                         "audio": crate::system::audio_diagnostics(),
+                        "indexed_roots": crate::media::last_scan_roots(),
+                        "cover_art_cache_count": cover_art_cache_count,
+                        "cover_art_memory_cache_count": crate::media::cover_art_memory_cache_len(),
                     })
                 };
                 let response = json_response(&body);
@@ -224,7 +253,60 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/screenshot.bmp") {
+            if path == "/api/library" && method == "GET" {
+                let body = if let Ok(db) = crate::database::Db::open(&self.db_path) {
+                    let counts = db.library_counts().unwrap_or_default();
+                    let playlists = db.get_playlists().unwrap_or_default();
+                    let cover_art_cache_count = db.cover_art_cache_count().unwrap_or_default();
+                    if let Some(snapshot) = runtime_snapshot() {
+                        serde_json::json!({
+                            "status": "ok",
+                            "db_path": snapshot.db_path,
+                            "settings_path": snapshot.settings_path,
+                            "counts": counts,
+                            "playlists": playlists,
+                            "player": snapshot.player,
+                            "queue": snapshot.queue,
+                            "queue_index": snapshot.queue_index,
+                            "scan_status": snapshot.scan_status,
+                            "indexed_roots": snapshot.indexed_roots,
+                            "audio": crate::system::audio_diagnostics(),
+                            "battery_status": snapshot.battery_status,
+                            "usb_status": snapshot.usb_status,
+                            "cover_art_cache_count": cover_art_cache_count,
+                            "cover_art_memory_cache_count": snapshot.cover_art_memory_cache_count,
+                            "frame_ms": snapshot.frame_ms,
+                        })
+                    } else {
+                        serde_json::json!({
+                            "status": "warming_up",
+                            "db_path": self.db_path,
+                            "settings_path": crate::preferences::path(),
+                            "counts": counts,
+                            "playlists": playlists,
+                            "player": null,
+                            "queue": [],
+                            "queue_index": null,
+                            "scan_status": "Warming up",
+                            "indexed_roots": crate::media::last_scan_roots(),
+                            "audio": crate::system::audio_diagnostics(),
+                            "cover_art_cache_count": cover_art_cache_count,
+                            "cover_art_memory_cache_count": crate::media::cover_art_memory_cache_len(),
+                            "frame_ms": 0.0,
+                        })
+                    }
+                } else {
+                    serde_json::json!({
+                        "status": "db_unavailable",
+                        "db_path": self.db_path,
+                    })
+                };
+                let response = json_response(&body);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path.starts_with("/api/screenshot.bmp") {
                 if let Some(bmp) = renderer::get_latest_screenshot() {
                     let mut response_bytes = Vec::new();
                     if write_screenshot_bmp(&mut response_bytes, &bmp).is_ok() {
@@ -257,23 +339,21 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/cover-art.bmp") && method == "GET" {
-                let id = url
-                    .split("id=")
-                    .nth(1)
-                    .and_then(|value| {
-                        value
-                            .chars()
-                            .take_while(|ch| ch.is_ascii_digit())
-                            .collect::<String>()
-                            .parse::<i64>()
-                            .ok()
-                    });
+            if path.starts_with("/api/cover-art.bmp") && method == "GET" {
+                let id = url.split("id=").nth(1).and_then(|value| {
+                    value
+                        .chars()
+                        .take_while(|ch| ch.is_ascii_digit())
+                        .collect::<String>()
+                        .parse::<i64>()
+                        .ok()
+                });
 
                 if let Some(id) = id {
                     if let Ok(db) = crate::database::Db::open(&self.db_path) {
                         if let Ok(Some(track)) = db.get_track_by_id(id) {
-                            if let Some(art) = crate::media::cached_cover_art(&track.path) {
+                            if let Some(art) = crate::media::cached_cover_art_for_track(&db, &track)
+                            {
                                 let mut response_bytes = Vec::new();
                                 if write_cover_art_bmp(&mut response_bytes, &art).is_ok() {
                                     let response = Response::from_data(response_bytes)
@@ -315,7 +395,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/input") && method == "POST" {
+            if path.starts_with("/api/input") && method == "POST" {
                 let key_str = url.split("key=").nth(1).unwrap_or("");
                 let button = match key_str {
                     "Confirm" => Some(Button::Confirm),
@@ -350,7 +430,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/sync-usb" && method == "POST" {
+            if path == "/api/sync-usb" && method == "POST" {
                 let _ = self.tx.send(ServerEvent::UsbSync);
                 let response = Response::from_string("{\"status\":\"ok\"}")
                     .with_header(
@@ -363,7 +443,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/pointer") && method == "POST" {
+            if path.starts_with("/api/pointer") && method == "POST" {
                 let event = if url.contains("action=tap") {
                     Some(InputEvent::Tap)
                 } else if url.contains("action=swipe") {
@@ -397,7 +477,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/control" && method == "POST" {
+            if path == "/api/control" && method == "POST" {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 if let Ok(cmd) = serde_json::from_str::<ControlCommand>(&body) {
@@ -418,7 +498,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url == "/api/upload" && method == "POST" {
+            if path == "/api/upload" && method == "POST" {
                 let headers = request.headers();
                 let filename = headers
                     .iter()
@@ -460,7 +540,7 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/status") && method == "GET" {
+            if path.starts_with("/api/status") && method == "GET" {
                 let body = if let Ok(db) = crate::database::Db::open(&self.db_path) {
                     let counts = db.library_counts().unwrap_or_default();
                     serde_json::json!({
@@ -485,7 +565,194 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/tracks") && method == "GET" {
+            if path == "/api/playlists" && method == "GET" {
+                let playlists = crate::database::Db::open(&self.db_path)
+                    .and_then(|db| db.get_playlists())
+                    .unwrap_or_default();
+                let response = json_response(&playlists);
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/playlists" && method == "POST" {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                match serde_json::from_str::<PlaylistPayload>(&body)
+                    .ok()
+                    .map(|payload| payload.name.trim().to_string())
+                    .filter(|name| !name.is_empty())
+                {
+                    Some(name) => match crate::database::Db::open(&self.db_path)
+                        .and_then(|db| db.create_playlist(&name))
+                    {
+                        Ok(id) => {
+                            let _ = self.tx.send(ServerEvent::Control(
+                                ControlCommand::CreatePlaylist { name: name.clone() },
+                            ));
+                            let response = json_response(&serde_json::json!({
+                                "status": "ok",
+                                "playlist": { "id": id, "name": name }
+                            }));
+                            let _ = request.respond(response);
+                        }
+                        Err(err) => {
+                            let response = json_response_status(
+                                &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                StatusCode(500),
+                            );
+                            let _ = request.respond(response);
+                        }
+                    },
+                    None => {
+                        let response = json_response_status(
+                            &serde_json::json!({"status": "invalid_playlist"}),
+                            StatusCode(400),
+                        );
+                        let _ = request.respond(response);
+                    }
+                }
+                continue;
+            }
+
+            if let Some((playlist_id, track_id)) = parse_playlist_track_path(&path) {
+                if method == "DELETE" {
+                    match crate::database::Db::open(&self.db_path)
+                        .and_then(|db| db.remove_track_from_playlist(playlist_id, track_id))
+                    {
+                        Ok(()) => {
+                            let _ = self.tx.send(ServerEvent::Control(
+                                ControlCommand::RemoveTrackFromPlaylist {
+                                    playlist_id,
+                                    track_id,
+                                },
+                            ));
+                            let response = json_response(&serde_json::json!({"status": "ok"}));
+                            let _ = request.respond(response);
+                        }
+                        Err(err) => {
+                            let response = json_response_status(
+                                &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                StatusCode(500),
+                            );
+                            let _ = request.respond(response);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if let Some(playlist_id) = parse_playlist_tracks_path(&path) {
+                if method == "GET" {
+                    let tracks = crate::database::Db::open(&self.db_path)
+                        .and_then(|db| db.get_playlist_tracks(playlist_id))
+                        .unwrap_or_default();
+                    let response = json_response(&tracks);
+                    let _ = request.respond(response);
+                    continue;
+                }
+
+                if method == "POST" {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<PlaylistTrackPayload>(&body) {
+                        Ok(payload) => match crate::database::Db::open(&self.db_path)
+                            .and_then(|db| db.add_track_to_playlist(playlist_id, payload.track_id))
+                        {
+                            Ok(()) => {
+                                let _ = self.tx.send(ServerEvent::Control(
+                                    ControlCommand::AddTrackToPlaylist {
+                                        playlist_id,
+                                        track_id: payload.track_id,
+                                    },
+                                ));
+                                let response = json_response(&serde_json::json!({"status": "ok"}));
+                                let _ = request.respond(response);
+                            }
+                            Err(err) => {
+                                let response = json_response_status(
+                                    &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                    StatusCode(500),
+                                );
+                                let _ = request.respond(response);
+                            }
+                        },
+                        Err(_) => {
+                            let response = json_response_status(
+                                &serde_json::json!({"status": "invalid_track"}),
+                                StatusCode(400),
+                            );
+                            let _ = request.respond(response);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if let Some(playlist_id) = parse_playlist_path(&path) {
+                if method == "PUT" {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    match serde_json::from_str::<PlaylistPayload>(&body)
+                        .ok()
+                        .map(|payload| payload.name.trim().to_string())
+                        .filter(|name| !name.is_empty())
+                    {
+                        Some(name) => match crate::database::Db::open(&self.db_path)
+                            .and_then(|db| db.rename_playlist(playlist_id, &name))
+                        {
+                            Ok(()) => {
+                                let _ = self.tx.send(ServerEvent::Control(
+                                    ControlCommand::RenamePlaylist {
+                                        id: playlist_id,
+                                        name,
+                                    },
+                                ));
+                                let response = json_response(&serde_json::json!({"status": "ok"}));
+                                let _ = request.respond(response);
+                            }
+                            Err(err) => {
+                                let response = json_response_status(
+                                    &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                    StatusCode(500),
+                                );
+                                let _ = request.respond(response);
+                            }
+                        },
+                        None => {
+                            let response = json_response_status(
+                                &serde_json::json!({"status": "invalid_playlist"}),
+                                StatusCode(400),
+                            );
+                            let _ = request.respond(response);
+                        }
+                    }
+                    continue;
+                }
+
+                if method == "DELETE" {
+                    match crate::database::Db::open(&self.db_path)
+                        .and_then(|db| db.delete_playlist(playlist_id))
+                    {
+                        Ok(()) => {
+                            let _ = self.tx.send(ServerEvent::Control(
+                                ControlCommand::DeletePlaylist { id: playlist_id },
+                            ));
+                            let response = json_response(&serde_json::json!({"status": "ok"}));
+                            let _ = request.respond(response);
+                        }
+                        Err(err) => {
+                            let response = json_response_status(
+                                &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                StatusCode(500),
+                            );
+                            let _ = request.respond(response);
+                        }
+                    }
+                    continue;
+                }
+            }
+
+            if path.starts_with("/api/tracks") && method == "GET" {
                 if let Ok(db) = crate::database::Db::open(&self.db_path) {
                     if url.contains("playlists=1") || url.contains("type=playlists") {
                         if let Ok(playlists) = db.get_playlists() {
@@ -580,7 +847,7 @@ impl CompanionServer {
                     .with_header(
                         Header::from_bytes(
                             &b"Access-Control-Allow-Methods"[..],
-                            &b"GET, POST, OPTIONS"[..],
+                            &b"GET, POST, PUT, DELETE, OPTIONS"[..],
                         )
                         .unwrap(),
                     )
@@ -644,15 +911,52 @@ fn sanitize_filename(name: &str) -> String {
     }
 }
 
+fn parse_playlist_path(path: &str) -> Option<i64> {
+    let rest = path.strip_prefix("/api/playlists/")?;
+    if rest.contains('/') {
+        return None;
+    }
+    rest.parse().ok()
+}
+
+fn parse_playlist_tracks_path(path: &str) -> Option<i64> {
+    let rest = path.strip_prefix("/api/playlists/")?;
+    let id = rest.strip_suffix("/tracks")?;
+    id.parse().ok()
+}
+
+fn parse_playlist_track_path(path: &str) -> Option<(i64, i64)> {
+    let rest = path.strip_prefix("/api/playlists/")?;
+    let (playlist_id, tail) = rest.split_once("/tracks/")?;
+    Some((playlist_id.parse().ok()?, tail.parse().ok()?))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sanitize_filename;
+    use super::{
+        parse_playlist_path, parse_playlist_track_path, parse_playlist_tracks_path,
+        sanitize_filename,
+    };
 
     #[test]
     fn upload_filenames_are_sanitized() {
         assert_eq!(sanitize_filename("../evil.mp3"), "evil.mp3");
         assert_eq!(sanitize_filename("artist/song?.wav"), "song_.wav");
         assert_eq!(sanitize_filename(""), "upload.ogg");
+    }
+
+    #[test]
+    fn playlist_api_paths_parse_ids() {
+        assert_eq!(parse_playlist_path("/api/playlists/12"), Some(12));
+        assert_eq!(
+            parse_playlist_tracks_path("/api/playlists/12/tracks"),
+            Some(12)
+        );
+        assert_eq!(
+            parse_playlist_track_path("/api/playlists/12/tracks/34"),
+            Some((12, 34))
+        );
+        assert_eq!(parse_playlist_path("/api/playlists/12/tracks"), None);
     }
 }
 

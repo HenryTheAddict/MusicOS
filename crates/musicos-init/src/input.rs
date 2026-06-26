@@ -153,20 +153,14 @@ mod linux {
             }
             Key::KEY_X | Key::BTN_NORTH | Key::BTN_TR => Button::Context,
             Key::KEY_Y | Key::BTN_WEST => Button::Home,
-            Key::KEY_MENU | Key::KEY_HOMEPAGE | Key::BTN_MODE | Key::BTN_TRIGGER => {
-                Button::Menu
-            }
+            Key::KEY_MENU | Key::KEY_HOMEPAGE | Key::BTN_MODE | Key::BTN_TRIGGER => Button::Menu,
             Key::KEY_SLEEP | Key::KEY_SUSPEND => Button::Sleep,
             Key::KEY_VOLUMEUP => Button::VolumeUp,
             Key::KEY_VOLUMEDOWN => Button::VolumeDown,
             Key::KEY_UP | Key::BTN_DPAD_UP => Button::Up,
             Key::KEY_DOWN | Key::BTN_DPAD_DOWN => Button::Down,
-            Key::KEY_LEFT | Key::KEY_PREVIOUSSONG | Key::BTN_DPAD_LEFT => {
-                Button::Left
-            }
-            Key::KEY_RIGHT | Key::KEY_NEXTSONG | Key::BTN_DPAD_RIGHT => {
-                Button::Right
-            }
+            Key::KEY_LEFT | Key::KEY_PREVIOUSSONG | Key::BTN_DPAD_LEFT => Button::Left,
+            Key::KEY_RIGHT | Key::KEY_NEXTSONG | Key::BTN_DPAD_RIGHT => Button::Right,
             _ => return None,
         })
     }

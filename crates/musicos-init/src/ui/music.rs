@@ -73,7 +73,12 @@ pub fn draw_music_menu(
     let items = [
         (Focus::Albums, lang.translate("albums"), counts.albums, 42.0),
         (Focus::Songs, lang.translate("songs"), counts.tracks, 149.0),
-        (Focus::Artists, lang.translate("artists"), counts.artists, 256.0),
+        (
+            Focus::Artists,
+            lang.translate("artists"),
+            counts.artists,
+            256.0,
+        ),
         (
             Focus::Playlists,
             lang.translate("playlists"),
@@ -86,7 +91,12 @@ pub fn draw_music_menu(
             counts.favorites,
             470.0,
         ),
-        (Focus::Queue, lang.translate("queue"), queue_len as i64, 577.0),
+        (
+            Focus::Queue,
+            lang.translate("queue"),
+            queue_len as i64,
+            577.0,
+        ),
         (Focus::History, lang.translate("history"), 0, 684.0),
         (Focus::ShuffleAll, lang.translate("shuffle_all"), 0, 791.0),
     ];

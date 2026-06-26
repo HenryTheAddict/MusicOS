@@ -51,7 +51,11 @@ pub struct AudioTestResult {
 }
 
 pub fn apply_brightness(percent: u8) {
-    let percent = if percent == 0 { 0 } else { percent.clamp(5, 100) };
+    let percent = if percent == 0 {
+        0
+    } else {
+        percent.clamp(5, 100)
+    };
     if let Err(err) = write_brightness(percent) {
         log::info!("brightness apply skipped: {err}");
     }
@@ -109,15 +113,19 @@ pub fn audio_diagnostics() -> AudioDiagnostics {
     let amixer = find_program("amixer");
     let aplay = find_program("aplay");
     let mixer_controls = amixer.as_ref().and_then(|path| {
-        Command::new(path).arg("scontrols").output().ok().map(|output| {
-            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            if stdout.is_empty() {
-                stderr
-            } else {
-                stdout
-            }
-        })
+        Command::new(path)
+            .arg("scontrols")
+            .output()
+            .ok()
+            .map(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                if stdout.is_empty() {
+                    stderr
+                } else {
+                    stdout
+                }
+            })
     });
     let mixer_init_results = amixer
         .as_ref()
@@ -185,7 +193,10 @@ pub fn battery_summary() -> String {
 
     match info.capacity {
         Some(percent) if percent <= 15 && !info.status.eq_ignore_ascii_case("Charging") => {
-            format!("low battery {percent}% - {}", info.status.to_ascii_lowercase())
+            format!(
+                "low battery {percent}% - {}",
+                info.status.to_ascii_lowercase()
+            )
         }
         Some(percent) if info.status.eq_ignore_ascii_case("Charging") => {
             format!("charging {percent}%")
@@ -301,9 +312,7 @@ fn probe_mixer_control(amixer: &Path, control: &str) -> MixerProbe {
         Ok(output) => MixerProbe {
             control: control.to_string(),
             ok: false,
-            message: String::from_utf8_lossy(&output.stderr)
-                .trim()
-                .to_string(),
+            message: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         },
         Err(err) => MixerProbe {
             control: control.to_string(),

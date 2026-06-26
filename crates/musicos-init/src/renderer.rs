@@ -907,7 +907,9 @@ impl<'a> Canvas<'a> {
         let line_height = (v_metrics.ascent - v_metrics.descent + v_metrics.line_gap).max(size);
         for (line_index, line) in text.lines().enumerate() {
             let origin_x = self.resolution.scale_x(x).round();
-            let origin_y = (self.resolution.scale_y(y) + v_metrics.ascent + line_height * line_index as f32).round();
+            let origin_y =
+                (self.resolution.scale_y(y) + v_metrics.ascent + line_height * line_index as f32)
+                    .round();
             let origin = point(origin_x, origin_y);
             let glyphs: Vec<_> = font.layout(line, scale, origin).collect();
             for glyph in glyphs {

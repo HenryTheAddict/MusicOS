@@ -134,6 +134,7 @@ pub struct MusicOs {
     pub usb_status: UsbStatus,
     pub resolution: Resolution,
     pub last_draw_seconds: f32,
+    pub last_frame_ms: f32,
     pub last_drawn_screen: Option<Screen>,
     pub outline_x: f32,
     pub outline_y: f32,
@@ -362,6 +363,7 @@ impl MusicOs {
             usb_status: UsbStatus::default(),
             resolution,
             last_draw_seconds: 0.0,
+            last_frame_ms: 0.0,
             last_drawn_screen: None,
             outline_x: 0.0,
             outline_y: 0.0,
@@ -403,11 +405,14 @@ impl MusicOs {
             self.cover_art_opacity = 0.0;
 
             if let Some(ref track) = status.track {
-                let track_path = track.path.clone();
+                let track = track.clone();
+                let db_path = self.db_path.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 self.cover_art_rx = Some(rx);
                 std::thread::spawn(move || {
-                    let art = crate::media::cached_cover_art(&track_path);
+                    let art = crate::database::Db::open(&db_path)
+                        .ok()
+                        .and_then(|db| crate::media::cached_cover_art_for_track(&db, &track));
                     let _ = tx.send(art);
                 });
             } else {
@@ -605,6 +610,10 @@ impl MusicOs {
         }
 
         self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx
+    }
+
+    pub fn set_last_frame_ms(&mut self, frame_ms: f32) {
+        self.last_frame_ms = frame_ms.max(0.0);
     }
 
     pub fn handle_server_event(&mut self, event: ServerEvent) -> bool {
@@ -904,11 +913,28 @@ impl MusicOs {
 
         crate::ui::shadow_rr(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 8.0, 16.0);
 
-        crate::ui::rr(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, Color::rgba(255, 255, 255, 225));
+        crate::ui::rr(
+            canvas,
+            hud_x,
+            hud_y,
+            hud_w,
+            hud_h,
+            hud_r,
+            Color::rgba(255, 255, 255, 225),
+        );
         crate::ui::liquid_glass(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 36);
 
         let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-        crate::ui::rr_stroke(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 3.0, accent.with_alpha(128));
+        crate::ui::rr_stroke(
+            canvas,
+            hud_x,
+            hud_y,
+            hud_w,
+            hud_h,
+            hud_r,
+            3.0,
+            accent.with_alpha(128),
+        );
 
         let (label, val_str, ratio) = match self.hud_type {
             HudType::Volume => {
@@ -948,15 +974,7 @@ impl MusicOs {
 
         let fill_w = track_w * ratio;
         if fill_w > 0.0 {
-            crate::ui::rr(
-                canvas,
-                track_x,
-                track_y,
-                fill_w,
-                track_h,
-                track_r,
-                accent,
-            );
+            crate::ui::rr(canvas, track_x, track_y, fill_w, track_h, track_r, accent);
         }
 
         let knob_x = track_x + fill_w;
@@ -1759,6 +1777,10 @@ impl MusicOs {
             scan_status: self.scan_status.clone(),
             usb_status: self.usb_status.message.clone(),
             battery_status: crate::system::battery_summary(),
+            indexed_roots: crate::media::last_scan_roots(),
+            cover_art_cache_count: self.db.cover_art_cache_count().unwrap_or_default(),
+            cover_art_memory_cache_count: crate::media::cover_art_memory_cache_len(),
+            frame_ms: self.last_frame_ms,
         });
     }
 

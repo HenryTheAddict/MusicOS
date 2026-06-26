@@ -104,10 +104,7 @@ pub fn draw_now_playing(
         Color::WHITE,
         FontWeight::Bold,
     );
-    if let Some(next_track) = status
-        .queue_index
-        .and_then(|index| queue.get(index + 1))
-    {
+    if let Some(next_track) = status.queue_index.and_then(|index| queue.get(index + 1)) {
         text_fit(
             canvas,
             &format!("Up Next: {}", next_track.title),

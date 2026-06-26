@@ -3,125 +3,227 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>MusicOS Sync</title>
+    <title>MusicOS Control Center</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="shell">
-      <section class="sidebar glass">
+      <aside class="rail panel">
         <div class="brand">
           <div class="mark">m</div>
           <div>
-            <h1>MusicOS Sync</h1>
+            <h1>MusicOS</h1>
             <p id="statusText">Starting...</p>
           </div>
         </div>
 
-        <div class="meter-grid">
-          <div class="meter">
-            <span>Tracks</span>
-            <strong id="trackCount">0</strong>
-          </div>
-          <div class="meter">
-            <span>Albums</span>
-            <strong id="albumCount">0</strong>
-          </div>
-          <div class="meter">
-            <span>Playlists</span>
-            <strong id="playlistCount">0</strong>
-          </div>
-          <div class="meter">
-            <span>Favorites</span>
-            <strong id="pinCount">0</strong>
-          </div>
-        </div>
+        <nav class="tabs" aria-label="MusicOS Control Center">
+          <button class="tab active" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="library">Library</button>
+          <button class="tab" data-tab="playlists">Playlists</button>
+          <button class="tab" data-tab="device">Device</button>
+          <button class="tab" data-tab="logs">Logs</button>
+        </nav>
 
-        <div class="sync-panel">
-          <button id="refreshBtn" class="primary">Refresh</button>
-          <button id="chooseBtn">Choose Folder</button>
-          <button id="uploadBtn">Upload Music</button>
-          <button id="usbBtn">USB Sync</button>
-        </div>
-
-        <div class="path-block">
-          <span>Target</span>
-          <input id="targetInput" spellcheck="false" />
-          <span>Folder</span>
-          <code id="folderText">./music</code>
-        </div>
-
-        <div class="settings-panel">
-          <label>
-            <span>User</span>
-            <input id="userNameInput" spellcheck="false" />
-          </label>
-          <label>
-            <span>Device</span>
-            <input id="deviceNameInput" spellcheck="false" />
-          </label>
-          <label>
-            <span>Audio</span>
-            <select id="audioBackendInput">
-              <option value="auto">Auto</option>
-              <option value="alsa">ALSA</option>
-              <option value="rodio">Rodio</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          <label>
-            <span>PCM</span>
-            <input id="alsaDeviceInput" spellcheck="false" />
-          </label>
-          <button id="saveSettingsBtn" class="primary">Save Settings</button>
-          <div class="maintenance-grid">
-            <button id="scanBtn">Scan</button>
-            <button id="audioTestBtn">Audio Test</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="device-panel glass">
-        <header class="device-header">
-          <div>
-            <span class="eyebrow">Live Device</span>
-            <h2>Mirror</h2>
-          </div>
+        <div class="rail-status">
           <div id="connectionPill" class="pill offline">Offline</div>
-        </header>
-        <div class="mirror-frame">
-          <img id="mirror" alt="MusicOS device mirror" />
-          <div id="mirrorEmpty" class="mirror-empty">Waiting for MusicOS</div>
+          <div id="emulatorPill" class="pill offline">Emulator off</div>
         </div>
-        <div class="key-strip">
-          <kbd>W</kbd><span>Up</span>
-          <kbd>A</kbd><span>Left</span>
-          <kbd>S</kbd><span>Down</span>
-          <kbd>D</kbd><span>Right</span>
-          <kbd>J</kbd><span>Confirm</span>
-          <kbd>H</kbd><span>Back</span>
-          <kbd>U</kbd><span>Menu</span>
-          <kbd>I</kbd><span>Home</span>
-        </div>
-      </section>
 
-      <section class="library glass">
-        <header>
+        <div class="rail-actions">
+          <button id="startEmuBtn" class="primary">Start Emulator</button>
+          <button id="restartEmuBtn">Restart</button>
+          <button id="stopEmuBtn">Stop</button>
+        </div>
+
+        <div class="config-stack">
+          <label>
+            <span>Target</span>
+            <input id="targetInput" spellcheck="false" />
+          </label>
           <div>
-            <span class="eyebrow">Offline Library</span>
-            <h2>Indexed Tracks</h2>
+            <span>Folder</span>
+            <code id="folderText">./music</code>
           </div>
-          <p id="playerText" class="player-text">Queue idle</p>
-        </header>
-        <div id="tracks" class="tracks"></div>
-        <div class="transport">
-          <button data-control="prev">Prev</button>
-          <button data-control="play_pause" class="primary">Play</button>
-          <button data-control="next">Next</button>
+          <div>
+            <span>Database</span>
+            <code id="dbText">out/desktop-media.sqlite3</code>
+          </div>
         </div>
-        <div class="queue-tools">
-          <button id="queueClearBtn">Clear Queue</button>
-          <button id="diagnosticsBtn">Diagnostics</button>
-        </div>
+      </aside>
+
+      <section class="workspace">
+        <section class="view active" data-view="overview">
+          <div class="topbar">
+            <div>
+              <span class="eyebrow">Control Center</span>
+              <h2>Overview</h2>
+            </div>
+            <div class="toolbar">
+              <button id="refreshBtn">Refresh</button>
+              <button id="scanBtn" class="primary">Scan</button>
+            </div>
+          </div>
+
+          <div class="metrics">
+            <div class="metric panel"><span>Tracks</span><strong id="trackCount">0</strong></div>
+            <div class="metric panel"><span>Albums</span><strong id="albumCount">0</strong></div>
+            <div class="metric panel"><span>Playlists</span><strong id="playlistCount">0</strong></div>
+            <div class="metric panel"><span>Cover Art</span><strong id="coverArtCount">0</strong></div>
+          </div>
+
+          <div class="overview-grid">
+            <section class="panel mirror-panel">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Live Device</span>
+                  <h3>Mirror</h3>
+                </div>
+                <p id="frameText">0.0 ms</p>
+              </header>
+              <div class="mirror-frame">
+                <img id="mirror" alt="MusicOS device mirror" />
+                <div id="mirrorEmpty" class="mirror-empty">Waiting for MusicOS</div>
+              </div>
+              <div class="key-strip">
+                <kbd>W</kbd><span>Up</span>
+                <kbd>A</kbd><span>Left</span>
+                <kbd>S</kbd><span>Down</span>
+                <kbd>D</kbd><span>Right</span>
+                <kbd>J</kbd><span>Confirm</span>
+                <kbd>H</kbd><span>Back</span>
+                <kbd>U</kbd><span>Menu</span>
+                <kbd>I</kbd><span>Home</span>
+              </div>
+            </section>
+
+            <section class="panel now-panel">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Playback</span>
+                  <h3>Now Playing</h3>
+                </div>
+                <p id="playerText">Queue idle</p>
+              </header>
+              <div id="nowPlaying" class="now-playing"></div>
+              <div class="transport">
+                <button data-control="prev">Prev</button>
+                <button data-control="play_pause" class="primary">Play</button>
+                <button data-control="next">Next</button>
+              </div>
+              <div id="queueList" class="queue-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view="library">
+          <div class="topbar">
+            <div>
+              <span class="eyebrow">Offline Library</span>
+              <h2>Library</h2>
+            </div>
+            <div class="toolbar">
+              <input id="librarySearch" class="search" placeholder="Search library" spellcheck="false" />
+              <button id="uploadBtn" class="primary">Upload Music</button>
+            </div>
+          </div>
+          <div id="tracks" class="tracks"></div>
+        </section>
+
+        <section class="view" data-view="playlists">
+          <div class="topbar">
+            <div>
+              <span class="eyebrow">Mixes</span>
+              <h2>Playlists</h2>
+            </div>
+            <form id="playlistForm" class="toolbar">
+              <input id="playlistNameInput" class="search" placeholder="Playlist name" spellcheck="false" />
+              <button class="primary" type="submit">Create</button>
+            </form>
+          </div>
+          <div class="playlist-grid">
+            <div id="playlistList" class="playlist-list panel"></div>
+            <div class="panel playlist-detail">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Selected</span>
+                  <h3 id="selectedPlaylistTitle">No Playlist</h3>
+                </div>
+                <div class="toolbar">
+                  <button id="playPlaylistBtn">Play</button>
+                  <button id="renamePlaylistBtn">Rename</button>
+                  <button id="deletePlaylistBtn">Delete</button>
+                </div>
+              </header>
+              <div id="playlistTracks" class="tracks compact"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" data-view="device">
+          <div class="topbar">
+            <div>
+              <span class="eyebrow">Runtime</span>
+              <h2>Device</h2>
+            </div>
+            <div class="toolbar">
+              <button id="chooseBtn">Choose Folder</button>
+              <button id="openFolderBtn">Open Folder</button>
+              <button id="resetDbBtn">Reset DB</button>
+            </div>
+          </div>
+          <div class="device-grid">
+            <section class="panel">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Settings</span>
+                  <h3>Profile</h3>
+                </div>
+                <button id="saveSettingsBtn" class="primary">Save</button>
+              </header>
+              <div class="settings-grid">
+                <label><span>User</span><input id="userNameInput" spellcheck="false" /></label>
+                <label><span>Device</span><input id="deviceNameInput" spellcheck="false" /></label>
+                <label>
+                  <span>Audio</span>
+                  <select id="audioBackendInput">
+                    <option value="auto">Auto</option>
+                    <option value="alsa">ALSA</option>
+                    <option value="rodio">Rodio</option>
+                    <option value="none">None</option>
+                  </select>
+                </label>
+                <label><span>PCM</span><input id="alsaDeviceInput" spellcheck="false" /></label>
+              </div>
+            </section>
+
+            <section class="panel">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Diagnostics</span>
+                  <h3>Health</h3>
+                </div>
+                <button id="audioTestBtn">Audio Test</button>
+              </header>
+              <div id="diagnosticsGrid" class="diagnostics-grid"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view="logs">
+          <div class="topbar">
+            <div>
+              <span class="eyebrow">Runtime</span>
+              <h2>Logs</h2>
+            </div>
+            <div class="toolbar">
+              <button id="clearLogsBtn">Clear</button>
+              <button id="diagnosticsBtn" class="primary">Diagnostics</button>
+            </div>
+          </div>
+          <div id="logs" class="logs panel"></div>
+        </section>
+
         <p id="actionText" class="action">Ready.</p>
       </section>
     </main>

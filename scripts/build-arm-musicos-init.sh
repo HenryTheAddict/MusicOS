@@ -48,6 +48,6 @@ cargo build \
   --bin musicos-init \
   --target aarch64-unknown-linux-gnu \
   --release \
-  --features pid1,audio
+  --features pid1,device-audio
 
 file "$repo_root/target/aarch64-unknown-linux-gnu/release/musicos-init"

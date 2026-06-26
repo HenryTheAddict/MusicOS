@@ -9,7 +9,7 @@ MUSICOS_INIT_SITE_METHOD = local
 MUSICOS_INIT_SUBDIR = crates/musicos-init
 MUSICOS_INIT_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --exclude=out --exclude=vendor --exclude=target --exclude=.git
 MUSICOS_INIT_DEPENDENCIES = host-rustc sqlite alsa-lib
-MUSICOS_INIT_CARGO_BUILD_OPTS = --features pid1,audio
+MUSICOS_INIT_CARGO_BUILD_OPTS = --features pid1,device-audio
 
 define MUSICOS_INIT_BUILD_CMDS
 	cd $(@D)/$(MUSICOS_INIT_SUBDIR) && \
