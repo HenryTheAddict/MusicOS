@@ -2,7 +2,7 @@
 
 Minimal Rust-first embedded Linux shell for low-energy music hardware. The first
 target is Anbernic RG35XX 2024 / Allwinner H700, with a real QEMU aarch64 boot
-target for Mac development.
+target and a desktop preview loop for Windows, macOS, and Linux development.
 
 ## What Is Implemented
 
@@ -17,7 +17,7 @@ target for Mac development.
 - SQLite media indexer for local MicroSD-style media folders.
 - USB sync path that indexes mounted media and a Settings `Get Update` action
   that installs `musicos-init` updates from USB storage.
-- Native Mac app target for desktop UI testing.
+- Native desktop app target for Windows/macOS/Linux UI testing.
 - Electron `MusicOS Sync` companion app for device mirror, keyboard input,
   folder upload, and USB sync triggering.
 - Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
@@ -29,6 +29,12 @@ target for Mac development.
 scripts/check-host.sh
 ```
 
+On Windows PowerShell:
+
+```powershell
+.\scripts\check-host.ps1
+```
+
 For the normal desktop development loop, run the emulator and sync companion
 together:
 
@@ -36,7 +42,13 @@ together:
 scripts/run-desktop.sh
 ```
 
-That launches `musicos-mac` and the Electron sync app in parallel with one shared
+On Windows PowerShell:
+
+```powershell
+.\scripts\run-desktop.ps1
+```
+
+That launches the desktop UI and the Electron sync app in parallel with one shared
 SQLite database, media folder, and companion API target:
 
 - API: `http://127.0.0.1:18080`
@@ -49,10 +61,10 @@ Override with `MUSICOS_COMPANION_PORT`, `MUSICOS_MEDIA_DB`,
 For the desktop test app by itself:
 
 ```sh
-cargo run --bin musicos-mac --features mac-app
+cargo run --bin musicos-mac --features desktop-app
 ```
 
-The Mac target stores its default test database at `out/mac-media.sqlite3` and
+The desktop target stores its default test database at `out/mac-media.sqlite3` and
 serves the device API on `http://127.0.0.1:18080`. Override that with
 `MUSICOS_MEDIA_DB` or `MUSICOS_COMPANION_PORT` when needed.
 
@@ -67,6 +79,22 @@ The sync app targets `http://127.0.0.1:18080` by default. Use
 `MUSICOS_SYNC_DIR=/path/to/music` to choose the folder uploaded by the app.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
+
+Windows PowerShell equivalent:
+
+```powershell
+$env:MUSICOS_SYNC_TARGET = "http://192.168.7.2:8080"
+$env:MUSICOS_SYNC_DIR = "C:\Music"
+npm run sync:electron
+```
+
+You can also use the npm shortcuts on any host with Rust and Node installed:
+
+```sh
+npm run check
+npm run build
+npm run desktop
+```
 
 For static visual snapshots:
 
@@ -83,6 +111,14 @@ To test USB media/update behavior on a host:
 
 ```sh
 MUSICOS_USB_ROOTS=/path/to/usb MUSICOS_UPDATE_STAGING=out/staged-update cargo test --workspace --features mac-app
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:MUSICOS_USB_ROOTS = "E:\"
+$env:MUSICOS_UPDATE_STAGING = "out\staged-update"
+cargo test --workspace --features desktop-app
 ```
 
 For a USB update, put a new MusicOS image at one of these paths on the USB
@@ -112,17 +148,31 @@ Use `MUSICOS_QEMU_NET=none scripts/run-qemu.sh` for the fully offline QEMU run,
 or `MUSICOS_QEMU_HOST_PORT=18081 scripts/run-qemu-sync.sh` if port `18080` is
 already in use.
 
-On macOS, Buildroot needs GNU/Linux host tooling rather than Apple Clang. Use:
+On macOS and Windows, Buildroot needs GNU/Linux host tooling. Use Docker Desktop
+or a Linux/WSL environment for firmware images:
 
 ```sh
 scripts/build-qemu-container.sh
 scripts/run-qemu.sh
 ```
 
-For the RG35XX 2024 image on macOS, use the matching container wrapper:
+Windows PowerShell Docker wrapper:
+
+```powershell
+.\scripts\build-qemu-container.ps1
+```
+
+For the RG35XX 2024 image on macOS or Windows, use the matching container
+wrapper:
 
 ```sh
 scripts/build-rg35xx-container.sh
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\build-rg35xx-container.ps1
 ```
 
 The container wrapper builds a cached local image named

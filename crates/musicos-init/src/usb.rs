@@ -348,7 +348,7 @@ fn detect_update_kind(path: &Path) -> Result<UpdateKind> {
     }
 }
 
-fn copy_update_file(source: &Path, dest: &Path, kind: UpdateKind) -> Result<()> {
+fn copy_update_file(source: &Path, dest: &Path, _kind: UpdateKind) -> Result<()> {
     let mut input = File::open(source)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut input, &mut output)?;
@@ -356,7 +356,7 @@ fn copy_update_file(source: &Path, dest: &Path, kind: UpdateKind) -> Result<()> 
     output.sync_all()?;
     #[cfg(unix)]
     {
-        if kind == UpdateKind::Elf {
+        if _kind == UpdateKind::Elf {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(dest)?.permissions();
             perms.set_mode(0o755);

@@ -54,7 +54,7 @@ fn ensure_binary(path: &PathBuf, package_bin: &str) -> Result<()> {
     }
     println!("Building missing {package_bin}...");
     let status = Command::new("cargo")
-        .args(["build", "--bin", package_bin, "--features", "mac-app"])
+        .args(["build", "--bin", package_bin, "--features", "desktop-app"])
         .status()
         .with_context(|| format!("building {package_bin}"))?;
     anyhow::ensure!(status.success(), "cargo build failed for {package_bin}");
