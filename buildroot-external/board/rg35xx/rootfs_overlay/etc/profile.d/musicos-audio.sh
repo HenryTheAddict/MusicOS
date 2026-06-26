@@ -1,0 +1,3 @@
+export MUSICOS_AUDIO_BACKEND="${MUSICOS_AUDIO_BACKEND:-alsa}"
+export MUSICOS_ALSA_DEVICE="${MUSICOS_ALSA_DEVICE:-plughw:0,0}"
+export ALSA_CONFIG_PATH="${ALSA_CONFIG_PATH:-/usr/share/alsa/alsa.conf}"

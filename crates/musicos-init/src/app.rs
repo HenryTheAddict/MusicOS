@@ -1,0 +1,2974 @@
+use crate::audio::{AudioPlayer, EqPreset, LoopMode};
+use crate::database::{Db, LibraryCounts, Pin, Playlist, Track};
+use crate::input::{Button, InputEvent, SwipeDirection};
+use crate::preferences::{LibraryGroup, LibrarySort, Preferences};
+use crate::renderer::{Canvas, Color, Resolution};
+use crate::server::{RuntimeSnapshot, ServerEvent, SettingsUpdate};
+use crate::ui;
+use crate::ui::localization::Language;
+use crate::ui::theme::ThemeName;
+use crate::usb::UsbStatus;
+use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    First,
+    Welcome,
+    Theme,
+    DateTimeSetup,
+    Home,
+    MusicApp,
+    Language,
+    TestComplete,
+    NowPlaying,
+    SongsList,
+    AlbumsList,
+    ArtistsList,
+    PlaylistsList,
+    PlaylistTracksList,
+    Queue,
+    ContextMenu,
+    Settings,
+    SettingsDetail,
+    Apps,
+    About,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    GetStarted,
+    Language,
+    Yeah,
+    Custom,
+    ThemeSelect,
+    HomeMusic,
+    HomeApps,
+    HomeSettings,
+    HomeNowPlaying,
+    Albums,
+    Songs,
+    Artists,
+    Playlists,
+    History,
+    Favorites,
+    Queue,
+    ShuffleAll,
+    ContextPlay,
+    ContextPin,
+    ContextAddToPlaylist,
+    ContextShuffle,
+    ContextDelete,
+    ContextCancel,
+    SettingsGeneral,
+    SettingsAudio,
+    SettingsLooks,
+    SettingsTheme,
+    SettingsLanguage,
+    SettingsDateTime,
+    SettingsBrightness,
+    SettingsVolume,
+    SettingsEq,
+    SettingsSwitchObject,
+    SettingsAbout,
+    SettingsConnectivity,
+    SettingsGetUpdate,
+    SettingsUser,
+    DateHour,
+    DateMinute,
+    DateMonth,
+    DateDay,
+    DateYear,
+    DateDone,
+    AppsMusic,
+    AppsNowPlaying,
+    AppsSettings,
+    AppsUsbSync,
+    HomePlaylist1,
+    HomePlaylist2,
+    HomePlaylist3,
+    HomePlaylist4,
+}
+
+pub struct MusicOs {
+    pub screen: Screen,
+    pub focus: Focus,
+    pub previous_screen: Screen,
+    pub previous_focus: Focus,
+    pub active_theme: ThemeName,
+    pub active_language: Language,
+    pub user_name: String,
+    pub device_name: String,
+    pub audio_backend: String,
+    pub alsa_device: String,
+    pub audio_output_mode: String,
+    pub library_sort: LibrarySort,
+    pub library_group: LibraryGroup,
+    pub sleep_timeout_minutes: u8,
+    pub dim_timeout_seconds: u16,
+    pub first_run_audio_test_complete: bool,
+    pub scan_status: String,
+    pub audio_test_status: String,
+    pub db_path: String,
+    pub clock_hour: u8,
+    pub clock_minute: u8,
+    pub clock_month: u8,
+    pub clock_day: u8,
+    pub clock_year: u16,
+    pub time_configured: bool,
+    pub brightness: u8,
+    pub clock_anchor: Instant,
+    pub db: Db,
+    pub player: AudioPlayer,
+    pub selected_index: usize,
+    pub tracks_queue: Vec<Track>,
+    pub albums_list: Vec<String>,
+    pub artists_list: Vec<String>,
+    pub playlists_list: Vec<Playlist>,
+    pub pins_list: Vec<Pin>,
+    pub active_playlist: Option<Playlist>,
+    pub scroll_offset: f32,
+    pub target_scroll_offset: f32,
+    pub current_cover_art: Option<crate::renderer::CoverArt>,
+    pub current_track_id: Option<i64>,
+    pub cover_art_rx: Option<std::sync::mpsc::Receiver<Option<crate::renderer::CoverArt>>>,
+    pub usb_status: UsbStatus,
+    pub resolution: Resolution,
+    pub last_draw_seconds: f32,
+    pub last_drawn_screen: Option<Screen>,
+    pub outline_x: f32,
+    pub outline_y: f32,
+    pub outline_w: f32,
+    pub outline_h: f32,
+    pub outline_r: f32,
+    pub outline_thick: f32,
+    pub outline_active: bool,
+    pub outline_animating: bool,
+    pub screen_transition: f32,
+    pub theme_colors_initialized: bool,
+    pub cur_top_r: f32,
+    pub cur_top_g: f32,
+    pub cur_top_b: f32,
+    pub cur_bottom_r: f32,
+    pub cur_bottom_g: f32,
+    pub cur_bottom_b: f32,
+    pub hud_timer: f32,
+    pub hud_t: f32,
+    pub hud_type: HudType,
+    pub home_held: bool,
+    pub home_chorded: bool,
+    pub cover_art_opacity: f32,
+    pub is_asleep: bool,
+    pub last_session_save: Instant,
+    pub last_interaction: Instant,
+    pub display_dimmed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HudType {
+    Volume,
+    Brightness,
+}
+
+fn apply_audio_runtime_preferences(preferences: &Preferences) {
+    match preferences.audio_backend.as_str() {
+        "auto" => std::env::remove_var("MUSICOS_AUDIO_BACKEND"),
+        backend => std::env::set_var("MUSICOS_AUDIO_BACKEND", backend),
+    }
+    if preferences.alsa_device.trim().is_empty() {
+        std::env::remove_var("MUSICOS_ALSA_DEVICE");
+    } else {
+        std::env::set_var("MUSICOS_ALSA_DEVICE", preferences.alsa_device.trim());
+    }
+}
+
+fn restore_queue_tracks(db: &Db, preferences: &Preferences) -> Vec<Track> {
+    preferences
+        .resume_queue_track_ids
+        .iter()
+        .filter_map(|id| db.get_track_by_id(*id).ok().flatten())
+        .collect()
+}
+
+fn eq_preset_from_str(value: &str) -> EqPreset {
+    match value.to_ascii_lowercase().as_str() {
+        "bass" => EqPreset::Bass,
+        "vocal" => EqPreset::Vocal,
+        "treble" => EqPreset::Treble,
+        "night" => EqPreset::Night,
+        _ => EqPreset::Flat,
+    }
+}
+
+fn loop_mode_from_str(value: &str) -> LoopMode {
+    match value.to_ascii_lowercase().as_str() {
+        "all" => LoopMode::All,
+        "one" => LoopMode::One,
+        _ => LoopMode::None,
+    }
+}
+
+fn sort_tracks(tracks: &mut [Track], sort: LibrarySort) {
+    match sort {
+        LibrarySort::Title => tracks.sort_by_key(|track| track.title.to_ascii_lowercase()),
+        LibrarySort::Artist => tracks.sort_by_key(|track| {
+            (
+                track.artist.to_ascii_lowercase(),
+                track.album.to_ascii_lowercase(),
+                track.track_number,
+                track.title.to_ascii_lowercase(),
+            )
+        }),
+        LibrarySort::Album => tracks.sort_by_key(|track| {
+            (
+                track.album.to_ascii_lowercase(),
+                track.track_number,
+                track.title.to_ascii_lowercase(),
+            )
+        }),
+        LibrarySort::RecentlyAdded => tracks.sort_by_key(|track| {
+            (
+                std::cmp::Reverse(track.last_played.unwrap_or(0)),
+                track.title.to_ascii_lowercase(),
+            )
+        }),
+        LibrarySort::PlayCount => tracks.sort_by_key(|track| {
+            (
+                std::cmp::Reverse(track.play_count),
+                track.title.to_ascii_lowercase(),
+            )
+        }),
+    }
+}
+
+fn jump_index_by_letter(labels: &[&str], selected_index: usize, direction: i32) -> usize {
+    if labels.is_empty() {
+        return 0;
+    }
+    let selected_index = selected_index.min(labels.len() - 1);
+    let current = first_label_letter(labels[selected_index]);
+    if direction >= 0 {
+        for (index, label) in labels.iter().enumerate().skip(selected_index + 1) {
+            if first_label_letter(label) != current {
+                return index;
+            }
+        }
+        (selected_index + 8).min(labels.len() - 1)
+    } else {
+        for index in (0..selected_index).rev() {
+            if first_label_letter(labels[index]) != current {
+                let letter = first_label_letter(labels[index]);
+                let mut start = index;
+                while start > 0 && first_label_letter(labels[start - 1]) == letter {
+                    start -= 1;
+                }
+                return start;
+            }
+        }
+        selected_index.saturating_sub(8)
+    }
+}
+
+fn first_label_letter(label: &str) -> char {
+    label
+        .chars()
+        .find(|ch| ch.is_ascii_alphanumeric())
+        .map(|ch| ch.to_ascii_uppercase())
+        .unwrap_or('#')
+}
+
+impl MusicOs {
+    pub fn new(resolution: Resolution) -> Self {
+        let db_path = std::env::var("MUSICOS_MEDIA_DB")
+            .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string());
+        Self::with_db_path(resolution, &db_path)
+    }
+
+    pub fn with_db_path(resolution: Resolution, db_path: &str) -> Self {
+        let db = Db::open(db_path).unwrap_or_else(|err| {
+            log::error!("failed to open sqlite DB at {db_path}: {err}");
+            Db::open(":memory:").unwrap()
+        });
+
+        let preferences = crate::preferences::load();
+        apply_audio_runtime_preferences(&preferences);
+        let mut player = AudioPlayer::new();
+        player.set_volume(preferences.volume);
+        player.set_eq_preset(preferences.eq_preset);
+        player.set_shuffle(preferences.shuffle);
+        player.set_loop_mode(preferences.loop_mode);
+        let restore_tracks = restore_queue_tracks(&db, &preferences);
+        if !restore_tracks.is_empty() {
+            let index = preferences
+                .resume_queue_index
+                .min(restore_tracks.len().saturating_sub(1));
+            player.restore_queue_paused(restore_tracks, index, preferences.resume_position_seconds);
+        }
+        crate::system::apply_brightness(preferences.brightness);
+
+        Self {
+            screen: if !preferences.setup_complete {
+                Screen::First
+            } else if !preferences.time_configured {
+                Screen::DateTimeSetup
+            } else {
+                Screen::Home
+            },
+            focus: if !preferences.setup_complete {
+                Focus::GetStarted
+            } else if !preferences.time_configured {
+                Focus::DateHour
+            } else {
+                Focus::HomeMusic
+            },
+            previous_screen: Screen::First,
+            previous_focus: Focus::GetStarted,
+            active_theme: preferences.theme,
+            active_language: preferences.language,
+            user_name: preferences.user_name,
+            device_name: preferences.device_name,
+            audio_backend: preferences.audio_backend,
+            alsa_device: preferences.alsa_device,
+            audio_output_mode: preferences.audio_output_mode,
+            library_sort: preferences.library_sort,
+            library_group: preferences.library_group,
+            sleep_timeout_minutes: preferences.sleep_timeout_minutes,
+            dim_timeout_seconds: preferences.dim_timeout_seconds,
+            first_run_audio_test_complete: preferences.first_run_audio_test_complete,
+            scan_status: "Library ready".to_string(),
+            audio_test_status: "Audio test not run".to_string(),
+            db_path: db_path.to_string(),
+            clock_hour: preferences.clock_hour.min(23),
+            clock_minute: preferences.clock_minute.min(59),
+            clock_month: preferences.clock_month.clamp(1, 12),
+            clock_day: preferences.clock_day.clamp(1, 31),
+            clock_year: preferences.clock_year.clamp(2024, 2099),
+            time_configured: preferences.time_configured,
+            brightness: preferences.brightness.clamp(5, 100),
+            clock_anchor: Instant::now(),
+            db,
+            player,
+            selected_index: 0,
+            tracks_queue: Vec::new(),
+            albums_list: Vec::new(),
+            artists_list: Vec::new(),
+            playlists_list: Vec::new(),
+            pins_list: Vec::new(),
+            active_playlist: None,
+            scroll_offset: 0.0,
+            target_scroll_offset: 0.0,
+            current_cover_art: None,
+            current_track_id: None,
+            cover_art_rx: None,
+            usb_status: UsbStatus::default(),
+            resolution,
+            last_draw_seconds: 0.0,
+            last_drawn_screen: None,
+            outline_x: 0.0,
+            outline_y: 0.0,
+            outline_w: 0.0,
+            outline_h: 0.0,
+            outline_r: 0.0,
+            outline_thick: 0.0,
+            outline_active: false,
+            outline_animating: false,
+            screen_transition: 1.0,
+            theme_colors_initialized: false,
+            cur_top_r: 0.0,
+            cur_top_g: 0.0,
+            cur_top_b: 0.0,
+            cur_bottom_r: 0.0,
+            cur_bottom_g: 0.0,
+            cur_bottom_b: 0.0,
+            hud_timer: 0.0,
+            hud_t: 0.0,
+            hud_type: HudType::Volume,
+            home_held: false,
+            home_chorded: false,
+            cover_art_opacity: 0.0,
+            is_asleep: false,
+            last_session_save: Instant::now(),
+            last_interaction: Instant::now(),
+            display_dimmed: false,
+        }
+    }
+
+    pub fn tick(&mut self) {
+        self.player.tick();
+
+        let status = self.player.get_status();
+        let current_id = status.track.as_ref().map(|t| t.id);
+        if current_id != self.current_track_id {
+            self.current_track_id = current_id;
+            self.current_cover_art = None;
+            self.cover_art_opacity = 0.0;
+
+            if let Some(ref track) = status.track {
+                let track_path = track.path.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                self.cover_art_rx = Some(rx);
+                std::thread::spawn(move || {
+                    let art = crate::media::cached_cover_art(&track_path);
+                    let _ = tx.send(art);
+                });
+            } else {
+                self.cover_art_rx = None;
+            }
+        }
+
+        if let Some(ref rx) = self.cover_art_rx {
+            if let Ok(art_opt) = rx.try_recv() {
+                self.current_cover_art = art_opt;
+                self.cover_art_rx = None;
+                self.cover_art_opacity = 0.0;
+            }
+        }
+
+        if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
+            self.cover_art_opacity = (self.cover_art_opacity + 0.05).min(1.0);
+        } else {
+            self.cover_art_opacity = 0.0;
+        }
+
+        if self.current_list_len() > 0 {
+            let (item_h, row_h, content_top, content_bottom, list_origin) = match self.screen {
+                Screen::Language => (144.0, 124.0, 92.0, 700.0, 112.0),
+                _ => (144.0, 128.0, 252.0, 850.0, 248.0),
+            };
+            let sel = self.selected_index as f32;
+            let selected_y = list_origin + sel * item_h - self.target_scroll_offset;
+
+            if selected_y < content_top {
+                self.target_scroll_offset = sel * item_h - (content_top - list_origin);
+            } else if selected_y + row_h > content_bottom {
+                self.target_scroll_offset = sel * item_h - (content_bottom - row_h - list_origin);
+            }
+
+            let max_scroll = ((self.current_list_len().saturating_sub(1)) as f32 * item_h).max(0.0);
+            self.target_scroll_offset = self.target_scroll_offset.clamp(0.0, max_scroll);
+        }
+
+        if (self.target_scroll_offset - self.scroll_offset).abs() > 0.1 {
+            let delta = self.target_scroll_offset - self.scroll_offset;
+            let factor = if delta.abs() > 360.0 { 0.64 } else { 0.42 };
+            self.scroll_offset += delta * factor;
+        } else {
+            self.scroll_offset = self.target_scroll_offset;
+        }
+
+        let dt = 1.0 / 60.0;
+        if self.hud_timer > 0.0 {
+            self.hud_timer = (self.hud_timer - dt).max(0.0);
+            self.hud_t = (self.hud_t + dt * 6.0).min(1.0);
+        } else {
+            self.hud_t = (self.hud_t - dt * 4.0).max(0.0);
+        }
+
+        if self.player.get_status().track.is_some()
+            && self.last_session_save.elapsed() >= Duration::from_secs(5)
+        {
+            self.save_preferences(false);
+            self.last_session_save = Instant::now();
+        }
+        if !self.is_asleep {
+            let idle = self.last_interaction.elapsed();
+            if !self.display_dimmed
+                && self.dim_timeout_seconds > 0
+                && idle >= Duration::from_secs(self.dim_timeout_seconds as u64)
+            {
+                let dimmed = (self.brightness / 3).max(5);
+                crate::system::apply_brightness(dimmed);
+                self.display_dimmed = true;
+            }
+            if self.sleep_timeout_minutes > 0
+                && !self.player.get_status().is_playing
+                && idle >= Duration::from_secs(self.sleep_timeout_minutes as u64 * 60)
+            {
+                self.enter_sleep();
+            }
+        }
+        self.publish_runtime_snapshot();
+    }
+
+    pub fn handle_input(&mut self, event: InputEvent) -> bool {
+        if self.is_asleep {
+            if let InputEvent::Button(_) = event {
+                self.is_asleep = false;
+                self.display_dimmed = false;
+                self.last_interaction = Instant::now();
+                self.home_held = false;
+                self.home_chorded = true;
+                crate::system::apply_brightness(self.brightness);
+                return true;
+            }
+            return false;
+        }
+        self.last_interaction = Instant::now();
+        if self.display_dimmed {
+            self.display_dimmed = false;
+            crate::system::apply_brightness(self.brightness);
+        }
+
+        let old_screen = self.screen;
+        let old_focus = self.focus;
+        let old_idx = self.selected_index;
+
+        match event {
+            InputEvent::Button(Button::Confirm) | InputEvent::Tap => self.activate(),
+            InputEvent::Button(Button::Back) => self.back(),
+            InputEvent::Button(Button::Home) => {
+                self.home_held = true;
+                self.home_chorded = false;
+            }
+            InputEvent::ButtonRelease(Button::Home) => {
+                self.home_held = false;
+                if !self.home_chorded {
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeMusic;
+                }
+                self.home_chorded = false;
+            }
+            InputEvent::Button(Button::Menu) => {
+                if self.screen == Screen::Apps {
+                    self.screen = self.previous_screen;
+                    self.focus = self.previous_focus;
+                } else {
+                    self.previous_screen = self.screen;
+                    self.previous_focus = self.focus;
+                    self.screen = Screen::Apps;
+                    self.focus = match old_screen {
+                        Screen::MusicApp
+                        | Screen::SongsList
+                        | Screen::AlbumsList
+                        | Screen::ArtistsList
+                        | Screen::PlaylistsList
+                        | Screen::PlaylistTracksList
+                        | Screen::Queue => Focus::AppsMusic,
+                        Screen::NowPlaying => Focus::AppsNowPlaying,
+                        Screen::Settings | Screen::SettingsDetail => Focus::AppsSettings,
+                        _ => Focus::AppsMusic,
+                    };
+                }
+            }
+            InputEvent::Button(Button::Sleep) => {
+                self.enter_sleep();
+            }
+            InputEvent::Button(Button::VolumeUp) => {
+                if self.home_held {
+                    self.adjust_brightness(5);
+                    self.home_chorded = true;
+                } else {
+                    self.adjust_volume(0.05);
+                }
+            }
+            InputEvent::Button(Button::VolumeDown) => {
+                if self.home_held {
+                    self.adjust_brightness(-5);
+                    self.home_chorded = true;
+                } else {
+                    self.adjust_volume(-0.05);
+                }
+            }
+            InputEvent::Button(Button::Context) => {
+                if self.screen == Screen::Home {
+                    self.focus_home_left_side();
+                } else if self.screen != Screen::ContextMenu && self.can_open_context_menu() {
+                    self.previous_screen = self.screen;
+                    self.previous_focus = self.focus;
+                    self.screen = Screen::ContextMenu;
+                    self.focus = Focus::ContextPlay;
+                }
+            }
+            InputEvent::Button(Button::Down) | InputEvent::Swipe(SwipeDirection::Down) => {
+                self.move_down();
+            }
+            InputEvent::Button(Button::Up) | InputEvent::Swipe(SwipeDirection::Up) => {
+                self.move_up();
+            }
+            InputEvent::Button(Button::Right) | InputEvent::Swipe(SwipeDirection::Right) => {
+                self.move_right();
+            }
+            InputEvent::Button(Button::Left) | InputEvent::Swipe(SwipeDirection::Left) => {
+                self.move_left();
+            }
+            InputEvent::AnyButton => {
+                if self.screen == Screen::TestComplete {
+                    self.screen = Screen::Welcome;
+                }
+            }
+            InputEvent::Power => {}
+            InputEvent::ButtonRelease(_) => {}
+        }
+        if self.screen != old_screen {
+            self.screen_transition = 0.0;
+            self.target_scroll_offset = 0.0;
+            self.scroll_offset = 0.0;
+        }
+
+        self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx
+    }
+
+    pub fn handle_server_event(&mut self, event: ServerEvent) -> bool {
+        match event {
+            ServerEvent::Button(b) => self.handle_input(InputEvent::Button(b)),
+            ServerEvent::Pointer(ev) => self.handle_input(ev),
+            ServerEvent::UploadComplete => {
+                let _ = crate::media::index_default_locations(&self.db);
+                self.refresh_library();
+                true
+            }
+            ServerEvent::UsbSync => {
+                self.run_usb_sync();
+                true
+            }
+            ServerEvent::Control(cmd) => {
+                match cmd {
+                    crate::server::ControlCommand::PlayPause => self.player.play_pause(),
+                    crate::server::ControlCommand::Next => self.player.next(),
+                    crate::server::ControlCommand::Prev => self.player.prev(),
+                    crate::server::ControlCommand::Volume { value } => {
+                        self.player.set_volume(value);
+                        self.save_preferences(false);
+                        self.hud_type = HudType::Volume;
+                        self.hud_timer = 2.0;
+                    }
+                    crate::server::ControlCommand::Brightness { value } => {
+                        self.set_brightness(value);
+                    }
+                    crate::server::ControlCommand::Seek { value } => {
+                        self.player.seek(value);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::Shuffle => {
+                        self.player.toggle_shuffle();
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::Loop => {
+                        self.player.toggle_loop_mode();
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::PlayTrack { id } => {
+                        if let Ok(Some(track)) = self.db.get_track_by_id(id) {
+                            let _ = self.db.increment_play_count(track.id);
+                            self.player.set_queue(vec![track], 0);
+                            self.screen = Screen::NowPlaying;
+                            self.focus = Focus::Albums;
+                            self.save_preferences(false);
+                        }
+                    }
+                    crate::server::ControlCommand::PlayPlaylist { id, start_index } => {
+                        if id == 0 {
+                            if let Ok(tracks) = self.db.get_tracks() {
+                                if !tracks.is_empty() {
+                                    self.player.set_queue(tracks, start_index);
+                                    self.screen = Screen::NowPlaying;
+                                    self.save_preferences(false);
+                                }
+                            }
+                        } else if let Ok(tracks) = self.db.get_playlist_tracks(id) {
+                            if !tracks.is_empty() {
+                                self.player.set_queue(tracks, start_index);
+                                self.screen = Screen::NowPlaying;
+                                self.save_preferences(false);
+                            }
+                        }
+                    }
+                    crate::server::ControlCommand::SetTheme { name } => {
+                        self.active_theme = ThemeName::from_str(&name);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::SetLanguage { name } => {
+                        self.active_language = Language::from_str(&name);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::ToggleFavorite { id } => {
+                        if let Ok(favorited) = self.db.toggle_favorite(id) {
+                            self.player.update_track_favorite(id, favorited);
+                        }
+                    }
+                    crate::server::ControlCommand::DeletePlaylist { id } => {
+                        let _ = self.db.delete_playlist(id);
+                        self.refresh_library();
+                    }
+                    crate::server::ControlCommand::RenamePlaylist { id, name } => {
+                        let _ = self.db.rename_playlist(id, &name);
+                        self.refresh_library();
+                    }
+                    crate::server::ControlCommand::CreatePlaylist { name } => {
+                        let _ = self.db.create_playlist(&name);
+                        self.refresh_library();
+                    }
+                    crate::server::ControlCommand::AddTrackToPlaylist {
+                        playlist_id,
+                        track_id,
+                    } => {
+                        let _ = self.db.add_track_to_playlist(playlist_id, track_id);
+                    }
+                    crate::server::ControlCommand::RemoveTrackFromPlaylist {
+                        playlist_id,
+                        track_id,
+                    } => {
+                        let _ = self.db.remove_track_from_playlist(playlist_id, track_id);
+                    }
+                    crate::server::ControlCommand::SetSettings { settings } => {
+                        self.apply_settings_update(settings);
+                    }
+                    crate::server::ControlCommand::ResetSettings => {
+                        self.reset_user_settings();
+                    }
+                    crate::server::ControlCommand::ScanLibrary => {
+                        self.scan_library();
+                    }
+                    crate::server::ControlCommand::AudioTest => {
+                        self.run_audio_test();
+                    }
+                    crate::server::ControlCommand::QueueAdd { id, position } => {
+                        if let Ok(Some(track)) = self.db.get_track_by_id(id) {
+                            if position
+                                .as_deref()
+                                .map(|value| value.eq_ignore_ascii_case("next"))
+                                .unwrap_or(false)
+                            {
+                                self.player.queue_add_next(track);
+                            } else {
+                                self.player.queue_add_later(track);
+                            }
+                            self.save_preferences(false);
+                        }
+                    }
+                    crate::server::ControlCommand::QueueRemove { index } => {
+                        self.player.queue_remove(index);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::QueueMove { from, to } => {
+                        if self.player.queue_move(from, to) {
+                            self.save_preferences(false);
+                        }
+                    }
+                    crate::server::ControlCommand::QueueClear => {
+                        self.player.queue_clear();
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::CleanupMissingFiles => {
+                        match self.db.cleanup_missing_files() {
+                            Ok(removed) => {
+                                self.refresh_library();
+                                self.scan_status =
+                                    format!("Removed {removed} missing library entries");
+                            }
+                            Err(err) => {
+                                self.scan_status = format!("Missing-file cleanup failed: {err:#}");
+                            }
+                        }
+                    }
+                }
+                true
+            }
+        }
+    }
+
+    pub fn draw(&mut self, canvas: &mut Canvas<'_>, seconds: f32) {
+        if self.is_asleep {
+            canvas.clear(Color::BLACK);
+            return;
+        }
+        canvas.language = self.active_language;
+        let (tt_color, tb_color) = self.active_theme.gradient_colors();
+        let dt = (seconds - self.last_draw_seconds).max(0.0).min(0.1);
+        self.last_draw_seconds = seconds;
+
+        if !self.theme_colors_initialized {
+            self.cur_top_r = tt_color.r as f32;
+            self.cur_top_g = tt_color.g as f32;
+            self.cur_top_b = tt_color.b as f32;
+            self.cur_bottom_r = tb_color.r as f32;
+            self.cur_bottom_g = tb_color.g as f32;
+            self.cur_bottom_b = tb_color.b as f32;
+            self.theme_colors_initialized = true;
+        } else {
+            let factor = (8.0 * dt).min(1.0);
+            self.cur_top_r += (tt_color.r as f32 - self.cur_top_r) * factor;
+            self.cur_top_g += (tt_color.g as f32 - self.cur_top_g) * factor;
+            self.cur_top_b += (tt_color.b as f32 - self.cur_top_b) * factor;
+            self.cur_bottom_r += (tb_color.r as f32 - self.cur_bottom_r) * factor;
+            self.cur_bottom_g += (tb_color.g as f32 - self.cur_bottom_g) * factor;
+            self.cur_bottom_b += (tb_color.b as f32 - self.cur_bottom_b) * factor;
+        }
+
+        let animated_top = Color::rgb(
+            self.cur_top_r as u8,
+            self.cur_top_g as u8,
+            self.cur_top_b as u8,
+        );
+        let animated_bottom = Color::rgb(
+            self.cur_bottom_r as u8,
+            self.cur_bottom_g as u8,
+            self.cur_bottom_b as u8,
+        );
+        canvas.theme_top_color = Some(animated_top);
+        canvas.theme_bottom_color = Some(animated_bottom);
+
+        let transition_t = crate::ui::transitions::ease_out_cubic(self.screen_transition);
+
+        if self.screen == Screen::ContextMenu {
+            self.draw_screen(
+                self.previous_screen,
+                self.previous_focus,
+                canvas,
+                seconds,
+                1.0,
+            );
+            let title = self.context_menu_title();
+            ui::draw_context_menu(
+                canvas,
+                self.focus,
+                self.active_theme,
+                &title,
+                self.context_item_is_pinned(),
+                transition_t,
+                seconds,
+            );
+        } else {
+            self.draw_screen(self.screen, self.focus, canvas, seconds, transition_t);
+        }
+
+        let screen_changed = Some(self.screen) != self.last_drawn_screen;
+        self.last_drawn_screen = Some(self.screen);
+
+        if let Some((tx, ty, tw, th, tr, t_thick)) = canvas.selected_box {
+            if screen_changed || !self.outline_active {
+                self.outline_x = tx;
+                self.outline_y = ty;
+                self.outline_w = tw;
+                self.outline_h = th;
+                self.outline_r = tr;
+                self.outline_thick = t_thick;
+                self.outline_active = true;
+            } else {
+                let factor = (15.0 * dt).min(1.0);
+                self.outline_x += (tx - self.outline_x) * factor;
+                self.outline_y += (ty - self.outline_y) * factor;
+                self.outline_w += (tw - self.outline_w) * factor;
+                self.outline_h += (th - self.outline_h) * factor;
+                self.outline_r += (tr - self.outline_r) * factor;
+                self.outline_thick += (t_thick - self.outline_thick) * factor;
+            }
+
+            let outline_pulse = crate::ui::transitions::pulse01(seconds, 4.0, 0.0);
+            let outline_color = canvas
+                .theme_top_color
+                .unwrap_or(Color::rgb(35, 108, 220))
+                .mix(Color::BLACK, 0.42)
+                .with_alpha((174.0 + outline_pulse * 30.0).round() as u8);
+            crate::ui::rr_stroke(
+                canvas,
+                self.outline_x,
+                self.outline_y,
+                self.outline_w,
+                self.outline_h,
+                self.outline_r,
+                (self.outline_thick * 0.62).max(2.5) + outline_pulse * 0.6,
+                outline_color,
+            );
+
+            let dist = (tx - self.outline_x).abs()
+                + (ty - self.outline_y).abs()
+                + (tw - self.outline_w).abs()
+                + (th - self.outline_h).abs();
+            self.outline_animating = dist > 0.5;
+        } else {
+            self.outline_active = false;
+            self.outline_animating = false;
+        }
+
+        if self.screen_transition < 1.0 {
+            self.screen_transition = (self.screen_transition + dt * 5.5).min(1.0);
+        }
+
+        if self.hud_t > 0.0 {
+            self.draw_hud(canvas, seconds);
+        }
+    }
+
+    fn draw_hud(&self, canvas: &mut Canvas<'_>, _seconds: f32) {
+        let res = canvas.resolution();
+        let scale = res.scale();
+
+        let hud_w = 800.0;
+        let hud_h = 96.0;
+        let hud_r = 48.0;
+        let hud_x = 240.0;
+
+        let target_y = 32.0;
+        let start_y = -112.0;
+        let hud_y = start_y + (target_y - start_y) * self.hud_t;
+
+        crate::ui::shadow_rr(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 8.0, 16.0);
+
+        crate::ui::rr(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, Color::rgba(255, 255, 255, 225));
+        crate::ui::liquid_glass(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 36);
+
+        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
+        crate::ui::rr_stroke(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 3.0, accent.with_alpha(128));
+
+        let (label, val_str, ratio) = match self.hud_type {
+            HudType::Volume => {
+                let vol = self.player.get_status().volume;
+                ("Volume", format!("{}%", (vol * 100.0).round() as u8), vol)
+            }
+            HudType::Brightness => {
+                let bri = self.brightness;
+                ("Brightness", format!("{}%", bri), bri as f32 / 100.0)
+            }
+        };
+
+        canvas.text(
+            label,
+            hud_x + 48.0,
+            hud_y + 30.0,
+            36.0,
+            Color::BLACK,
+            crate::ui::FontWeight::Bold,
+        );
+
+        let track_x = hud_x + 280.0;
+        let track_y = hud_y + 40.0;
+        let track_w = 360.0;
+        let track_h = 16.0;
+        let track_r = 8.0;
+
+        crate::ui::rr(
+            canvas,
+            track_x,
+            track_y,
+            track_w,
+            track_h,
+            track_r,
+            Color::rgb(220, 220, 220),
+        );
+
+        let fill_w = track_w * ratio;
+        if fill_w > 0.0 {
+            crate::ui::rr(
+                canvas,
+                track_x,
+                track_y,
+                fill_w,
+                track_h,
+                track_r,
+                accent,
+            );
+        }
+
+        let knob_x = track_x + fill_w;
+        let knob_y = track_y + track_h / 2.0;
+        let knob_radius = 16.0;
+
+        canvas.circle(
+            res.scale_x(knob_x),
+            res.scale_y(knob_y),
+            knob_radius * scale,
+            accent,
+        );
+        canvas.circle(
+            res.scale_x(knob_x),
+            res.scale_y(knob_y),
+            6.0 * scale,
+            Color::WHITE,
+        );
+
+        canvas.text_right(
+            &val_str,
+            hud_x + hud_w - 48.0,
+            hud_y + 30.0,
+            36.0,
+            Color::BLACK,
+            crate::ui::FontWeight::Bold,
+        );
+    }
+
+    pub fn animation_in_progress(&self) -> bool {
+        self.outline_animating
+            || self.screen_transition < 1.0
+            || self.hud_t > 0.0
+            || (self.target_scroll_offset - self.scroll_offset).abs() > 0.5
+            || self.theme_colors_initialized && {
+                let (tt_color, tb_color) = self.active_theme.gradient_colors();
+                (self.cur_top_r - tt_color.r as f32).abs() > 0.5
+                    || (self.cur_bottom_r - tb_color.r as f32).abs() > 0.5
+            }
+    }
+
+    fn draw_screen(
+        &self,
+        screen: Screen,
+        focus: Focus,
+        canvas: &mut Canvas<'_>,
+        seconds: f32,
+        transition_t: f32,
+    ) {
+        log::debug!("draw_screen: screen={:?}, focus={:?}", screen, focus);
+        let active_playlists = self.db.get_playlists().unwrap_or_default();
+        let time_str = self.format_clock();
+
+        match screen {
+            Screen::First => ui::screens::draw_first(
+                canvas,
+                focus,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                transition_t,
+            ),
+            Screen::Welcome => ui::screens::draw_welcome(
+                canvas,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                transition_t,
+            ),
+            Screen::Theme => ui::screens::draw_theme_selection(
+                canvas,
+                focus,
+                self.active_theme,
+                seconds,
+                self.active_language,
+                transition_t,
+            ),
+            Screen::DateTimeSetup => ui::settings::draw_date_time_setup(
+                canvas,
+                focus,
+                self.clock_hour,
+                self.clock_minute,
+                self.clock_month,
+                self.clock_day,
+                self.clock_year,
+                self.active_theme,
+                seconds,
+                transition_t,
+            ),
+            Screen::Language => ui::screens::draw_language_selection(
+                canvas,
+                self.active_language,
+                self.selected_index,
+                self.scroll_offset,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                transition_t,
+            ),
+            Screen::TestComplete => {
+                ui::screens::draw_test_complete(canvas, seconds, self.active_language, transition_t)
+            }
+
+            Screen::Home => ui::home::draw_home(
+                canvas,
+                focus,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                &active_playlists,
+                &self.db.get_tracks().unwrap_or_default(),
+                &self.player.get_status(),
+                self.current_cover_art.as_ref(),
+                &crate::system::battery_summary(),
+                &time_str,
+                transition_t,
+            ),
+            Screen::MusicApp => {
+                let pins = self.db.get_pins().unwrap_or_default();
+                ui::music::draw_music_menu(
+                    canvas,
+                    focus,
+                    seconds,
+                    self.active_language,
+                    self.active_theme,
+                    &pins,
+                    self.library_counts(),
+                    self.player.queue_tracks().len(),
+                    transition_t,
+                )
+            }
+            Screen::SongsList => ui::music::draw_tracks_list(
+                canvas,
+                self.active_language.translate("songs"),
+                &self.tracks_queue,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::AlbumsList => ui::music::draw_items_list(
+                canvas,
+                self.active_language.translate("albums"),
+                &self.albums_list,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::ArtistsList => ui::music::draw_items_list(
+                canvas,
+                self.active_language.translate("artists"),
+                &self.artists_list,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::PlaylistsList => {
+                let names: Vec<String> =
+                    self.playlists_list.iter().map(|p| p.name.clone()).collect();
+                ui::music::draw_items_list(
+                    canvas,
+                    self.active_language.translate("playlists"),
+                    &names,
+                    self.selected_index,
+                    self.active_theme,
+                    self.scroll_offset,
+                    transition_t,
+                    seconds,
+                )
+            }
+            Screen::PlaylistTracksList => {
+                let title = self
+                    .active_playlist
+                    .as_ref()
+                    .map(|p| p.name.as_str())
+                    .unwrap_or("Playlist Tracks");
+                ui::music::draw_tracks_list(
+                    canvas,
+                    title,
+                    &self.tracks_queue,
+                    self.selected_index,
+                    self.active_theme,
+                    self.scroll_offset,
+                    transition_t,
+                    seconds,
+                )
+            }
+            Screen::Queue => ui::music::draw_tracks_list(
+                canvas,
+                self.active_language.translate("queue"),
+                &self.tracks_queue,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::NowPlaying => {
+                let status = self.player.get_status();
+                ui::nowplaying::draw_now_playing(
+                    canvas,
+                    focus,
+                    seconds,
+                    self.active_language,
+                    self.active_theme,
+                    &status,
+                    &self.player.queue_tracks(),
+                    self.current_cover_art.as_ref(),
+                    self.cover_art_opacity,
+                    transition_t,
+                )
+            }
+            Screen::Settings => ui::settings::draw_settings(
+                canvas,
+                focus,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                transition_t,
+            ),
+            Screen::SettingsDetail => ui::settings::draw_settings_detail(
+                canvas,
+                focus,
+                self.brightness,
+                (self.player.get_status().volume * 100.0).round() as u8,
+                self.player.get_eq_preset(),
+                self.active_theme,
+                &crate::system::battery_summary(),
+                seconds,
+                transition_t,
+            ),
+            Screen::Apps => ui::apps::draw_apps(
+                canvas,
+                focus,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                self.library_counts(),
+                &self.usb_status,
+                transition_t,
+            ),
+            Screen::About => {
+                let audio_label = if self.alsa_device.trim().is_empty() {
+                    self.audio_backend.clone()
+                } else {
+                    format!("{} {}", self.audio_backend, self.alsa_device)
+                };
+                ui::apps::draw_about(
+                    canvas,
+                    focus,
+                    seconds,
+                    self.active_theme,
+                    self.library_counts(),
+                    &self.usb_status,
+                    self.resolution,
+                    &self.user_name,
+                    &self.device_name,
+                    self.player.queue_tracks().len(),
+                    &audio_label,
+                    &self.scan_status,
+                    &self.audio_test_status,
+                    &crate::system::battery_summary(),
+                    &self.db_path,
+                    &crate::preferences::path().display().to_string(),
+                    transition_t,
+                )
+            }
+            Screen::ContextMenu => {}
+        }
+    }
+
+    pub fn force_screen_for_snapshot(&mut self, screen: Screen) {
+        self.screen = screen;
+        self.screen_transition = 1.0;
+        self.focus = match screen {
+            Screen::First => Focus::GetStarted,
+            Screen::Welcome => Focus::GetStarted,
+            Screen::Theme => Focus::ThemeSelect,
+            Screen::DateTimeSetup => Focus::DateHour,
+            Screen::Home => Focus::HomeMusic,
+            Screen::MusicApp => Focus::Albums,
+            Screen::Language => Focus::Language,
+            Screen::TestComplete => Focus::GetStarted,
+            Screen::NowPlaying => Focus::Albums,
+            Screen::Queue => Focus::Queue,
+            Screen::Settings => Focus::SettingsGeneral,
+            Screen::SettingsDetail => Focus::SettingsLanguage,
+            Screen::Apps => Focus::AppsMusic,
+            Screen::About => Focus::SettingsAbout,
+            Screen::ContextMenu => Focus::ContextPlay,
+            _ => Focus::Albums,
+        };
+    }
+
+    fn reset_list_state(&mut self) {
+        self.selected_index = 0;
+        self.scroll_offset = 0.0;
+        self.target_scroll_offset = 0.0;
+    }
+
+    fn init_language_screen(&mut self) {
+        let idx = match self.active_language {
+            Language::En => 0,
+            Language::Es => 1,
+            Language::De => 2,
+            Language::Ja => 3,
+            Language::Zh => 4,
+        };
+        self.selected_index = idx;
+        self.scroll_offset = idx as f32 * 144.0;
+        self.target_scroll_offset = idx as f32 * 144.0;
+    }
+
+    fn current_list_len(&self) -> usize {
+        match self.screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+                self.tracks_queue.len()
+            }
+            Screen::AlbumsList => self.albums_list.len(),
+            Screen::ArtistsList => self.artists_list.len(),
+            Screen::PlaylistsList => self.playlists_list.len(),
+            Screen::Language => 5,
+            _ => 0,
+        }
+    }
+
+    fn jump_active_list(&mut self, direction: i32) {
+        match self.screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+                let labels = self
+                    .tracks_queue
+                    .iter()
+                    .map(|track| track.title.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            Screen::AlbumsList => {
+                let labels = self
+                    .albums_list
+                    .iter()
+                    .map(|item| item.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            Screen::ArtistsList => {
+                let labels = self
+                    .artists_list
+                    .iter()
+                    .map(|item| item.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            Screen::PlaylistsList => {
+                let labels = self
+                    .playlists_list
+                    .iter()
+                    .map(|item| item.name.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            _ => {}
+        }
+    }
+
+    fn activate(&mut self) {
+        match (self.screen, self.focus) {
+            (Screen::First, Focus::Language) => {
+                self.previous_screen = self.screen;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Language;
+                self.init_language_screen();
+            }
+            (Screen::First, _) => self.screen = Screen::Welcome,
+            (Screen::Welcome, _) => {
+                self.screen = Screen::Theme;
+                self.focus = Focus::ThemeSelect;
+            }
+            (Screen::Theme, _) => {
+                if self.previous_screen == Screen::Settings {
+                    self.save_preferences(true);
+                    self.screen = Screen::Settings;
+                    self.focus = Focus::SettingsLooks;
+                } else if !self.time_configured {
+                    self.save_preferences(false);
+                    self.screen = Screen::DateTimeSetup;
+                    self.focus = Focus::DateHour;
+                } else {
+                    self.save_preferences(true);
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeMusic;
+                }
+            }
+            (Screen::DateTimeSetup, Focus::DateHour) => self.focus = Focus::DateMinute,
+            (Screen::DateTimeSetup, Focus::DateMinute) => self.focus = Focus::DateMonth,
+            (Screen::DateTimeSetup, Focus::DateMonth) => self.focus = Focus::DateDay,
+            (Screen::DateTimeSetup, Focus::DateDay) => self.focus = Focus::DateYear,
+            (Screen::DateTimeSetup, Focus::DateYear) => self.focus = Focus::DateDone,
+            (Screen::DateTimeSetup, Focus::DateDone) | (Screen::DateTimeSetup, _) => {
+                self.time_configured = true;
+                self.clock_anchor = Instant::now();
+                self.save_preferences(true);
+                if self.previous_screen == Screen::SettingsDetail {
+                    self.screen = Screen::SettingsDetail;
+                    self.focus = Focus::SettingsDateTime;
+                } else {
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeMusic;
+                }
+            }
+            (Screen::Home, Focus::HomePlaylist1) => self.play_home_playlist(0),
+            (Screen::Home, Focus::HomePlaylist2) => self.play_home_playlist(1),
+            (Screen::Home, Focus::HomePlaylist3) => self.play_home_playlist(2),
+            (Screen::Home, Focus::HomePlaylist4) => self.play_home_playlist(3),
+            (Screen::Home, Focus::HomeMusic) => {
+                self.previous_screen = Screen::Home;
+                self.previous_focus = self.focus;
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Albums;
+            }
+            (Screen::Home, Focus::HomeNowPlaying) => {
+                self.previous_screen = Screen::Home;
+                self.previous_focus = self.focus;
+                self.screen = Screen::NowPlaying;
+                self.focus = Focus::Albums;
+            }
+            (Screen::Home, Focus::HomeSettings) => {
+                self.previous_screen = Screen::Home;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Settings;
+                self.focus = Focus::SettingsGeneral;
+            }
+            (Screen::Home, Focus::HomeApps) => {
+                self.previous_screen = Screen::Home;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Apps;
+                self.focus = Focus::AppsMusic;
+            }
+            (Screen::Home, _) => {}
+            (Screen::Apps, Focus::AppsMusic) => {
+                self.previous_screen = Screen::Apps;
+                self.previous_focus = self.focus;
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Albums;
+            }
+            (Screen::Apps, Focus::AppsNowPlaying) => {
+                self.previous_screen = Screen::Apps;
+                self.previous_focus = self.focus;
+                self.screen = Screen::NowPlaying;
+                self.focus = Focus::Albums;
+            }
+            (Screen::Apps, Focus::AppsSettings) => {
+                self.previous_screen = Screen::Apps;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Settings;
+                self.focus = Focus::SettingsGeneral;
+            }
+            (Screen::Apps, Focus::AppsUsbSync) => {
+                self.previous_screen = Screen::Apps;
+                self.previous_focus = self.focus;
+                self.run_usb_sync();
+                self.screen = Screen::About;
+                self.focus = Focus::SettingsAbout;
+            }
+            (Screen::MusicApp, Focus::Songs) => {
+                if let Ok(tracks) = self.db.get_tracks() {
+                    self.tracks_queue = tracks;
+                    self.screen = Screen::SongsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::MusicApp, Focus::Albums) => {
+                if let Ok(albums) = self.db.get_albums() {
+                    self.albums_list = albums;
+                    self.screen = Screen::AlbumsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::ContextMenu, Focus::ContextPlay) => {
+                self.activate_context_play(false);
+            }
+            (Screen::ContextMenu, Focus::ContextPin) => {
+                if let Some((pin_type, target_id)) = self.context_pin_target() {
+                    if self.db.is_pinned(pin_type, target_id).unwrap_or(false) {
+                        let _ = self.db.unpin_item(pin_type, target_id);
+                    } else {
+                        let _ = self.db.pin_item(pin_type, target_id);
+                    }
+                }
+                self.screen = self.previous_screen;
+                self.focus = self.previous_focus;
+            }
+            (Screen::ContextMenu, Focus::ContextAddToPlaylist) => {
+                self.add_context_track_to_default_playlist();
+                self.screen = self.previous_screen;
+                self.focus = self.previous_focus;
+            }
+            (Screen::ContextMenu, Focus::ContextShuffle) => {
+                self.activate_context_play(true);
+            }
+            (Screen::ContextMenu, Focus::ContextDelete) => {
+                self.delete_context_target();
+                self.screen = self.previous_screen;
+                self.focus = self.previous_focus;
+            }
+            (Screen::ContextMenu, Focus::ContextCancel) => {
+                self.screen = self.previous_screen;
+                self.focus = self.previous_focus;
+            }
+            (Screen::MusicApp, Focus::Artists) => {
+                if let Ok(artists) = self.db.get_artists() {
+                    self.artists_list = artists;
+                    self.screen = Screen::ArtistsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::MusicApp, Focus::Playlists) => {
+                if let Ok(playlists) = self.db.get_playlists() {
+                    self.playlists_list = playlists;
+                    self.screen = Screen::PlaylistsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::MusicApp, Focus::Favorites) => {
+                if let Ok(favorites) = self.db.get_favorites() {
+                    self.tracks_queue = favorites;
+                    self.screen = Screen::SongsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::MusicApp, Focus::Queue) => {
+                self.tracks_queue = self.player.queue_tracks();
+                self.selected_index = self.player.current_index().unwrap_or(0);
+                if self.selected_index >= self.tracks_queue.len() {
+                    self.selected_index = 0;
+                }
+                self.previous_screen = Screen::MusicApp;
+                self.previous_focus = Focus::Queue;
+                self.screen = Screen::Queue;
+                self.scroll_offset = 0.0;
+                self.target_scroll_offset = 0.0;
+            }
+            (Screen::MusicApp, Focus::History) => {
+                if let Ok(history) = self.db.get_history(25) {
+                    self.tracks_queue = history;
+                    self.screen = Screen::SongsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::MusicApp, Focus::ShuffleAll) => {
+                if let Ok(tracks) = self.db.get_tracks() {
+                    if !tracks.is_empty() {
+                        self.player.set_queue(tracks, 0);
+                        self.player.set_shuffle(true);
+                        self.screen = Screen::NowPlaying;
+                        self.focus = Focus::Albums;
+                    }
+                }
+            }
+            (Screen::SongsList, _) | (Screen::Queue, _) => {
+                if self.selected_index < self.tracks_queue.len() {
+                    let track = self.tracks_queue[self.selected_index].clone();
+                    let _ = self.db.increment_play_count(track.id);
+                    self.player
+                        .set_queue(self.tracks_queue.clone(), self.selected_index);
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+            }
+            (Screen::AlbumsList, _) => {
+                if self.selected_index < self.albums_list.len() {
+                    let album = &self.albums_list[self.selected_index];
+                    self.tracks_queue = self.db.get_album_tracks(album).unwrap_or_default();
+                    self.screen = Screen::SongsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::ArtistsList, _) => {
+                if self.selected_index < self.artists_list.len() {
+                    let artist = &self.artists_list[self.selected_index];
+                    self.tracks_queue = self.db.get_artist_tracks(artist).unwrap_or_default();
+                    self.screen = Screen::SongsList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::PlaylistsList, _) => {
+                if self.selected_index < self.playlists_list.len() {
+                    let playlist = self.playlists_list[self.selected_index].clone();
+                    if let Ok(tracks) = self.db.get_playlist_tracks(playlist.id) {
+                        self.tracks_queue = tracks;
+                        self.active_playlist = Some(playlist.clone());
+                        self.screen = Screen::PlaylistTracksList;
+                        self.reset_list_state();
+                    }
+                }
+            }
+            (Screen::PlaylistTracksList, _) => {
+                if self.selected_index < self.tracks_queue.len() {
+                    let track = self.tracks_queue[self.selected_index].clone();
+                    let _ = self.db.increment_play_count(track.id);
+                    self.player
+                        .set_queue(self.tracks_queue.clone(), self.selected_index);
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+            }
+            (Screen::NowPlaying, _) => match self.focus {
+                Focus::Albums => self.player.play_pause(),
+                Focus::Artists => self.player.prev(),
+                Focus::Playlists => self.player.next(),
+                Focus::Songs => self.player.toggle_loop_mode(),
+                Focus::History => self.player.toggle_shuffle(),
+                Focus::Favorites => self.toggle_current_favorite(),
+                _ => {}
+            },
+            (Screen::Settings, Focus::SettingsGeneral)
+            | (Screen::Settings, Focus::SettingsLanguage) => {
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsGeneral;
+                self.screen = Screen::SettingsDetail;
+                self.focus = Focus::SettingsLanguage;
+            }
+            (Screen::Settings, Focus::SettingsAudio) => {
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsAudio;
+                self.screen = Screen::SettingsDetail;
+                self.focus = Focus::SettingsVolume;
+            }
+            (Screen::SettingsDetail, Focus::SettingsLanguage) => {
+                self.previous_screen = self.screen;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Language;
+                self.focus = Focus::Language;
+                self.init_language_screen();
+            }
+            (Screen::SettingsDetail, Focus::SettingsDateTime) => {
+                self.previous_screen = self.screen;
+                self.previous_focus = self.focus;
+                self.screen = Screen::DateTimeSetup;
+                self.focus = Focus::DateHour;
+            }
+            (Screen::SettingsDetail, Focus::SettingsBrightness)
+            | (Screen::SettingsDetail, Focus::SettingsVolume)
+            | (Screen::SettingsDetail, Focus::SettingsEq)
+            | (Screen::SettingsDetail, Focus::SettingsSwitchObject) => match self.focus {
+                Focus::SettingsBrightness => self.adjust_brightness(10),
+                Focus::SettingsVolume => self.adjust_volume(0.10),
+                Focus::SettingsEq => self.cycle_eq(1),
+                Focus::SettingsSwitchObject => {
+                    self.active_theme = match self.active_theme {
+                        ThemeName::Blue => ThemeName::Red,
+                        ThemeName::Red => ThemeName::Green,
+                        ThemeName::Green => ThemeName::Purple,
+                        ThemeName::Purple => ThemeName::Blue,
+                    };
+                    self.save_preferences(false);
+                }
+                _ => {}
+            },
+            (Screen::Settings, Focus::SettingsLooks) | (Screen::Settings, Focus::SettingsTheme) => {
+                self.previous_screen = self.screen;
+                self.previous_focus = self.focus;
+                self.screen = Screen::Theme;
+                self.focus = Focus::ThemeSelect;
+            }
+            (Screen::Settings, Focus::SettingsAbout) => {
+                self.screen = Screen::About;
+                self.focus = Focus::SettingsAbout;
+            }
+            (Screen::Settings, Focus::SettingsConnectivity) => {
+                self.run_usb_sync();
+                self.screen = Screen::About;
+                self.focus = Focus::SettingsAbout;
+            }
+            (Screen::Settings, Focus::SettingsGetUpdate) => {
+                self.run_usb_update();
+                self.screen = Screen::About;
+                self.focus = Focus::SettingsAbout;
+            }
+            (Screen::Settings, Focus::SettingsUser) => {
+                self.screen = Screen::About;
+                self.focus = Focus::SettingsAbout;
+            }
+            (Screen::About, _) => {
+                self.run_usb_sync();
+            }
+            (Screen::Language, _) => {
+                self.save_preferences(false);
+                if self.previous_screen == Screen::SettingsDetail {
+                    self.screen = Screen::SettingsDetail;
+                    self.focus = Focus::SettingsLanguage;
+                } else if self.previous_screen == Screen::Settings {
+                    self.screen = Screen::Settings;
+                    self.focus = Focus::SettingsGeneral;
+                } else {
+                    self.screen = Screen::First;
+                    self.focus = Focus::GetStarted;
+                }
+            }
+            (Screen::TestComplete, _) => self.screen = Screen::Welcome,
+            _ => {}
+        }
+    }
+
+    fn play_home_playlist(&mut self, index: usize) {
+        if let Ok(playlists) = self.db.get_playlists() {
+            if index < playlists.len() {
+                if let Ok(tracks) = self.db.get_playlist_tracks(playlists[index].id) {
+                    if !tracks.is_empty() {
+                        self.player.set_queue(tracks, 0);
+                        self.screen = Screen::NowPlaying;
+                        self.focus = Focus::Albums;
+                    }
+                }
+                return;
+            }
+        }
+
+        if let Ok(tracks) = self.db.get_tracks() {
+            if index < tracks.len() {
+                self.player.set_queue(tracks, index);
+                self.screen = Screen::NowPlaying;
+                self.focus = Focus::Albums;
+            }
+        }
+    }
+
+    fn library_counts(&self) -> LibraryCounts {
+        self.db.library_counts().unwrap_or_default()
+    }
+
+    fn current_preferences(&self, setup_complete: bool) -> Preferences {
+        let mut preferences = crate::preferences::load();
+        let status = self.player.get_status();
+        preferences.user_name = self.user_name.clone();
+        preferences.device_name = self.device_name.clone();
+        preferences.theme = self.active_theme;
+        preferences.language = self.active_language;
+        preferences.setup_complete |= setup_complete;
+        preferences.time_configured = self.time_configured;
+        preferences.clock_hour = self.clock_hour;
+        preferences.clock_minute = self.clock_minute;
+        preferences.clock_month = self.clock_month;
+        preferences.clock_day = self.clock_day;
+        preferences.clock_year = self.clock_year;
+        preferences.brightness = self.brightness;
+        preferences.volume = status.volume;
+        preferences.eq_preset = self.player.get_eq_preset();
+        preferences.audio_backend = self.audio_backend.clone();
+        preferences.alsa_device = self.alsa_device.clone();
+        preferences.audio_output_mode = self.audio_output_mode.clone();
+        preferences.shuffle = self.player.shuffle_enabled();
+        preferences.loop_mode = self.player.loop_mode();
+        preferences.resume_queue_track_ids = self.player.queue_track_ids();
+        preferences.resume_queue_index = self.player.current_index().unwrap_or(0);
+        preferences.resume_track_id = status.track.as_ref().map(|track| track.id);
+        preferences.resume_position_seconds = status.position;
+        preferences.resume_paused = !status.is_playing;
+        preferences.library_sort = self.library_sort;
+        preferences.library_group = self.library_group;
+        preferences.sleep_timeout_minutes = self.sleep_timeout_minutes;
+        preferences.dim_timeout_seconds = self.dim_timeout_seconds;
+        preferences.first_run_audio_test_complete = self.first_run_audio_test_complete;
+        preferences.last_music_focus = self.music_focus_name().to_string();
+        preferences.sanitized()
+    }
+
+    fn save_preferences(&self, setup_complete: bool) {
+        let preferences = self.current_preferences(setup_complete);
+        if let Err(err) = crate::preferences::save(&preferences) {
+            log::warn!("failed to save MusicOS preferences: {err:#}");
+        }
+    }
+
+    fn music_focus_name(&self) -> &'static str {
+        match self.focus {
+            Focus::Songs | Focus::ShuffleAll => "songs",
+            Focus::Artists => "artists",
+            Focus::Playlists => "playlists",
+            Focus::Favorites => "favorites",
+            Focus::Queue => "queue",
+            Focus::History => "history",
+            _ => "albums",
+        }
+    }
+
+    fn publish_runtime_snapshot(&self) {
+        crate::server::publish_runtime_snapshot(RuntimeSnapshot {
+            settings: self.current_preferences(false),
+            player: self.player.get_status(),
+            queue: self.player.queue_tracks(),
+            queue_index: self.player.current_index(),
+            counts: self.library_counts(),
+            db_path: self.db_path.clone(),
+            settings_path: crate::preferences::path().display().to_string(),
+            scan_status: self.scan_status.clone(),
+            usb_status: self.usb_status.message.clone(),
+            battery_status: crate::system::battery_summary(),
+        });
+    }
+
+    fn apply_settings_update(&mut self, update: SettingsUpdate) {
+        if let Some(value) = update.user_name {
+            let value = value.trim();
+            if !value.is_empty() {
+                self.user_name = value.to_string();
+            }
+        }
+        if let Some(value) = update.device_name {
+            let value = value.trim();
+            if !value.is_empty() {
+                self.device_name = value.to_string();
+            }
+        }
+        if let Some(value) = update.theme {
+            self.active_theme = ThemeName::from_str(&value);
+        }
+        if let Some(value) = update.language {
+            self.active_language = Language::from_str(&value);
+        }
+        if let Some(value) = update.audio_backend {
+            self.audio_backend = match value.to_ascii_lowercase().as_str() {
+                "alsa" => "alsa".to_string(),
+                "rodio" => "rodio".to_string(),
+                "none" | "silent" => "none".to_string(),
+                _ => "auto".to_string(),
+            };
+        }
+        if let Some(value) = update.alsa_device {
+            self.alsa_device = value.trim().to_string();
+        }
+        if let Some(value) = update.audio_output_mode {
+            let value = value.trim();
+            if !value.is_empty() {
+                self.audio_output_mode = value.to_string();
+            }
+        }
+        if let Some(value) = update.brightness {
+            self.brightness = value.clamp(5, 100);
+            crate::system::apply_brightness(self.brightness);
+        }
+        if let Some(value) = update.volume {
+            self.player.set_volume(value);
+        }
+        if let Some(value) = update.eq_preset {
+            self.player.set_eq_preset(eq_preset_from_str(&value));
+        }
+        if let Some(value) = update.shuffle {
+            self.player.set_shuffle(value);
+        }
+        if let Some(value) = update.loop_mode {
+            self.player.set_loop_mode(loop_mode_from_str(&value));
+        }
+        if let Some(value) = update.library_sort {
+            self.library_sort = LibrarySort::from_str(&value);
+            self.sort_library();
+        }
+        if let Some(value) = update.library_group {
+            self.library_group = LibraryGroup::from_str(&value);
+        }
+        if let Some(value) = update.sleep_timeout_minutes {
+            self.sleep_timeout_minutes = value.min(180);
+        }
+        if let Some(value) = update.dim_timeout_seconds {
+            self.dim_timeout_seconds = value.clamp(10, 600);
+        }
+        if let Some(value) = update.first_run_audio_test_complete {
+            self.first_run_audio_test_complete = value;
+        }
+        let preferences = self.current_preferences(false);
+        apply_audio_runtime_preferences(&preferences);
+        self.save_preferences(false);
+    }
+
+    fn reset_user_settings(&mut self) {
+        let defaults = Preferences::default();
+        self.user_name = defaults.user_name;
+        self.device_name = defaults.device_name;
+        self.active_theme = defaults.theme;
+        self.active_language = defaults.language;
+        self.audio_backend = defaults.audio_backend;
+        self.alsa_device = defaults.alsa_device;
+        self.audio_output_mode = defaults.audio_output_mode;
+        self.library_sort = defaults.library_sort;
+        self.library_group = defaults.library_group;
+        self.sleep_timeout_minutes = defaults.sleep_timeout_minutes;
+        self.dim_timeout_seconds = defaults.dim_timeout_seconds;
+        self.first_run_audio_test_complete = false;
+        self.brightness = defaults.brightness;
+        self.player.set_volume(defaults.volume);
+        self.player.set_eq_preset(defaults.eq_preset);
+        self.player.set_shuffle(defaults.shuffle);
+        self.player.set_loop_mode(defaults.loop_mode);
+        crate::system::apply_brightness(self.brightness);
+        apply_audio_runtime_preferences(&self.current_preferences(false));
+        self.save_preferences(false);
+        self.scan_status = "Settings reset; media library preserved".to_string();
+    }
+
+    fn scan_library(&mut self) {
+        self.scan_status = "Scanning library...".to_string();
+        match crate::media::index_default_locations(&self.db) {
+            Ok(indexed) => {
+                self.refresh_library();
+                let counts = self.library_counts();
+                self.scan_status = format!(
+                    "Scan complete: {indexed} indexed, {} songs, {} albums, {} playlists",
+                    counts.tracks, counts.albums, counts.playlists
+                );
+            }
+            Err(err) => {
+                self.scan_status = format!("Scan failed: {err:#}");
+            }
+        }
+    }
+
+    fn run_audio_test(&mut self) {
+        let result = crate::system::run_audio_test();
+        self.audio_test_status = result.message;
+        self.first_run_audio_test_complete = result.ok;
+        self.save_preferences(false);
+    }
+
+    pub fn refresh_library(&mut self) {
+        if let Ok(tracks) = self.db.get_tracks() {
+            self.tracks_queue = tracks;
+        }
+        if let Ok(albums) = self.db.get_albums() {
+            self.albums_list = albums;
+        }
+        if let Ok(artists) = self.db.get_artists() {
+            self.artists_list = artists;
+        }
+        if let Ok(playlists) = self.db.get_playlists() {
+            self.playlists_list = playlists;
+        }
+        if let Ok(pins) = self.db.get_pins() {
+            self.pins_list = pins;
+        }
+        self.sort_library();
+    }
+
+    fn sort_library(&mut self) {
+        sort_tracks(&mut self.tracks_queue, self.library_sort);
+    }
+
+    pub fn run_usb_sync(&mut self) {
+        self.usb_status = match crate::usb::sync_from_usb(&self.db) {
+            Ok(status) => status,
+            Err(err) => UsbStatus {
+                message: format!("USB sync failed: {err:#}"),
+                ..UsbStatus::default()
+            },
+        };
+
+        self.refresh_library();
+    }
+
+    pub fn run_usb_update(&mut self) {
+        self.usb_status = match crate::usb::get_update_from_usb() {
+            Ok(status) => status,
+            Err(err) => UsbStatus {
+                message: format!("USB update failed: {err:#}"),
+                ..UsbStatus::default()
+            },
+        };
+    }
+
+    fn can_open_context_menu(&self) -> bool {
+        match self.screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+                self.tracks_queue.get(self.selected_index).is_some()
+            }
+            Screen::AlbumsList => self
+                .albums_list
+                .get(self.selected_index)
+                .and_then(|album| self.filtered_tracks(|track| track.album == *album))
+                .is_some(),
+            Screen::ArtistsList => self
+                .artists_list
+                .get(self.selected_index)
+                .and_then(|artist| self.filtered_tracks(|track| track.artist == *artist))
+                .is_some(),
+            Screen::PlaylistsList => self.playlists_list.get(self.selected_index).is_some(),
+            Screen::Home => false,
+            Screen::NowPlaying => self.player.get_current_track().is_some(),
+            _ => false,
+        }
+    }
+
+    fn focus_home_left_side(&mut self) {
+        if self.home_left_item_count() > 0 {
+            self.focus = Focus::HomePlaylist1;
+        }
+    }
+
+    fn home_left_item_count(&self) -> usize {
+        let playlist_count = self
+            .db
+            .get_playlists()
+            .map(|playlists| playlists.len())
+            .unwrap_or(0);
+        let track_count = self.db.get_tracks().map(|tracks| tracks.len()).unwrap_or(0);
+        playlist_count.max(track_count).min(4)
+    }
+
+    fn home_left_focus_index(focus: Focus) -> Option<usize> {
+        match focus {
+            Focus::HomePlaylist1 => Some(0),
+            Focus::HomePlaylist2 => Some(1),
+            Focus::HomePlaylist3 => Some(2),
+            Focus::HomePlaylist4 => Some(3),
+            _ => None,
+        }
+    }
+
+    fn home_left_focus_for_index(index: usize) -> Focus {
+        match index.min(3) {
+            0 => Focus::HomePlaylist1,
+            1 => Focus::HomePlaylist2,
+            2 => Focus::HomePlaylist3,
+            _ => Focus::HomePlaylist4,
+        }
+    }
+
+    fn move_home_left_focus(&mut self, delta: isize) {
+        let count = self.home_left_item_count();
+        if count == 0 {
+            self.focus = Focus::HomeMusic;
+            return;
+        }
+
+        let current = Self::home_left_focus_index(self.focus).unwrap_or(0);
+        let next = (current as isize + delta).rem_euclid(count as isize) as usize;
+        self.focus = Self::home_left_focus_for_index(next);
+    }
+
+    fn focus_home_left_or(&mut self, index: usize, fallback: Focus) {
+        if index < self.home_left_item_count() {
+            self.focus = Self::home_left_focus_for_index(index);
+        } else {
+            self.focus = fallback;
+        }
+    }
+
+    fn context_pin_target(&self) -> Option<(&'static str, i64)> {
+        match self.previous_screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => self
+                .tracks_queue
+                .get(self.selected_index)
+                .map(|track| ("track", track.id)),
+            Screen::PlaylistsList => self
+                .playlists_list
+                .get(self.selected_index)
+                .map(|playlist| ("playlist", playlist.id)),
+            Screen::Home => match self.previous_focus {
+                Focus::HomePlaylist1
+                | Focus::HomePlaylist2
+                | Focus::HomePlaylist3
+                | Focus::HomePlaylist4 => self
+                    .context_home_playlist()
+                    .map(|playlist| ("playlist", playlist.id)),
+                Focus::HomeNowPlaying => self
+                    .player
+                    .get_current_track()
+                    .map(|track| ("track", track.id)),
+                _ => None,
+            },
+            Screen::NowPlaying => self
+                .player
+                .get_current_track()
+                .map(|track| ("track", track.id)),
+            _ => None,
+        }
+    }
+
+    pub fn context_item_is_pinned(&self) -> bool {
+        if let Some((pin_type, target_id)) = self.context_pin_target() {
+            self.db.is_pinned(pin_type, target_id).unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
+    pub fn context_menu_title(&self) -> String {
+        match self.previous_screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => self
+                .tracks_queue
+                .get(self.selected_index)
+                .map(|track| track.title.clone())
+                .unwrap_or_else(|| "Track".to_string()),
+            Screen::PlaylistsList => self
+                .playlists_list
+                .get(self.selected_index)
+                .map(|playlist| playlist.name.clone())
+                .unwrap_or_else(|| "Playlist".to_string()),
+            Screen::AlbumsList => self
+                .albums_list
+                .get(self.selected_index)
+                .cloned()
+                .unwrap_or_else(|| "Album".to_string()),
+            Screen::ArtistsList => self
+                .artists_list
+                .get(self.selected_index)
+                .cloned()
+                .unwrap_or_else(|| "Artist".to_string()),
+            Screen::NowPlaying => self
+                .player
+                .get_current_track()
+                .map(|track| track.title.clone())
+                .unwrap_or_else(|| "Track".to_string()),
+            Screen::Home => match self.previous_focus {
+                Focus::HomePlaylist1
+                | Focus::HomePlaylist2
+                | Focus::HomePlaylist3
+                | Focus::HomePlaylist4 => self
+                    .context_home_playlist()
+                    .map(|playlist| playlist.name)
+                    .unwrap_or_else(|| "Playlist".to_string()),
+                Focus::HomeNowPlaying => self
+                    .player
+                    .get_current_track()
+                    .map(|track| track.title.clone())
+                    .unwrap_or_else(|| "Now Playing".to_string()),
+                Focus::HomeMusic => "Music".to_string(),
+                _ => "Home".to_string(),
+            },
+            _ => self
+                .player
+                .get_current_track()
+                .map(|track| track.title.clone())
+                .unwrap_or_else(|| "Item".to_string()),
+        }
+    }
+
+    fn activate_context_play(&mut self, shuffle: bool) {
+        if self.context_targets_current_player() {
+            if shuffle {
+                self.player.set_shuffle(true);
+            }
+            self.player.play_pause();
+            self.screen = self.previous_screen;
+            self.focus = self.previous_focus;
+            return;
+        }
+
+        let queue_and_index = self.context_queue();
+
+        if let Some((tracks, index)) = queue_and_index {
+            if let Some(track) = tracks.get(index) {
+                let _ = self.db.increment_play_count(track.id);
+            }
+            if shuffle {
+                self.player.set_shuffle(true);
+            }
+            self.player.set_queue(tracks, index);
+            self.screen = Screen::NowPlaying;
+            self.focus = Focus::Albums;
+        } else {
+            self.screen = self.previous_screen;
+            self.focus = self.previous_focus;
+        }
+    }
+
+    fn context_queue(&self) -> Option<(Vec<Track>, usize)> {
+        match self.previous_screen {
+            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+                if self.selected_index < self.tracks_queue.len() {
+                    Some((self.tracks_queue.clone(), self.selected_index))
+                } else {
+                    None
+                }
+            }
+            Screen::AlbumsList => self
+                .albums_list
+                .get(self.selected_index)
+                .and_then(|album| self.filtered_tracks(|track| track.album == *album)),
+            Screen::ArtistsList => self
+                .artists_list
+                .get(self.selected_index)
+                .and_then(|artist| self.filtered_tracks(|track| track.artist == *artist)),
+            Screen::PlaylistsList => self.playlists_list.get(self.selected_index).and_then(|p| {
+                self.db
+                    .get_playlist_tracks(p.id)
+                    .ok()
+                    .filter(|tracks| !tracks.is_empty())
+                    .map(|tracks| (tracks, 0))
+            }),
+            Screen::Home => self.context_home_queue(),
+            Screen::MusicApp => self.all_tracks_queue(),
+            Screen::NowPlaying => self
+                .player
+                .get_current_track()
+                .map(|track| (vec![track.clone()], 0)),
+            _ => None,
+        }
+    }
+
+    fn all_tracks_queue(&self) -> Option<(Vec<Track>, usize)> {
+        self.db
+            .get_tracks()
+            .ok()
+            .filter(|tracks| !tracks.is_empty())
+            .map(|tracks| (tracks, 0))
+    }
+
+    fn context_home_queue(&self) -> Option<(Vec<Track>, usize)> {
+        match self.previous_focus {
+            Focus::HomeMusic => self.all_tracks_queue(),
+            Focus::HomePlaylist1
+            | Focus::HomePlaylist2
+            | Focus::HomePlaylist3
+            | Focus::HomePlaylist4 => self.context_home_playlist().and_then(|playlist| {
+                self.db
+                    .get_playlist_tracks(playlist.id)
+                    .ok()
+                    .filter(|tracks| !tracks.is_empty())
+                    .map(|tracks| (tracks, 0))
+            }),
+            Focus::HomeNowPlaying => self
+                .player
+                .get_current_track()
+                .map(|track| (vec![track.clone()], 0)),
+            _ => None,
+        }
+    }
+
+    fn context_targets_current_player(&self) -> bool {
+        self.previous_screen == Screen::NowPlaying
+            || (self.previous_screen == Screen::Home
+                && self.previous_focus == Focus::HomeNowPlaying)
+    }
+
+    fn context_home_playlist(&self) -> Option<Playlist> {
+        let index = match self.previous_focus {
+            Focus::HomePlaylist1 => 0,
+            Focus::HomePlaylist2 => 1,
+            Focus::HomePlaylist3 => 2,
+            Focus::HomePlaylist4 => 3,
+            _ => return None,
+        };
+        self.db.get_playlists().ok()?.into_iter().nth(index)
+    }
+
+    fn filtered_tracks<F>(&self, predicate: F) -> Option<(Vec<Track>, usize)>
+    where
+        F: Fn(&Track) -> bool,
+    {
+        let mut tracks = self.db.get_tracks().ok()?;
+        tracks.retain(predicate);
+        if tracks.is_empty() {
+            None
+        } else {
+            Some((tracks, 0))
+        }
+    }
+
+    fn add_context_track_to_default_playlist(&mut self) {
+        let track_ids = self.context_track_ids();
+        if track_ids.is_empty() {
+            return;
+        }
+
+        let playlist_id = self.context_adds_playlist_id();
+
+        if let Some(playlist_id) = playlist_id {
+            for track_id in track_ids {
+                let _ = self.db.add_track_to_playlist(playlist_id, track_id);
+            }
+            self.refresh_library();
+        }
+    }
+
+    fn context_track_ids(&self) -> Vec<i64> {
+        if let Some((pin_type, id)) = self.context_pin_target() {
+            if pin_type == "track" {
+                return vec![id];
+            }
+        }
+        self.context_queue()
+            .map(|(tracks, _)| tracks.into_iter().map(|track| track.id).collect())
+            .unwrap_or_default()
+    }
+
+    fn context_adds_playlist_id(&self) -> Option<i64> {
+        self.db
+            .get_playlists()
+            .ok()
+            .and_then(|playlists| {
+                playlists
+                    .into_iter()
+                    .find(|playlist| playlist.name == "Context Adds")
+                    .map(|playlist| playlist.id)
+            })
+            .or_else(|| self.db.create_playlist("Context Adds").ok())
+    }
+
+    fn delete_context_target(&mut self) {
+        match self.previous_screen {
+            Screen::PlaylistsList => {
+                if let Some(playlist) = self.playlists_list.get(self.selected_index) {
+                    let _ = self.db.delete_playlist(playlist.id);
+                }
+                if let Ok(playlists) = self.db.get_playlists() {
+                    self.playlists_list = playlists;
+                    self.selected_index = self
+                        .selected_index
+                        .min(self.playlists_list.len().saturating_sub(1));
+                }
+            }
+            Screen::PlaylistTracksList => {
+                if let (Some(playlist_id), Some(track_id)) = (
+                    self.active_playlist.as_ref().map(|playlist| playlist.id),
+                    self.tracks_queue
+                        .get(self.selected_index)
+                        .map(|track| track.id),
+                ) {
+                    let _ = self.db.remove_track_from_playlist(playlist_id, track_id);
+                    if let Ok(tracks) = self.db.get_playlist_tracks(playlist_id) {
+                        self.tracks_queue = tracks;
+                        self.selected_index = self
+                            .selected_index
+                            .min(self.tracks_queue.len().saturating_sub(1));
+                    }
+                }
+            }
+            Screen::Queue => {
+                self.player.queue_remove(self.selected_index);
+                self.tracks_queue = self.player.queue_tracks();
+                self.selected_index = self
+                    .selected_index
+                    .min(self.tracks_queue.len().saturating_sub(1));
+                self.save_preferences(false);
+            }
+            Screen::Home => {
+                if let Some(playlist) = self.context_home_playlist() {
+                    let _ = self.db.delete_playlist(playlist.id);
+                    self.refresh_library();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn back(&mut self) {
+        match self.screen {
+            Screen::First => {}
+            Screen::Welcome => self.screen = Screen::First,
+            Screen::Theme => {
+                if self.previous_screen == Screen::Settings {
+                    self.screen = Screen::Settings;
+                    self.focus = Focus::SettingsLooks;
+                } else {
+                    self.screen = Screen::Welcome;
+                }
+            }
+            Screen::DateTimeSetup => {
+                if self.previous_screen == Screen::SettingsDetail {
+                    self.screen = Screen::SettingsDetail;
+                    self.focus = Focus::SettingsDateTime;
+                } else {
+                    self.screen = Screen::Theme;
+                    self.focus = Focus::ThemeSelect;
+                }
+            }
+            Screen::Home => {}
+            Screen::MusicApp => {
+                if self.previous_screen == Screen::Apps {
+                    self.screen = Screen::Apps;
+                    self.focus = Focus::AppsMusic;
+                } else {
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeMusic;
+                }
+                self.reset_list_state();
+            }
+            Screen::SongsList => {
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Songs;
+            }
+            Screen::AlbumsList => {
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Albums;
+            }
+            Screen::ArtistsList => {
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Artists;
+            }
+            Screen::PlaylistsList => {
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Playlists;
+            }
+            Screen::PlaylistTracksList => {
+                self.screen = Screen::PlaylistsList;
+                self.selected_index = 0;
+            }
+            Screen::Queue => {
+                self.screen = Screen::MusicApp;
+                self.focus = Focus::Queue;
+            }
+            Screen::Language => {
+                if self.previous_screen == Screen::SettingsDetail {
+                    self.screen = Screen::SettingsDetail;
+                    self.focus = Focus::SettingsLanguage;
+                } else if self.previous_screen == Screen::Settings {
+                    self.screen = Screen::Settings;
+                    self.focus = Focus::SettingsGeneral;
+                } else {
+                    self.screen = Screen::First;
+                    self.focus = Focus::Language;
+                }
+            }
+            Screen::NowPlaying => {
+                if self.previous_screen == Screen::Apps {
+                    self.screen = Screen::Apps;
+                    self.focus = Focus::AppsNowPlaying;
+                } else {
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeNowPlaying;
+                }
+            }
+            Screen::Settings => {
+                if self.previous_screen == Screen::Apps {
+                    self.screen = Screen::Apps;
+                    self.focus = Focus::AppsSettings;
+                } else {
+                    self.screen = Screen::Home;
+                    self.focus = Focus::HomeSettings;
+                }
+            }
+            Screen::SettingsDetail => {
+                self.screen = Screen::Settings;
+                self.focus = if self.previous_screen == Screen::Settings {
+                    self.previous_focus
+                } else {
+                    Focus::SettingsGeneral
+                };
+            }
+            Screen::Apps => {
+                self.screen = Screen::Home;
+                self.focus = Focus::HomeApps;
+            }
+            Screen::About => {
+                if self.previous_screen == Screen::Apps {
+                    self.screen = Screen::Apps;
+                    self.focus = Focus::AppsUsbSync;
+                } else {
+                    self.screen = Screen::Settings;
+                    self.focus = Focus::SettingsAbout;
+                }
+            }
+            Screen::TestComplete => self.screen = Screen::Welcome,
+            Screen::ContextMenu => {
+                self.screen = self.previous_screen;
+                self.focus = self.previous_focus;
+            }
+        }
+    }
+
+    fn move_down(&mut self) {
+        match self.screen {
+            Screen::Theme => {
+                if self.focus == Focus::ThemeSelect {
+                    self.focus = Focus::Yeah;
+                }
+            }
+            Screen::First => {
+                if self.focus == Focus::GetStarted {
+                    self.focus = Focus::Language;
+                }
+            }
+            Screen::Home => {
+                if Self::home_left_focus_index(self.focus).is_some() {
+                    self.move_home_left_focus(1);
+                } else {
+                    self.focus = match self.focus {
+                        Focus::HomeApps => Focus::HomeSettings,
+                        Focus::HomeSettings => Focus::HomeApps,
+                        Focus::HomeMusic => Focus::HomeNowPlaying,
+                        Focus::HomeNowPlaying => Focus::HomeMusic,
+                        _ => self.focus,
+                    };
+                }
+            }
+            Screen::Apps => {
+                self.focus = match self.focus {
+                    Focus::AppsMusic => Focus::AppsNowPlaying,
+                    Focus::AppsNowPlaying => Focus::AppsSettings,
+                    Focus::AppsSettings => Focus::AppsUsbSync,
+                    Focus::AppsUsbSync => Focus::AppsMusic,
+                    _ => self.focus,
+                };
+            }
+            Screen::MusicApp => {
+                self.focus = match self.focus {
+                    Focus::Albums => Focus::Songs,
+                    Focus::Songs => Focus::Artists,
+                    Focus::Artists => Focus::Playlists,
+                    Focus::Playlists => Focus::Favorites,
+                    Focus::Favorites => Focus::Queue,
+                    Focus::Queue => Focus::History,
+                    Focus::History => Focus::ShuffleAll,
+                    Focus::ShuffleAll => Focus::Albums,
+                    _ => self.focus,
+                };
+            }
+            Screen::SongsList | Screen::Queue => {
+                if !self.tracks_queue.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.tracks_queue.len();
+                }
+            }
+            Screen::AlbumsList => {
+                if !self.albums_list.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.albums_list.len();
+                }
+            }
+            Screen::ArtistsList => {
+                if !self.artists_list.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.artists_list.len();
+                }
+            }
+            Screen::PlaylistsList => {
+                if !self.playlists_list.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.playlists_list.len();
+                }
+            }
+            Screen::PlaylistTracksList => {
+                if !self.tracks_queue.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.tracks_queue.len();
+                }
+            }
+            Screen::Language => {
+                self.selected_index = (self.selected_index + 1) % 5;
+                self.active_language = match self.selected_index {
+                    0 => Language::En,
+                    1 => Language::Es,
+                    2 => Language::De,
+                    3 => Language::Ja,
+                    4 => Language::Zh,
+                    _ => Language::En,
+                };
+                self.save_preferences(false);
+            }
+            Screen::Settings => {
+                self.focus = match self.focus {
+                    Focus::SettingsGeneral => Focus::SettingsAudio,
+                    Focus::SettingsAudio => Focus::SettingsLooks,
+                    Focus::SettingsLooks => Focus::SettingsAbout,
+                    Focus::SettingsAbout => Focus::SettingsConnectivity,
+                    Focus::SettingsConnectivity => Focus::SettingsGetUpdate,
+                    Focus::SettingsGetUpdate => Focus::SettingsUser,
+                    Focus::SettingsUser => Focus::SettingsGeneral,
+                    Focus::SettingsTheme => Focus::SettingsGeneral,
+                    Focus::SettingsLanguage => Focus::SettingsGeneral,
+                    _ => self.focus,
+                };
+            }
+            Screen::SettingsDetail => {
+                self.focus = match self.focus {
+                    Focus::SettingsLanguage => Focus::SettingsDateTime,
+                    Focus::SettingsDateTime => Focus::SettingsBrightness,
+                    Focus::SettingsBrightness => Focus::SettingsVolume,
+                    Focus::SettingsVolume => Focus::SettingsEq,
+                    Focus::SettingsEq => Focus::SettingsSwitchObject,
+                    Focus::SettingsSwitchObject => Focus::SettingsLanguage,
+                    _ => Focus::SettingsLanguage,
+                };
+            }
+            Screen::DateTimeSetup => {
+                self.adjust_date_time(1);
+            }
+            Screen::ContextMenu => {
+                self.focus = match self.focus {
+                    Focus::ContextPlay => Focus::ContextPin,
+                    Focus::ContextPin => Focus::ContextAddToPlaylist,
+                    Focus::ContextAddToPlaylist => Focus::ContextShuffle,
+                    Focus::ContextShuffle => Focus::ContextDelete,
+                    Focus::ContextDelete => Focus::ContextCancel,
+                    Focus::ContextCancel => Focus::ContextPlay,
+                    _ => self.focus,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    fn move_up(&mut self) {
+        match self.screen {
+            Screen::Theme => {
+                if self.focus == Focus::Yeah || self.focus == Focus::Custom {
+                    self.focus = Focus::ThemeSelect;
+                }
+            }
+            Screen::First => {
+                if self.focus == Focus::Language {
+                    self.focus = Focus::GetStarted;
+                }
+            }
+            Screen::Home => {
+                if Self::home_left_focus_index(self.focus).is_some() {
+                    self.move_home_left_focus(-1);
+                } else {
+                    self.focus = match self.focus {
+                        Focus::HomeSettings => Focus::HomeApps,
+                        Focus::HomeApps => Focus::HomeSettings,
+                        Focus::HomeNowPlaying => Focus::HomeMusic,
+                        Focus::HomeMusic => Focus::HomeNowPlaying,
+                        _ => self.focus,
+                    };
+                }
+            }
+            Screen::Apps => {
+                self.focus = match self.focus {
+                    Focus::AppsMusic => Focus::AppsUsbSync,
+                    Focus::AppsUsbSync => Focus::AppsSettings,
+                    Focus::AppsSettings => Focus::AppsNowPlaying,
+                    Focus::AppsNowPlaying => Focus::AppsMusic,
+                    _ => self.focus,
+                };
+            }
+            Screen::MusicApp => {
+                self.focus = match self.focus {
+                    Focus::Albums => Focus::ShuffleAll,
+                    Focus::Songs => Focus::Albums,
+                    Focus::Artists => Focus::Songs,
+                    Focus::Playlists => Focus::Artists,
+                    Focus::Favorites => Focus::Playlists,
+                    Focus::Queue => Focus::Favorites,
+                    Focus::History => Focus::Queue,
+                    Focus::ShuffleAll => Focus::History,
+                    _ => self.focus,
+                };
+            }
+            Screen::SongsList | Screen::Queue => {
+                if !self.tracks_queue.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.tracks_queue.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::AlbumsList => {
+                if !self.albums_list.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.albums_list.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::ArtistsList => {
+                if !self.artists_list.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.artists_list.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::PlaylistsList => {
+                if !self.playlists_list.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.playlists_list.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::PlaylistTracksList => {
+                if !self.tracks_queue.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.tracks_queue.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::Language => {
+                self.selected_index = if self.selected_index == 0 {
+                    4
+                } else {
+                    self.selected_index - 1
+                };
+                self.active_language = match self.selected_index {
+                    0 => Language::En,
+                    1 => Language::Es,
+                    2 => Language::De,
+                    3 => Language::Ja,
+                    4 => Language::Zh,
+                    _ => Language::En,
+                };
+                self.save_preferences(false);
+            }
+            Screen::Settings => {
+                self.focus = match self.focus {
+                    Focus::SettingsGeneral => Focus::SettingsUser,
+                    Focus::SettingsUser => Focus::SettingsGetUpdate,
+                    Focus::SettingsGetUpdate => Focus::SettingsConnectivity,
+                    Focus::SettingsConnectivity => Focus::SettingsAbout,
+                    Focus::SettingsAbout => Focus::SettingsLooks,
+                    Focus::SettingsLooks => Focus::SettingsAudio,
+                    Focus::SettingsAudio => Focus::SettingsGeneral,
+                    Focus::SettingsTheme => Focus::SettingsLooks,
+                    Focus::SettingsLanguage => Focus::SettingsGeneral,
+                    _ => self.focus,
+                };
+            }
+            Screen::SettingsDetail => {
+                self.focus = match self.focus {
+                    Focus::SettingsLanguage => Focus::SettingsSwitchObject,
+                    Focus::SettingsSwitchObject => Focus::SettingsEq,
+                    Focus::SettingsEq => Focus::SettingsVolume,
+                    Focus::SettingsVolume => Focus::SettingsBrightness,
+                    Focus::SettingsBrightness => Focus::SettingsDateTime,
+                    Focus::SettingsDateTime => Focus::SettingsLanguage,
+                    _ => Focus::SettingsLanguage,
+                };
+            }
+            Screen::DateTimeSetup => {
+                self.adjust_date_time(-1);
+            }
+            Screen::ContextMenu => {
+                self.focus = match self.focus {
+                    Focus::ContextPlay => Focus::ContextCancel,
+                    Focus::ContextCancel => Focus::ContextDelete,
+                    Focus::ContextDelete => Focus::ContextShuffle,
+                    Focus::ContextShuffle => Focus::ContextAddToPlaylist,
+                    Focus::ContextAddToPlaylist => Focus::ContextPin,
+                    Focus::ContextPin => Focus::ContextPlay,
+                    _ => self.focus,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    fn move_right(&mut self) {
+        match self.screen {
+            Screen::Theme => match self.focus {
+                Focus::ThemeSelect => {
+                    self.active_theme = match self.active_theme {
+                        ThemeName::Blue => ThemeName::Red,
+                        ThemeName::Red => ThemeName::Green,
+                        ThemeName::Green => ThemeName::Purple,
+                        ThemeName::Purple => ThemeName::Blue,
+                    };
+                    self.save_preferences(false);
+                }
+                Focus::Custom => {
+                    self.focus = Focus::Yeah;
+                }
+                _ => {}
+            },
+            Screen::Home => match self.focus {
+                Focus::HomePlaylist1 | Focus::HomePlaylist2 => self.focus = Focus::HomeApps,
+                Focus::HomePlaylist3 | Focus::HomePlaylist4 => self.focus = Focus::HomeSettings,
+                Focus::HomeApps => self.focus = Focus::HomeMusic,
+                Focus::HomeSettings => self.focus = Focus::HomeNowPlaying,
+                Focus::HomeMusic => self.focus_home_left_or(0, Focus::HomeMusic),
+                Focus::HomeNowPlaying => self.focus_home_left_or(2, Focus::HomeNowPlaying),
+                _ => {}
+            },
+            Screen::NowPlaying => {
+                self.focus = match self.focus {
+                    Focus::Songs => Focus::Artists,
+                    Focus::Artists => Focus::Albums,
+                    Focus::Albums => Focus::Playlists,
+                    Focus::Playlists => Focus::History,
+                    Focus::History => Focus::Favorites,
+                    Focus::Favorites => Focus::Songs,
+                    _ => self.focus,
+                };
+            }
+            Screen::SongsList
+            | Screen::AlbumsList
+            | Screen::ArtistsList
+            | Screen::PlaylistsList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self.jump_active_list(1),
+            Screen::SettingsDetail => match self.focus {
+                Focus::SettingsBrightness => self.adjust_brightness(5),
+                Focus::SettingsVolume => self.adjust_volume(0.05),
+                Focus::SettingsEq => self.cycle_eq(1),
+                _ => {}
+            },
+            Screen::DateTimeSetup => {
+                self.focus = match self.focus {
+                    Focus::DateHour => Focus::DateMinute,
+                    Focus::DateMinute => Focus::DateMonth,
+                    Focus::DateMonth => Focus::DateDay,
+                    Focus::DateDay => Focus::DateYear,
+                    Focus::DateYear => Focus::DateDone,
+                    Focus::DateDone => Focus::DateHour,
+                    _ => Focus::DateHour,
+                };
+            }
+            _ => {}
+        }
+    }
+
+    fn move_left(&mut self) {
+        match self.screen {
+            Screen::Theme => match self.focus {
+                Focus::ThemeSelect => {
+                    self.active_theme = match self.active_theme {
+                        ThemeName::Blue => ThemeName::Purple,
+                        ThemeName::Purple => ThemeName::Green,
+                        ThemeName::Green => ThemeName::Red,
+                        ThemeName::Red => ThemeName::Blue,
+                    };
+                    self.save_preferences(false);
+                }
+                Focus::Yeah => {
+                    self.focus = Focus::Custom;
+                }
+                _ => {}
+            },
+            Screen::Home => match self.focus {
+                Focus::HomeMusic => self.focus = Focus::HomeApps,
+                Focus::HomeApps => self.focus_home_left_or(0, Focus::HomeMusic),
+                Focus::HomeNowPlaying => self.focus = Focus::HomeSettings,
+                Focus::HomeSettings => self.focus_home_left_or(2, Focus::HomeNowPlaying),
+                Focus::HomePlaylist1 | Focus::HomePlaylist2 => self.focus = Focus::HomeMusic,
+                Focus::HomePlaylist3 | Focus::HomePlaylist4 => self.focus = Focus::HomeNowPlaying,
+                _ => {}
+            },
+            Screen::NowPlaying => {
+                self.focus = match self.focus {
+                    Focus::Songs => Focus::Favorites,
+                    Focus::Favorites => Focus::History,
+                    Focus::History => Focus::Playlists,
+                    Focus::Playlists => Focus::Albums,
+                    Focus::Albums => Focus::Artists,
+                    Focus::Artists => Focus::Songs,
+                    _ => self.focus,
+                };
+            }
+            Screen::SongsList
+            | Screen::AlbumsList
+            | Screen::ArtistsList
+            | Screen::PlaylistsList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self.jump_active_list(-1),
+            Screen::SettingsDetail => match self.focus {
+                Focus::SettingsBrightness => self.adjust_brightness(-5),
+                Focus::SettingsVolume => self.adjust_volume(-0.05),
+                Focus::SettingsEq => self.cycle_eq(-1),
+                _ => {}
+            },
+            Screen::DateTimeSetup => {
+                self.focus = match self.focus {
+                    Focus::DateHour => Focus::DateDone,
+                    Focus::DateMinute => Focus::DateHour,
+                    Focus::DateMonth => Focus::DateMinute,
+                    Focus::DateDay => Focus::DateMonth,
+                    Focus::DateYear => Focus::DateDay,
+                    Focus::DateDone => Focus::DateYear,
+                    _ => Focus::DateHour,
+                };
+            }
+            _ => {}
+        }
+    }
+}
+
+impl MusicOs {
+    fn adjust_date_time(&mut self, delta: i32) {
+        match self.focus {
+            Focus::DateHour => {
+                self.clock_hour = wrap_i32(self.clock_hour as i32 + delta, 0, 23) as u8;
+            }
+            Focus::DateMinute => {
+                self.clock_minute = wrap_i32(self.clock_minute as i32 + delta, 0, 59) as u8;
+            }
+            Focus::DateMonth => {
+                self.clock_month = wrap_i32(self.clock_month as i32 + delta, 1, 12) as u8;
+                self.clock_day = self
+                    .clock_day
+                    .min(days_in_month(self.clock_month, self.clock_year) as u8);
+            }
+            Focus::DateDay => {
+                self.clock_day = wrap_i32(
+                    self.clock_day as i32 + delta,
+                    1,
+                    days_in_month(self.clock_month, self.clock_year),
+                ) as u8;
+            }
+            Focus::DateYear => {
+                self.clock_year = wrap_i32(self.clock_year as i32 + delta, 2024, 2099) as u16;
+                self.clock_day = self
+                    .clock_day
+                    .min(days_in_month(self.clock_month, self.clock_year) as u8);
+            }
+            _ => {}
+        }
+        self.clock_anchor = Instant::now();
+        self.save_preferences(false);
+    }
+
+    fn adjust_brightness(&mut self, delta: i32) {
+        let next = (self.brightness as i32 + delta).clamp(5, 100) as u8;
+        if next != self.brightness {
+            self.set_brightness(next);
+        }
+        self.hud_type = HudType::Brightness;
+        self.hud_timer = 2.0;
+    }
+
+    fn set_brightness(&mut self, value: u8) {
+        let next = value.clamp(5, 100);
+        self.brightness = next;
+        crate::system::apply_brightness(next);
+        self.save_preferences(false);
+        self.hud_type = HudType::Brightness;
+        self.hud_timer = 2.0;
+    }
+
+    fn adjust_volume(&mut self, delta: f32) {
+        let volume = (self.player.get_status().volume + delta).clamp(0.0, 1.0);
+        self.player.set_volume(volume);
+        self.save_preferences(false);
+        self.hud_type = HudType::Volume;
+        self.hud_timer = 2.0;
+    }
+
+    fn cycle_eq(&mut self, direction: i32) {
+        let preset = if direction >= 0 {
+            self.player.get_eq_preset().next()
+        } else {
+            self.player.get_eq_preset().previous()
+        };
+        self.player.set_eq_preset(preset);
+        self.save_preferences(false);
+    }
+
+    fn toggle_current_favorite(&mut self) {
+        let Some(track) = self.player.get_current_track().cloned() else {
+            return;
+        };
+        match self.db.toggle_favorite(track.id) {
+            Ok(favorited) => {
+                self.player.update_track_favorite(track.id, favorited);
+                for queued in &mut self.tracks_queue {
+                    if queued.id == track.id {
+                        queued.favorited = favorited;
+                    }
+                }
+            }
+            Err(err) => log::warn!("failed to toggle favorite for {}: {err:#}", track.id),
+        }
+    }
+
+    fn format_clock(&self) -> String {
+        if let Ok(value) = std::env::var("MUSICOS_TIME_TEXT") {
+            if !value.trim().is_empty() {
+                return value;
+            }
+        }
+
+        let elapsed_minutes = self.clock_anchor.elapsed().as_secs() / 60;
+        let total_minutes =
+            self.clock_hour as u64 * 60 + self.clock_minute as u64 + elapsed_minutes;
+        let hours = (total_minutes / 60) % 24;
+        let minutes = total_minutes % 60;
+        let am_pm = if hours >= 12 { "PM" } else { "AM" };
+        let disp_hours = if hours % 12 == 0 { 12 } else { hours % 12 };
+
+        format!("{disp_hours}:{minutes:02} {am_pm}")
+    }
+
+    pub fn enter_sleep(&mut self) {
+        self.is_asleep = true;
+        self.player.pause();
+        crate::system::apply_brightness(0);
+
+        #[cfg(target_os = "linux")]
+        {
+            log::info!("Suspending system to RAM...");
+            if let Err(err) = std::fs::write("/sys/power/state", "mem") {
+                log::error!("Failed to write to /sys/power/state: {}", err);
+            }
+            log::info!("System woke up from suspend!");
+        }
+    }
+}
+
+fn wrap_i32(value: i32, min: i32, max: i32) -> i32 {
+    if value < min {
+        max
+    } else if value > max {
+        min
+    } else {
+        value
+    }
+}
+
+fn days_in_month(month: u8, year: u16) -> i32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 31,
+    }
+}
+
+fn is_leap_year(year: u16) -> bool {
+    let year = year as i32;
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}

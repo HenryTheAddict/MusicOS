@@ -1,0 +1,4 @@
+NAME=MusicOS
+TARGET=musicos-qemu
+DISPLAY_MODES=1280x960,640x480
+NETWORK=disabled

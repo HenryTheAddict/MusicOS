@@ -1,0 +1,55 @@
+# macOS
+.DS_Store
+._*
+
+# Rust
+/target/
+**/*.rs.bk
+
+# Node / Electron
+/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Buildroot / device image output
+/out/
+/vendor/
+/third_party/knulli/
+*.img
+*.img.gz
+*.wic
+*.wic.gz
+*.iso
+*.dtb
+*.dtbo
+
+# Local media and generated libraries
+/music/
+/samples/imported/
+*.mp3
+*.flac
+*.m4a
+*.ogg
+*.wav
+*.aiff
+
+# App/runtime state
+*.db
+*.db-shm
+*.db-wal
+settings.json
+settings.json.bad
+preferences.json
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+*.pid
+.env
+.env.*
+!.env.example

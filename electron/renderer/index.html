@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MusicOS Sync</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="sidebar glass">
+        <div class="brand">
+          <div class="mark">m</div>
+          <div>
+            <h1>MusicOS Sync</h1>
+            <p id="statusText">Starting...</p>
+          </div>
+        </div>
+
+        <div class="meter-grid">
+          <div class="meter">
+            <span>Tracks</span>
+            <strong id="trackCount">0</strong>
+          </div>
+          <div class="meter">
+            <span>Albums</span>
+            <strong id="albumCount">0</strong>
+          </div>
+          <div class="meter">
+            <span>Playlists</span>
+            <strong id="playlistCount">0</strong>
+          </div>
+          <div class="meter">
+            <span>Favorites</span>
+            <strong id="pinCount">0</strong>
+          </div>
+        </div>
+
+        <div class="sync-panel">
+          <button id="refreshBtn" class="primary">Refresh</button>
+          <button id="chooseBtn">Choose Folder</button>
+          <button id="uploadBtn">Upload Music</button>
+          <button id="usbBtn">USB Sync</button>
+        </div>
+
+        <div class="path-block">
+          <span>Target</span>
+          <input id="targetInput" spellcheck="false" />
+          <span>Folder</span>
+          <code id="folderText">./music</code>
+        </div>
+
+        <div class="settings-panel">
+          <label>
+            <span>User</span>
+            <input id="userNameInput" spellcheck="false" />
+          </label>
+          <label>
+            <span>Device</span>
+            <input id="deviceNameInput" spellcheck="false" />
+          </label>
+          <label>
+            <span>Audio</span>
+            <select id="audioBackendInput">
+              <option value="auto">Auto</option>
+              <option value="alsa">ALSA</option>
+              <option value="rodio">Rodio</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label>
+            <span>PCM</span>
+            <input id="alsaDeviceInput" spellcheck="false" />
+          </label>
+          <button id="saveSettingsBtn" class="primary">Save Settings</button>
+          <div class="maintenance-grid">
+            <button id="scanBtn">Scan</button>
+            <button id="audioTestBtn">Audio Test</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="device-panel glass">
+        <header class="device-header">
+          <div>
+            <span class="eyebrow">Live Device</span>
+            <h2>Mirror</h2>
+          </div>
+          <div id="connectionPill" class="pill offline">Offline</div>
+        </header>
+        <div class="mirror-frame">
+          <img id="mirror" alt="MusicOS device mirror" />
+          <div id="mirrorEmpty" class="mirror-empty">Waiting for MusicOS</div>
+        </div>
+        <div class="key-strip">
+          <kbd>W</kbd><span>Up</span>
+          <kbd>A</kbd><span>Left</span>
+          <kbd>S</kbd><span>Down</span>
+          <kbd>D</kbd><span>Right</span>
+          <kbd>J</kbd><span>Confirm</span>
+          <kbd>H</kbd><span>Back</span>
+          <kbd>U</kbd><span>Menu</span>
+          <kbd>I</kbd><span>Home</span>
+        </div>
+      </section>
+
+      <section class="library glass">
+        <header>
+          <div>
+            <span class="eyebrow">Offline Library</span>
+            <h2>Indexed Tracks</h2>
+          </div>
+          <p id="playerText" class="player-text">Queue idle</p>
+        </header>
+        <div id="tracks" class="tracks"></div>
+        <div class="transport">
+          <button data-control="prev">Prev</button>
+          <button data-control="play_pause" class="primary">Play</button>
+          <button data-control="next">Next</button>
+        </div>
+        <div class="queue-tools">
+          <button id="queueClearBtn">Clear Queue</button>
+          <button id="diagnosticsBtn">Diagnostics</button>
+        </div>
+        <p id="actionText" class="action">Ready.</p>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

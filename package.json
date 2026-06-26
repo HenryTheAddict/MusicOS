@@ -1,0 +1,14 @@
+{
+  "name": "musicos-desktop-sync",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron sync companion for MusicOS.",
+  "main": "electron/main.js",
+  "scripts": {
+    "sync:electron": "electron .",
+    "sync:electron:dev": "MUSICOS_SYNC_TARGET=${MUSICOS_SYNC_TARGET:-http://127.0.0.1:18080} electron ."
+  },
+  "devDependencies": {
+    "electron": "^42.4.1"
+  }
+}

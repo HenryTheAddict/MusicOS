@@ -1,0 +1,9 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="256" height="256" rx="64" fill="white"/>
+<path d="M203.217 172.5C203.217 176.918 199.635 180.5 195.217 180.5H60C55.5817 180.5 52 176.918 52 172.5V83C52 78.5817 55.5817 75 60 75H195.217C199.635 75 203.217 78.5817 203.217 83V172.5Z" fill="white" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M80.1334 96.1H175.083" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M66.0667 180.5L84.8235 161.743C86.3238 160.243 88.3586 159.4 90.4804 159.4H164.736C166.858 159.4 168.893 160.243 170.393 161.743L189.15 180.5" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M95.1666 138.3C90.7484 138.3 87.1666 134.718 87.1666 130.3V125.2C87.1666 120.782 90.7483 117.2 95.1666 117.2H100.267C104.685 117.2 108.267 120.782 108.267 125.2V130.3C108.267 134.718 104.685 138.3 100.267 138.3H95.1666Z" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M154.95 138.3C150.532 138.3 146.95 134.718 146.95 130.3V125.2C146.95 120.782 150.532 117.2 154.95 117.2H160.05C164.468 117.2 168.05 120.782 168.05 125.2V130.3C168.05 134.718 164.468 138.3 160.05 138.3H154.95Z" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M98.5 117.2H157.5" stroke="black" stroke-width="8" stroke-miterlimit="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

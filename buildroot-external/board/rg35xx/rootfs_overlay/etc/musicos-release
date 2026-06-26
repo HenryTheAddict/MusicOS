@@ -1,0 +1,5 @@
+NAME=MusicOS
+TARGET=musicos-rg35xx
+SOC=Allwinner H700
+DISPLAY_MODES=640x480,1280x960
+NETWORK=disabled
