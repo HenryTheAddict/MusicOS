@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::BufReader;
 #[cfg(all(feature = "device-audio", target_os = "linux"))]
 use std::sync::{
-    atomic::{AtomicBool, AtomicU32, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     Arc,
 };
 
@@ -122,6 +122,7 @@ pub struct AudioPlayer {
     last_backend: String,
     selected_pcm: Option<String>,
     last_error: Option<String>,
+    shuffle_seed: u64,
 }
 
 impl AudioPlayer {
@@ -189,6 +190,10 @@ impl AudioPlayer {
             } else {
                 None
             };
+            let shuffle_seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0xdeadbeef);
 
             Self {
                 _stream: stream_opt,
@@ -208,10 +213,15 @@ impl AudioPlayer {
                 last_backend,
                 selected_pcm: None,
                 last_error,
+                shuffle_seed,
             }
         }
         #[cfg(not(any(feature = "desktop-audio", feature = "device-audio")))]
         {
+            let shuffle_seed = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0xdeadbeef);
             Self {
                 queue: Vec::new(),
                 current_index: None,
@@ -225,6 +235,7 @@ impl AudioPlayer {
                 last_backend: "silent".to_string(),
                 selected_pcm: None,
                 last_error: None,
+                shuffle_seed,
             }
         }
     }
@@ -274,18 +285,21 @@ impl AudioPlayer {
                     track_path.clone(),
                     track_title.clone(),
                     track_artist.clone(),
+                    0.0,
                 ) {
                     return;
                 }
             }
 
-            if let Some(ref handle) = self.stream_handle {
-                if let Ok(new_sink) = Sink::try_new(handle) {
-                    self.sink = Some(new_sink);
-                } else {
-                    let message = "audio sink recreate failed".to_string();
-                    log::error!("{message}");
-                    self.last_error = Some(message);
+            if self.sink.is_none() {
+                if let Some(ref handle) = self.stream_handle {
+                    if let Ok(new_sink) = Sink::try_new(handle) {
+                        self.sink = Some(new_sink);
+                    } else {
+                        let message = "audio sink recreate failed".to_string();
+                        log::error!("{message}");
+                        self.last_error = Some(message);
+                    }
                 }
             }
 
@@ -332,6 +346,7 @@ impl AudioPlayer {
                     track_path.clone(),
                     track_title.clone(),
                     track_artist.clone(),
+                    0.0,
                 )
             {
                 return;
@@ -409,7 +424,6 @@ impl AudioPlayer {
             if let Some(ref sink) = self.sink {
                 sink.stop();
             }
-            self.sink = None;
             #[cfg(target_os = "linux")]
             {
                 self.alsa_playback = None;
@@ -429,11 +443,11 @@ impl AudioPlayer {
                 let mut next = idx;
                 if self.queue.len() > 1 {
                     while next == idx {
-                        next = (std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_nanos() as usize)
-                            % self.queue.len();
+                        self.shuffle_seed = self
+                            .shuffle_seed
+                            .wrapping_mul(1664525)
+                            .wrapping_add(1013904223);
+                        next = (self.shuffle_seed as usize) % self.queue.len();
                     }
                 }
                 next
@@ -522,6 +536,13 @@ impl AudioPlayer {
     }
 
     pub fn get_position(&self) -> f32 {
+        #[cfg(all(feature = "audio", target_os = "linux"))]
+        if let Some(ref alsa) = self.alsa_playback {
+            let frames = alsa.written_frames.load(Ordering::Relaxed);
+            let rate = alsa.sample_rate.load(Ordering::Relaxed).max(1);
+            return frames as f32 / rate as f32;
+        }
+
         let elapsed = if !self.is_paused && self.play_start.is_some() {
             self.accumulated_time + self.play_start.unwrap().elapsed()
         } else {
@@ -535,6 +556,17 @@ impl AudioPlayer {
         let seconds = seconds.clamp(0.0, duration as f32);
         let seek_dur = Duration::from_secs_f32(seconds);
         self.accumulated_time = seek_dur;
+
+        #[cfg(all(feature = "device-audio", target_os = "linux"))]
+        if self.alsa_playback.is_some() {
+            if let Some(track) = self.get_current_track() {
+                let path = track.path.clone();
+                let title = track.title.clone();
+                let artist = track.artist.clone();
+                self.alsa_playback = None;
+                self.start_alsa_playback(path, title, artist, seconds);
+            }
+        }
 
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         if let Some(ref sink) = self.sink {
@@ -675,20 +707,39 @@ impl AudioPlayer {
     }
 
     #[cfg(all(feature = "device-audio", target_os = "linux"))]
-    fn start_alsa_playback(&mut self, path: String, title: String, artist: String) -> bool {
-        match AlsaPlayback::start(path.clone(), self.volume, self.eq_preset) {
+    fn start_alsa_playback(
+        &mut self,
+        path: String,
+        title: String,
+        artist: String,
+        start_seconds: f32,
+    ) -> bool {
+        let was_paused = self.is_paused;
+        match AlsaPlayback::start(path.clone(), self.volume, self.eq_preset, start_seconds) {
             Ok(playback) => {
+                if was_paused {
+                    playback.paused.store(true, Ordering::Relaxed);
+                }
                 self.alsa_playback = Some(playback);
-                self.is_paused = false;
+                self.is_paused = was_paused;
                 self.last_backend = "alsa".to_string();
                 self.selected_pcm =
                     alsa_pcm_candidates(std::env::var("MUSICOS_ALSA_DEVICE").ok().as_deref())
                         .into_iter()
                         .next();
                 self.last_error = None;
-                self.play_start = Some(Instant::now());
-                self.accumulated_time = Duration::ZERO;
-                log::info!("Playing track through ALSA: {} - {}", title, artist);
+                self.play_start = if was_paused {
+                    None
+                } else {
+                    Some(Instant::now())
+                };
+                self.accumulated_time = Duration::from_secs_f32(start_seconds);
+                log::info!(
+                    "Playing track through ALSA from {}s: {} - {}",
+                    start_seconds,
+                    title,
+                    artist
+                );
                 true
             }
             Err(err) => {
@@ -722,19 +773,30 @@ struct AlsaPlayback {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     volume_bits: Arc<AtomicU32>,
+    written_frames: Arc<AtomicU64>,
+    sample_rate: Arc<AtomicU32>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
 #[cfg(all(feature = "device-audio", target_os = "linux"))]
 impl AlsaPlayback {
-    fn start(path: String, volume: f32, preset: EqPreset) -> Result<Self, String> {
+    fn start(
+        path: String,
+        volume: f32,
+        preset: EqPreset,
+        start_seconds: f32,
+    ) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let volume_bits = Arc::new(AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()));
+        let written_frames = Arc::new(AtomicU64::new(0));
+        let sample_rate = Arc::new(AtomicU32::new(44100));
 
         let thread_stop = Arc::clone(&stop);
         let thread_paused = Arc::clone(&paused);
         let thread_volume = Arc::clone(&volume_bits);
+        let thread_written = Arc::clone(&written_frames);
+        let thread_rate = Arc::clone(&sample_rate);
         let thread_path = path.clone();
 
         let worker = std::thread::Builder::new()
@@ -746,6 +808,9 @@ impl AlsaPlayback {
                     thread_stop,
                     thread_paused,
                     thread_volume,
+                    thread_written,
+                    thread_rate,
+                    start_seconds,
                 ) {
                     log::error!("ALSA playback thread stopped for {thread_path}: {err}");
                 }
@@ -756,6 +821,8 @@ impl AlsaPlayback {
             stop,
             paused,
             volume_bits,
+            written_frames,
+            sample_rate,
             worker: Some(worker),
         })
     }
@@ -787,12 +854,20 @@ fn play_file_with_alsa(
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
     volume_bits: Arc<AtomicU32>,
+    written_frames: Arc<AtomicU64>,
+    sample_rate: Arc<AtomicU32>,
+    start_seconds: f32,
 ) -> Result<(), String> {
     let file = File::open(path).map_err(|err| format!("open failed: {err}"))?;
     let reader = BufReader::new(file);
-    let decoder = Decoder::new(reader).map_err(|err| format!("decode failed: {err}"))?;
+    let mut decoder = Decoder::new(reader).map_err(|err| format!("decode failed: {err}"))?;
+    if start_seconds > 0.0 {
+        let _ = decoder.try_seek(Duration::from_secs_f32(start_seconds));
+    }
     let mut source = EqSource::new(decoder, preset);
-    let sample_rate = source.sample_rate();
+    let rate = source.sample_rate();
+    sample_rate.store(rate, Ordering::Relaxed);
+    written_frames.store((start_seconds * rate as f32) as u64, Ordering::Relaxed);
     let channels = source.channels().max(1);
     let device = std::env::var("MUSICOS_ALSA_DEVICE").ok();
     let candidates = alsa_pcm_candidates(device.as_deref());
@@ -802,11 +877,12 @@ fn play_file_with_alsa(
         match write_source_to_alsa(
             &candidate,
             &mut source,
-            sample_rate,
+            rate,
             channels,
             &stop,
             &paused,
             &volume_bits,
+            &written_frames,
         ) {
             Ok(()) => return Ok(()),
             Err(err) => {
@@ -878,6 +954,7 @@ fn write_source_to_alsa<S>(
     stop: &AtomicBool,
     paused: &AtomicBool,
     volume_bits: &AtomicU32,
+    written_frames: &AtomicU64,
 ) -> Result<(), String>
 where
     S: Source<Item = i16>,
@@ -908,6 +985,7 @@ where
     let channels_usize = channels as usize;
     let samples_per_chunk = channels_usize * 1024;
     let mut buffer = Vec::with_capacity(samples_per_chunk);
+    let mut current_volume = f32::from_bits(volume_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0);
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -919,12 +997,23 @@ where
         }
 
         buffer.clear();
-        let volume = f32::from_bits(volume_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0);
+        let target_volume = f32::from_bits(volume_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0);
         for _ in 0..samples_per_chunk {
             let Some(sample) = source.next() else {
                 break;
             };
-            let scaled = (sample as f32 * volume).clamp(i16::MIN as f32, i16::MAX as f32);
+            if (current_volume - target_volume).abs() > 0.0001 {
+                let step = 0.0005 * (target_volume - current_volume).signum();
+                current_volume += step;
+                if (step > 0.0 && current_volume > target_volume)
+                    || (step < 0.0 && current_volume < target_volume)
+                {
+                    current_volume = target_volume;
+                }
+            } else {
+                current_volume = target_volume;
+            }
+            let scaled = (sample as f32 * current_volume).clamp(i16::MIN as f32, i16::MAX as f32);
             buffer.push(scaled as i16);
         }
         if buffer.is_empty() {
@@ -936,6 +1025,7 @@ where
             match io.writei(&buffer[offset..]) {
                 Ok(frames) => {
                     offset += frames * channels_usize;
+                    written_frames.fetch_add(frames as u64, Ordering::Relaxed);
                     if pcm.state() != State::Running {
                         let _ = pcm.start();
                     }

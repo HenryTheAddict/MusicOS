@@ -162,6 +162,9 @@ pub struct MusicOs {
     pub last_session_save: Instant,
     pub last_interaction: Instant,
     pub display_dimmed: bool,
+    pub wifi_sync_overlay: bool,
+    pub wifi_sync_ip: String,
+    pub wifi_sync_timeout: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -391,6 +394,9 @@ impl MusicOs {
             last_session_save: Instant::now(),
             last_interaction: Instant::now(),
             display_dimmed: false,
+            wifi_sync_overlay: false,
+            wifi_sync_ip: String::new(),
+            wifi_sync_timeout: None,
         }
     }
 
@@ -513,11 +519,23 @@ impl MusicOs {
             crate::system::apply_brightness(self.brightness);
         }
 
+        if self.wifi_sync_overlay {
+            self.wifi_sync_overlay = false;
+            return true;
+        }
+
         let old_screen = self.screen;
         let old_focus = self.focus;
         let old_idx = self.selected_index;
 
         match event {
+            InputEvent::WifiSync => {
+                log::info!("WifiSync event triggered!");
+                self.wifi_sync_ip = get_local_ip();
+                self.wifi_sync_overlay = true;
+                self.wifi_sync_timeout = Some(Instant::now() + Duration::from_secs(8));
+                return true;
+            }
             InputEvent::Button(Button::Confirm) | InputEvent::Tap => self.activate(),
             InputEvent::Button(Button::Back) => self.back(),
             InputEvent::Button(Button::Home) => {
@@ -896,6 +914,91 @@ impl MusicOs {
         if self.hud_t > 0.0 {
             self.draw_hud(canvas, seconds);
         }
+
+        if self.wifi_sync_overlay {
+            if let Some(timeout) = self.wifi_sync_timeout {
+                if Instant::now() > timeout {
+                    self.wifi_sync_overlay = false;
+                }
+            }
+        }
+
+        if self.wifi_sync_overlay {
+            self.draw_wifi_sync_overlay(canvas, seconds);
+        }
+    }
+
+    fn draw_wifi_sync_overlay(&self, canvas: &mut Canvas<'_>, _seconds: f32) {
+        let res = canvas.resolution();
+        let scale = res.scale();
+
+        let card_w = 640.0;
+        let card_h = 320.0;
+        let card_r = 32.0;
+        let card_x = (res.width as f32 / scale - card_w) / 2.0;
+        let card_y = (res.height as f32 / scale - card_h) / 2.0;
+
+        crate::ui::rr(
+            canvas,
+            0.0,
+            0.0,
+            res.width as f32 / scale,
+            res.height as f32 / scale,
+            0.0,
+            Color::rgba(0, 0, 0, 160),
+        );
+
+        crate::ui::shadow_rr(canvas, card_x, card_y, card_w, card_h, card_r, 12.0, 24.0);
+        crate::ui::rr(
+            canvas,
+            card_x,
+            card_y,
+            card_w,
+            card_h,
+            card_r,
+            Color::rgba(255, 255, 255, 240),
+        );
+        crate::ui::liquid_glass(canvas, card_x, card_y, card_w, card_h, card_r, 48);
+
+        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
+        crate::ui::rr_stroke(canvas, card_x, card_y, card_w, card_h, card_r, 3.0, accent);
+
+        canvas.text_centered(
+            "Wi-Fi Sync Diagnostics",
+            card_x + card_w / 2.0,
+            card_y + 40.0,
+            38.0,
+            Color::BLACK,
+            crate::ui::FontWeight::Bold,
+        );
+
+        canvas.text_centered(
+            "Connect companion app to:",
+            card_x + card_w / 2.0,
+            card_y + 110.0,
+            28.0,
+            Color::rgb(80, 80, 80),
+            crate::ui::FontWeight::Regular,
+        );
+
+        let ip_url = format!("http://{}:18080", self.wifi_sync_ip);
+        canvas.text_centered(
+            &ip_url,
+            card_x + card_w / 2.0,
+            card_y + 170.0,
+            42.0,
+            accent.mix(Color::BLACK, 0.2),
+            crate::ui::FontWeight::Bold,
+        );
+
+        canvas.text_centered(
+            "Press any key to dismiss",
+            card_x + card_w / 2.0,
+            card_y + 250.0,
+            24.0,
+            Color::rgb(120, 120, 120),
+            crate::ui::FontWeight::Regular,
+        );
     }
 
     fn draw_hud(&self, canvas: &mut Canvas<'_>, _seconds: f32) {
@@ -1746,7 +1849,7 @@ impl MusicOs {
         preferences.sanitized()
     }
 
-    fn save_preferences(&self, setup_complete: bool) {
+    pub fn save_preferences(&self, setup_complete: bool) {
         let preferences = self.current_preferences(setup_complete);
         if let Err(err) = crate::preferences::save(&preferences) {
             log::warn!("failed to save MusicOS preferences: {err:#}");
@@ -2993,4 +3096,25 @@ fn days_in_month(month: u8, year: u16) -> i32 {
 fn is_leap_year(year: u16) -> bool {
     let year = year as i32;
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+}
+
+pub fn get_local_ip() -> String {
+    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+        for target in &[
+            "8.8.8.8:80",
+            "1.1.1.1:80",
+            "192.168.1.1:80",
+            "192.168.0.1:80",
+        ] {
+            if socket.connect(target).is_ok() {
+                if let Ok(addr) = socket.local_addr() {
+                    let ip = addr.ip().to_string();
+                    if ip != "0.0.0.0" && ip != "127.0.0.1" {
+                        return ip;
+                    }
+                }
+            }
+        }
+    }
+    "127.0.0.1".to_string()
 }

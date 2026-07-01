@@ -25,8 +25,12 @@ pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
 
     let art = extract_cover_art(track_path);
     if let Ok(mut cache) = cache.lock() {
-        if cache.len() > 128 {
-            cache.clear();
+        if cache.len() >= 128 {
+            // Drop a portion of the cache entries (e.g., half) to avoid full clears and thrashing
+            let keys_to_remove: Vec<String> = cache.keys().take(64).cloned().collect();
+            for key in keys_to_remove {
+                cache.remove(&key);
+            }
         }
         cache.insert(track_path.to_string(), art.clone());
     }
@@ -223,7 +227,10 @@ pub fn index_default_locations(db: &Db) -> Result<usize> {
         "/music".to_string(),
     ];
 
-    if Path::new("./music").exists() {
+    let upload_dir = std::env::var("MUSICOS_UPLOAD_DIR").unwrap_or_else(|_| "./music".to_string());
+    if Path::new(&upload_dir).exists() {
+        roots.push(upload_dir);
+    } else if Path::new("./music").exists() {
         roots.push("./music".to_string());
     }
 
@@ -256,14 +263,25 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
         return Ok(0);
     }
 
+    db.begin_transaction()?;
+
     let mut indexed = 0;
     let reindex_all = std::env::var("MUSICOS_REINDEX_ALL").as_deref() == Ok("1");
+
+    let mut files = Vec::new();
     for entry in WalkDir::new(root).follow_links(false).into_iter().flatten() {
-        if !entry.file_type().is_file() || !is_audio(entry.path()) {
-            continue;
+        if entry.file_type().is_file() && is_audio(entry.path()) {
+            files.push(entry.into_path());
         }
-        let path_str = entry.path().display().to_string();
-        let Ok(stats) = file_stats(entry.path()) else {
+    }
+
+    let total = files.len();
+    for (idx, path) in files.iter().enumerate() {
+        let pct = if total > 0 { (idx * 100) / total } else { 100 };
+        log::info!("[INDEXING] {}%", pct);
+
+        let path_str = path.display().to_string();
+        let Ok(stats) = file_stats(path) else {
             continue;
         };
         if !reindex_all {
@@ -271,11 +289,18 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
                 continue;
             }
         }
-        match index_file(db, entry.path(), stats) {
+        match index_file(db, path, stats) {
             Ok(()) => indexed += 1,
-            Err(err) => log::warn!("failed to index file {}: {err}", entry.path().display()),
+            Err(err) => log::warn!("failed to index file {}: {err}", path.display()),
         }
     }
+    log::info!("[INDEXING] 100%");
+
+    if let Err(err) = db.commit_transaction() {
+        let _ = db.rollback_transaction();
+        return Err(err);
+    }
+
     Ok(indexed)
 }
 

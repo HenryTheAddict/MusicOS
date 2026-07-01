@@ -9,6 +9,39 @@ use musicos_init::server::CompanionServer;
 use musicos_init::{init, media};
 
 fn main() {
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::capture();
+        let msg = match info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => match info.payload().downcast_ref::<String>() {
+                Some(s) => &**s,
+                None => "Box<Any>",
+            },
+        };
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let log_msg = format!("Panic occurred: {msg} at {location}\nBacktrace:\n{backtrace}\n");
+        eprintln!("{log_msg}");
+        let _ = std::fs::create_dir_all("/var/lib/musicos");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/var/lib/musicos/panic.log")
+        {
+            use std::io::Write;
+            let _ = write!(file, "{log_msg}");
+        } else if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("panic.log")
+        {
+            use std::io::Write;
+            let _ = write!(file, "{log_msg}");
+        }
+    }));
+
     if let Err(err) = run() {
         error!("{err:?}");
         eprintln!("musicos-init: {err:?}");
@@ -59,8 +92,16 @@ fn run() -> Result<()> {
     renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
     app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
 
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let r = running.clone();
+    if let Err(err) = ctrlc::set_handler(move || {
+        r.store(false, std::sync::atomic::Ordering::SeqCst);
+    }) {
+        error!("failed to set Ctrl-C handler: {err}");
+    }
+
     let mut last_frame = Instant::now();
-    loop {
+    while running.load(std::sync::atomic::Ordering::SeqCst) {
         app.tick();
 
         let mut screen_changed = false;
@@ -95,4 +136,8 @@ fn run() -> Result<()> {
 
         std::thread::sleep(Duration::from_millis(2));
     }
+
+    info!("MusicOS stopping gracefully...");
+    app.save_preferences(true);
+    Ok(())
 }

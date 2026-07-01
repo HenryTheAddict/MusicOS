@@ -11,9 +11,27 @@
     "desktop": "npm run sync:electron",
     "sync:electron": "electron .",
     "sync:electron:dev": "node scripts/run-electron-dev.js",
-    "test": "cargo test --workspace --features desktop-app,desktop-audio"
+    "test": "cargo test --workspace --features desktop-app,desktop-audio",
+    "build:linux": "electron-builder --linux appimage"
   },
   "devDependencies": {
-    "electron": "^42.4.1"
+    "electron": "^42.4.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.musicos.controlcenter",
+    "productName": "MusicOS Control Center",
+    "linux": {
+      "target": "AppImage",
+      "category": "Audio"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ]
   }
 }
