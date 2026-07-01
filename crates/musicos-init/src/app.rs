@@ -165,12 +165,19 @@ pub struct MusicOs {
     pub wifi_sync_overlay: bool,
     pub wifi_sync_ip: String,
     pub wifi_sync_timeout: Option<Instant>,
+    scan_rx: Option<std::sync::mpsc::Receiver<ScanResult>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudType {
     Volume,
     Brightness,
+}
+
+#[derive(Debug)]
+struct ScanResult {
+    indexed: Result<usize, String>,
+    elapsed_ms: u128,
 }
 
 fn apply_audio_runtime_preferences(preferences: &Preferences) {
@@ -309,7 +316,7 @@ impl MusicOs {
         }
         crate::system::apply_brightness(preferences.brightness);
 
-        Self {
+        let mut app = Self {
             screen: if !preferences.setup_complete {
                 Screen::First
             } else if !preferences.time_configured {
@@ -397,11 +404,15 @@ impl MusicOs {
             wifi_sync_overlay: false,
             wifi_sync_ip: String::new(),
             wifi_sync_timeout: None,
-        }
+            scan_rx: None,
+        };
+        app.refresh_library();
+        app
     }
 
     pub fn tick(&mut self) {
         self.player.tick();
+        self.poll_library_scan();
 
         let status = self.player.get_status();
         let current_id = status.track.as_ref().map(|t| t.id);
@@ -634,13 +645,69 @@ impl MusicOs {
         self.last_frame_ms = frame_ms.max(0.0);
     }
 
+    pub fn start_library_scan(&mut self) {
+        self.start_library_scan_with_status("Scanning library...");
+    }
+
+    fn start_library_scan_with_status(&mut self, status: &str) {
+        if self.scan_rx.is_some() {
+            self.scan_status = "Scan already running...".to_string();
+            return;
+        }
+
+        self.scan_status = status.to_string();
+        let db_path = self.db_path.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.scan_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let started = Instant::now();
+            let indexed = crate::database::Db::open(&db_path)
+                .and_then(|db| crate::media::index_default_locations(&db))
+                .map_err(|err| format!("{err:#}"));
+            let _ = tx.send(ScanResult {
+                indexed,
+                elapsed_ms: started.elapsed().as_millis(),
+            });
+        });
+    }
+
+    fn poll_library_scan(&mut self) {
+        let result = match self.scan_rx.as_ref().map(|rx| rx.try_recv()) {
+            Some(Ok(result)) => result,
+            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                self.scan_rx = None;
+                self.scan_status = "Scan failed: worker stopped".to_string();
+                return;
+            }
+            Some(Err(std::sync::mpsc::TryRecvError::Empty)) | None => return,
+        };
+
+        self.scan_rx = None;
+        match result.indexed {
+            Ok(indexed) => {
+                self.refresh_library();
+                let counts = self.library_counts();
+                self.scan_status = format!(
+                    "Scan complete: {indexed} indexed, {} songs, {} albums, {} playlists in {:.1}s",
+                    counts.tracks,
+                    counts.albums,
+                    counts.playlists,
+                    result.elapsed_ms as f32 / 1000.0
+                );
+            }
+            Err(err) => {
+                self.scan_status = format!("Scan failed: {err}");
+            }
+        }
+    }
+
     pub fn handle_server_event(&mut self, event: ServerEvent) -> bool {
         match event {
             ServerEvent::Button(b) => self.handle_input(InputEvent::Button(b)),
             ServerEvent::Pointer(ev) => self.handle_input(ev),
             ServerEvent::UploadComplete => {
-                let _ = crate::media::index_default_locations(&self.db);
-                self.refresh_library();
+                self.start_library_scan_with_status("Upload complete; scanning library...");
                 true
             }
             ServerEvent::UsbSync => {
@@ -1986,20 +2053,7 @@ impl MusicOs {
     }
 
     fn scan_library(&mut self) {
-        self.scan_status = "Scanning library...".to_string();
-        match crate::media::index_default_locations(&self.db) {
-            Ok(indexed) => {
-                self.refresh_library();
-                let counts = self.library_counts();
-                self.scan_status = format!(
-                    "Scan complete: {indexed} indexed, {} songs, {} albums, {} playlists",
-                    counts.tracks, counts.albums, counts.playlists
-                );
-            }
-            Err(err) => {
-                self.scan_status = format!("Scan failed: {err:#}");
-            }
-        }
+        self.start_library_scan();
     }
 
     fn run_audio_test(&mut self) {

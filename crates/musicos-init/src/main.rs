@@ -3,10 +3,10 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use log::{error, info};
 use musicos_init::app::MusicOs;
+use musicos_init::init;
 use musicos_init::input::{InputEvent, InputSystem};
 use musicos_init::renderer::{self, Renderer};
 use musicos_init::server::CompanionServer;
-use musicos_init::{init, media};
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
@@ -82,11 +82,7 @@ fn run() -> Result<()> {
     let db_path = std::env::var("MUSICOS_MEDIA_DB")
         .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string());
     CompanionServer::start(8080, tx, db_path)?;
-
-    if let Err(err) = media::index_default_locations(&app.db) {
-        info!("media indexing skipped: {err:#}");
-    }
-    app.refresh_library();
+    app.start_library_scan();
 
     let draw_start = Instant::now();
     renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;

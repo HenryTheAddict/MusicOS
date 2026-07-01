@@ -102,6 +102,18 @@ npm run build
 npm run desktop
 ```
 
+On Windows, run the local runtime performance smoke test with:
+
+```powershell
+npm run perf:smoke
+```
+
+It seeds a small WAV library under `out/perf`, starts the desktop runtime,
+checks API latency, screenshot availability, input latency, scan completion,
+frame timing at the RG35XX-style `640x480` resolution, and writes
+`out/perf/runtime-performance-smoke.json`. Pass `-Resolution 1280x960` to
+stress the HD desktop path.
+
 For static visual snapshots:
 
 ```sh

@@ -4,7 +4,6 @@ use anyhow::Result;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use musicos_init::app::MusicOs;
 use musicos_init::input::{Button, InputEvent, SwipeDirection};
-use musicos_init::media;
 use musicos_init::renderer::{Canvas, Resolution};
 use musicos_init::server::CompanionServer;
 
@@ -36,10 +35,7 @@ fn main() -> Result<()> {
 
     let (tx, rx) = std::sync::mpsc::channel();
     CompanionServer::start(companion_port(), tx, db_path)?;
-
-    if let Err(err) = media::index_default_locations(&app.db) {
-        log::info!("media indexing skipped: {err:#}");
-    }
+    app.start_library_scan();
 
     let target_fps = 60.0;
     let frame_duration = std::time::Duration::from_secs_f32(1.0 / target_fps);

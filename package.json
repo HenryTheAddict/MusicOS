@@ -9,6 +9,7 @@
     "build:desktop": "cargo build --bin musicos-mac --bin musicos-sync --bin musicos-desktop --features desktop-app,desktop-audio",
     "check": "cargo check --workspace --features desktop-app,desktop-audio",
     "desktop": "npm run sync:electron",
+    "perf:smoke": "powershell -ExecutionPolicy Bypass -File scripts/perf-smoke.ps1",
     "sync:electron": "electron .",
     "sync:electron:dev": "node scripts/run-electron-dev.js",
     "test": "cargo test --workspace --features desktop-app,desktop-audio",

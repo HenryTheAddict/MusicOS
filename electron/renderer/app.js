@@ -276,7 +276,11 @@ async function refreshSelectedPlaylistTracks() {
 
 async function refreshMirror() {
   try {
-    const response = await fetch(`${state.target}/api/screenshot.bmp?t=${Date.now()}`);
+    const cacheBust = Date.now();
+    let response = await fetch(`${state.target}/api/screenshot.png?t=${cacheBust}`);
+    if (!response.ok) {
+      response = await fetch(`${state.target}/api/screenshot.bmp?t=${cacheBust}`);
+    }
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
     const nextUrl = URL.createObjectURL(blob);
