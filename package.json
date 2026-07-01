@@ -6,9 +6,27 @@
   "main": "electron/main.js",
   "scripts": {
     "sync:electron": "electron .",
-    "sync:electron:dev": "MUSICOS_SYNC_TARGET=${MUSICOS_SYNC_TARGET:-http://127.0.0.1:18080} electron ."
+    "sync:electron:dev": "MUSICOS_SYNC_TARGET=${MUSICOS_SYNC_TARGET:-http://127.0.0.1:18080} electron .",
+    "build:linux": "electron-builder --linux appimage"
   },
   "devDependencies": {
-    "electron": "^42.4.1"
+    "electron": "^42.4.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.musicos.sync",
+    "productName": "MusicOS-Sync",
+    "linux": {
+      "target": "AppImage",
+      "category": "Audio"
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "assets/**/*",
+      "package.json"
+    ]
   }
 }

@@ -8,10 +8,12 @@
 
 # Node / Electron
 /node_modules/
+/dist/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
 
 # Buildroot / device image output
 /out/

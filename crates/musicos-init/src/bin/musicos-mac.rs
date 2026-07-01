@@ -106,6 +106,8 @@ fn keyboard_events(window: &Window) -> Vec<InputEvent> {
     for key in window.get_keys_pressed(KeyRepeat::No) {
         if let Some(button) = map_minifb_key(key) {
             events.push(InputEvent::Button(button));
+        } else if key == Key::W {
+            events.push(InputEvent::WifiSync);
         } else if key == Key::Escape {
         } else {
             events.push(InputEvent::AnyButton);

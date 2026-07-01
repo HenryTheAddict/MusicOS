@@ -79,6 +79,14 @@ impl Resolution {
         if let Ok(value) = std::env::var("MUSICOS_RESOLUTION") {
             return Self::parse(&value).unwrap_or(Self::HD_4_3);
         }
+        if let Ok(size_str) = std::fs::read_to_string("/sys/class/graphics/fb0/virtual_size") {
+            let parts: Vec<&str> = size_str.trim().split(',').collect();
+            if parts.len() == 2 {
+                if let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    return Self { width: w, height: h };
+                }
+            }
+        }
         std::fs::read_to_string("/proc/cmdline")
             .ok()
             .and_then(|cmdline| {
@@ -91,23 +99,47 @@ impl Resolution {
     }
 
     fn parse(value: &str) -> Option<Self> {
-        match value {
-            "640x480" => Some(Self::VGA_4_3),
-            "1280x960" => Some(Self::HD_4_3),
-            _ => None,
+        let parts: Vec<&str> = value.split('x').collect();
+        if parts.len() == 2 {
+            let w = parts[0].parse::<u32>().ok()?;
+            let h = parts[1].parse::<u32>().ok()?;
+            Some(Self { width: w, height: h })
+        } else {
+            None
+        }
+    }
+
+    pub fn offsets(&self) -> (f32, f32, f32) {
+        let logical_aspect = 1280.0 / 960.0;
+        let target_aspect = self.width as f32 / self.height as f32;
+        
+        if (target_aspect - logical_aspect).abs() < 0.01 {
+            (self.width as f32 / 1280.0, 0.0, 0.0)
+        } else if target_aspect > logical_aspect {
+            let scale = self.height as f32 / 960.0;
+            let actual_w = 1280.0 * scale;
+            let dx = (self.width as f32 - actual_w) / 2.0;
+            (scale, dx, 0.0)
+        } else {
+            let scale = self.width as f32 / 1280.0;
+            let actual_h = 960.0 * scale;
+            let dy = (self.height as f32 - actual_h) / 2.0;
+            (scale, 0.0, dy)
         }
     }
 
     pub fn scale(&self) -> f32 {
-        self.width as f32 / 1280.0
+        self.offsets().0
     }
 
     pub fn scale_x(&self, value: f32) -> f32 {
-        value * self.scale()
+        let (scale, dx, _) = self.offsets();
+        dx + value * scale
     }
 
     pub fn scale_y(&self, value: f32) -> f32 {
-        value * (self.height as f32 / 960.0)
+        let (scale, _, dy) = self.offsets();
+        dy + value * scale
     }
 }
 
@@ -893,7 +925,7 @@ impl<'a> Canvas<'a> {
         color: Color,
         weight: FontWeight,
     ) {
-        let font = match self.language {
+        let primary = match self.language {
             crate::ui::localization::Language::Ja => self.regular_ja.clone(),
             crate::ui::localization::Language::Zh => self.regular_zh.clone(),
             _ => match weight {
@@ -901,18 +933,39 @@ impl<'a> Canvas<'a> {
                 FontWeight::Bold => self.bold.clone(),
             },
         };
+        let ja = self.regular_ja.clone();
+        let zh = self.regular_zh.clone();
+
         let size = (size * self.resolution.scale()).round().max(1.0);
         let scale = Scale::uniform(size);
-        let v_metrics = font.v_metrics(scale);
+        let v_metrics = primary.v_metrics(scale);
         let line_height = (v_metrics.ascent - v_metrics.descent + v_metrics.line_gap).max(size);
+        
         for (line_index, line) in text.lines().enumerate() {
-            let origin_x = self.resolution.scale_x(x).round();
+            let mut caret_x = self.resolution.scale_x(x).round();
             let origin_y = (self.resolution.scale_y(y) + v_metrics.ascent + line_height * line_index as f32).round();
-            let origin = point(origin_x, origin_y);
-            let glyphs: Vec<_> = font.layout(line, scale, origin).collect();
-            for glyph in glyphs {
-                if let Some(bb) = glyph.pixel_bounding_box() {
-                    glyph.draw(|gx, gy, alpha| {
+            let mut last_glyph_id = None;
+            for ch in line.chars() {
+                let chosen_font = if primary.glyph(ch).id().0 != 0 {
+                    &primary
+                } else if ja.glyph(ch).id().0 != 0 {
+                    &ja
+                } else if zh.glyph(ch).id().0 != 0 {
+                    &zh
+                } else {
+                    &primary
+                };
+                let glyph = chosen_font.glyph(ch).scaled(scale);
+                if let Some(last_id) = last_glyph_id {
+                    caret_x += chosen_font.pair_kerning(scale, last_id, glyph.id());
+                }
+                last_glyph_id = Some(glyph.id());
+                
+                let positioned = glyph.positioned(point(caret_x, origin_y));
+                caret_x += positioned.unpositioned().h_metrics().advance_width;
+                
+                if let Some(bb) = positioned.pixel_bounding_box() {
+                    positioned.draw(|gx, gy, alpha| {
                         let a = (alpha * color.a as f32).round() as u8;
                         self.put_pixel(
                             bb.min.x + gx as i32,
@@ -968,7 +1021,7 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn text_width(&self, text: &str, size: f32, weight: FontWeight) -> f32 {
-        let font = match self.language {
+        let primary = match self.language {
             crate::ui::localization::Language::Ja => self.regular_ja.clone(),
             crate::ui::localization::Language::Zh => self.regular_zh.clone(),
             _ => match weight {
@@ -976,17 +1029,34 @@ impl<'a> Canvas<'a> {
                 FontWeight::Bold => self.bold.clone(),
             },
         };
+        let ja = self.regular_ja.clone();
+        let zh = self.regular_zh.clone();
         let scaled_size = (size * self.resolution.scale()).round().max(1.0);
         let scale = Scale::uniform(scaled_size);
-        let mut width = 0.0_f32;
+        let mut max_width = 0.0_f32;
         for line in text.lines() {
-            for glyph in font.layout(line, scale, point(0.0, 0.0)) {
-                if let Some(bb) = glyph.pixel_bounding_box() {
-                    width = width.max(bb.max.x as f32 / self.resolution.scale());
+            let mut line_width = 0.0_f32;
+            let mut last_glyph_id = None;
+            for ch in line.chars() {
+                let chosen_font = if primary.glyph(ch).id().0 != 0 {
+                    &primary
+                } else if ja.glyph(ch).id().0 != 0 {
+                    &ja
+                } else if zh.glyph(ch).id().0 != 0 {
+                    &zh
+                } else {
+                    &primary
+                };
+                let glyph = chosen_font.glyph(ch).scaled(scale);
+                if let Some(last_id) = last_glyph_id {
+                    line_width += chosen_font.pair_kerning(scale, last_id, glyph.id());
                 }
+                last_glyph_id = Some(glyph.id());
+                line_width += glyph.h_metrics().advance_width;
             }
+            max_width = max_width.max(line_width / self.resolution.scale());
         }
-        width
+        max_width
     }
 
     fn text_line_height(&self, size: f32, weight: FontWeight) -> f32 {

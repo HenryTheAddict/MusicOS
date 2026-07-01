@@ -253,7 +253,11 @@ fn brightness_path() -> Option<PathBuf> {
 }
 
 fn battery_root() -> Option<PathBuf> {
-    let entries = std::fs::read_dir("/sys/class/power_supply").ok()?;
+    let p = Path::new("/sys/class/power_supply");
+    if !p.is_dir() {
+        return None;
+    }
+    let entries = std::fs::read_dir(p).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
         let kind = read_trimmed(path.join("type")).unwrap_or_default();

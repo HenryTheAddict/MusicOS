@@ -7,86 +7,116 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="drag-region"></div>
+    <div id="toastContainer" class="toast-container"></div>
+    <div id="dropOverlay" class="drop-overlay">
+      <div class="drop-card">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="drop-icon"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <h3>Drop Music Folders Here</h3>
+        <p>Supports MP3, WAV, FLAC, M4A, OGG</p>
+      </div>
+    </div>
+
     <main class="shell">
+      <!-- ─── Sidebar ──────────────────────────── -->
       <section class="sidebar glass">
-        <div class="brand">
-          <div class="mark">m</div>
-          <div>
-            <h1>MusicOS Sync</h1>
-            <p id="statusText">Starting...</p>
+        <div class="sidebar-scroll">
+          <div class="brand">
+            <div class="mark">m</div>
+            <div>
+              <h1>MusicOS Sync</h1>
+              <p id="statusText">Starting...</p>
+            </div>
           </div>
-        </div>
 
-        <div class="meter-grid">
-          <div class="meter">
-            <span>Tracks</span>
-            <strong id="trackCount">0</strong>
+          <div class="meter-grid">
+            <div class="meter">
+              <span>Tracks</span>
+              <strong id="trackCount">0</strong>
+            </div>
+            <div class="meter">
+              <span>Albums</span>
+              <strong id="albumCount">0</strong>
+            </div>
+            <div class="meter">
+              <span>Playlists</span>
+              <strong id="playlistCount">0</strong>
+            </div>
+            <div class="meter">
+              <span>Favorites</span>
+              <strong id="pinCount">0</strong>
+            </div>
           </div>
-          <div class="meter">
-            <span>Albums</span>
-            <strong id="albumCount">0</strong>
-          </div>
-          <div class="meter">
-            <span>Playlists</span>
-            <strong id="playlistCount">0</strong>
-          </div>
-          <div class="meter">
-            <span>Favorites</span>
-            <strong id="pinCount">0</strong>
-          </div>
-        </div>
 
-        <div class="sync-panel">
-          <button id="refreshBtn" class="primary">Refresh</button>
-          <button id="chooseBtn">Choose Folder</button>
-          <button id="uploadBtn">Upload Music</button>
-          <button id="usbBtn">USB Sync</button>
-        </div>
+          <div class="sync-panel">
+            <button id="refreshBtn" class="primary">Refresh</button>
+            <button id="chooseBtn">Choose Folder</button>
+            <button id="uploadBtn">Upload Music</button>
+            <button id="usbBtn">USB Sync</button>
+          </div>
 
-        <div class="path-block">
-          <span>Target</span>
-          <input id="targetInput" spellcheck="false" />
-          <span>Folder</span>
-          <code id="folderText">./music</code>
-        </div>
+          <div id="uploadProgress" class="upload-progress" hidden>
+            <div class="upload-progress-header">
+              <span id="uploadProgressText">Uploading...</span>
+              <span id="uploadProgressCount"></span>
+            </div>
+            <div class="upload-progress-track">
+              <div id="uploadProgressFill" class="upload-progress-fill"></div>
+            </div>
+          </div>
 
-        <div class="settings-panel">
-          <label>
-            <span>User</span>
-            <input id="userNameInput" spellcheck="false" />
-          </label>
-          <label>
-            <span>Device</span>
-            <input id="deviceNameInput" spellcheck="false" />
-          </label>
-          <label>
-            <span>Audio</span>
-            <select id="audioBackendInput">
-              <option value="auto">Auto</option>
-              <option value="alsa">ALSA</option>
-              <option value="rodio">Rodio</option>
-              <option value="none">None</option>
-            </select>
-          </label>
-          <label>
-            <span>PCM</span>
-            <input id="alsaDeviceInput" spellcheck="false" />
-          </label>
-          <button id="saveSettingsBtn" class="primary">Save Settings</button>
-          <div class="maintenance-grid">
-            <button id="scanBtn">Scan</button>
-            <button id="audioTestBtn">Audio Test</button>
+          <div class="path-block">
+            <span>Target</span>
+            <input id="targetInput" spellcheck="false" />
+            <span>Folder</span>
+            <code id="folderText">./music</code>
+          </div>
+
+          <div class="settings-panel">
+            <label>
+              <span>User</span>
+              <input id="userNameInput" spellcheck="false" />
+            </label>
+            <label>
+              <span>Device</span>
+              <input id="deviceNameInput" spellcheck="false" />
+            </label>
+            <label>
+              <span>Audio</span>
+              <select id="audioBackendInput">
+                <option value="auto">Auto</option>
+                <option value="alsa">ALSA</option>
+                <option value="rodio">Rodio</option>
+                <option value="none">None</option>
+              </select>
+            </label>
+            <label>
+              <span>PCM</span>
+              <input id="alsaDeviceInput" spellcheck="false" />
+            </label>
+            <button id="saveSettingsBtn" class="primary">Save Settings</button>
+            <div class="maintenance-grid">
+              <button id="scanBtn">Scan</button>
+              <button id="audioTestBtn">Audio Test</button>
+            </div>
           </div>
         </div>
       </section>
 
+      <!-- ─── Device Mirror ────────────────────── -->
       <section class="device-panel glass">
         <header class="device-header">
           <div>
             <span class="eyebrow">Live Device</span>
             <h2>Mirror</h2>
           </div>
-          <div id="connectionPill" class="pill offline">Offline</div>
+          <div class="device-header-right">
+            <div id="connectionPill" class="pill offline">Offline</div>
+            <label class="mock-toggle">
+              <input type="checkbox" id="mockModeCheckbox" />
+              <span>Demo Mode</span>
+            </label>
+          </div>
         </header>
         <div class="mirror-frame">
           <img id="mirror" alt="MusicOS device mirror" />
@@ -104,25 +134,57 @@
         </div>
       </section>
 
+      <!-- ─── Library ──────────────────────────── -->
       <section class="library glass">
         <header>
           <div>
             <span class="eyebrow">Offline Library</span>
-            <h2>Indexed Tracks</h2>
+            <h2>Tracks</h2>
           </div>
-          <p id="playerText" class="player-text">Queue idle</p>
+          <span id="trackCounter" class="track-counter"></span>
         </header>
-        <div id="tracks" class="tracks"></div>
-        <div class="transport">
-          <button data-control="prev">Prev</button>
-          <button data-control="play_pause" class="primary">Play</button>
-          <button data-control="next">Next</button>
+
+        <div class="library-toolbar">
+          <input
+            id="searchInput"
+            type="search"
+            class="search-input"
+            placeholder="Search tracks..."
+            spellcheck="false"
+          />
+          <select id="sortSelect" class="sort-select">
+            <option value="title">Title</option>
+            <option value="artist">Artist</option>
+            <option value="album">Album</option>
+            <option value="duration">Duration</option>
+          </select>
         </div>
+
+        <div id="tracks" class="tracks"></div>
+
+        <div id="nowPlaying" class="now-playing" hidden>
+          <div class="now-playing-progress">
+            <div id="npProgressFill" class="now-playing-progress-fill"></div>
+          </div>
+          <div class="now-playing-content">
+            <img id="npArt" class="now-playing-art" alt="" />
+            <div class="now-playing-info">
+              <span id="npTitle" class="now-playing-title">—</span>
+              <span id="npArtist" class="now-playing-artist">—</span>
+            </div>
+            <span id="npTime" class="now-playing-time"></span>
+            <div class="now-playing-controls">
+              <button id="npPrev" class="np-btn" title="Previous">⏮</button>
+              <button id="npPlayPause" class="np-btn np-play" title="Play">▶</button>
+              <button id="npNext" class="np-btn" title="Next">⏭</button>
+            </div>
+          </div>
+        </div>
+
         <div class="queue-tools">
           <button id="queueClearBtn">Clear Queue</button>
           <button id="diagnosticsBtn">Diagnostics</button>
         </div>
-        <p id="actionText" class="action">Ready.</p>
       </section>
     </main>
     <script src="./app.js"></script>

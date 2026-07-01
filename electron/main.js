@@ -1,13 +1,45 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const fs = require("node:fs/promises");
+const fsSync = require("node:fs");
 const path = require("node:path");
 
-const DEFAULT_TARGET = process.env.MUSICOS_SYNC_TARGET || "http://127.0.0.1:18080";
-const DEFAULT_DIR = process.env.MUSICOS_SYNC_DIR || path.resolve(process.cwd(), "music");
+const CONFIG_PATH = path.join(
+  app.getPath("userData"),
+  "sync-config.json"
+);
+const DEFAULT_TARGET =
+  process.env.MUSICOS_SYNC_TARGET || "http://127.0.0.1:18080";
+const DEFAULT_DIR =
+  process.env.MUSICOS_SYNC_DIR || path.resolve(process.cwd(), "music");
 
 let mainWindow;
-let syncDir = DEFAULT_DIR;
-let target = DEFAULT_TARGET;
+let config = loadConfig();
+
+/* ── persistent config ─────────────────────────── */
+
+function loadConfig() {
+  try {
+    const raw = fsSync.readFileSync(CONFIG_PATH, "utf-8");
+    const parsed = JSON.parse(raw);
+    return {
+      target: parsed.target || DEFAULT_TARGET,
+      syncDir: parsed.syncDir || DEFAULT_DIR,
+    };
+  } catch {
+    return { target: DEFAULT_TARGET, syncDir: DEFAULT_DIR };
+  }
+}
+
+function saveConfig() {
+  try {
+    fsSync.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
+    fsSync.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch {
+    /* best-effort */
+  }
+}
+
+/* ── window ────────────────────────────────────── */
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -22,8 +54,8 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
-      nodeIntegration: false
-    }
+      nodeIntegration: false,
+    },
   });
 
   mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
@@ -39,59 +71,129 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
+/* ── IPC handlers ──────────────────────────────── */
+
 ipcMain.handle("config:get", () => ({
-  target,
-  syncDir
+  target: config.target,
+  syncDir: config.syncDir,
 }));
 
 ipcMain.handle("config:set-target", (_event, nextTarget) => {
   if (typeof nextTarget === "string" && nextTarget.trim()) {
-    target = nextTarget.trim().replace(/\/$/, "");
+    config.target = nextTarget.trim().replace(/\/$/, "");
+    saveConfig();
   }
-  return { target, syncDir };
+  return { target: config.target, syncDir: config.syncDir };
 });
 
 ipcMain.handle("folder:choose", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "Choose MusicOS sync folder",
-    defaultPath: syncDir,
-    properties: ["openDirectory", "createDirectory"]
+    defaultPath: config.syncDir,
+    properties: ["openDirectory", "createDirectory"],
   });
   if (!result.canceled && result.filePaths[0]) {
-    syncDir = result.filePaths[0];
+    config.syncDir = result.filePaths[0];
+    saveConfig();
   }
-  return { target, syncDir };
+  return { target: config.target, syncDir: config.syncDir };
 });
 
-ipcMain.handle("folder:upload", async () => {
-  const files = await collectAudioFiles(syncDir);
+let uploadPaused = false;
+
+ipcMain.on("upload:pause", () => {
+  uploadPaused = true;
+});
+
+ipcMain.on("upload:resume", () => {
+  uploadPaused = false;
+});
+
+ipcMain.handle("folder:upload", async (event, customPath) => {
+  uploadPaused = false;
+  const uploadPath = customPath || config.syncDir;
+  const files = await collectAudioFiles(uploadPath);
   let uploaded = 0;
   const errors = [];
+  const total = files.length;
+  const sender = event.sender;
 
-  for (const file of files) {
+  for (let i = 0; i < files.length; i++) {
+    while (uploadPaused) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+
+    const file = files[i];
+    const filename = path.basename(file);
     try {
-      const body = await fs.readFile(file);
-      const response = await fetch(`${target}/api/upload`, {
-        method: "POST",
-        headers: {
-          "X-Filename": path.basename(file)
-        },
-        body
+      sender.send("upload:progress", {
+        current: i + 1,
+        total,
+        filename,
+        phase: "uploading",
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      uploaded += 1;
+      const body = await fs.readFile(file);
+
+      let attempts = 0;
+      let success = false;
+      while (!success && !uploadPaused) {
+        try {
+          const response = await fetch(`${config.target}/api/upload`, {
+            method: "POST",
+            headers: { "X-Filename": filename },
+            body,
+          });
+          if (response.ok) {
+            success = true;
+          } else {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        } catch (err) {
+          attempts += 1;
+          if (attempts >= 3) {
+            sender.send("upload:progress", {
+              current: i,
+              total,
+              filename: `Waiting for connection... (${filename})`,
+              phase: "paused",
+            });
+            uploadPaused = true;
+            while (uploadPaused) {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            attempts = 0;
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+      }
+
+      if (success) {
+        uploaded += 1;
+      } else {
+        i -= 1;
+      }
     } catch (error) {
-      errors.push(`${path.basename(file)}: ${error.message}`);
+      errors.push(`${filename}: ${error.message}`);
     }
   }
 
+  sender.send("upload:progress", {
+    current: total,
+    total,
+    filename: "",
+    phase: "done",
+  });
+
   return {
-    folder: syncDir,
+    folder: uploadPath,
     found: files.length,
     uploaded,
-    errors
+    errors,
   };
 });
+
+/* ── file helpers ──────────────────────────────── */
 
 async function collectAudioFiles(root) {
   const out = [];
@@ -111,7 +213,10 @@ async function walk(dir, out) {
     const file = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       await walk(file, out);
-    } else if (entry.isFile() && /\.(mp3|wav|flac|m4a|ogg|opus|aac)$/i.test(entry.name)) {
+    } else if (
+      entry.isFile() &&
+      /\.(mp3|wav|flac|m4a|ogg|opus|aac)$/i.test(entry.name)
+    ) {
       out.push(file);
     }
   }

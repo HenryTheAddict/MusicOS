@@ -22,6 +22,8 @@ resvg = "0.47.0"
 usvg = "0.47.0"
 id3 = "0.6"
 image = { version = "0.24", default-features = true }
+ctrlc = "3.4"
+
 
 [target.'cfg(target_os = "macos")'.dependencies]
 minifb = { version = "0.27", optional = true }

@@ -197,10 +197,25 @@ impl Db {
         Ok(id)
     }
 
+    pub fn begin_transaction(&self) -> Result<()> {
+        self.conn.execute("BEGIN TRANSACTION", [])?;
+        Ok(())
+    }
+
+    pub fn commit_transaction(&self) -> Result<()> {
+        self.conn.execute("COMMIT TRANSACTION", [])?;
+        Ok(())
+    }
+
+    pub fn rollback_transaction(&self) -> Result<()> {
+        let _ = self.conn.execute("ROLLBACK TRANSACTION", []);
+        Ok(())
+    }
+
     pub fn track_is_fresh(&self, path: &str, file_size: i64, modified_at: i64) -> Result<bool> {
         let mut stmt = self
             .conn
-            .prepare("SELECT file_size, modified_at FROM tracks WHERE path = ?1 LIMIT 1")?;
+            .prepare_cached("SELECT file_size, modified_at FROM tracks WHERE path = ?1 LIMIT 1")?;
         let mut rows = stmt.query(params![path])?;
         if let Some(row) = rows.next()? {
             let saved_size: i64 = row.get(0)?;
@@ -211,7 +226,7 @@ impl Db {
     }
 
     pub fn get_tracks(&self) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
              FROM tracks ORDER BY title COLLATE NOCASE ASC",
         )?;
@@ -238,7 +253,7 @@ impl Db {
     }
 
     pub fn get_track_by_id(&self, id: i64) -> Result<Option<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
              FROM tracks WHERE id = ?1",
         )?;
@@ -300,7 +315,7 @@ impl Db {
     }
 
     pub fn get_favorites(&self) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
              FROM tracks WHERE favorited = 1 ORDER BY title COLLATE NOCASE ASC",
         )?;
@@ -341,7 +356,7 @@ impl Db {
     }
 
     pub fn get_history(&self, limit: i32) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.favorited, t.play_count, t.last_played
              FROM play_history h
              JOIN tracks t ON h.track_id = t.id
@@ -399,12 +414,9 @@ impl Db {
     }
 
     pub fn delete_playlist(&self, id: i64) -> Result<()> {
+        // Deleting from playlists automatically deletes from playlist_tracks via foreign key ON DELETE CASCADE.
         self.conn
             .execute("DELETE FROM playlists WHERE id = ?1", params![id])?;
-        self.conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
-            params![id],
-        )?;
         self.conn.execute(
             "DELETE FROM pins WHERE pin_type = 'playlist' AND target_id = ?1",
             params![id],
@@ -423,7 +435,7 @@ impl Db {
     pub fn cleanup_missing_files(&self) -> Result<usize> {
         let mut missing = Vec::new();
         {
-            let mut stmt = self.conn.prepare("SELECT id, path FROM tracks")?;
+            let mut stmt = self.conn.prepare_cached("SELECT id, path FROM tracks")?;
             let rows = stmt.query_map([], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
             })?;
@@ -437,6 +449,8 @@ impl Db {
         for id in &missing {
             self.conn
                 .execute("DELETE FROM tracks WHERE id = ?1", params![id])?;
+            self.conn
+                .execute("DELETE FROM pins WHERE pin_type = 'track' AND target_id = ?1", params![id])?;
         }
         let removed = missing.len();
         Ok(removed)
@@ -459,7 +473,7 @@ impl Db {
     }
 
     pub fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.favorited, t.play_count, t.last_played
              FROM playlist_tracks pt
              JOIN tracks t ON pt.track_id = t.id
@@ -488,7 +502,7 @@ impl Db {
     }
 
     pub fn get_album_tracks(&self, album: &str) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
              FROM tracks
              WHERE album = ?1
@@ -516,7 +530,7 @@ impl Db {
     }
 
     pub fn get_artist_tracks(&self, artist: &str) -> Result<Vec<Track>> {
-        let mut stmt = self.conn.prepare(
+        let mut stmt = self.conn.prepare_cached(
             "SELECT id, path, title, artist, album, track_number, duration, favorited, play_count, last_played
              FROM tracks
              WHERE artist = ?1
@@ -571,7 +585,7 @@ impl Db {
     pub fn get_pins(&self) -> Result<Vec<Pin>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT id, pin_type, target_id FROM pins")?;
+            .prepare_cached("SELECT id, pin_type, target_id FROM pins")?;
         let rows = stmt.query_map([], |row| {
             let id: i64 = row.get(0)?;
             let pin_type: String = row.get(1)?;

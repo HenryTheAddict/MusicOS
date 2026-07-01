@@ -224,13 +224,20 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/screenshot.bmp") {
+            if url.starts_with("/api/screenshot.png") || url.starts_with("/api/screenshot.bmp") {
+                let use_png = url.starts_with("/api/screenshot.png");
                 if let Some(bmp) = renderer::get_latest_screenshot() {
                     let mut response_bytes = Vec::new();
-                    if write_screenshot_bmp(&mut response_bytes, &bmp).is_ok() {
+                    let write_ok = if use_png {
+                        write_screenshot_png(&mut response_bytes, &bmp)
+                    } else {
+                        write_screenshot_bmp(&mut response_bytes, &bmp)
+                    };
+                    if write_ok.is_ok() {
+                        let content_type = if use_png { "image/png" } else { "image/bmp" };
                         let response = Response::from_data(response_bytes)
                             .with_header(
-                                Header::from_bytes(&b"Content-Type"[..], &b"image/bmp"[..])
+                                Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes())
                                     .unwrap(),
                             )
                             .with_header(
@@ -257,7 +264,8 @@ impl CompanionServer {
                 continue;
             }
 
-            if url.starts_with("/api/cover-art.bmp") && method == "GET" {
+            if (url.starts_with("/api/cover-art.png") || url.starts_with("/api/cover-art.bmp")) && method == "GET" {
+                let use_png = url.starts_with("/api/cover-art.png");
                 let id = url
                     .split("id=")
                     .nth(1)
@@ -275,12 +283,18 @@ impl CompanionServer {
                         if let Ok(Some(track)) = db.get_track_by_id(id) {
                             if let Some(art) = crate::media::cached_cover_art(&track.path) {
                                 let mut response_bytes = Vec::new();
-                                if write_cover_art_bmp(&mut response_bytes, &art).is_ok() {
+                                let write_ok = if use_png {
+                                    write_cover_art_png(&mut response_bytes, &art)
+                                } else {
+                                    write_cover_art_bmp(&mut response_bytes, &art)
+                                };
+                                if write_ok.is_ok() {
+                                    let content_type = if use_png { "image/png" } else { "image/bmp" };
                                     let response = Response::from_data(response_bytes)
                                         .with_header(
                                             Header::from_bytes(
                                                 &b"Content-Type"[..],
-                                                &b"image/bmp"[..],
+                                                content_type.as_bytes(),
                                             )
                                             .unwrap(),
                                         )
@@ -430,9 +444,41 @@ impl CompanionServer {
                 let mut body = Vec::new();
                 let _ = request.as_reader().read_to_end(&mut body);
 
-                let upload_dir = "./music";
-                let _ = std::fs::create_dir_all(upload_dir);
-                let dest_path = std::path::Path::new(upload_dir).join(&filename);
+                let upload_dir = std::env::var("MUSICOS_UPLOAD_DIR").unwrap_or_else(|_| "./music".to_string());
+                let _ = std::fs::create_dir_all(&upload_dir);
+                let upload_dir_canon = std::path::Path::new(&upload_dir)
+                    .canonicalize()
+                    .unwrap_or_else(|_| std::path::PathBuf::from(&upload_dir));
+                let dest_path = upload_dir_canon.join(&filename);
+
+                let is_safe = match dest_path.canonicalize() {
+                    Ok(p) => p.starts_with(&upload_dir_canon),
+                    Err(_) => {
+                        if let Some(parent) = dest_path.parent() {
+                            if let Ok(parent_canon) = parent.canonicalize() {
+                                parent_canon.starts_with(&upload_dir_canon)
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    }
+                };
+
+                if !is_safe {
+                    log::error!("path traversal attempt blocked: {}", filename);
+                    let response = Response::from_string(
+                        "{\"status\":\"error\",\"message\":\"traversal attempt blocked\"}",
+                    )
+                    .with_status_code(StatusCode(400))
+                    .with_header(
+                        Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..])
+                            .unwrap(),
+                    );
+                    let _ = request.respond(response);
+                    continue;
+                }
 
                 match std::fs::write(&dest_path, &body) {
                     Ok(_) => {
@@ -657,19 +703,12 @@ mod tests {
 }
 
 fn write_screenshot_bmp<W: Write>(w: &mut W, bgra: &[u8]) -> Result<()> {
-    let resolution = renderer::get_latest_screenshot()
-        .map(|b| {
-            let len = b.len();
-            if len == 1280 * 960 * 4 {
-                (1280, 960)
-            } else {
-                (640, 480)
-            }
-        })
-        .unwrap_or((1280, 960));
-
-    let width = resolution.0;
-    let height = resolution.1;
+    let len = bgra.len();
+    let (width, height) = if len == 1280 * 960 * 4 {
+        (1280, 960)
+    } else {
+        (640, 480)
+    };
     write_bmp(w, width, height, bgra)
 }
 
@@ -708,3 +747,54 @@ fn write_bmp<W: Write>(w: &mut W, width: usize, height: usize, bgra: &[u8]) -> R
     w.write_all(bgra)?;
     Ok(())
 }
+
+fn write_screenshot_png<W: Write>(w: &mut W, bgra: &[u8]) -> Result<()> {
+    let len = bgra.len();
+    let (width, height) = if len == 1280 * 960 * 4 {
+        (1280, 960)
+    } else {
+        (640, 480)
+    };
+    let mut rgba = vec![0u8; len];
+    for i in (0..len).step_by(4) {
+        if i + 3 < len {
+            rgba[i] = bgra[i + 2];     // R
+            rgba[i + 1] = bgra[i + 1]; // G
+            rgba[i + 2] = bgra[i];     // B
+            rgba[i + 3] = bgra[i + 3]; // A
+        }
+    }
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image::write_buffer_with_format(
+        &mut cursor,
+        &rgba,
+        width as u32,
+        height as u32,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )?;
+    w.write_all(cursor.get_ref())?;
+    Ok(())
+}
+
+fn write_cover_art_png<W: Write>(w: &mut W, art: &renderer::CoverArt) -> Result<()> {
+    let mut rgba = Vec::with_capacity(art.pixels.len() * 4);
+    for color in &art.pixels {
+        rgba.push(color.r);
+        rgba.push(color.g);
+        rgba.push(color.b);
+        rgba.push(255);
+    }
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    image::write_buffer_with_format(
+        &mut cursor,
+        &rgba,
+        art.width,
+        art.height,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )?;
+    w.write_all(cursor.get_ref())?;
+    Ok(())
+}
+

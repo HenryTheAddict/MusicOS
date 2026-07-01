@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Button {
     Confirm,
     Back,
@@ -30,6 +30,7 @@ pub enum InputEvent {
     Swipe(SwipeDirection),
     Tap,
     Power,
+    WifiSync,
 }
 
 #[cfg(target_os = "linux")]
@@ -42,6 +43,8 @@ mod linux {
     pub struct InputSystem {
         devices: Vec<Device>,
         pointer: PointerTracker,
+        pressed_buttons: std::collections::HashSet<Button>,
+        pressed_keys: std::collections::HashSet<u16>,
     }
 
     impl InputSystem {
@@ -72,6 +75,8 @@ mod linux {
             Self {
                 devices,
                 pointer: PointerTracker::default(),
+                pressed_buttons: std::collections::HashSet::new(),
+                pressed_keys: std::collections::HashSet::new(),
             }
         }
 
@@ -85,16 +90,40 @@ mod linux {
                     match event.kind() {
                         InputEventKind::Key(key) => {
                             let value = event.value();
+                            let code = key.code();
                             log_input(&format!(
                                 "key {:?} code={} value={}",
                                 key,
-                                key.code(),
+                                code,
                                 value
                             ));
+                            if value == 0 {
+                                self.pressed_keys.remove(&code);
+                            } else {
+                                self.pressed_keys.insert(code);
+                                
+                                // A + Start: BTN_SOUTH (304) + BTN_START (315)
+                                if self.pressed_keys.contains(&304) && self.pressed_keys.contains(&315) {
+                                    log::info!("debug wifi sync chorded: A + Start");
+                                    out.push(InputEvent::WifiSync);
+                                }
+                            }
+
                             if let Some(button) = map_key_to_button(key) {
                                 if value == 0 {
+                                    self.pressed_buttons.remove(&button);
                                     out.push(InputEvent::ButtonRelease(button));
                                 } else {
+                                    self.pressed_buttons.insert(button);
+                                    
+                                    // Chord: VolumeDown + Home -> Menu (Open options/diagnostics)
+                                    if self.pressed_buttons.contains(&Button::VolumeDown)
+                                        && self.pressed_buttons.contains(&Button::Home)
+                                    {
+                                        log::info!("diagnostic chord chorded: VolumeDown + Home");
+                                        out.push(InputEvent::Button(Button::Menu));
+                                    }
+
                                     out.push(InputEvent::Button(button));
                                 }
                             } else if key == Key::KEY_POWER && value != 0 {
