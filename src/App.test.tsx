@@ -34,8 +34,31 @@ const settingsResponse = {
   resume_queue_enabled: true
 };
 
+const indexedTrack = {
+  id: 42,
+  path: "C:/Music/Albums/Blue Static/01 Neon Start.wav",
+  title: "Neon Start",
+  artist: "Blue Static",
+  album: "Control Room",
+  duration: 185,
+  track_number: 1,
+  play_count: 2,
+  favorited: false,
+  indexed_at: 1_778_000_000,
+  cover_art_updated_at: 1_778_000_100
+};
+
+let libraryData: Record<string, unknown>;
+let tracksData: Array<Record<string, unknown>>;
+let playlistsData: Array<Record<string, unknown>>;
+let playlistTracksData: Array<Record<string, unknown>>;
+
 describe("MusicOS Control Center shell", () => {
   beforeEach(() => {
+    libraryData = { ...libraryResponse };
+    tracksData = [];
+    playlistsData = [];
+    playlistTracksData = [];
     vi.stubGlobal("fetch", vi.fn(fetchMock));
     vi.stubGlobal("confirm", vi.fn(() => true));
     window.musicos = {
@@ -130,6 +153,94 @@ describe("MusicOS Control Center shell", () => {
       );
     });
   });
+
+  it("wires song menu actions to player, queue, favorite, and playlist APIs", async () => {
+    tracksData = [indexedTrack];
+    playlistsData = [{ id: 7, name: "Pocket Sync", track_count: 0 }];
+    libraryData = {
+      ...libraryResponse,
+      counts: { tracks: 1, albums: 1, artists: 1, playlists: 1, favorites: 0 },
+      player: { track: indexedTrack, is_playing: false, position: 11 },
+      queue: [indexedTrack]
+    };
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Songs" }));
+    expect((await screen.findAllByText("Neon Start")).length).toBeGreaterThan(0);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /Actions for Neon Start/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Add to selected playlist" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/playlists/7/tracks",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ track_id: 42 })
+        })
+      );
+    });
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /Actions for Neon Start/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Favorite" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "toggle_favorite", id: 42 })
+        })
+      );
+    });
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /Actions for Neon Start/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Play next" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "queue_add", id: 42, position: "next" })
+        })
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Neon Start" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "play_track", id: 42 })
+        })
+      );
+    });
+  });
+
+  it("wires device emulator and sync controls through Electron IPC", async () => {
+    const musicos = window.musicos!;
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Devices" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Start$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Restart$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Stop$/i }));
+
+    await waitFor(() => {
+      expect(musicos.emulator.start).toHaveBeenCalled();
+      expect(musicos.emulator.restart).toHaveBeenCalled();
+      expect(musicos.emulator.stop).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Plan sync/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Start sync/i }));
+
+    await waitFor(() => {
+      expect(musicos.sync.dryRun).toHaveBeenCalled();
+      expect(musicos.sync.start).toHaveBeenCalled();
+    });
+  });
 });
 
 function fetchMock(input: RequestInfo | URL, init?: RequestInit) {
@@ -137,10 +248,11 @@ function fetchMock(input: RequestInfo | URL, init?: RequestInit) {
   if (init?.method === "POST" || init?.method === "PUT" || init?.method === "DELETE") {
     return jsonResponse({ status: "ok" });
   }
-  if (url.includes("/api/library")) return jsonResponse(libraryResponse);
-  if (url.includes("/api/tracks")) return jsonResponse([]);
+  if (url.includes("/api/library")) return jsonResponse(libraryData);
+  if (url.includes("/api/tracks")) return jsonResponse(tracksData);
   if (url.includes("/api/settings")) return jsonResponse(settingsResponse);
-  if (url.includes("/api/playlists")) return jsonResponse([]);
+  if (url.includes("/api/playlists/") && url.includes("/tracks")) return jsonResponse(playlistTracksData);
+  if (url.includes("/api/playlists")) return jsonResponse(playlistsData);
   if (url.includes("/api/mixes")) return jsonResponse([]);
   if (url.includes("/api/logs")) return jsonResponse([]);
   return jsonResponse({});

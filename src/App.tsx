@@ -816,7 +816,9 @@ function SongsTable(props: {
               <TableCell className="text-right">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="icon-sm" variant="ghost"><ChevronDown className="size-4" /></Button>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Actions for ${track.title || fileTitle(track.path)}`}>
+                      <ChevronDown className="size-4" />
+                    </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => props.playTrack(track.id)}>Play</DropdownMenuItem>
