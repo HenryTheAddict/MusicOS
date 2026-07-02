@@ -242,6 +242,9 @@ describe("MusicOS Control Center shell", () => {
     }]);
     render(<App />);
 
+    fireEvent.click(await screen.findByRole("button", { name: "Songs" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select Neon Start" }));
+
     fireEvent.click(await screen.findByRole("button", { name: "Devices" }));
     expect(await screen.findByText("Storage planned")).toBeInTheDocument();
     expect(screen.getByText("Needs review")).toBeInTheDocument();
@@ -273,12 +276,21 @@ describe("MusicOS Control Center shell", () => {
 
     const scopeSelect = screen.getByRole("combobox", { name: "Sync scope" });
     fireEvent.pointerDown(scopeSelect, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("option", { name: "Selected tracks (1)" }));
+    expect(await screen.findByText("1 selected track")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Plan sync/i }));
+    await waitFor(() => {
+      expect(musicos.sync.dryRun).toHaveBeenLastCalledWith(["C:/Music/Albums/Blue Static/01 Neon Start.wav"]);
+    });
+
+    fireEvent.pointerDown(scopeSelect, { button: 0, ctrlKey: false, pointerType: "mouse" });
     fireEvent.click(await screen.findByRole("option", { name: "Selected playlist" }));
     expect(await screen.findByText("Pocket Sync")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Plan sync/i }));
     await waitFor(() => {
-      expect(musicos.sync.dryRun).toHaveBeenCalledWith(["C:/Music/Albums/Blue Static/01 Neon Start.wav"]);
+      expect(musicos.sync.dryRun).toHaveBeenLastCalledWith(["C:/Music/Albums/Blue Static/01 Neon Start.wav"]);
     });
   });
 });

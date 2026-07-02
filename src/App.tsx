@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -74,7 +75,7 @@ type Section =
   | "sync"
   | "updates"
   | "settings";
-type SyncScope = "all" | "favorites" | "playlist";
+type SyncScope = "all" | "favorites" | "selected" | "playlist";
 
 type Track = {
   id: number;
@@ -227,6 +228,7 @@ export function App() {
   const [dryRun, setDryRun] = useState<Record<string, unknown> | null>(null);
   const [syncScope, setSyncScope] = useState<SyncScope>("all");
   const [syncPlaylistId, setSyncPlaylistId] = useState<number | null>(null);
+  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<number>>(() => new Set());
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -252,6 +254,7 @@ export function App() {
     );
   }, [query, section, tracks]);
 
+  const selectedTracks = useMemo(() => tracks.filter((track) => selectedTrackIds.has(track.id)), [tracks, selectedTrackIds]);
   const albums = useMemo(() => groupAlbums(tracks), [tracks]);
   const artists = useMemo(() => groupArtists(tracks), [tracks]);
 
@@ -266,6 +269,14 @@ export function App() {
       window.clearInterval(slower);
     };
   }, []);
+
+  useEffect(() => {
+    setSelectedTrackIds((current) => {
+      const indexedIds = new Set(tracks.map((track) => track.id));
+      const next = new Set([...current].filter((id) => indexedIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [tracks]);
 
   async function boot() {
     try {
@@ -461,11 +472,16 @@ export function App() {
       if (!files.length) throw new Error("No favorite tracks are available to sync.");
       return files;
     }
+    if (syncScope === "selected") {
+      const files = selectedTracks.map((track) => track.path).filter(Boolean);
+      if (!files.length) throw new Error("Select one or more songs before selected-track sync.");
+      return files;
+    }
 
     const playlistId = syncPlaylistId ?? playlists[0]?.id;
     if (!playlistId) throw new Error("Create or select a playlist before playlist sync.");
-    const selectedTracks = await getJson<Track[]>(`/api/playlists/${playlistId}/tracks`);
-    const files = selectedTracks.map((track) => track.path).filter(Boolean);
+    const playlistTracksForSync = await getJson<Track[]>(`/api/playlists/${playlistId}/tracks`);
+    const files = playlistTracksForSync.map((track) => track.path).filter(Boolean);
     if (!files.length) throw new Error("The selected playlist has no tracks to sync.");
     return files;
   }
@@ -501,6 +517,28 @@ export function App() {
       setInstallingUpdate(false);
       setBusy(false);
     }
+  }
+
+  function toggleTrackSelection(id: number) {
+    setSelectedTrackIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setDryRun(null);
+  }
+
+  function setVisibleTrackSelection(trackIds: number[], selected: boolean) {
+    setSelectedTrackIds((current) => {
+      const next = new Set(current);
+      for (const id of trackIds) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+    setDryRun(null);
   }
 
   return (
@@ -583,6 +621,9 @@ export function App() {
                   toggleFavorite={(id) => sendControl("toggle_favorite", { id })}
                   queueTrack={(id, position) => sendControl("queue_add", { id, position })}
                   addTrack={addTrackToPlaylist}
+                  selectedTrackIds={selectedTrackIds}
+                  toggleTrackSelection={toggleTrackSelection}
+                  setVisibleTrackSelection={setVisibleTrackSelection}
                 />
               )}
               {section === "albums" && <AlbumGrid albums={albums} target={target} playTrack={(id) => sendControl("play_track", { id })} />}
@@ -595,6 +636,9 @@ export function App() {
                   toggleFavorite={(id) => sendControl("toggle_favorite", { id })}
                   queueTrack={(id, position) => sendControl("queue_add", { id, position })}
                   addTrack={addTrackToPlaylist}
+                  selectedTrackIds={selectedTrackIds}
+                  toggleTrackSelection={toggleTrackSelection}
+                  setVisibleTrackSelection={setVisibleTrackSelection}
                 />
               )}
               {section === "playlists" && (
@@ -644,6 +688,7 @@ export function App() {
                   history={syncHistory}
                   dryRun={dryRun}
                   playlists={playlists}
+                  selectedTrackCount={selectedTracks.length}
                   syncScope={syncScope}
                   setSyncScope={(next) => {
                     setSyncScope(next);
@@ -816,15 +861,32 @@ function SongsTable(props: {
   toggleFavorite: (id: number) => void;
   queueTrack?: (id: number, position?: string) => void;
   addTrack: (id: number) => void;
+  selectedTrackIds?: Set<number>;
+  toggleTrackSelection?: (id: number) => void;
+  setVisibleTrackSelection?: (trackIds: number[], selected: boolean) => void;
   compact?: boolean;
 }) {
   if (!props.tracks.length) return <EmptyState title="No music here yet" body="Scan or sync music to populate this view. No demo tracks are invented." />;
+  const selectionEnabled = !props.compact && props.selectedTrackIds && props.toggleTrackSelection && props.setVisibleTrackSelection;
+  const visibleIds = props.tracks.map((track) => track.id);
+  const selectedVisibleCount = visibleIds.filter((id) => props.selectedTrackIds?.has(id)).length;
+  const allVisibleSelected = Boolean(selectionEnabled && selectedVisibleCount === visibleIds.length);
+  const someVisibleSelected = Boolean(selectionEnabled && selectedVisibleCount > 0 && !allVisibleSelected);
   return (
     <div className="overflow-hidden rounded-lg border border-white/10">
       <Table>
         {!props.compact && (
           <TableHeader>
             <TableRow className="border-white/10 hover:bg-transparent">
+              {selectionEnabled && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    aria-label="Select all visible songs"
+                    checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+                    onCheckedChange={(checked) => props.setVisibleTrackSelection?.(visibleIds, checked === true)}
+                  />
+                </TableHead>
+              )}
               <TableHead className="w-10">#</TableHead>
               <TableHead>Song</TableHead>
               <TableHead>Artist</TableHead>
@@ -836,7 +898,16 @@ function SongsTable(props: {
         )}
         <TableBody>
           {props.tracks.map((track, index) => (
-            <TableRow key={track.id} className="border-white/10">
+            <TableRow key={track.id} className={cn("border-white/10", props.selectedTrackIds?.has(track.id) && "bg-primary/8")}>
+              {selectionEnabled && (
+                <TableCell>
+                  <Checkbox
+                    aria-label={`Select ${track.title || fileTitle(track.path)}`}
+                    checked={props.selectedTrackIds?.has(track.id) ?? false}
+                    onCheckedChange={() => props.toggleTrackSelection?.(track.id)}
+                  />
+                </TableCell>
+              )}
               <TableCell className="text-muted-foreground">{track.track_number || index + 1}</TableCell>
               <TableCell>
                 <div className="flex min-w-0 items-center gap-3">
@@ -1060,6 +1131,7 @@ function SyncManager(props: {
   history: SyncState[];
   dryRun: Record<string, unknown> | null;
   playlists: Playlist[];
+  selectedTrackCount: number;
   syncScope: SyncScope;
   setSyncScope: (value: SyncScope) => void;
   syncPlaylistId: number | null;
@@ -1081,7 +1153,22 @@ function SyncManager(props: {
     ...(state?.errors ?? [])
   ];
   const selectedPlaylist = props.playlists.find((playlist) => playlist.id === props.syncPlaylistId) ?? props.playlists[0] ?? null;
-  const scopeLabel = props.syncScope === "all" ? "All music" : props.syncScope === "favorites" ? "Favorite tracks" : (selectedPlaylist?.name ?? "Selected playlist");
+  const scopeLabel =
+    props.syncScope === "all"
+      ? "All music"
+      : props.syncScope === "favorites"
+        ? "Favorite tracks"
+        : props.syncScope === "selected"
+          ? `${props.selectedTrackCount} selected ${props.selectedTrackCount === 1 ? "track" : "tracks"}`
+          : (selectedPlaylist?.name ?? "Selected playlist");
+  const scopeBadge =
+    props.syncScope === "playlist"
+      ? "Playlist sync"
+      : props.syncScope === "favorites"
+        ? "Favorites sync"
+        : props.syncScope === "selected"
+          ? "Selection sync"
+          : "Folder sync";
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <Card className="rounded-lg border-white/10 bg-[#181c22]">
@@ -1094,6 +1181,7 @@ function SyncManager(props: {
                 <SelectContent>
                   <SelectItem value="all">All music in folder</SelectItem>
                   <SelectItem value="favorites">Favorite tracks</SelectItem>
+                  <SelectItem value="selected">Selected tracks ({props.selectedTrackCount})</SelectItem>
                   <SelectItem value="playlist">Selected playlist</SelectItem>
                 </SelectContent>
               </Select>
@@ -1125,7 +1213,7 @@ function SyncManager(props: {
                 <div className="font-medium">What will sync</div>
                 <div className="text-sm text-muted-foreground">{scopeLabel}</div>
               </div>
-              <Badge variant="secondary">{props.syncScope === "playlist" ? "Playlist sync" : props.syncScope === "favorites" ? "Favorites sync" : "Folder sync"}</Badge>
+              <Badge variant="secondary">{scopeBadge}</Badge>
             </div>
           </div>
           <Progress value={total ? (done / total) * 100 : 0} />
