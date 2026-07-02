@@ -48,6 +48,14 @@ const indexedTrack = {
   cover_art_updated_at: 1_778_000_100
 };
 
+const secondIndexedTrack = {
+  ...indexedTrack,
+  id: 43,
+  path: "C:/Music/Albums/Blue Static/02 Screen Glow.wav",
+  title: "Screen Glow",
+  track_number: 2
+};
+
 let libraryData: Record<string, unknown>;
 let tracksData: Array<Record<string, unknown>>;
 let playlistsData: Array<Record<string, unknown>>;
@@ -155,11 +163,11 @@ describe("MusicOS Control Center shell", () => {
   });
 
   it("wires song menu actions to player, queue, favorite, and playlist APIs", async () => {
-    tracksData = [indexedTrack];
+    tracksData = [indexedTrack, secondIndexedTrack];
     playlistsData = [{ id: 7, name: "Pocket Sync", track_count: 0 }];
     libraryData = {
       ...libraryResponse,
-      counts: { tracks: 1, albums: 1, artists: 1, playlists: 1, favorites: 0 },
+      counts: { tracks: 2, albums: 1, artists: 1, playlists: 1, favorites: 0 },
       player: { track: indexedTrack, is_playing: false, position: 11 },
       queue: [indexedTrack]
     };
@@ -212,6 +220,20 @@ describe("MusicOS Control Center shell", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ command: "play_track", id: 42 })
+        })
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Albums" }));
+    fireEvent.pointerDown(await screen.findByRole("button", { name: /Actions for album Control Room/i }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Add album to selected playlist" }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/playlists/7/tracks",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ track_id: 43 })
         })
       );
     });

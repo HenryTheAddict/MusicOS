@@ -97,7 +97,9 @@ size/checksum, triggers one library scan after the batch, and can export a JSON
 diagnostics bundle from the Logs view. The Device view also exposes library
 backup/restore, playlist import/export, sync history, cover-art cache clearing,
 database repair, changed/full rescans, and a perf-smoke launcher. The Library
-view can dry-run a sync and retry only failed files from the last sync attempt.
+view can add individual songs or whole albums to the selected playlist, select
+specific songs for sync, dry-run the selected/favorites/playlist/folder sync
+scope, and retry only failed files from the last sync attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
 

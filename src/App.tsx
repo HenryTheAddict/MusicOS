@@ -443,14 +443,19 @@ export function App() {
   }
 
   async function addTrackToPlaylist(trackId: number) {
+    await addTracksToPlaylist([trackId], "Track");
+  }
+
+  async function addTracksToPlaylist(trackIds: number[], label = "Tracks") {
     if (!selectedPlaylistId) {
       toast.info("Create or select a playlist first");
       setSection("playlists");
       return;
     }
-    await postJson(`/api/playlists/${selectedPlaylistId}/tracks`, { track_id: trackId });
+    if (!trackIds.length) return;
+    await Promise.all(trackIds.map((trackId) => postJson(`/api/playlists/${selectedPlaylistId}/tracks`, { track_id: trackId })));
     await refreshPlaylists(selectedPlaylistId);
-    toast.success("Track added to playlist");
+    toast.success(`${label} added to playlist`);
   }
 
   async function startSync() {
@@ -626,7 +631,14 @@ export function App() {
                   setVisibleTrackSelection={setVisibleTrackSelection}
                 />
               )}
-              {section === "albums" && <AlbumGrid albums={albums} target={target} playTrack={(id) => sendControl("play_track", { id })} />}
+              {section === "albums" && (
+                <AlbumGrid
+                  albums={albums}
+                  target={target}
+                  playTrack={(id) => sendControl("play_track", { id })}
+                  addAlbum={(trackIds, name) => addTracksToPlaylist(trackIds, name)}
+                />
+              )}
               {section === "artists" && <ArtistView artists={artists} />}
               {section === "favorites" && (
                 <SongsTable
@@ -947,16 +959,43 @@ function SongsTable(props: {
 type AlbumGroup = { name: string; artist: string; tracks: Track[]; duration: number };
 type ArtistGroup = { name: string; albums: number; tracks: number; plays: number };
 
-function AlbumGrid({ albums, target, playTrack }: { albums: AlbumGroup[]; target: string; playTrack: (id: number) => void }) {
+function AlbumGrid({
+  albums,
+  target,
+  playTrack,
+  addAlbum
+}: {
+  albums: AlbumGroup[];
+  target: string;
+  playTrack: (id: number) => void;
+  addAlbum: (trackIds: number[], albumName: string) => void;
+}) {
   if (!albums.length) return <EmptyState title="No albums indexed" body="Albums appear after metadata scanning finishes." />;
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
       {albums.map((album) => (
-        <button key={album.name} className="rounded-lg border border-white/10 bg-[#181c22] p-3 text-left hover:bg-white/7" onClick={() => playTrack(album.tracks[0].id)}>
+        <div key={album.name} className="rounded-lg border border-white/10 bg-[#181c22] p-3 text-left transition hover:bg-white/7">
           <CoverArt target={target} track={album.tracks[0]} className="mb-3 size-full aspect-square rounded-md" />
-          <strong className="block truncate text-sm">{album.name}</strong>
-          <span className="block truncate text-xs text-muted-foreground">{album.artist} / {album.tracks.length} songs</span>
-        </button>
+          <div className="flex min-w-0 items-start justify-between gap-2">
+            <button className="min-w-0 text-left" onClick={() => playTrack(album.tracks[0].id)}>
+              <strong className="block truncate text-sm hover:text-primary">{album.name}</strong>
+              <span className="block truncate text-xs text-muted-foreground">{album.artist} / {album.tracks.length} songs</span>
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon-sm" variant="ghost" aria-label={`Actions for album ${album.name}`}>
+                  <ChevronDown className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => playTrack(album.tracks[0].id)}>Play album</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => addAlbum(album.tracks.map((track) => track.id), album.name)}>
+                  Add album to selected playlist
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
       ))}
     </div>
   );
