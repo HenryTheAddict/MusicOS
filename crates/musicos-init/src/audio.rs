@@ -129,6 +129,10 @@ impl AudioPlayer {
     pub fn new() -> Self {
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
+            if prefers_silent_backend() {
+                return Self::silent("none");
+            }
+
             let mut stream_opt = None;
             let mut handle_opt = None;
             let mut sink_opt = None;
@@ -277,6 +281,17 @@ impl AudioPlayer {
 
         self.stop();
 
+        if prefers_silent_backend() {
+            self.is_paused = false;
+            self.last_backend = "none".to_string();
+            self.selected_pcm = None;
+            self.last_error = None;
+            self.play_start = Some(Instant::now());
+            self.accumulated_time = Duration::ZERO;
+            log::info!("audio none backend: {} - {}", track_title, track_artist);
+            return;
+        }
+
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
             #[cfg(target_os = "linux")]
@@ -373,6 +388,36 @@ impl AudioPlayer {
             self.play_start = Some(Instant::now());
             self.accumulated_time = Duration::ZERO;
             log::info!("audio silent fallback: {} - {}", track_title, track_artist);
+        }
+    }
+
+    fn silent(backend: &str) -> Self {
+        let shuffle_seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0xdeadbeef);
+        Self {
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            _stream: None,
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            stream_handle: None,
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            sink: None,
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
+            alsa_playback: None,
+            queue: Vec::new(),
+            current_index: None,
+            volume: 1.0,
+            eq_preset: EqPreset::Flat,
+            is_paused: false,
+            loop_mode: LoopMode::None,
+            shuffle: false,
+            play_start: None,
+            accumulated_time: Duration::ZERO,
+            last_backend: backend.to_string(),
+            selected_pcm: None,
+            last_error: None,
+            shuffle_seed,
         }
     }
 
@@ -750,6 +795,18 @@ impl AudioPlayer {
             }
         }
     }
+}
+
+fn prefers_silent_backend() -> bool {
+    std::env::var("MUSICOS_TEST_AUDIO_BACKEND")
+        .or_else(|_| std::env::var("MUSICOS_AUDIO_BACKEND"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "none" | "silent" | "stub" | "off"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

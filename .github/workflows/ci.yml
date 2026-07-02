@@ -32,6 +32,8 @@ jobs:
         run: cargo check --workspace --features desktop-app,desktop-audio
 
       - name: Test Rust workspace
+        env:
+          MUSICOS_TEST_AUDIO_BACKEND: none
         run: cargo test --workspace --features desktop-app,desktop-audio
 
       - name: Check Electron JavaScript
