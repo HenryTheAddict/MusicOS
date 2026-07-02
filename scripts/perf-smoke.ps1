@@ -4,6 +4,9 @@ param(
     [int]$Samples = 20,
     [int]$TimeoutSeconds = 45,
     [string]$Resolution = "640x480",
+    [double]$MaxFirstScreenshotMs = 1500,
+    [double]$MaxFrameP95Ms = 25,
+    [double]$MaxApiP95Ms = 30,
     [switch]$SkipBuild,
     [switch]$KeepRunning
 )
@@ -157,6 +160,37 @@ function Measure-Frames([int]$Count) {
     }
 }
 
+function Assert-PerfThresholds($Report) {
+    $failures = New-Object System.Collections.Generic.List[string]
+    if ($Report.first_screenshot_ms -gt $MaxFirstScreenshotMs) {
+        $failures.Add("first screenshot $($Report.first_screenshot_ms) ms > $MaxFirstScreenshotMs ms")
+    }
+    if ($Report.frame.p95_ms -gt $MaxFrameP95Ms) {
+        $failures.Add("frame p95 $($Report.frame.p95_ms) ms > $MaxFrameP95Ms ms")
+    }
+    foreach ($entry in $Report.api) {
+        if ($entry.path -in @("/api/status", "/api/library", "/api/diagnostics", "/api/player") -and $entry.p95_ms -gt $MaxApiP95Ms) {
+            $failures.Add("$($entry.path) p95 $($entry.p95_ms) ms > $MaxApiP95Ms ms")
+        }
+        if ($entry.errors.Count -gt 0) {
+            $failures.Add("$($entry.path) returned errors")
+        }
+    }
+    if ($Report.first_screenshot_bytes -lt 1000) {
+        $failures.Add("first screenshot was too small: $($Report.first_screenshot_bytes) bytes")
+    }
+    if ($Report.counts.tracks -lt $TrackCount) {
+        $failures.Add("indexed $($Report.counts.tracks) tracks, expected at least $TrackCount")
+    }
+    if (-not ($Report.scan_status -like "Scan complete:*")) {
+        $failures.Add("scan did not complete: $($Report.scan_status)")
+    }
+
+    if ($failures.Count -gt 0) {
+        throw "Performance smoke failed: $($failures -join '; ')"
+    }
+}
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 Remove-Item -Force -ErrorAction SilentlyContinue $DbPath, "$DbPath-shm", "$DbPath-wal", $ReportPath, $StdoutPath, $StderrPath
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $MusicDir
@@ -261,6 +295,7 @@ try {
     }
 
     $report | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 $ReportPath
+    Assert-PerfThresholds $report
     $report | ConvertTo-Json -Depth 8
 } finally {
     foreach ($name in $oldEnv.Keys) {

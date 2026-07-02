@@ -21,6 +21,10 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
 - Electron `MusicOS Control Center` for the Windows/macOS/Linux desktop
   emulator, device mirror, library sync, playlists, diagnostics, logs, and
   local emulator controls.
+- Smart dynamic mixes, playback history, queue maintenance, seek controls,
+  sleep timer commands, motion/performance settings, and cover-art cache tools.
+- Ordered playlist tracks, sync dry-run/retry tools, database repair, changed
+  versus full library rescans, and frame timing diagnostics.
 - Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
 - QEMU launch script using `qemu-system-aarch64 -M virt -cpu cortex-a53`.
 
@@ -83,6 +87,12 @@ build output into Logs, and then launches the emulator. The app targets
 `http://127.0.0.1:18080` by default. Use
 `MUSICOS_SYNC_TARGET=http://192.168.7.2:8080` for a USB-networked device, and
 `MUSICOS_SYNC_DIR=/path/to/music` to choose the folder uploaded by the app.
+Folder sync preserves relative artist/album paths, skips unchanged files by
+size/checksum, triggers one library scan after the batch, and can export a JSON
+diagnostics bundle from the Logs view. The Device view also exposes library
+backup/restore, playlist import/export, sync history, cover-art cache clearing,
+database repair, changed/full rescans, and a perf-smoke launcher. The Library
+view can dry-run a sync and retry only failed files from the last sync attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
 
@@ -111,8 +121,37 @@ npm run perf:smoke
 It seeds a small WAV library under `out/perf`, starts the desktop runtime,
 checks API latency, screenshot availability, input latency, scan completion,
 frame timing at the RG35XX-style `640x480` resolution, and writes
-`out/perf/runtime-performance-smoke.json`. Pass `-Resolution 1280x960` to
-stress the HD desktop path.
+`out/perf/runtime-performance-smoke.json`. It fails nonzero if first screenshot,
+frame p95, core API p95, scan completion, or indexed track count misses the
+default thresholds. Pass `-Resolution 1280x960` to stress the HD desktop path.
+
+Useful runtime APIs:
+
+- `GET /api/library` returns counts, playback, queue, playlists, diagnostics
+  summary, legacy `scan_status`, structured `scan`, and build `version`.
+- `GET /api/tracks?query=&limit=&offset=&sort=&filter=&artist=&album=&playlist_id=`
+  returns the compatible track array with optional filtering.
+- `GET /api/mixes` and `GET /api/mixes/:id/tracks` expose dynamic mixes such as
+  Favorites, Recently Added, Most Played, Never Played, Long Tracks, Shuffle
+  All, and Random Album.
+- `GET /api/history?limit=&offset=` returns recently played tracks.
+- `GET /api/performance` returns frame timing, motion mode, scan state, and
+  cover-art cache counters.
+- `GET /api/logs?limit=120` returns recent runtime events for diagnostics export
+  and the Control Center Logs view.
+- `POST /api/library/cover-art-cache/clear` clears persisted and in-memory
+  cover-art cache state so art can be rebuilt.
+- `POST /api/library/repair` runs SQLite integrity checks, missing-file cleanup,
+  orphan playlist cleanup, playlist position repair, and a WAL checkpoint.
+- `POST /api/library/rescan` with `{ "mode": "changed" | "full" }` starts a
+  bounded scan using changed-file skips or a full metadata/art refresh.
+- `PUT /api/playlists/:id/tracks/reorder` with `{ "track_ids": [...] }`
+  persists manual playlist order.
+- `POST /api/control` accepts playback, queue, playlist, scan, seek, sleep
+  timer, and smart-mix commands.
+
+GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs the Windows
+Rust check/test, Electron JavaScript syntax checks, and desktop binary build.
 
 For static visual snapshots:
 

@@ -414,11 +414,36 @@ kbd.key-hit {
   margin-top: 14px;
 }
 
+.transport.secondary {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 8px;
+}
+
 .queue-list {
   margin-top: 12px;
   display: grid;
   gap: 7px;
   max-height: 220px;
+}
+
+.smart-panel {
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.mix-list,
+.tool-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.mix-card {
+  min-height: 74px;
+  display: grid;
+  align-content: center;
+  text-align: left;
 }
 
 .tracks {
@@ -554,6 +579,38 @@ kbd.key-hit {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 24px;
+}
+
+.diagnostic.wide {
+  margin-top: 12px;
+}
+
+.sync-history {
+  margin-top: 12px;
+  max-height: 160px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+}
+
+.sync-job {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: 18px;
+}
+
+.sync-job span,
+.sync-job strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .logs {

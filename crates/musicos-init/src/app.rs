@@ -1,9 +1,9 @@
 use crate::audio::{AudioPlayer, EqPreset, LoopMode};
 use crate::database::{Db, LibraryCounts, Pin, Playlist, Track};
 use crate::input::{Button, InputEvent, SwipeDirection};
-use crate::preferences::{LibraryGroup, LibrarySort, Preferences};
+use crate::preferences::{LibraryGroup, LibrarySort, MotionMode, Preferences};
 use crate::renderer::{Canvas, Color, Resolution};
-use crate::server::{RuntimeSnapshot, ServerEvent, SettingsUpdate};
+use crate::server::{RuntimeSnapshot, ScanInfo, ServerEvent, SettingsUpdate};
 use crate::ui;
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
@@ -105,8 +105,14 @@ pub struct MusicOs {
     pub library_group: LibraryGroup,
     pub sleep_timeout_minutes: u8,
     pub dim_timeout_seconds: u16,
+    pub motion_mode: MotionMode,
+    pub seek_step_seconds: u8,
+    pub sleep_timer_default_minutes: u8,
+    pub resume_queue_enabled: bool,
+    pub shuffle_default_enabled: bool,
     pub first_run_audio_test_complete: bool,
     pub scan_status: String,
+    pub scan: ScanInfo,
     pub audio_test_status: String,
     pub db_path: String,
     pub clock_hour: u8,
@@ -165,7 +171,8 @@ pub struct MusicOs {
     pub wifi_sync_overlay: bool,
     pub wifi_sync_ip: String,
     pub wifi_sync_timeout: Option<Instant>,
-    scan_rx: Option<std::sync::mpsc::Receiver<ScanResult>>,
+    pub sleep_timer_deadline: Option<Instant>,
+    scan_rx: Option<std::sync::mpsc::Receiver<ScanMessage>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +185,17 @@ pub enum HudType {
 struct ScanResult {
     indexed: Result<usize, String>,
     elapsed_ms: u128,
+}
+
+#[derive(Debug)]
+enum ScanMessage {
+    Progress {
+        indexed: usize,
+        discovered: usize,
+        current_root: Option<String>,
+        elapsed_ms: u128,
+    },
+    Finished(ScanResult),
 }
 
 fn apply_audio_runtime_preferences(preferences: &Preferences) {
@@ -193,6 +211,9 @@ fn apply_audio_runtime_preferences(preferences: &Preferences) {
 }
 
 fn restore_queue_tracks(db: &Db, preferences: &Preferences) -> Vec<Track> {
+    if !preferences.resume_queue_enabled {
+        return Vec::new();
+    }
     preferences
         .resume_queue_track_ids
         .iter()
@@ -344,8 +365,14 @@ impl MusicOs {
             library_group: preferences.library_group,
             sleep_timeout_minutes: preferences.sleep_timeout_minutes,
             dim_timeout_seconds: preferences.dim_timeout_seconds,
+            motion_mode: preferences.motion_mode,
+            seek_step_seconds: preferences.seek_step_seconds,
+            sleep_timer_default_minutes: preferences.sleep_timer_default_minutes,
+            resume_queue_enabled: preferences.resume_queue_enabled,
+            shuffle_default_enabled: preferences.shuffle_default_enabled,
             first_run_audio_test_complete: preferences.first_run_audio_test_complete,
             scan_status: "Library ready".to_string(),
+            scan: ScanInfo::default(),
             audio_test_status: "Audio test not run".to_string(),
             db_path: db_path.to_string(),
             clock_hour: preferences.clock_hour.min(23),
@@ -404,6 +431,7 @@ impl MusicOs {
             wifi_sync_overlay: false,
             wifi_sync_ip: String::new(),
             wifi_sync_timeout: None,
+            sleep_timer_deadline: None,
             scan_rx: None,
         };
         app.refresh_library();
@@ -446,7 +474,13 @@ impl MusicOs {
         }
 
         if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
-            self.cover_art_opacity = (self.cover_art_opacity + 0.05).min(1.0);
+            let fade_step = match self.motion_mode {
+                MotionMode::Reduced => 1.0,
+                MotionMode::BatterySaver => 0.12,
+                MotionMode::Visuals => 0.04,
+                MotionMode::Balanced => 0.05,
+            };
+            self.cover_art_opacity = (self.cover_art_opacity + fade_step).min(1.0);
         } else {
             self.cover_art_opacity = 0.0;
         }
@@ -505,6 +539,13 @@ impl MusicOs {
                 && !self.player.get_status().is_playing
                 && idle >= Duration::from_secs(self.sleep_timeout_minutes as u64 * 60)
             {
+                self.enter_sleep();
+            }
+        }
+        if let Some(deadline) = self.sleep_timer_deadline {
+            if Instant::now() >= deadline {
+                self.sleep_timer_deadline = None;
+                self.scan_status = "Sleep timer expired".to_string();
                 self.enter_sleep();
             }
         }
@@ -646,16 +687,36 @@ impl MusicOs {
     }
 
     pub fn start_library_scan(&mut self) {
-        self.start_library_scan_with_status("Scanning library...");
+        self.start_library_scan_with_status("Scanning library...", false);
     }
 
-    fn start_library_scan_with_status(&mut self, status: &str) {
+    pub fn start_library_rescan(&mut self, mode: &str) {
+        let reindex_all = matches!(mode, "full" | "all" | "rebuild");
+        let status = if reindex_all {
+            "Full library rescan..."
+        } else {
+            "Scanning changed library files..."
+        };
+        self.start_library_scan_with_status(status, reindex_all);
+    }
+
+    fn start_library_scan_with_status(&mut self, status: &str, reindex_all: bool) {
         if self.scan_rx.is_some() {
             self.scan_status = "Scan already running...".to_string();
+            self.scan.state = "running".to_string();
             return;
         }
 
         self.scan_status = status.to_string();
+        self.scan = ScanInfo {
+            state: "running".to_string(),
+            indexed: 0,
+            discovered: 0,
+            current_root: None,
+            elapsed_ms: 0,
+            last_error: None,
+        };
+        crate::server::push_runtime_log("scan", status.to_string());
         let db_path = self.db_path.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         self.scan_rx = Some(rx);
@@ -663,31 +724,84 @@ impl MusicOs {
         std::thread::spawn(move || {
             let started = Instant::now();
             let indexed = crate::database::Db::open(&db_path)
-                .and_then(|db| crate::media::index_default_locations(&db))
+                .and_then(|db| {
+                    if reindex_all {
+                        crate::media::reindex_default_locations_with_progress(&db, |progress| {
+                            let _ = tx.send(ScanMessage::Progress {
+                                indexed: progress.indexed,
+                                discovered: progress.discovered,
+                                current_root: progress.current_root,
+                                elapsed_ms: started.elapsed().as_millis(),
+                            });
+                        })
+                    } else {
+                        crate::media::index_default_locations_with_progress(&db, |progress| {
+                            let _ = tx.send(ScanMessage::Progress {
+                                indexed: progress.indexed,
+                                discovered: progress.discovered,
+                                current_root: progress.current_root,
+                                elapsed_ms: started.elapsed().as_millis(),
+                            });
+                        })
+                    }
+                })
                 .map_err(|err| format!("{err:#}"));
-            let _ = tx.send(ScanResult {
+            let _ = tx.send(ScanMessage::Finished(ScanResult {
                 indexed,
                 elapsed_ms: started.elapsed().as_millis(),
-            });
+            }));
         });
     }
 
     fn poll_library_scan(&mut self) {
-        let result = match self.scan_rx.as_ref().map(|rx| rx.try_recv()) {
-            Some(Ok(result)) => result,
-            Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
-                self.scan_rx = None;
-                self.scan_status = "Scan failed: worker stopped".to_string();
-                return;
-            }
-            Some(Err(std::sync::mpsc::TryRecvError::Empty)) | None => return,
+        let Some(rx) = self.scan_rx.take() else {
+            return;
         };
 
-        self.scan_rx = None;
+        let result = loop {
+            match rx.try_recv() {
+                Ok(ScanMessage::Progress {
+                    indexed,
+                    discovered,
+                    current_root,
+                    elapsed_ms,
+                }) => {
+                    self.scan.state = "running".to_string();
+                    self.scan.indexed = indexed;
+                    self.scan.discovered = discovered;
+                    self.scan.current_root = current_root.clone();
+                    self.scan.elapsed_ms = elapsed_ms;
+                    self.scan.last_error = None;
+                    self.scan_status = if let Some(root) = current_root {
+                        format!("Scanning {root}: {indexed}/{discovered} indexed")
+                    } else {
+                        format!("Scanning library: {indexed}/{discovered} indexed")
+                    };
+                }
+                Ok(ScanMessage::Finished(result)) => break result,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    self.scan_rx = Some(rx);
+                    return;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.scan_status = "Scan failed: worker stopped".to_string();
+                    self.scan.state = "error".to_string();
+                    self.scan.last_error = Some("worker stopped".to_string());
+                    crate::server::push_runtime_log("scan", "Scan failed: worker stopped");
+                    return;
+                }
+            }
+        };
+
         match result.indexed {
             Ok(indexed) => {
                 self.refresh_library();
                 let counts = self.library_counts();
+                self.scan.state = "complete".to_string();
+                self.scan.indexed = indexed;
+                self.scan.elapsed_ms = result.elapsed_ms;
+                self.scan.current_root = None;
+                self.scan.last_error = None;
                 self.scan_status = format!(
                     "Scan complete: {indexed} indexed, {} songs, {} albums, {} playlists in {:.1}s",
                     counts.tracks,
@@ -695,9 +809,15 @@ impl MusicOs {
                     counts.playlists,
                     result.elapsed_ms as f32 / 1000.0
                 );
+                crate::server::push_runtime_log("scan", self.scan_status.clone());
             }
             Err(err) => {
                 self.scan_status = format!("Scan failed: {err}");
+                self.scan.state = "error".to_string();
+                self.scan.elapsed_ms = result.elapsed_ms;
+                self.scan.current_root = None;
+                self.scan.last_error = Some(err);
+                crate::server::push_runtime_log("scan", self.scan_status.clone());
             }
         }
     }
@@ -707,7 +827,7 @@ impl MusicOs {
             ServerEvent::Button(b) => self.handle_input(InputEvent::Button(b)),
             ServerEvent::Pointer(ev) => self.handle_input(ev),
             ServerEvent::UploadComplete => {
-                self.start_library_scan_with_status("Upload complete; scanning library...");
+                self.start_library_scan_with_status("Upload complete; scanning library...", false);
                 true
             }
             ServerEvent::UsbSync => {
@@ -732,6 +852,29 @@ impl MusicOs {
                         self.player.seek(value);
                         self.save_preferences(false);
                     }
+                    crate::server::ControlCommand::SeekRelative { value } => {
+                        let next = self.player.get_position() + value;
+                        self.player.seek(next);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::SeekAbsolute { value } => {
+                        self.player.seek(value);
+                        self.save_preferences(false);
+                    }
+                    crate::server::ControlCommand::SleepTimer { minutes } => {
+                        let minutes = minutes.min(180);
+                        self.sleep_timer_deadline = if minutes == 0 {
+                            None
+                        } else {
+                            Some(Instant::now() + Duration::from_secs(minutes as u64 * 60))
+                        };
+                        self.save_preferences(false);
+                        self.scan_status = if minutes == 0 {
+                            "Sleep timer cleared".to_string()
+                        } else {
+                            format!("Sleep timer set to {minutes} minutes")
+                        };
+                    }
                     crate::server::ControlCommand::Shuffle => {
                         self.player.toggle_shuffle();
                         self.save_preferences(false);
@@ -744,6 +887,7 @@ impl MusicOs {
                         if let Ok(Some(track)) = self.db.get_track_by_id(id) {
                             let _ = self.db.increment_play_count(track.id);
                             self.player.set_queue(vec![track], 0);
+                            self.apply_shuffle_default();
                             self.screen = Screen::NowPlaying;
                             self.focus = Focus::Albums;
                             self.save_preferences(false);
@@ -754,6 +898,7 @@ impl MusicOs {
                             if let Ok(tracks) = self.db.get_tracks() {
                                 if !tracks.is_empty() {
                                     self.player.set_queue(tracks, start_index);
+                                    self.apply_shuffle_default();
                                     self.screen = Screen::NowPlaying;
                                     self.save_preferences(false);
                                 }
@@ -761,7 +906,21 @@ impl MusicOs {
                         } else if let Ok(tracks) = self.db.get_playlist_tracks(id) {
                             if !tracks.is_empty() {
                                 self.player.set_queue(tracks, start_index);
+                                self.apply_shuffle_default();
                                 self.screen = Screen::NowPlaying;
+                                self.save_preferences(false);
+                            }
+                        }
+                    }
+                    crate::server::ControlCommand::PlayMix { id, start_index } => {
+                        if let Ok(tracks) = self.db.get_mix_tracks(&id, 500) {
+                            if !tracks.is_empty() {
+                                let start_index =
+                                    start_index.unwrap_or(0).min(tracks.len().saturating_sub(1));
+                                self.player.set_queue(tracks, start_index);
+                                self.apply_shuffle_default();
+                                self.screen = Screen::NowPlaying;
+                                self.focus = Focus::Albums;
                                 self.save_preferences(false);
                             }
                         }
@@ -811,6 +970,9 @@ impl MusicOs {
                     }
                     crate::server::ControlCommand::ScanLibrary => {
                         self.scan_library();
+                    }
+                    crate::server::ControlCommand::RescanLibrary { mode } => {
+                        self.start_library_rescan(&mode);
                     }
                     crate::server::ControlCommand::AudioTest => {
                         self.run_audio_test();
@@ -869,6 +1031,11 @@ impl MusicOs {
         let (tt_color, tb_color) = self.active_theme.gradient_colors();
         let dt = (seconds - self.last_draw_seconds).max(0.0).min(0.1);
         self.last_draw_seconds = seconds;
+        let motion_seconds = match self.motion_mode {
+            MotionMode::Reduced => 0.0,
+            MotionMode::BatterySaver => seconds * 0.5,
+            MotionMode::Visuals | MotionMode::Balanced => seconds,
+        };
 
         if !self.theme_colors_initialized {
             self.cur_top_r = tt_color.r as f32;
@@ -901,14 +1068,18 @@ impl MusicOs {
         canvas.theme_top_color = Some(animated_top);
         canvas.theme_bottom_color = Some(animated_bottom);
 
-        let transition_t = crate::ui::transitions::ease_out_cubic(self.screen_transition);
+        let transition_t = if self.motion_mode == MotionMode::Reduced {
+            1.0
+        } else {
+            crate::ui::transitions::ease_out_cubic(self.screen_transition)
+        };
 
         if self.screen == Screen::ContextMenu {
             self.draw_screen(
                 self.previous_screen,
                 self.previous_focus,
                 canvas,
-                seconds,
+                motion_seconds,
                 1.0,
             );
             let title = self.context_menu_title();
@@ -919,10 +1090,16 @@ impl MusicOs {
                 &title,
                 self.context_item_is_pinned(),
                 transition_t,
-                seconds,
+                motion_seconds,
             );
         } else {
-            self.draw_screen(self.screen, self.focus, canvas, seconds, transition_t);
+            self.draw_screen(
+                self.screen,
+                self.focus,
+                canvas,
+                motion_seconds,
+                transition_t,
+            );
         }
 
         let screen_changed = Some(self.screen) != self.last_drawn_screen;
@@ -947,7 +1124,11 @@ impl MusicOs {
                 self.outline_thick += (t_thick - self.outline_thick) * factor;
             }
 
-            let outline_pulse = crate::ui::transitions::pulse01(seconds, 4.0, 0.0);
+            let outline_pulse = if self.motion_mode == MotionMode::Reduced {
+                0.0
+            } else {
+                crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
+            };
             let outline_color = canvas
                 .theme_top_color
                 .unwrap_or(Color::rgb(35, 108, 220))
@@ -979,7 +1160,7 @@ impl MusicOs {
         }
 
         if self.hud_t > 0.0 {
-            self.draw_hud(canvas, seconds);
+            self.draw_hud(canvas, motion_seconds);
         }
 
         if self.wifi_sync_overlay {
@@ -991,7 +1172,7 @@ impl MusicOs {
         }
 
         if self.wifi_sync_overlay {
-            self.draw_wifi_sync_overlay(canvas, seconds);
+            self.draw_wifi_sync_overlay(canvas, motion_seconds);
         }
     }
 
@@ -1714,6 +1895,7 @@ impl MusicOs {
                     let _ = self.db.increment_play_count(track.id);
                     self.player
                         .set_queue(self.tracks_queue.clone(), self.selected_index);
+                    self.apply_shuffle_default();
                     self.screen = Screen::NowPlaying;
                     self.focus = Focus::Albums;
                 }
@@ -1751,6 +1933,7 @@ impl MusicOs {
                     let _ = self.db.increment_play_count(track.id);
                     self.player
                         .set_queue(self.tracks_queue.clone(), self.selected_index);
+                    self.apply_shuffle_default();
                     self.screen = Screen::NowPlaying;
                     self.focus = Focus::Albums;
                 }
@@ -1859,6 +2042,7 @@ impl MusicOs {
                 if let Ok(tracks) = self.db.get_playlist_tracks(playlists[index].id) {
                     if !tracks.is_empty() {
                         self.player.set_queue(tracks, 0);
+                        self.apply_shuffle_default();
                         self.screen = Screen::NowPlaying;
                         self.focus = Focus::Albums;
                     }
@@ -1870,6 +2054,7 @@ impl MusicOs {
         if let Ok(tracks) = self.db.get_tracks() {
             if index < tracks.len() {
                 self.player.set_queue(tracks, index);
+                self.apply_shuffle_default();
                 self.screen = Screen::NowPlaying;
                 self.focus = Focus::Albums;
             }
@@ -1878,6 +2063,12 @@ impl MusicOs {
 
     fn library_counts(&self) -> LibraryCounts {
         self.db.library_counts().unwrap_or_default()
+    }
+
+    fn apply_shuffle_default(&mut self) {
+        if self.shuffle_default_enabled {
+            self.player.set_shuffle(true);
+        }
     }
 
     fn current_preferences(&self, setup_complete: bool) -> Preferences {
@@ -1911,6 +2102,11 @@ impl MusicOs {
         preferences.library_group = self.library_group;
         preferences.sleep_timeout_minutes = self.sleep_timeout_minutes;
         preferences.dim_timeout_seconds = self.dim_timeout_seconds;
+        preferences.motion_mode = self.motion_mode;
+        preferences.seek_step_seconds = self.seek_step_seconds;
+        preferences.sleep_timer_default_minutes = self.sleep_timer_default_minutes;
+        preferences.resume_queue_enabled = self.resume_queue_enabled;
+        preferences.shuffle_default_enabled = self.shuffle_default_enabled;
         preferences.first_run_audio_test_complete = self.first_run_audio_test_complete;
         preferences.last_music_focus = self.music_focus_name().to_string();
         preferences.sanitized()
@@ -1945,6 +2141,7 @@ impl MusicOs {
             db_path: self.db_path.clone(),
             settings_path: crate::preferences::path().display().to_string(),
             scan_status: self.scan_status.clone(),
+            scan: self.scan.clone(),
             usb_status: self.usb_status.message.clone(),
             battery_status: crate::system::battery_summary(),
             indexed_roots: crate::media::last_scan_roots(),
@@ -2019,6 +2216,21 @@ impl MusicOs {
         if let Some(value) = update.dim_timeout_seconds {
             self.dim_timeout_seconds = value.clamp(10, 600);
         }
+        if let Some(value) = update.motion_mode {
+            self.motion_mode = MotionMode::from_str(&value);
+        }
+        if let Some(value) = update.seek_step_seconds {
+            self.seek_step_seconds = value.clamp(5, 60);
+        }
+        if let Some(value) = update.sleep_timer_default_minutes {
+            self.sleep_timer_default_minutes = value.min(180);
+        }
+        if let Some(value) = update.resume_queue_enabled {
+            self.resume_queue_enabled = value;
+        }
+        if let Some(value) = update.shuffle_default_enabled {
+            self.shuffle_default_enabled = value;
+        }
         if let Some(value) = update.first_run_audio_test_complete {
             self.first_run_audio_test_complete = value;
         }
@@ -2040,6 +2252,11 @@ impl MusicOs {
         self.library_group = defaults.library_group;
         self.sleep_timeout_minutes = defaults.sleep_timeout_minutes;
         self.dim_timeout_seconds = defaults.dim_timeout_seconds;
+        self.motion_mode = defaults.motion_mode;
+        self.seek_step_seconds = defaults.seek_step_seconds;
+        self.sleep_timer_default_minutes = defaults.sleep_timer_default_minutes;
+        self.resume_queue_enabled = defaults.resume_queue_enabled;
+        self.shuffle_default_enabled = defaults.shuffle_default_enabled;
         self.first_run_audio_test_complete = false;
         self.brightness = defaults.brightness;
         self.player.set_volume(defaults.volume);
@@ -2296,6 +2513,9 @@ impl MusicOs {
                 self.player.set_shuffle(true);
             }
             self.player.set_queue(tracks, index);
+            if !shuffle {
+                self.apply_shuffle_default();
+            }
             self.screen = Screen::NowPlaying;
             self.focus = Focus::Albums;
         } else {

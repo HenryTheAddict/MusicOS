@@ -15,6 +15,13 @@ use lofty::tag::Accessor;
 static COVER_ART_CACHE: OnceLock<Mutex<HashMap<String, Option<CoverArt>>>> = OnceLock::new();
 static LAST_SCAN_ROOTS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
 
+#[derive(Debug, Clone, Default)]
+pub struct ScanProgress {
+    pub indexed: usize,
+    pub discovered: usize,
+    pub current_root: Option<String>,
+}
+
 pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
     let cache = COVER_ART_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(cache) = cache.lock() {
@@ -62,6 +69,14 @@ pub fn cover_art_memory_cache_len() -> usize {
         .get()
         .and_then(|cache| cache.lock().ok().map(|cache| cache.len()))
         .unwrap_or(0)
+}
+
+pub fn clear_cover_art_memory_cache() {
+    if let Some(cache) = COVER_ART_CACHE.get() {
+        if let Ok(mut cache) = cache.lock() {
+            cache.clear();
+        }
+    }
 }
 
 pub fn last_scan_roots() -> Vec<String> {
@@ -161,7 +176,12 @@ fn persist_cover_art(
     }
     let image = image::RgbaImage::from_raw(art.width, art.height, rgba)
         .ok_or_else(|| anyhow::anyhow!("invalid cover-art buffer"))?;
-    image.save(&path)?;
+    let temp = dir.join(format!("{track_id}.png.tmp"));
+    image.save_with_format(&temp, image::ImageFormat::Png)?;
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    std::fs::rename(&temp, &path)?;
     db.set_track_cover_art(track_id, path.to_str(), source_modified_at)?;
     Ok(())
 }
@@ -219,6 +239,74 @@ fn find_folder_cover_art(dir: &Path) -> Option<PathBuf> {
 }
 
 pub fn index_default_locations(db: &Db) -> Result<usize> {
+    index_default_locations_with_progress(db, |_| {})
+}
+
+pub fn index_default_locations_with_progress<F>(db: &Db, progress: F) -> Result<usize>
+where
+    F: FnMut(ScanProgress),
+{
+    index_default_locations_with_mode(db, false, progress)
+}
+
+pub fn reindex_default_locations_with_progress<F>(db: &Db, progress: F) -> Result<usize>
+where
+    F: FnMut(ScanProgress),
+{
+    index_default_locations_with_mode(db, true, progress)
+}
+
+fn index_default_locations_with_mode<F>(
+    db: &Db,
+    reindex_all: bool,
+    mut progress: F,
+) -> Result<usize>
+where
+    F: FnMut(ScanProgress),
+{
+    let roots = default_scan_roots();
+
+    if let Ok(mut last) = LAST_SCAN_ROOTS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+    {
+        *last = roots.clone();
+    }
+
+    let mut indexed = 0;
+    let mut discovered = 0;
+    for root in roots {
+        let root_path = Path::new(&root);
+        if !root_path.exists() {
+            continue;
+        }
+
+        let files = audio_files_under(root_path);
+        discovered += files.len();
+        progress(ScanProgress {
+            indexed,
+            discovered,
+            current_root: Some(root.clone()),
+        });
+
+        indexed += index_files(db, &files, reindex_all, |local_indexed| {
+            progress(ScanProgress {
+                indexed: indexed + local_indexed,
+                discovered,
+                current_root: Some(root.clone()),
+            });
+        })?;
+    }
+
+    progress(ScanProgress {
+        indexed,
+        discovered,
+        current_root: None,
+    });
+    Ok(indexed)
+}
+
+fn default_scan_roots() -> Vec<String> {
     let mut roots = vec![
         "/mnt/sdcard".to_string(),
         "/media".to_string(),
@@ -242,20 +330,7 @@ pub fn index_default_locations(db: &Db) -> Result<usize> {
             }
         }
     }
-
-    let scanned_roots = roots.clone();
-    if let Ok(mut last) = LAST_SCAN_ROOTS
-        .get_or_init(|| Mutex::new(Vec::new()))
-        .lock()
-    {
-        *last = scanned_roots;
-    }
-
-    let mut indexed = 0;
-    for root in roots {
-        indexed += index_location(db, Path::new(&root))?;
-    }
-    Ok(indexed)
+    roots
 }
 
 pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
@@ -263,17 +338,28 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
         return Ok(0);
     }
 
-    db.begin_transaction()?;
+    let files = audio_files_under(root);
+    index_files(db, &files, false, |_| {})
+}
 
-    let mut indexed = 0;
-    let reindex_all = std::env::var("MUSICOS_REINDEX_ALL").as_deref() == Ok("1");
-
+fn audio_files_under(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
     for entry in WalkDir::new(root).follow_links(false).into_iter().flatten() {
         if entry.file_type().is_file() && is_audio(entry.path()) {
             files.push(entry.into_path());
         }
     }
+    files
+}
+
+fn index_files<F>(db: &Db, files: &[PathBuf], reindex_all: bool, mut progress: F) -> Result<usize>
+where
+    F: FnMut(usize),
+{
+    db.begin_transaction()?;
+
+    let mut indexed = 0;
+    let reindex_all = reindex_all || std::env::var("MUSICOS_REINDEX_ALL").as_deref() == Ok("1");
 
     let total = files.len();
     for (idx, path) in files.iter().enumerate() {
@@ -290,7 +376,10 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
             }
         }
         match index_file(db, path, stats) {
-            Ok(()) => indexed += 1,
+            Ok(()) => {
+                indexed += 1;
+                progress(indexed);
+            }
             Err(err) => log::warn!("failed to index file {}: {err}", path.display()),
         }
     }

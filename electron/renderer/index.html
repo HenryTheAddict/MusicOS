@@ -111,6 +111,12 @@
                 <button data-control="play_pause" class="primary">Play</button>
                 <button data-control="next">Next</button>
               </div>
+              <div class="transport secondary">
+                <button id="seekBackBtn">-10s</button>
+                <button id="seekForwardBtn">+10s</button>
+                <button id="sleepTimerBtn">Sleep</button>
+                <button id="queueClearBtn">Clear Queue</button>
+              </div>
               <div id="queueList" class="queue-list"></div>
             </section>
           </div>
@@ -124,9 +130,22 @@
             </div>
             <div class="toolbar">
               <input id="librarySearch" class="search" placeholder="Search library" spellcheck="false" />
+              <button id="dryRunBtn">Dry Run</button>
               <button id="uploadBtn" class="primary">Upload Music</button>
+              <button id="retrySyncBtn">Retry Failed</button>
+              <button id="cancelSyncBtn">Cancel Sync</button>
             </div>
           </div>
+          <section class="panel smart-panel">
+            <header class="panel-header">
+              <div>
+                <span class="eyebrow">Daily Driver</span>
+                <h3>Smart Mixes</h3>
+              </div>
+              <button id="refreshMixesBtn">Refresh Mixes</button>
+            </header>
+            <div id="mixList" class="mix-list"></div>
+          </section>
           <div id="tracks" class="tracks"></div>
         </section>
 
@@ -169,6 +188,7 @@
             <div class="toolbar">
               <button id="chooseBtn">Choose Folder</button>
               <button id="openFolderBtn">Open Folder</button>
+              <button id="openArtCacheBtn">Art Cache</button>
               <button id="resetDbBtn">Reset DB</button>
             </div>
           </div>
@@ -194,6 +214,31 @@
                   </select>
                 </label>
                 <label><span>PCM</span><input id="alsaDeviceInput" spellcheck="false" /></label>
+                <label>
+                  <span>Motion</span>
+                  <select id="motionModeInput">
+                    <option value="balanced">Balanced</option>
+                    <option value="battery_saver">Battery Saver</option>
+                    <option value="visuals">Visuals</option>
+                    <option value="reduced">Reduced Motion</option>
+                  </select>
+                </label>
+                <label><span>Seek Step</span><input id="seekStepInput" type="number" min="5" max="60" step="5" /></label>
+                <label><span>Sleep Default</span><input id="sleepDefaultInput" type="number" min="0" max="180" step="5" /></label>
+                <label>
+                  <span>Resume Queue</span>
+                  <select id="resumeQueueInput">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Shuffle Default</span>
+                  <select id="shuffleDefaultInput">
+                    <option value="false">Off</option>
+                    <option value="true">On</option>
+                  </select>
+                </label>
               </div>
             </section>
 
@@ -207,6 +252,29 @@
               </header>
               <div id="diagnosticsGrid" class="diagnostics-grid"></div>
             </section>
+
+            <section class="panel">
+              <header class="panel-header">
+                <div>
+                  <span class="eyebrow">Maintenance</span>
+                  <h3>Tools</h3>
+                </div>
+                <button id="perfSmokeBtn">Perf Smoke</button>
+              </header>
+              <div class="tool-grid">
+                <button id="backupBtn">Backup</button>
+                <button id="restoreBtn">Restore</button>
+                <button id="exportPlaylistsBtn">Export Playlists</button>
+                <button id="importPlaylistsBtn">Import Playlists</button>
+                <button id="clearArtCacheBtn">Clear Art Cache</button>
+                <button id="repairLibraryBtn">Repair Library</button>
+                <button id="rescanChangedBtn">Rescan Changed</button>
+                <button id="rescanFullBtn">Full Rescan</button>
+                <button id="clearSyncHistoryBtn">Clear Sync History</button>
+              </div>
+              <div id="performanceBox" class="diagnostic wide"></div>
+              <div id="syncHistory" class="sync-history"></div>
+            </section>
           </div>
         </section>
 
@@ -218,6 +286,7 @@
             </div>
             <div class="toolbar">
               <button id="clearLogsBtn">Clear</button>
+              <button id="exportDiagnosticsBtn">Export</button>
               <button id="diagnosticsBtn" class="primary">Diagnostics</button>
             </div>
           </div>
