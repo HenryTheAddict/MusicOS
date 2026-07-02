@@ -7,6 +7,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0"
 bitflags = "2.6"
+clap = { version = "4.5", features = ["derive", "env"] }
 libc = "0.2"
 log = "0.4"
 rusttype = "0.9"
@@ -56,6 +57,10 @@ required-features = ["desktop-app"]
 name = "musicos-desktop"
 path = "src/bin/musicos-desktop.rs"
 required-features = ["desktop-app"]
+
+[[bin]]
+name = "musicos"
+path = "src/bin/musicos.rs"
 
 [features]
 default = []

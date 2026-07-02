@@ -55,7 +55,15 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  const devUrl = process.env.MUSICOS_RENDERER_URL;
+  const viteIndex = path.join(__dirname, "renderer-vite", "index.html");
+  if (devUrl) {
+    mainWindow.loadURL(devUrl);
+  } else if (fsSync.existsSync(viteIndex)) {
+    mainWindow.loadFile(viteIndex);
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  }
 }
 
 app.whenReady().then(createWindow);

@@ -21,6 +21,11 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
 - Electron `MusicOS Control Center` for the Windows/macOS/Linux desktop
   emulator, device mirror, library sync, playlists, diagnostics, logs, and
   local emulator controls.
+- Vite + React + TypeScript Control Center renderer using shadcn/ui components,
+  with an iTunes-style library shell for songs, albums, artists, playlists,
+  devices, sync, updates, settings, and a persistent now-playing bar.
+- `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
+  USB update staging/install checks, settings, devices, and doctor output.
 - Smart dynamic mixes, playback history, queue maintenance, seek controls,
   sleep timer commands, motion/performance settings, and cover-art cache tools.
 - Ordered playlist tracks, sync dry-run/retry tools, database repair, changed
@@ -107,10 +112,93 @@ npm run sync:electron
 You can also use the npm shortcuts on any host with Rust and Node installed:
 
 ```sh
+npm run dev
+npm run build:renderer
 npm run check
 npm run build
 npm run desktop
+npm run cli -- --help
 ```
+
+For live renderer work, run:
+
+```sh
+npm run sync:electron:dev
+```
+
+That starts Vite on `http://127.0.0.1:5173` and launches Electron with
+`MUSICOS_RENDERER_URL` pointed at the dev renderer. Normal Electron launches load
+the built Vite app from `electron/renderer-vite`; if that folder does not exist,
+Electron falls back to the legacy static renderer.
+
+## Control Center Frontend
+
+The desktop companion is now a Vite React app initialized with the requested
+shadcn preset:
+
+```powershell
+npx.cmd --yes shadcn@latest init --preset b1tgXXJFI --template vite --rtl --pointer
+```
+
+On Windows PowerShell, plain `npx shadcn@latest ...` can fail before shadcn runs
+because script execution policy blocks `npx.ps1`. Use `npx.cmd` instead. The
+first shadcn attempt also failed because the repo was still a static Electron
+renderer with no Vite/Tailwind framework for shadcn to detect. The fix was to add
+the Vite renderer (`index.html`, `src/main.tsx`, `vite.config.ts`,
+`tsconfig.json`), install Tailwind, add `tailwind.config.js`, then rerun the same
+preset command. The generated `components.json` keeps RTL support enabled, while
+the app sets the default document direction to LTR.
+
+Useful frontend commands:
+
+```sh
+npm run shadcn:init
+npm run build:renderer
+npm run typecheck
+npm run sync:electron:dev
+```
+
+## MusicOS CLI
+
+Run the CLI through npm or Cargo:
+
+```sh
+npm run cli -- --help
+cargo run --bin musicos --features desktop-app,desktop-audio -- --help
+```
+
+Examples:
+
+```sh
+npm run cli -- scan
+npm run cli -- scan --all
+npm run cli -- library list
+npm run cli -- library stats --json
+npm run cli -- library add ./music
+npm run cli -- playlists list
+npm run cli -- playlists create "Roadtrip"
+npm run cli -- playlists add-track 1 42
+npm run cli -- devices list
+npm run cli -- sync plan desktop --json
+npm run cli -- sync start desktop --dry-run
+npm run cli -- updates scan
+npm run cli -- updates install
+npm run cli -- settings get --json
+npm run cli -- settings set user-name "Henry"
+npm run cli -- settings set device-name "MusicOS"
+npm run cli -- settings set audio-backend alsa
+npm run cli -- settings set alsa-device plughw:0,0
+npm run cli -- settings set theme red
+npm run cli -- settings set eq bass
+npm run cli -- doctor --json
+```
+
+The CLI reuses the Rust SQLite, media indexing, preferences, playlist, USB
+update, and companion upload paths. `sync start --dry-run` never writes to a
+device. `sync start desktop` uploads files from `MUSICOS_SYNC_DIR` to
+`MUSICOS_SYNC_TARGET` using the same `/api/upload` headers as the Control Center,
+then triggers one `/api/control` library scan. You can also pass an explicit
+`http://host:port` target as the device id for a reachable MusicOS companion API.
 
 On Windows, run the local runtime performance smoke test with:
 
@@ -145,6 +233,10 @@ Useful runtime APIs:
   orphan playlist cleanup, playlist position repair, and a WAL checkpoint.
 - `POST /api/library/rescan` with `{ "mode": "changed" | "full" }` starts a
   bounded scan using changed-file skips or a full metadata/art refresh.
+- `POST /api/sync-usb` scans configured/removable USB roots, indexes USB media,
+  stages MusicOS update payloads, and installs update targets when present.
+- `POST /api/updates/install` installs an already-staged MusicOS binary or
+  system image update without requiring another USB scan.
 - `PUT /api/playlists/:id/tracks/reorder` with `{ "track_ids": [...] }`
   persists manual playlist order.
 - `POST /api/control` accepts playback, queue, playlist, scan, seek, sleep

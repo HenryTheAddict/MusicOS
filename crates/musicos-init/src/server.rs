@@ -862,6 +862,30 @@ impl CompanionServer {
                 continue;
             }
 
+            if path == "/api/updates/install" && method == "POST" {
+                let response = match crate::usb::install_pending_update() {
+                    Ok(Some(path)) => json_response(&serde_json::json!({
+                        "status": "ok",
+                        "installed_update": path.display().to_string(),
+                        "message": "Installed staged MusicOS update."
+                    })),
+                    Ok(None) => json_response(&serde_json::json!({
+                        "status": "no_update",
+                        "installed_update": null,
+                        "message": "No staged MusicOS update was found."
+                    })),
+                    Err(error) => json_response_status(
+                        &serde_json::json!({
+                            "status": "error",
+                            "message": error.to_string()
+                        }),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
             if path.starts_with("/api/pointer") && method == "POST" {
                 let event = if url.contains("action=tap") {
                     Some(InputEvent::Tap)
