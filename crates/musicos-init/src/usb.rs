@@ -163,9 +163,8 @@ pub fn install_pending_update() -> Result<Option<PathBuf>> {
 fn discover_usb_roots() -> Vec<PathBuf> {
     let mut roots = BTreeSet::new();
     mount_removable_candidates(&mut roots);
-    if let Ok(value) = std::env::var("MUSICOS_USB_ROOTS") {
-        for item in value.split(':').filter(|item| !item.trim().is_empty()) {
-            let path = PathBuf::from(item);
+    if let Some(value) = std::env::var_os("MUSICOS_USB_ROOTS") {
+        for path in std::env::split_paths(&value) {
             if path.exists() {
                 roots.insert(path.clone());
                 collect_children(&path, &mut roots, 2);
