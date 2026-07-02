@@ -74,6 +74,7 @@ type Section =
   | "sync"
   | "updates"
   | "settings";
+type SyncScope = "all" | "favorites" | "playlist";
 
 type Track = {
   id: number;
@@ -89,7 +90,7 @@ type Track = {
   play_count?: number;
 };
 
-type Playlist = { id: number; name: string };
+type Playlist = { id: number; name: string; track_count?: number };
 type Mix = { id: string; name: string; kind: string; track_count: number };
 type Config = { target: string; syncDir: string; dbPath: string; emulator?: EmulatorStatus };
 type EmulatorStatus = {
@@ -167,9 +168,9 @@ declare global {
       exportPlaylists: () => Promise<{ canceled?: boolean; count?: number }>;
       importPlaylists: () => Promise<{ canceled?: boolean; imported?: number }>;
       sync: {
-        start: () => Promise<SyncState>;
+        start: (files?: string[]) => Promise<SyncState>;
         status: () => Promise<SyncState>;
-        dryRun: () => Promise<Record<string, unknown>>;
+        dryRun: (files?: string[]) => Promise<Record<string, unknown>>;
         retryFailed: () => Promise<SyncState & { retryStarted?: boolean }>;
         cancel: () => Promise<SyncState>;
         history: () => Promise<SyncState[]>;
@@ -224,6 +225,8 @@ export function App() {
   const [newPlaylist, setNewPlaylist] = useState("");
   const [renameValue, setRenameValue] = useState("");
   const [dryRun, setDryRun] = useState<Record<string, unknown> | null>(null);
+  const [syncScope, setSyncScope] = useState<SyncScope>("all");
+  const [syncPlaylistId, setSyncPlaylistId] = useState<number | null>(null);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -441,10 +444,30 @@ export function App() {
 
   async function startSync() {
     await guarded("Starting sync...", async () => {
-      setSync(await ipc().sync.start());
+      setSync(await ipc().sync.start(await syncFilesForScope()));
       await refreshSyncState();
       await refreshLogs();
     });
+  }
+
+  async function planSync() {
+    await guarded("Planning sync...", async () => setDryRun(await ipc().sync.dryRun(await syncFilesForScope())));
+  }
+
+  async function syncFilesForScope() {
+    if (syncScope === "all") return undefined;
+    if (syncScope === "favorites") {
+      const files = tracks.filter((track) => track.favorited).map((track) => track.path).filter(Boolean);
+      if (!files.length) throw new Error("No favorite tracks are available to sync.");
+      return files;
+    }
+
+    const playlistId = syncPlaylistId ?? playlists[0]?.id;
+    if (!playlistId) throw new Error("Create or select a playlist before playlist sync.");
+    const selectedTracks = await getJson<Track[]>(`/api/playlists/${playlistId}/tracks`);
+    const files = selectedTracks.map((track) => track.path).filter(Boolean);
+    if (!files.length) throw new Error("The selected playlist has no tracks to sync.");
+    return files;
   }
 
   async function runUsbSync() {
@@ -620,7 +643,18 @@ export function App() {
                   sync={sync}
                   history={syncHistory}
                   dryRun={dryRun}
-                  dryRunAction={() => guarded("Planning sync...", async () => setDryRun(await ipc().sync.dryRun()))}
+                  playlists={playlists}
+                  syncScope={syncScope}
+                  setSyncScope={(next) => {
+                    setSyncScope(next);
+                    setDryRun(null);
+                  }}
+                  syncPlaylistId={syncPlaylistId}
+                  setSyncPlaylistId={(id) => {
+                    setSyncPlaylistId(id);
+                    setDryRun(null);
+                  }}
+                  dryRunAction={planSync}
                   start={startSync}
                   cancel={() => guarded("Cancelling sync...", async () => setSync(await ipc().sync.cancel()))}
                   retry={() => guarded("Retrying failed items...", async () => setSync(await ipc().sync.retryFailed()))}
@@ -1025,6 +1059,11 @@ function SyncManager(props: {
   sync: SyncState | null;
   history: SyncState[];
   dryRun: Record<string, unknown> | null;
+  playlists: Playlist[];
+  syncScope: SyncScope;
+  setSyncScope: (value: SyncScope) => void;
+  syncPlaylistId: number | null;
+  setSyncPlaylistId: (id: number | null) => void;
   dryRunAction: () => void;
   start: () => void;
   cancel: () => void;
@@ -1041,11 +1080,41 @@ function SyncManager(props: {
     ...(state?.failedFiles ?? []).map((file) => `Failed: ${file}`),
     ...(state?.errors ?? [])
   ];
+  const selectedPlaylist = props.playlists.find((playlist) => playlist.id === props.syncPlaylistId) ?? props.playlists[0] ?? null;
+  const scopeLabel = props.syncScope === "all" ? "All music" : props.syncScope === "favorites" ? "Favorite tracks" : (selectedPlaylist?.name ?? "Selected playlist");
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <Card className="rounded-lg border-white/10 bg-[#181c22]">
         <CardHeader><CardTitle className="text-base">Sync Music</CardTitle></CardHeader>
         <CardContent className="grid gap-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Sync scope">
+              <Select value={props.syncScope} onValueChange={(value) => props.setSyncScope(value as SyncScope)}>
+                <SelectTrigger aria-label="Sync scope"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All music in folder</SelectItem>
+                  <SelectItem value="favorites">Favorite tracks</SelectItem>
+                  <SelectItem value="playlist">Selected playlist</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Playlist">
+              <Select
+                value={String(selectedPlaylist?.id ?? "none")}
+                onValueChange={(value) => props.setSyncPlaylistId(value === "none" ? null : Number(value))}
+                disabled={props.syncScope !== "playlist" || !props.playlists.length}
+              >
+                <SelectTrigger aria-label="Sync playlist"><SelectValue placeholder="Choose playlist" /></SelectTrigger>
+                <SelectContent>
+                  {props.playlists.length ? props.playlists.map((playlist) => (
+                    <SelectItem key={playlist.id} value={String(playlist.id)}>
+                      {playlist.name}{typeof playlist.track_count === "number" ? ` (${playlist.track_count})` : ""}
+                    </SelectItem>
+                  )) : <SelectItem value="none">No playlists yet</SelectItem>}
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
           <div className="grid gap-2 text-sm text-muted-foreground">
             <PathLine label="Source" value={props.config.syncDir} />
             <PathLine label="Target API" value={props.config.target} />
@@ -1054,9 +1123,9 @@ function SyncManager(props: {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="font-medium">What will sync</div>
-                <div className="text-sm text-muted-foreground">All supported audio in the selected music folder</div>
+                <div className="text-sm text-muted-foreground">{scopeLabel}</div>
               </div>
-              <Badge variant="secondary">Folder sync</Badge>
+              <Badge variant="secondary">{props.syncScope === "playlist" ? "Playlist sync" : props.syncScope === "favorites" ? "Favorites sync" : "Folder sync"}</Badge>
             </div>
           </div>
           <Progress value={total ? (done / total) * 100 : 0} />

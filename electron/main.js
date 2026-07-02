@@ -219,6 +219,7 @@ async function startEmulator() {
 
 async function startSync(_event, filesOverride = null) {
   if (syncState.running) return syncState;
+  const selectedFiles = syncFileOverride(filesOverride);
 
   syncState = {
     running: true,
@@ -234,7 +235,7 @@ async function startSync(_event, filesOverride = null) {
     finishedAt: null
   };
 
-  runSyncJob(filesOverride).catch(error => {
+  runSyncJob(selectedFiles).catch(error => {
     syncState.failed += 1;
     syncState.errors.push(error.message);
     appendLog("sync", `failed: ${error.message}`);
@@ -254,8 +255,9 @@ async function retryFailedSync() {
   return { ...state, retryStarted: true };
 }
 
-async function syncDryRun() {
-  const files = await collectAudioFiles(syncDir);
+async function syncDryRun(_event, filesOverride = null) {
+  const selectedFiles = syncFileOverride(filesOverride);
+  const files = selectedFiles || await collectAudioFiles(syncDir);
   let totalBytes = 0;
   let unreadable = 0;
   for (const file of files) {
@@ -270,6 +272,7 @@ async function syncDryRun() {
     ok: true,
     syncDir,
     target,
+    scoped: Boolean(selectedFiles),
     files: files.length,
     totalBytes,
     unreadable,
@@ -280,7 +283,7 @@ async function syncDryRun() {
 }
 
 async function runSyncJob(filesOverride = null) {
-  const files = Array.isArray(filesOverride) ? filesOverride : await collectAudioFiles(syncDir);
+  const files = filesOverride || await collectAudioFiles(syncDir);
   syncState.found = files.length;
   appendLog("sync", `Found ${files.length} audio files in ${syncDir}`);
 
@@ -341,6 +344,13 @@ async function runSyncJob(filesOverride = null) {
       appendLog("sync", `scan trigger failed: ${error.message}`);
     }
   }
+}
+
+function syncFileOverride(filesOverride) {
+  if (!Array.isArray(filesOverride)) return null;
+  return filesOverride
+    .filter(file => typeof file === "string" && file.trim())
+    .map(file => file.trim());
 }
 
 async function exportDiagnostics() {

@@ -219,6 +219,9 @@ describe("MusicOS Control Center shell", () => {
 
   it("wires device emulator and sync controls through Electron IPC", async () => {
     const musicos = window.musicos!;
+    tracksData = [indexedTrack];
+    playlistsData = [{ id: 7, name: "Pocket Sync", track_count: 1 }];
+    playlistTracksData = [indexedTrack];
     musicos.sync.status = vi.fn(async () => ({
       running: false,
       found: 4,
@@ -255,7 +258,7 @@ describe("MusicOS Control Center shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sync" }));
     expect(await screen.findByText("What will sync")).toBeInTheDocument();
-    expect(screen.getByText("All supported audio in the selected music folder")).toBeInTheDocument();
+    expect(screen.getByText("All music")).toBeInTheDocument();
     expect(screen.getByText("Conflicts and failed items")).toBeInTheDocument();
     expect(screen.getByText("Failed: C:/Music/broken.flac")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: /Plan sync/i }));
@@ -266,6 +269,16 @@ describe("MusicOS Control Center shell", () => {
     await waitFor(() => {
       expect(musicos.sync.dryRun).toHaveBeenCalled();
       expect(musicos.sync.start).toHaveBeenCalled();
+    });
+
+    const scopeSelect = screen.getByRole("combobox", { name: "Sync scope" });
+    fireEvent.pointerDown(scopeSelect, { button: 0, ctrlKey: false, pointerType: "mouse" });
+    fireEvent.click(await screen.findByRole("option", { name: "Selected playlist" }));
+    expect(await screen.findByText("Pocket Sync")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Plan sync/i }));
+    await waitFor(() => {
+      expect(musicos.sync.dryRun).toHaveBeenCalledWith(["C:/Music/Albums/Blue Static/01 Neon Start.wav"]);
     });
   });
 });

@@ -18,9 +18,9 @@ contextBridge.exposeInMainWorld("musicos", {
     report: () => ipcRenderer.invoke("performance:report:get")
   },
   sync: {
-    start: () => ipcRenderer.invoke("sync:start"),
+    start: files => ipcRenderer.invoke("sync:start", files),
     status: () => ipcRenderer.invoke("sync:status"),
-    dryRun: () => ipcRenderer.invoke("sync:dryRun"),
+    dryRun: files => ipcRenderer.invoke("sync:dryRun", files),
     retryFailed: () => ipcRenderer.invoke("sync:retryFailed"),
     cancel: () => ipcRenderer.invoke("sync:cancel"),
     history: () => ipcRenderer.invoke("sync:history:get"),
