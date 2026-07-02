@@ -600,6 +600,9 @@ export function App() {
                 <DevicePanel
                   config={config}
                   library={library}
+                  sync={sync}
+                  history={syncHistory}
+                  dryRun={dryRun}
                   start={() => guarded("Starting emulator...", async () => setConfig({ ...config, emulator: await ipc().emulator.start() }))}
                   stop={() => guarded("Stopping emulator...", async () => setConfig({ ...config, emulator: await ipc().emulator.stop() }))}
                   restart={() => guarded("Restarting emulator...", async () => setConfig({ ...config, emulator: await ipc().emulator.restart() }))}
@@ -950,6 +953,9 @@ function PlaylistView(props: {
 function DevicePanel(props: {
   config: Config;
   library: LibraryState | null;
+  sync: SyncState | null;
+  history: SyncState[];
+  dryRun: Record<string, unknown> | null;
   start: () => void;
   stop: () => void;
   restart: () => void;
@@ -959,6 +965,10 @@ function DevicePanel(props: {
   exportDiagnostics: () => void;
 }) {
   const emulator = props.config.emulator;
+  const lastSync = props.history[0] ?? null;
+  const plannedBytes = Number(props.dryRun?.totalBytes ?? 0);
+  const plannedFiles = Number(props.dryRun?.files ?? 0);
+  const syncStatus = props.sync?.running ? "Syncing" : lastSync ? (lastSync.failed ? "Needs review" : "Complete") : "Never synced";
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <Card className="rounded-lg border-white/10 bg-[#181c22]">
@@ -967,7 +977,12 @@ function DevicePanel(props: {
           <div className="grid gap-3 md:grid-cols-3">
             <Metric label="Runtime" value={emulator?.running ? "Running" : emulator?.starting ? "Starting" : "Stopped"} />
             <Metric label="Tracks" value={props.library?.counts?.tracks ?? 0} />
-            <Metric label="Frame p95" value={`${Number(props.library?.frame_timing?.p95_ms ?? 0).toFixed(1)} ms`} />
+            <Metric label="Sync status" value={syncStatus} />
+          </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Metric label="Storage planned" value={plannedBytes ? formatBytes(plannedBytes) : "Plan needed"} />
+            <Metric label="Pending files" value={plannedFiles || "Plan needed"} />
+            <Metric label="Last sync" value={lastSync?.finishedAt ? formatDateTime(lastSync.finishedAt) : "Never"} />
           </div>
           <div className="grid gap-2 text-sm text-muted-foreground">
             <PathLine label="Target" value={props.config.target} />
@@ -975,6 +990,14 @@ function DevicePanel(props: {
             <PathLine label="Database" value={props.config.dbPath} />
             <PathLine label="Binary" value={emulator?.binPath ?? "target/debug/musicos-mac.exe"} />
           </div>
+          {lastSync && (
+            <div className="rounded-md border border-white/10 bg-black/20 p-3 text-sm">
+              <div className="font-medium">Last sync summary</div>
+              <div className="mt-1 text-muted-foreground">
+                {lastSync.uploaded} uploaded / {lastSync.skipped} skipped / {lastSync.failed} failed
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button onClick={props.start}><MonitorPlay className="size-4" /> Start</Button>
             <Button variant="secondary" onClick={props.restart}><RefreshCcw className="size-4" /> Restart</Button>
@@ -1011,6 +1034,13 @@ function SyncManager(props: {
   const state = props.sync;
   const total = state?.found || 0;
   const done = (state?.uploaded || 0) + (state?.skipped || 0) + (state?.failed || 0);
+  const dryRunFiles = Number(props.dryRun?.files ?? 0);
+  const dryRunBytes = Number(props.dryRun?.totalBytes ?? 0);
+  const unreadable = Number(props.dryRun?.unreadable ?? 0);
+  const conflicts = [
+    ...(state?.failedFiles ?? []).map((file) => `Failed: ${file}`),
+    ...(state?.errors ?? [])
+  ];
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
       <Card className="rounded-lg border-white/10 bg-[#181c22]">
@@ -1019,6 +1049,15 @@ function SyncManager(props: {
           <div className="grid gap-2 text-sm text-muted-foreground">
             <PathLine label="Source" value={props.config.syncDir} />
             <PathLine label="Target API" value={props.config.target} />
+          </div>
+          <div className="rounded-md border border-white/10 bg-black/20 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-medium">What will sync</div>
+                <div className="text-sm text-muted-foreground">All supported audio in the selected music folder</div>
+              </div>
+              <Badge variant="secondary">Folder sync</Badge>
+            </div>
           </div>
           <Progress value={total ? (done / total) * 100 : 0} />
           <div className="grid gap-3 md:grid-cols-4">
@@ -1034,6 +1073,18 @@ function SyncManager(props: {
             <Button variant="outline" disabled={!state?.failedFiles?.length} onClick={props.retry}>Retry failed</Button>
           </div>
           {state?.current && <p className="truncate text-sm text-muted-foreground">Current: {state.current}</p>}
+          {conflicts.length ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3">
+              <div className="font-medium text-destructive">Conflicts and failed items</div>
+              <div className="mt-2 grid max-h-28 gap-1 overflow-auto text-xs text-muted-foreground">
+                {conflicts.slice(0, 8).map((conflict, index) => <div key={`${conflict}-${index}`} className="truncate">{conflict}</div>)}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-md border border-white/10 bg-black/15 p-3 text-sm text-muted-foreground">
+              No sync conflicts reported.
+            </div>
+          )}
         </CardContent>
       </Card>
       <Card className="rounded-lg border-white/10 bg-[#181c22]">
@@ -1041,8 +1092,9 @@ function SyncManager(props: {
         <CardContent className="grid gap-3">
           {props.dryRun ? (
             <div className="rounded-md border border-white/10 bg-black/20 p-3 text-sm">
-              <div>{String(props.dryRun.files ?? 0)} files / {formatBytes(Number(props.dryRun.totalBytes ?? 0))}</div>
-              <div className="text-muted-foreground">{String(props.dryRun.unreadable ?? 0)} unreadable</div>
+              <div className="font-medium">Pending changes</div>
+              <div className="mt-1">{dryRunFiles} files / {formatBytes(dryRunBytes)}</div>
+              <div className="text-muted-foreground">{unreadable} unreadable</div>
             </div>
           ) : <p className="text-sm text-muted-foreground">Run a dry plan to see pending local files before upload.</p>}
           <Separator />
@@ -1361,6 +1413,17 @@ function formatBytes(bytes: number) {
     unit += 1;
   }
   return `${value.toFixed(unit ? 1 : 0)} ${units[unit]}`;
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
 }
 
 function fileTitle(path: string) {

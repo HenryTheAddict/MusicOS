@@ -219,9 +219,30 @@ describe("MusicOS Control Center shell", () => {
 
   it("wires device emulator and sync controls through Electron IPC", async () => {
     const musicos = window.musicos!;
+    musicos.sync.status = vi.fn(async () => ({
+      running: false,
+      found: 4,
+      uploaded: 2,
+      skipped: 1,
+      failed: 1,
+      errors: ["scan: HTTP 500"],
+      failedFiles: ["C:/Music/broken.flac"]
+    }));
+    musicos.sync.dryRun = vi.fn(async () => ({ files: 4, totalBytes: 4096, unreadable: 1 }));
+    musicos.sync.history = vi.fn(async () => [{
+      running: false,
+      found: 4,
+      uploaded: 2,
+      skipped: 1,
+      failed: 1,
+      finishedAt: "2026-07-02T18:00:00.000Z"
+    }]);
     render(<App />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Devices" }));
+    expect(await screen.findByText("Storage planned")).toBeInTheDocument();
+    expect(screen.getByText("Needs review")).toBeInTheDocument();
+    expect(screen.getByText("Last sync summary")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: /^Start$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Restart$/i }));
     fireEvent.click(screen.getByRole("button", { name: /^Stop$/i }));
@@ -233,7 +254,13 @@ describe("MusicOS Control Center shell", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Sync" }));
+    expect(await screen.findByText("What will sync")).toBeInTheDocument();
+    expect(screen.getByText("All supported audio in the selected music folder")).toBeInTheDocument();
+    expect(screen.getByText("Conflicts and failed items")).toBeInTheDocument();
+    expect(screen.getByText("Failed: C:/Music/broken.flac")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: /Plan sync/i }));
+    expect(await screen.findByText("Pending changes")).toBeInTheDocument();
+    expect(screen.getByText("4 files / 4.0 KB")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Start sync/i }));
 
     await waitFor(() => {
