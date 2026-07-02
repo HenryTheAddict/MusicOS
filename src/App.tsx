@@ -482,20 +482,20 @@ export function App() {
 
   return (
     <TooltipProvider>
-      <div className="grid h-screen min-h-[720px] grid-cols-[260px_minmax(0,1fr)] overflow-hidden bg-[#101216] text-foreground">
+      <div className="font-compact grid h-screen min-h-[720px] grid-cols-[260px_minmax(0,1fr)] overflow-hidden bg-[#101216] text-foreground">
         <aside className="flex min-h-0 flex-col border-r border-white/10 bg-[#171a20]">
           <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
-            <div className="grid size-10 place-items-center rounded-lg bg-primary text-lg font-black text-primary-foreground">m</div>
+            <div className="font-heading grid size-10 place-items-center rounded-lg bg-primary text-lg font-black text-primary-foreground">m</div>
             <div className="min-w-0">
-              <div className="truncate text-sm font-semibold">MusicOS Control Center</div>
-              <div className="truncate text-xs text-muted-foreground">iTunes-style companion</div>
+              <div className="font-display truncate text-sm font-semibold">MusicOS Control Center</div>
+              <div className="font-micro truncate text-xs text-muted-foreground">iTunes-style companion</div>
             </div>
           </div>
           <ScrollArea className="flex-1">
             <nav className="space-y-5 p-3">
               {["Library", "Playlists", "Device", "System"].map((group) => (
                 <div key={group}>
-                  <p className="px-2 pb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{group}</p>
+                  <p className="font-micro px-2 pb-2 text-[11px] font-semibold uppercase text-muted-foreground">{group}</p>
                   <div className="grid gap-1">
                     {sections
                       .filter((item) => item.group === group)
@@ -696,8 +696,8 @@ function TopBar(props: {
   return (
     <header className="flex items-center gap-3 border-b border-white/10 bg-[#1b1f26] px-4">
       <div className="min-w-[150px]">
-        <h1 className="text-base font-semibold">{titleFor(props.section)}</h1>
-        <p className="text-xs text-muted-foreground">{props.connected ? "MusicOS API online" : "Waiting for runtime"}</p>
+        <h1 className="font-display text-base font-semibold">{titleFor(props.section)}</h1>
+        <p className="font-micro text-xs text-muted-foreground">{props.connected ? "MusicOS API online" : "Waiting for runtime"}</p>
       </div>
       <div className="relative max-w-xl flex-1">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -1208,11 +1208,11 @@ function StatusPill({ connected, emulator }: { connected: boolean; emulator?: Em
   return (
     <div className="rounded-lg border border-white/10 bg-black/20 p-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Runtime</span>
+        <span className="font-micro text-xs text-muted-foreground">Runtime</span>
         <Badge variant={connected ? "default" : "secondary"}>{connected ? "Online" : "Offline"}</Badge>
       </div>
       <div className="mt-2 flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">Emulator</span>
+        <span className="font-micro text-xs text-muted-foreground">Emulator</span>
         <Badge variant={emulator?.running ? "default" : "outline"}>{emulator?.running ? `PID ${emulator.pid}` : "Stopped"}</Badge>
       </div>
     </div>
@@ -1223,8 +1223,8 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   return (
     <Card className="rounded-lg border-white/10 bg-[#181c22]">
       <CardContent className="p-4">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-2 truncate text-2xl font-semibold">{value}</div>
+        <div className="font-micro text-xs text-muted-foreground">{label}</div>
+        <div className="font-display mt-2 truncate text-2xl font-semibold">{value}</div>
       </CardContent>
     </Card>
   );
@@ -1263,7 +1263,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   return (
     <div className="grid min-h-[180px] place-items-center rounded-lg border border-dashed border-white/15 bg-black/10 p-6 text-center">
       <div>
-        <div className="font-medium">{title}</div>
+        <div className="font-display font-medium">{title}</div>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">{body}</p>
       </div>
     </div>
@@ -1271,7 +1271,7 @@ function EmptyState({ title, body }: { title: string; body: string }) {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <Label className="grid gap-2 text-sm text-muted-foreground"><span>{label}</span>{children}</Label>;
+  return <Label className="grid gap-2 text-sm text-muted-foreground"><span className="font-micro">{label}</span>{children}</Label>;
 }
 
 function Toggle({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (value: boolean) => void }) {
@@ -1288,7 +1288,7 @@ function SelectValueInput({ value, values, onChange }: { value: string; values: 
 }
 
 function PathLine({ label, value }: { label: string; value?: string }) {
-  return <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3"><span>{label}</span><code className="truncate rounded bg-black/20 px-2 py-1">{value || "-"}</code></div>;
+  return <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3"><span className="font-micro">{label}</span><code className="truncate rounded bg-black/20 px-2 py-1">{value || "-"}</code></div>;
 }
 
 function groupAlbums(tracks: Track[]): AlbumGroup[] {

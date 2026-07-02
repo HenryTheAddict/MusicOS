@@ -129,7 +129,8 @@ npm run sync:electron:dev
 That starts Vite on `http://127.0.0.1:5173` and launches Electron with
 `MUSICOS_RENDERER_URL` pointed at the dev renderer. Normal Electron launches load
 the built Vite app from `electron/renderer-vite`; if that folder does not exist,
-Electron falls back to the legacy static renderer.
+Electron shows a build error instead of falling back to the removed static
+renderer. Run `npm run build:renderer` before launching packaged desktop builds.
 
 ## Control Center Frontend
 
@@ -148,6 +149,11 @@ the Vite renderer (`index.html`, `src/main.tsx`, `vite.config.ts`,
 `tsconfig.json`), install Tailwind, add `tailwind.config.js`, then rerun the same
 preset command. The generated `components.json` keeps RTL support enabled, while
 the app sets the default document direction to LTR.
+
+The renderer uses the bundled MusicOS font assets from `assets/fonts`: LECO 1976
+for compact app chrome, Raster Gothic 09/12 for small labels, and Raster Gothic
+18/24 for display text. The old static Electron renderer has been retired so the
+desktop UI source of truth is the Vite + React + TypeScript app under `src/`.
 
 Useful frontend commands:
 

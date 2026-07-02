@@ -1,4 +1,5 @@
 const { spawn } = require("node:child_process");
+const electronPath = require("electron");
 
 const env = {
   ...process.env,
@@ -13,7 +14,7 @@ const vite = spawn(npmCommand, ["run", "dev"], {
   env
 });
 
-const electron = spawn(npmCommand, ["run", "sync:electron"], {
+const electron = spawn(electronPath, ["."], {
   stdio: "inherit",
   env
 });

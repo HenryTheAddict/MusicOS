@@ -62,7 +62,11 @@ function createWindow() {
   } else if (fsSync.existsSync(viteIndex)) {
     mainWindow.loadFile(viteIndex);
   } else {
-    mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+    dialog.showErrorBox(
+      "MusicOS Control Center renderer missing",
+      "Run `npm run build:renderer` before launching the packaged Control Center, or use `npm run sync:electron:dev` for the Vite development renderer."
+    );
+    app.quit();
   }
 }
 

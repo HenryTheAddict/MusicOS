@@ -15,7 +15,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "perf:smoke": "powershell -ExecutionPolicy Bypass -File scripts/perf-smoke.ps1",
     "shadcn:init": "npx.cmd --yes shadcn@latest init --preset b1tgXXJFI --template vite --rtl --pointer",
-    "sync:electron": "electron .",
+    "sync:electron": "npm run build:renderer && electron .",
     "sync:electron:dev": "node scripts/run-electron-dev.js",
     "test": "cargo test --workspace --features desktop-app,desktop-audio",
     "test:renderer": "vitest run",
