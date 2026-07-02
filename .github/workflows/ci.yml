@@ -36,12 +36,14 @@ jobs:
           MUSICOS_TEST_AUDIO_BACKEND: none
         run: cargo test --workspace --features desktop-app,desktop-audio
 
-      - name: Check Electron JavaScript
+      - name: Check Electron and Vite frontend
         shell: pwsh
         run: |
           node --check electron/main.js
           node --check electron/preload.js
-          node --check electron/renderer/app.js
+          node --check scripts/run-electron-dev.js
+          npm run typecheck
+          npm run test:renderer
 
       - name: Build desktop binaries
         run: npm run build
