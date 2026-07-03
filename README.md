@@ -100,9 +100,10 @@ backup/restore, playlist import/export, sync history, cover-art cache clearing,
 database repair, changed/full rescans, and a perf-smoke launcher. The Library
 view includes Flow, an animated cover browser backed by real indexed albums, and
 can add individual songs or whole albums to the selected playlist, select
-specific songs for sync, dry-run the selected/favorites/playlist/folder sync
-scope, manage the real Up Next queue from the now-playing bar, and retry only
-failed files from the last sync attempt.
+specific songs for sync, reorder playlist tracks, dry-run the
+selected/favorites/playlist/folder sync scope, manage the real Up Next queue
+from the now-playing bar, and retry only failed files from the last sync
+attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
 
@@ -347,8 +348,9 @@ scripts/flash-knulli-music-os.sh /dev/diskN
 ```
 
 The script refuses non-removable disks and whole-drive sizes above 128GB, then
-copies the newest `musicos-knulli-ui.squashfs` payload into `/boot/knulli` and
-copies sample music to the FAT partition.
+copies the newest `musicos-knulli-ui.squashfs` payload into `/boot/knulli`.
+Music is not bundled by default; set `MUSICOS_SAMPLE_DIR=/path/to/music` only
+when you explicitly want to copy your own test tracks to the FAT partition.
 
 Use the half-scale mode with:
 

@@ -16,7 +16,7 @@ if [[ ! -f "$default_payload" ]]; then
 fi
 payload="${MUSICOS_PAYLOAD:-$default_payload}"
 bootlogo="${MUSICOS_BOOTLOGO:-$repo_root/out/rg35xx/images/musicos-bootlogo.bmp}"
-sample_dir="${MUSICOS_SAMPLE_DIR:-$repo_root/samples/tanger}"
+sample_dir="${MUSICOS_SAMPLE_DIR:-}"
 sample_limit="${MUSICOS_SAMPLE_LIMIT:-0}"
 audio_format="${MUSICOS_AUDIO_FORMAT:-ogg}"
 ogg_quality="${MUSICOS_OGG_QUALITY:-5}"
@@ -59,6 +59,8 @@ if [[ -d "$sample_dir" ]]; then
   else
     echo "MusicOS samples: $sample_dir (limit $sample_limit)"
   fi
+else
+  echo "MusicOS samples: none. Set MUSICOS_SAMPLE_DIR to copy your own music."
 fi
 
 osascript - "$disk" "$raw_disk" "$image" <<'APPLESCRIPT'

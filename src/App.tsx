@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Album,
+  ArrowDown,
+  ArrowUp,
   BadgeCheck,
   Cable,
   ChevronDown,
@@ -461,6 +463,18 @@ export function App() {
     toast.success(`${label} added to playlist`);
   }
 
+  async function reorderPlaylistTrack(from: number, to: number) {
+    if (!selectedPlaylistId || from === to || to < 0 || to >= playlistTracks.length) return;
+    const trackIds = playlistTracks.map((track) => track.id);
+    const [moved] = trackIds.splice(from, 1);
+    if (!moved) return;
+    trackIds.splice(to, 0, moved);
+    await guarded("Saving playlist order...", async () => {
+      await putJson(`/api/playlists/${selectedPlaylistId}/tracks/reorder`, { track_ids: trackIds });
+      await refreshPlaylists(selectedPlaylistId);
+    });
+  }
+
   async function startSync() {
     await guarded("Starting sync...", async () => {
       setSync(await ipc().sync.start(await syncFilesForScope()));
@@ -684,6 +698,7 @@ export function App() {
                   deletePlaylist={deletePlaylist}
                   playPlaylist={(id) => sendControl("play_playlist", { id, start_index: 0 })}
                   removeTrack={(trackId) => deleteJson(`/api/playlists/${selectedPlaylistId}/tracks/${trackId}`).then(() => refreshPlaylists(selectedPlaylistId))}
+                  reorderTrack={reorderPlaylistTrack}
                 />
               )}
               {section === "devices" && (
@@ -1151,6 +1166,7 @@ function PlaylistView(props: {
   deletePlaylist: () => void;
   playPlaylist: (id: number) => void;
   removeTrack: (id: number) => void;
+  reorderTrack: (from: number, to: number) => void;
 }) {
   return (
     <div className="grid min-h-[560px] gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
@@ -1198,6 +1214,8 @@ function PlaylistView(props: {
                     <div className="truncate text-sm font-medium">{track.title}</div>
                     <div className="truncate text-xs text-muted-foreground">{track.artist} / {track.album}</div>
                   </div>
+                  <TooltipButton label={`Move ${track.title} up`} icon={ArrowUp} disabled={index === 0} onClick={() => props.reorderTrack(index, index - 1)} />
+                  <TooltipButton label={`Move ${track.title} down`} icon={ArrowDown} disabled={index >= props.tracks.length - 1} onClick={() => props.reorderTrack(index, index + 1)} />
                   <Button size="icon-sm" variant="ghost" onClick={() => props.removeTrack(track.id)}><Trash2 className="size-4" /></Button>
                 </div>
               ))}

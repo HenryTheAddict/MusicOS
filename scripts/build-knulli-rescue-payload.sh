@@ -24,25 +24,25 @@ mkdir -p \
   "$out_root/usr/share/musicos" \
   "$out_root/music/Samples"
 
-sample_dir="${MUSICOS_SAMPLE_DIR:-$repo_root/samples/tanger}"
-if [[ ! -d "$sample_dir" ]]; then
-  sample_dir="$repo_root/out/sample-songs"
-fi
-
-sample_count="$(find "$sample_dir" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' -o -iname '*.m4a' -o -iname '*.aac' \) | wc -l | tr -d ' ')"
-if [[ "$sample_count" == "0" && -z "${MUSICOS_SAMPLE_DIR:-}" && "$sample_dir" == "$repo_root/samples/tanger" ]]; then
-  sample_dir="$repo_root/out/sample-songs"
+sample_dir="${MUSICOS_SAMPLE_DIR:-}"
+sample_count="0"
+if [[ -n "$sample_dir" ]]; then
+  if [[ ! -d "$sample_dir" ]]; then
+    echo "sample directory not found: $sample_dir" >&2
+    exit 1
+  fi
   sample_count="$(find "$sample_dir" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' -o -iname '*.m4a' -o -iname '*.aac' \) | wc -l | tr -d ' ')"
+  if [[ "$sample_count" == "0" ]]; then
+    echo "no supported audio files found in sample directory: $sample_dir" >&2
+    exit 1
+  fi
+  while IFS= read -r sample; do
+    cp "$sample" "$out_root/music/Samples/"
+  done < <(find "$sample_dir" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' -o -iname '*.m4a' -o -iname '*.aac' \) | sort)
+  echo "Using $sample_count sample song(s) from $sample_dir"
+else
+  echo "No sample music bundled. Set MUSICOS_SAMPLE_DIR to include your own test tracks."
 fi
-if [[ "$sample_count" == "0" ]]; then
-  echo "no supported audio files found in sample directory: $sample_dir" >&2
-  exit 1
-fi
-
-while IFS= read -r sample; do
-  cp "$sample" "$out_root/music/Samples/"
-done < <(find "$sample_dir" -type f \( -iname '*.mp3' -o -iname '*.flac' -o -iname '*.wav' -o -iname '*.ogg' -o -iname '*.m4a' -o -iname '*.aac' \) | sort)
-echo "Using $sample_count sample song(s) from $sample_dir"
 
 python3 - <<'PY'
 from pathlib import Path

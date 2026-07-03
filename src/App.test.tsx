@@ -113,7 +113,7 @@ describe("MusicOS Control Center shell", () => {
     expect(screen.getByRole("button", { name: "Songs" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Devices" })).toBeInTheDocument();
     expect(await screen.findByText("No music here yet")).toBeInTheDocument();
-    expect(screen.queryByText("Demo Track")).not.toBeInTheDocument();
+    expect(screen.queryByText("Fake Demo Song")).not.toBeInTheDocument();
   });
 
   it("shows device status safely when no device is connected", async () => {
@@ -165,6 +165,7 @@ describe("MusicOS Control Center shell", () => {
   it("wires song menu actions to player, queue, favorite, and playlist APIs", async () => {
     tracksData = [indexedTrack, secondIndexedTrack];
     playlistsData = [{ id: 7, name: "Pocket Sync", track_count: 0 }];
+    playlistTracksData = [indexedTrack, secondIndexedTrack];
     libraryData = {
       ...libraryResponse,
       counts: { tracks: 2, albums: 1, artists: 1, playlists: 1, favorites: 0 },
@@ -289,6 +290,20 @@ describe("MusicOS Control Center shell", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({ track_id: 43 })
+        })
+      );
+    });
+
+    fetchSpy.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Playlists" }));
+    expect((await screen.findAllByText("Pocket Sync")).length).toBeGreaterThan(0);
+    fireEvent.click(await screen.findByRole("button", { name: "Move Neon Return up" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/playlists/7/tracks/reorder",
+        expect.objectContaining({
+          method: "PUT",
+          body: JSON.stringify({ track_ids: [43, 42] })
         })
       );
     });

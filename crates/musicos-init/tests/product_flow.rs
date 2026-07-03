@@ -19,7 +19,7 @@ fn scan_library_control_is_nonblocking_and_refreshes_when_done() {
     std::fs::create_dir_all(&music_root).expect("music dir");
     std::fs::write(
         music_root.join("Codex - Background Scanner.mp3"),
-        b"fake mp3 payload",
+        b"minimal mp3 test payload",
     )
     .expect("song");
 
@@ -64,8 +64,8 @@ fn apps_launcher_and_usb_sync_have_real_destinations() {
     let stage_root = root.join("stage");
     std::fs::create_dir_all(usb_root.join("musicos-update")).expect("usb update dir");
     std::fs::write(
-        usb_root.join("Artist - Demo Track.mp3"),
-        b"fake mp3 payload",
+        usb_root.join("Artist - USB Fixture.mp3"),
+        b"minimal mp3 test payload",
     )
     .expect("song");
     std::fs::write(
