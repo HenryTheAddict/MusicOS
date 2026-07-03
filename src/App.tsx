@@ -66,6 +66,7 @@ import { cn } from "@/lib/utils";
 
 type Section =
   | "library"
+  | "flow"
   | "albums"
   | "artists"
   | "songs"
@@ -197,6 +198,7 @@ const defaultConfig: Config = {
 
 const sections: Array<{ id: Section; label: string; icon: React.ElementType; group: string }> = [
   { id: "library", label: "Library", icon: Music2, group: "Library" },
+  { id: "flow", label: "Flow", icon: Album, group: "Library" },
   { id: "albums", label: "Albums", icon: Album, group: "Library" },
   { id: "artists", label: "Artists", icon: Disc3, group: "Library" },
   { id: "songs", label: "Songs", icon: ListMusic, group: "Library" },
@@ -631,6 +633,14 @@ export function App() {
                   setVisibleTrackSelection={setVisibleTrackSelection}
                 />
               )}
+              {section === "flow" && (
+                <FlowView
+                  albums={albums}
+                  target={target}
+                  playTrack={(id) => sendControl("play_track", { id })}
+                  addAlbum={(trackIds, name) => addTracksToPlaylist(trackIds, name)}
+                />
+              )}
               {section === "albums" && (
                 <AlbumGrid
                   albums={albums}
@@ -958,6 +968,109 @@ function SongsTable(props: {
 
 type AlbumGroup = { name: string; artist: string; tracks: Track[]; duration: number };
 type ArtistGroup = { name: string; albums: number; tracks: number; plays: number };
+
+function FlowView({
+  albums,
+  target,
+  playTrack,
+  addAlbum
+}: {
+  albums: AlbumGroup[];
+  target: string;
+  playTrack: (id: number) => void;
+  addAlbum: (trackIds: number[], albumName: string) => void;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const maxIndex = Math.max(0, albums.length - 1);
+  const activeAlbum = albums[Math.min(activeIndex, maxIndex)] ?? null;
+
+  useEffect(() => {
+    setActiveIndex((current) => Math.min(current, maxIndex));
+  }, [maxIndex]);
+
+  if (!albums.length) return <EmptyState title="No albums in Flow" body="Flow appears after real indexed albums are available." />;
+
+  function move(delta: number) {
+    setActiveIndex((current) => Math.min(maxIndex, Math.max(0, current + delta)));
+  }
+
+  return (
+    <div className="grid gap-5">
+      <Card className="overflow-hidden rounded-lg border-white/10 bg-[#181c22]">
+        <CardHeader className="flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="font-display text-base">Flow</CardTitle>
+            <p className="font-micro mt-1 text-xs text-muted-foreground">Animated album browser from your indexed library</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" aria-label="Previous Flow album" onClick={() => move(-1)} disabled={activeIndex === 0}>
+              <SkipBack className="size-4" />
+            </Button>
+            <Button variant="outline" size="icon" aria-label="Next Flow album" onClick={() => move(1)} disabled={activeIndex >= maxIndex}>
+              <SkipForward className="size-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-5">
+          <div
+            className="relative h-[380px] overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_center,_rgba(0,117,255,0.22),_rgba(0,0,0,0.2)_45%,_rgba(0,0,0,0.5))]"
+            style={{ perspective: "1200px" }}
+          >
+            <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-primary/15 to-transparent" />
+            {albums.map((album, index) => {
+              const offset = index - activeIndex;
+              const abs = Math.abs(offset);
+              const visible = abs <= 4;
+              const rotate = offset < 0 ? 58 : offset > 0 ? -58 : 0;
+              const x = offset * 148;
+              const z = offset === 0 ? 150 : -Math.min(abs * 90, 320);
+              const scale = offset === 0 ? 1.06 : Math.max(0.64, 0.9 - abs * 0.08);
+              return (
+                <button
+                  key={album.name}
+                  aria-label={`Focus ${album.name} in Flow`}
+                  className={cn(
+                    "absolute left-1/2 top-10 w-52 -translate-x-1/2 rounded-lg outline-none transition-all duration-500 ease-out focus-visible:ring-3 focus-visible:ring-ring/50",
+                    visible ? "pointer-events-auto" : "pointer-events-none"
+                  )}
+                  style={{
+                    opacity: visible ? Math.max(0.22, 1 - abs * 0.18) : 0,
+                    transform: `translateX(calc(-50% + ${x}px)) translateZ(${z}px) rotateY(${rotate}deg) scale(${scale})`,
+                    transformStyle: "preserve-3d",
+                    zIndex: 100 - abs
+                  }}
+                  onClick={() => setActiveIndex(index)}
+                >
+                  <CoverArt target={target} track={album.tracks[0]} className="size-52 rounded-lg border border-white/15 shadow-2xl shadow-black/60" />
+                  <div className="mt-3 h-20 scale-y-[-1] opacity-20 blur-[1px] [mask-image:linear-gradient(to_bottom,rgba(0,0,0,0.65),transparent)]">
+                    <CoverArt target={target} track={album.tracks[0]} className="size-52 rounded-lg border border-white/10" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {activeAlbum && (
+            <div className="grid gap-3 rounded-lg border border-white/10 bg-black/20 p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0">
+                <div className="font-display truncate text-2xl font-semibold">{activeAlbum.name}</div>
+                <div className="text-sm text-muted-foreground">
+                  {activeAlbum.artist} / {activeAlbum.tracks.length} songs / {formatDuration(activeAlbum.duration)}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => playTrack(activeAlbum.tracks[0].id)}><Play className="size-4" /> Play Flow album</Button>
+                <Button variant="secondary" onClick={() => addAlbum(activeAlbum.tracks.map((track) => track.id), activeAlbum.name)}>
+                  <Plus className="size-4" /> Add to playlist
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 
 function AlbumGrid({
   albums,

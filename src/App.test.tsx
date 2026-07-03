@@ -51,8 +51,8 @@ const indexedTrack = {
 const secondIndexedTrack = {
   ...indexedTrack,
   id: 43,
-  path: "C:/Music/Albums/Blue Static/02 Screen Glow.wav",
-  title: "Screen Glow",
+  path: "C:/Music/Albums/Blue Static/02 Neon Return.wav",
+  title: "Neon Return",
   track_number: 2
 };
 
@@ -228,6 +228,35 @@ describe("MusicOS Control Center shell", () => {
     fireEvent.pointerDown(await screen.findByRole("button", { name: /Actions for album Control Room/i }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Add album to selected playlist" }));
 
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/playlists/7/tracks",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ track_id: 43 })
+        })
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Flow" }));
+    expect((await screen.findAllByText("Flow")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Control Room")).toBeInTheDocument();
+
+    const fetchSpy = vi.mocked(fetch);
+    fetchSpy.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /Play Flow album/i }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "play_track", id: 42 })
+        })
+      );
+    });
+
+    fetchSpy.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: /Add to playlist/i }));
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
         "http://127.0.0.1:18080/api/playlists/7/tracks",

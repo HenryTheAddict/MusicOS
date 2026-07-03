@@ -22,8 +22,9 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
   emulator, device mirror, library sync, playlists, diagnostics, logs, and
   local emulator controls.
 - Vite + React + TypeScript Control Center renderer using shadcn/ui components,
-  with an iTunes-style library shell for songs, albums, artists, playlists,
-  devices, sync, updates, settings, and a persistent now-playing bar.
+  with an iTunes-style library shell for songs, Flow cover browsing, albums,
+  artists, playlists, devices, sync, updates, settings, and a persistent
+  now-playing bar.
 - `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
   USB update staging/install checks, settings, devices, and doctor output.
 - Smart dynamic mixes, playback history, queue maintenance, seek controls,
@@ -97,7 +98,8 @@ size/checksum, triggers one library scan after the batch, and can export a JSON
 diagnostics bundle from the Logs view. The Device view also exposes library
 backup/restore, playlist import/export, sync history, cover-art cache clearing,
 database repair, changed/full rescans, and a perf-smoke launcher. The Library
-view can add individual songs or whole albums to the selected playlist, select
+view includes Flow, an animated cover browser backed by real indexed albums, and
+can add individual songs or whole albums to the selected playlist, select
 specific songs for sync, dry-run the selected/favorites/playlist/folder sync
 scope, and retry only failed files from the last sync attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
