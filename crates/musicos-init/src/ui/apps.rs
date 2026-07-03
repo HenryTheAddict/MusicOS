@@ -288,7 +288,10 @@ pub fn draw_about(
     let display = format!("{}x{}", resolution.width, resolution.height);
     let queue = format!("{queue_len} queued");
     let library = format!("{} songs / {} albums", counts.tracks, counts.albums);
-    let playlists = format!("{} playlists / {} favorites", counts.playlists, counts.favorites);
+    let playlists = format!(
+        "{} playlists / {} favorites",
+        counts.playlists, counts.favorites
+    );
     let usb = format!("{} indexed", usb_status.media_files_indexed);
     let rows = [
         ("Display", display.as_str()),

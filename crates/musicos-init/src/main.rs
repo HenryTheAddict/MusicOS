@@ -3,10 +3,10 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use log::{error, info};
 use musicos_init::app::MusicOs;
+use musicos_init::init;
 use musicos_init::input::{InputEvent, InputSystem};
 use musicos_init::renderer::{self, Renderer};
 use musicos_init::server::CompanionServer;
-use musicos_init::{init, media};
 
 fn main() {
     std::panic::set_hook(Box::new(|info| {
@@ -18,7 +18,8 @@ fn main() {
                 None => "Box<Any>",
             },
         };
-        let location = info.location()
+        let location = info
+            .location()
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| "unknown location".to_string());
         let log_msg = format!("Panic occurred: {msg} at {location}\nBacktrace:\n{backtrace}\n");
@@ -81,13 +82,11 @@ fn run() -> Result<()> {
     let db_path = std::env::var("MUSICOS_MEDIA_DB")
         .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string());
     CompanionServer::start(8080, tx, db_path)?;
+    app.start_library_scan();
 
-    if let Err(err) = media::index_default_locations(&app.db) {
-        info!("media indexing skipped: {err:#}");
-    }
-    app.refresh_library();
-
+    let draw_start = Instant::now();
     renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
+    app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
 
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let r = running.clone();
@@ -125,7 +124,9 @@ fn run() -> Result<()> {
             idle_frame_budget
         };
         if screen_changed || last_frame.elapsed() >= redraw_budget {
+            let draw_start = Instant::now();
             renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
+            app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
             last_frame = Instant::now();
         }
 

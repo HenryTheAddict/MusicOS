@@ -6,7 +6,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "local"
+repository = "https://github.com/HenryTheAddict/MusicOS"
 
 [profile.release]
 lto = "thin"

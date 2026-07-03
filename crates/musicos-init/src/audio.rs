@@ -1,13 +1,13 @@
 use std::time::{Duration, Instant};
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 use rodio::{Decoder, OutputStream, Sink, Source};
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 use std::fs::File;
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 use std::io::BufReader;
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
     Arc,
@@ -68,7 +68,7 @@ impl EqPreset {
         }
     }
 
-    #[cfg(feature = "audio")]
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     fn gains(self) -> EqGains {
         match self {
             Self::Flat => EqGains::new(1.0, 1.0, 1.0, 1.0),
@@ -80,7 +80,7 @@ impl EqPreset {
     }
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 #[derive(Debug, Clone, Copy)]
 struct EqGains {
     low: f32,
@@ -89,7 +89,7 @@ struct EqGains {
     preamp: f32,
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 impl EqGains {
     const fn new(low: f32, mid: f32, high: f32, preamp: f32) -> Self {
         Self {
@@ -102,13 +102,13 @@ impl EqGains {
 }
 
 pub struct AudioPlayer {
-    #[cfg(feature = "audio")]
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     _stream: Option<OutputStream>,
-    #[cfg(feature = "audio")]
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     stream_handle: Option<rodio::OutputStreamHandle>,
-    #[cfg(feature = "audio")]
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     sink: Option<Sink>,
-    #[cfg(all(feature = "audio", target_os = "linux"))]
+    #[cfg(all(feature = "device-audio", target_os = "linux"))]
     alsa_playback: Option<AlsaPlayback>,
     queue: Vec<Track>,
     current_index: Option<usize>,
@@ -127,8 +127,12 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new() -> Self {
-        #[cfg(feature = "audio")]
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
+            if prefers_silent_backend() {
+                return Self::silent("none");
+            }
+
             let mut stream_opt = None;
             let mut handle_opt = None;
             let mut sink_opt = None;
@@ -147,7 +151,7 @@ impl AudioPlayer {
                 }
                 Err(default_err) => {
                     log::error!("default audio output stream failed: {default_err}. Trying fallback devices...");
-                    use rodio::cpal::traits::{HostTrait, DeviceTrait};
+                    use rodio::cpal::traits::{DeviceTrait, HostTrait};
                     let host = rodio::cpal::default_host();
                     let mut fallback_success = false;
                     if let Ok(devices) = host.output_devices() {
@@ -156,19 +160,19 @@ impl AudioPlayer {
                                 log::info!("trying audio fallback device: {}", name);
                             }
                             match OutputStream::try_from_device(&device) {
-                                Ok((stream, handle)) => {
-                                    match Sink::try_new(&handle) {
-                                        Ok(sink) => {
-                                            log::info!("audio fallback stream ready");
-                                            sink_opt = Some(sink);
-                                            stream_opt = Some(stream);
-                                            handle_opt = Some(handle);
-                                            fallback_success = true;
-                                            break;
-                                        }
-                                        Err(err) => log::error!("failed to create sink on fallback: {err}"),
+                                Ok((stream, handle)) => match Sink::try_new(&handle) {
+                                    Ok(sink) => {
+                                        log::info!("audio fallback stream ready");
+                                        sink_opt = Some(sink);
+                                        stream_opt = Some(stream);
+                                        handle_opt = Some(handle);
+                                        fallback_success = true;
+                                        break;
                                     }
-                                }
+                                    Err(err) => {
+                                        log::error!("failed to create sink on fallback: {err}")
+                                    }
+                                },
                                 Err(err) => log::error!("failed to initialize device: {err}"),
                             }
                         }
@@ -216,7 +220,7 @@ impl AudioPlayer {
                 shuffle_seed,
             }
         }
-        #[cfg(not(feature = "audio"))]
+        #[cfg(not(any(feature = "desktop-audio", feature = "device-audio")))]
         {
             let shuffle_seed = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -270,14 +274,25 @@ impl AudioPlayer {
         if idx >= self.queue.len() {
             return;
         }
-        #[cfg(feature = "audio")]
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         let track_path = self.queue[idx].path.clone();
         let track_title = self.queue[idx].title.clone();
         let track_artist = self.queue[idx].artist.clone();
 
         self.stop();
 
-        #[cfg(feature = "audio")]
+        if prefers_silent_backend() {
+            self.is_paused = false;
+            self.last_backend = "none".to_string();
+            self.selected_pcm = None;
+            self.last_error = None;
+            self.play_start = Some(Instant::now());
+            self.accumulated_time = Duration::ZERO;
+            log::info!("audio none backend: {} - {}", track_title, track_artist);
+            return;
+        }
+
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
             #[cfg(target_os = "linux")]
             if self.prefers_direct_alsa() {
@@ -357,15 +372,14 @@ impl AudioPlayer {
             self.accumulated_time = Duration::ZERO;
             let message = format!(
                 "audio playback did not start: {} - {}",
-                track_title,
-                track_artist
+                track_title, track_artist
             );
             log::error!("{message}");
             self.last_error = Some(message);
             return;
         }
 
-        #[cfg(not(feature = "audio"))]
+        #[cfg(not(any(feature = "desktop-audio", feature = "device-audio")))]
         {
             self.is_paused = false;
             self.last_backend = "silent".to_string();
@@ -377,13 +391,43 @@ impl AudioPlayer {
         }
     }
 
+    fn silent(backend: &str) -> Self {
+        let shuffle_seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0xdeadbeef);
+        Self {
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            _stream: None,
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            stream_handle: None,
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+            sink: None,
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
+            alsa_playback: None,
+            queue: Vec::new(),
+            current_index: None,
+            volume: 1.0,
+            eq_preset: EqPreset::Flat,
+            is_paused: false,
+            loop_mode: LoopMode::None,
+            shuffle: false,
+            play_start: None,
+            accumulated_time: Duration::ZERO,
+            last_backend: backend.to_string(),
+            selected_pcm: None,
+            last_error: None,
+            shuffle_seed,
+        }
+    }
+
     pub fn pause(&mut self) {
         if !self.is_paused {
-            #[cfg(feature = "audio")]
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
             if let Some(ref sink) = self.sink {
                 sink.pause();
             }
-            #[cfg(all(feature = "audio", target_os = "linux"))]
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
             if let Some(ref playback) = self.alsa_playback {
                 playback.set_paused(true);
             }
@@ -404,11 +448,11 @@ impl AudioPlayer {
         }
 
         if self.is_paused {
-            #[cfg(feature = "audio")]
+            #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
             if let Some(ref sink) = self.sink {
                 sink.play();
             }
-            #[cfg(all(feature = "audio", target_os = "linux"))]
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
             if let Some(ref playback) = self.alsa_playback {
                 playback.set_paused(false);
             }
@@ -420,7 +464,7 @@ impl AudioPlayer {
     }
 
     pub fn stop(&mut self) {
-        #[cfg(feature = "audio")]
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
             if let Some(ref sink) = self.sink {
                 sink.stop();
@@ -444,7 +488,10 @@ impl AudioPlayer {
                 let mut next = idx;
                 if self.queue.len() > 1 {
                     while next == idx {
-                        self.shuffle_seed = self.shuffle_seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                        self.shuffle_seed = self
+                            .shuffle_seed
+                            .wrapping_mul(1664525)
+                            .wrapping_add(1013904223);
                         next = (self.shuffle_seed as usize) % self.queue.len();
                     }
                 }
@@ -480,11 +527,11 @@ impl AudioPlayer {
 
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = volume.clamp(0.0, 1.0);
-        #[cfg(feature = "audio")]
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         if let Some(ref sink) = self.sink {
             sink.set_volume(self.volume);
         }
-        #[cfg(all(feature = "audio", target_os = "linux"))]
+        #[cfg(all(feature = "device-audio", target_os = "linux"))]
         if let Some(ref playback) = self.alsa_playback {
             playback.set_volume(self.volume);
         }
@@ -555,7 +602,7 @@ impl AudioPlayer {
         let seek_dur = Duration::from_secs_f32(seconds);
         self.accumulated_time = seek_dur;
 
-        #[cfg(all(feature = "audio", target_os = "linux"))]
+        #[cfg(all(feature = "device-audio", target_os = "linux"))]
         if self.alsa_playback.is_some() {
             if let Some(track) = self.get_current_track() {
                 let path = track.path.clone();
@@ -566,7 +613,7 @@ impl AudioPlayer {
             }
         }
 
-        #[cfg(feature = "audio")]
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         if let Some(ref sink) = self.sink {
             let _ = sink.try_seek(seek_dur);
         }
@@ -629,9 +676,11 @@ impl AudioPlayer {
             self.current_index = None;
             self.is_paused = true;
         } else if let Some(id) = current_track_id {
-            self.current_index = self.queue.iter().position(|track| track.id == id).or_else(|| {
-                Some(index.min(self.queue.len().saturating_sub(1)))
-            });
+            self.current_index = self
+                .queue
+                .iter()
+                .position(|track| track.id == id)
+                .or_else(|| Some(index.min(self.queue.len().saturating_sub(1))));
             if removed.id == id {
                 self.pause();
             }
@@ -695,15 +744,21 @@ impl AudioPlayer {
         }
     }
 
-    #[cfg(all(feature = "audio", target_os = "linux"))]
+    #[cfg(all(feature = "device-audio", target_os = "linux"))]
     fn prefers_direct_alsa(&self) -> bool {
         std::env::var("MUSICOS_AUDIO_BACKEND")
             .map(|value| value.eq_ignore_ascii_case("alsa"))
             .unwrap_or(true)
     }
 
-    #[cfg(all(feature = "audio", target_os = "linux"))]
-    fn start_alsa_playback(&mut self, path: String, title: String, artist: String, start_seconds: f32) -> bool {
+    #[cfg(all(feature = "device-audio", target_os = "linux"))]
+    fn start_alsa_playback(
+        &mut self,
+        path: String,
+        title: String,
+        artist: String,
+        start_seconds: f32,
+    ) -> bool {
         let was_paused = self.is_paused;
         match AlsaPlayback::start(path.clone(), self.volume, self.eq_preset, start_seconds) {
             Ok(playback) => {
@@ -713,13 +768,23 @@ impl AudioPlayer {
                 self.alsa_playback = Some(playback);
                 self.is_paused = was_paused;
                 self.last_backend = "alsa".to_string();
-                self.selected_pcm = alsa_pcm_candidates(std::env::var("MUSICOS_ALSA_DEVICE").ok().as_deref())
-                    .into_iter()
-                    .next();
+                self.selected_pcm =
+                    alsa_pcm_candidates(std::env::var("MUSICOS_ALSA_DEVICE").ok().as_deref())
+                        .into_iter()
+                        .next();
                 self.last_error = None;
-                self.play_start = if was_paused { None } else { Some(Instant::now()) };
+                self.play_start = if was_paused {
+                    None
+                } else {
+                    Some(Instant::now())
+                };
                 self.accumulated_time = Duration::from_secs_f32(start_seconds);
-                log::info!("Playing track through ALSA from {}s: {} - {}", start_seconds, title, artist);
+                log::info!(
+                    "Playing track through ALSA from {}s: {} - {}",
+                    start_seconds,
+                    title,
+                    artist
+                );
                 true
             }
             Err(err) => {
@@ -730,6 +795,18 @@ impl AudioPlayer {
             }
         }
     }
+}
+
+fn prefers_silent_backend() -> bool {
+    std::env::var("MUSICOS_TEST_AUDIO_BACKEND")
+        .or_else(|_| std::env::var("MUSICOS_AUDIO_BACKEND"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "none" | "silent" | "stub" | "off"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -748,7 +825,7 @@ pub struct PlaybackStatus {
     pub last_error: Option<String>,
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 struct AlsaPlayback {
     stop: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
@@ -758,9 +835,14 @@ struct AlsaPlayback {
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 impl AlsaPlayback {
-    fn start(path: String, volume: f32, preset: EqPreset, start_seconds: f32) -> Result<Self, String> {
+    fn start(
+        path: String,
+        volume: f32,
+        preset: EqPreset,
+        start_seconds: f32,
+    ) -> Result<Self, String> {
         let stop = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
         let volume_bits = Arc::new(AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()));
@@ -777,9 +859,16 @@ impl AlsaPlayback {
         let worker = std::thread::Builder::new()
             .name("musicos-alsa-playback".to_string())
             .spawn(move || {
-                if let Err(err) =
-                    play_file_with_alsa(&thread_path, preset, thread_stop, thread_paused, thread_volume, thread_written, thread_rate, start_seconds)
-                {
+                if let Err(err) = play_file_with_alsa(
+                    &thread_path,
+                    preset,
+                    thread_stop,
+                    thread_paused,
+                    thread_volume,
+                    thread_written,
+                    thread_rate,
+                    start_seconds,
+                ) {
                     log::error!("ALSA playback thread stopped for {thread_path}: {err}");
                 }
             })
@@ -805,7 +894,7 @@ impl AlsaPlayback {
     }
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 impl Drop for AlsaPlayback {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
@@ -815,7 +904,7 @@ impl Drop for AlsaPlayback {
     }
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 fn play_file_with_alsa(
     path: &str,
     preset: EqPreset,
@@ -871,7 +960,7 @@ fn play_file_with_alsa(
     })
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 pub fn alsa_pcm_candidates(preferred: Option<&str>) -> Vec<String> {
     let mut devices = Vec::new();
     if let Some(device) = preferred.filter(|value| !value.trim().is_empty()) {
@@ -892,7 +981,7 @@ pub fn alsa_pcm_candidates(preferred: Option<&str>) -> Vec<String> {
     devices
 }
 
-#[cfg(not(all(feature = "audio", target_os = "linux")))]
+#[cfg(not(all(feature = "device-audio", target_os = "linux")))]
 pub fn alsa_pcm_candidates(preferred: Option<&str>) -> Vec<String> {
     let mut devices = Vec::new();
     if let Some(device) = preferred.filter(|value| !value.trim().is_empty()) {
@@ -913,7 +1002,7 @@ pub fn alsa_pcm_candidates(preferred: Option<&str>) -> Vec<String> {
     devices
 }
 
-#[cfg(all(feature = "audio", target_os = "linux"))]
+#[cfg(all(feature = "device-audio", target_os = "linux"))]
 fn write_source_to_alsa<S>(
     device: &str,
     source: &mut S,
@@ -927,7 +1016,7 @@ fn write_source_to_alsa<S>(
 where
     S: Source<Item = i16>,
 {
-    use alsa::pcm::{Access, Format, HwParams, PCM, State};
+    use alsa::pcm::{Access, Format, HwParams, State, PCM};
     use alsa::{Direction, ValueOr};
 
     let pcm = PCM::new(device, Direction::Playback, false).map_err(|err| err.to_string())?;
@@ -973,7 +1062,9 @@ where
             if (current_volume - target_volume).abs() > 0.0001 {
                 let step = 0.0005 * (target_volume - current_volume).signum();
                 current_volume += step;
-                if (step > 0.0 && current_volume > target_volume) || (step < 0.0 && current_volume < target_volume) {
+                if (step > 0.0 && current_volume > target_volume)
+                    || (step < 0.0 && current_volume < target_volume)
+                {
                     current_volume = target_volume;
                 }
             } else {
@@ -1009,7 +1100,7 @@ where
     Ok(())
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 struct EqSource<S> {
     input: S,
     preset: EqPreset,
@@ -1022,7 +1113,7 @@ struct EqSource<S> {
     high_alpha: f32,
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 impl<S> EqSource<S>
 where
     S: Source<Item = i16>,
@@ -1049,7 +1140,7 @@ where
     }
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 impl<S> Iterator for EqSource<S>
 where
     S: Source<Item = i16>,
@@ -1083,7 +1174,7 @@ where
     }
 }
 
-#[cfg(feature = "audio")]
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
 impl<S> Source for EqSource<S>
 where
     S: Source<Item = i16>,

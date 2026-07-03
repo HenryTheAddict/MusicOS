@@ -11,15 +11,15 @@ cd "${ROOT}/vendor/x86_64-linux-gnu"
 if [[ ! -f "libasound.so.2" ]]; then
   echo "Downloading libasound deb package..."
   curl -L -o "${ARCHIVE}" "${URL}"
-  
+
   echo "Extracting deb package..."
   ar x "${ARCHIVE}"
   tar -xf data.tar.xz
-  
+
   # Find and copy libasound.so
   cp usr/lib/x86_64-linux-gnu/libasound.so.2.0.0 ./libasound.so
   ln -sf libasound.so libasound.so.2
-  
+
   # Clean up temp files
   rm -rf usr debian-binary control.tar.xz data.tar.xz "${ARCHIVE}"
 fi

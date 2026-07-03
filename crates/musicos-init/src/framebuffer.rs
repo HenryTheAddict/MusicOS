@@ -1,14 +1,23 @@
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
+#[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
+#[cfg(target_os = "linux")]
 use std::os::fd::AsRawFd;
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::Result;
+#[cfg(target_os = "linux")]
+use anyhow::{anyhow, Context};
 
 use crate::renderer::{Canvas, Resolution};
 
+#[cfg(target_os = "linux")]
 const FBIOGET_VSCREENINFO: libc::c_ulong = 0x4600;
+#[cfg(target_os = "linux")]
 const FBIOGET_FSCREENINFO: libc::c_ulong = 0x4602;
 
+#[cfg(target_os = "linux")]
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 struct FbBitfield {
@@ -17,6 +26,7 @@ struct FbBitfield {
     msb_right: u32,
 }
 
+#[cfg(target_os = "linux")]
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy)]
 struct FbVarScreeninfo {
@@ -51,6 +61,7 @@ struct FbVarScreeninfo {
     reserved: [u32; 4],
 }
 
+#[cfg(target_os = "linux")]
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 struct FbFixScreeninfo {
@@ -71,6 +82,7 @@ struct FbFixScreeninfo {
     reserved: [u16; 2],
 }
 
+#[cfg(target_os = "linux")]
 impl Default for FbFixScreeninfo {
     fn default() -> Self {
         // SAFETY: Linux framebuffer structs are plain-old-data C structs.
@@ -78,6 +90,7 @@ impl Default for FbFixScreeninfo {
     }
 }
 
+#[cfg(target_os = "linux")]
 pub struct FbDev {
     file: std::fs::File,
     ptr: *mut libc::c_void,
@@ -87,6 +100,10 @@ pub struct FbDev {
     back_buffer: Vec<u8>,
 }
 
+#[cfg(not(target_os = "linux"))]
+pub struct FbDev;
+
+#[cfg(target_os = "linux")]
 impl FbDev {
     pub fn open(path: impl AsRef<Path>, expected: Resolution) -> Result<Self> {
         let file = OpenOptions::new()
@@ -191,6 +208,21 @@ impl FbDev {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+impl FbDev {
+    pub fn open(path: impl AsRef<Path>, _expected: Resolution) -> Result<Self> {
+        anyhow::bail!(
+            "framebuffer devices are only supported on Linux: {}",
+            path.as_ref().display()
+        )
+    }
+
+    pub fn draw(&mut self, _f: impl FnOnce(&mut Canvas<'_>)) -> Result<()> {
+        anyhow::bail!("framebuffer drawing is only supported on Linux")
+    }
+}
+
+#[cfg(target_os = "linux")]
 impl Drop for FbDev {
     fn drop(&mut self) {
         // SAFETY: ptr/len were returned by mmap and are unmapped once here.

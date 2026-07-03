@@ -7,7 +7,7 @@ use crate::audio::{EqPreset, LoopMode};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 
-pub const CURRENT_SCHEMA_VERSION: u16 = 2;
+pub const CURRENT_SCHEMA_VERSION: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LibrarySort {
@@ -80,6 +80,40 @@ impl LibraryGroup {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MotionMode {
+    Balanced,
+    BatterySaver,
+    Visuals,
+    Reduced,
+}
+
+impl Default for MotionMode {
+    fn default() -> Self {
+        Self::Balanced
+    }
+}
+
+impl MotionMode {
+    pub fn from_str(value: &str) -> Self {
+        match value.to_ascii_lowercase().as_str() {
+            "battery" | "battery_saver" | "battery-saver" => Self::BatterySaver,
+            "visuals" | "extra" | "full" => Self::Visuals,
+            "reduced" | "reduced_motion" | "reduced-motion" => Self::Reduced,
+            _ => Self::Balanced,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Balanced => "Balanced",
+            Self::BatterySaver => "Battery Saver",
+            Self::Visuals => "Visuals",
+            Self::Reduced => "Reduced Motion",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
@@ -112,6 +146,11 @@ pub struct Preferences {
     pub library_group: LibraryGroup,
     pub sleep_timeout_minutes: u8,
     pub dim_timeout_seconds: u16,
+    pub motion_mode: MotionMode,
+    pub seek_step_seconds: u8,
+    pub sleep_timer_default_minutes: u8,
+    pub resume_queue_enabled: bool,
+    pub shuffle_default_enabled: bool,
     pub first_run_audio_test_complete: bool,
     pub last_music_focus: String,
 }
@@ -148,6 +187,11 @@ impl Default for Preferences {
             library_group: LibraryGroup::None,
             sleep_timeout_minutes: 0,
             dim_timeout_seconds: 45,
+            motion_mode: MotionMode::Balanced,
+            seek_step_seconds: 10,
+            sleep_timer_default_minutes: 30,
+            resume_queue_enabled: true,
+            shuffle_default_enabled: false,
             first_run_audio_test_complete: false,
             last_music_focus: "albums".to_string(),
         }
@@ -192,6 +236,14 @@ impl Preferences {
             self.resume_queue_index = 0;
         }
         self.dim_timeout_seconds = self.dim_timeout_seconds.clamp(10, 600);
+        self.seek_step_seconds = self.seek_step_seconds.clamp(5, 60);
+        self.sleep_timer_default_minutes = self.sleep_timer_default_minutes.min(180);
+        if !self.resume_queue_enabled {
+            self.resume_queue_track_ids.clear();
+            self.resume_queue_index = 0;
+            self.resume_track_id = None;
+            self.resume_position_seconds = 0.0;
+        }
         self.last_music_focus = match self.last_music_focus.to_ascii_lowercase().as_str() {
             "songs" | "artists" | "playlists" | "favorites" | "queue" | "history" => {
                 self.last_music_focus.to_ascii_lowercase()
@@ -289,12 +341,10 @@ mod tests {
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn old_settings_json_migrates_to_v2_defaults() {
+    fn old_settings_json_migrates_to_v3_defaults() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "musicos-prefs-migrate-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("musicos-prefs-migrate-{}", std::process::id()));
         let path = root.join("settings.json");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
@@ -320,10 +370,8 @@ mod tests {
     #[test]
     fn corrupt_settings_are_backed_up_and_defaults_load() {
         let _guard = ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "musicos-prefs-corrupt-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("musicos-prefs-corrupt-{}", std::process::id()));
         let path = root.join("settings.json");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(&path, b"{not json").unwrap();

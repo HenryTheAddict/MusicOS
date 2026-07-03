@@ -163,9 +163,8 @@ pub fn install_pending_update() -> Result<Option<PathBuf>> {
 fn discover_usb_roots() -> Vec<PathBuf> {
     let mut roots = BTreeSet::new();
     mount_removable_candidates(&mut roots);
-    if let Ok(value) = std::env::var("MUSICOS_USB_ROOTS") {
-        for item in value.split(':').filter(|item| !item.trim().is_empty()) {
-            let path = PathBuf::from(item);
+    if let Some(value) = std::env::var_os("MUSICOS_USB_ROOTS") {
+        for path in std::env::split_paths(&value) {
             if path.exists() {
                 roots.insert(path.clone());
                 collect_children(&path, &mut roots, 2);
@@ -348,7 +347,7 @@ fn detect_update_kind(path: &Path) -> Result<UpdateKind> {
     }
 }
 
-fn copy_update_file(source: &Path, dest: &Path, kind: UpdateKind) -> Result<()> {
+fn copy_update_file(source: &Path, dest: &Path, _kind: UpdateKind) -> Result<()> {
     let mut input = File::open(source)?;
     let mut output = File::create(dest)?;
     std::io::copy(&mut input, &mut output)?;
@@ -356,7 +355,7 @@ fn copy_update_file(source: &Path, dest: &Path, kind: UpdateKind) -> Result<()> 
     output.sync_all()?;
     #[cfg(unix)]
     {
-        if kind == UpdateKind::Elf {
+        if _kind == UpdateKind::Elf {
             use std::os::unix::fs::PermissionsExt;
             let mut perms = std::fs::metadata(dest)?.permissions();
             perms.set_mode(0o755);

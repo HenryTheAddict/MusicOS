@@ -7,6 +7,7 @@ license = "MIT"
 [dependencies]
 anyhow = "1.0"
 bitflags = "2.6"
+clap = { version = "4.5", features = ["derive", "env"] }
 libc = "0.2"
 log = "0.4"
 rusttype = "0.9"
@@ -16,6 +17,7 @@ rodio = { version = "0.19", features = ["mp3", "wav", "vorbis", "flac", "symphon
 tiny_http = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 mp3-metadata = "0.3"
 lofty = "0.21.1"
 resvg = "0.47.0"
@@ -25,7 +27,7 @@ image = { version = "0.24", default-features = true }
 ctrlc = "3.4"
 
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
 minifb = { version = "0.27", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -36,7 +38,7 @@ nix = { version = "0.29", features = ["fs", "mount", "reboot"] }
 [[bin]]
 name = "musicos-mac"
 path = "src/bin/musicos-mac.rs"
-required-features = ["mac-app"]
+required-features = ["desktop-app"]
 
 [[bin]]
 name = "musicos-snapshot"
@@ -49,15 +51,22 @@ path = "src/bin/musicos-index.rs"
 [[bin]]
 name = "musicos-sync"
 path = "src/bin/musicos-sync.rs"
-required-features = ["mac-app"]
+required-features = ["desktop-app"]
 
 [[bin]]
 name = "musicos-desktop"
 path = "src/bin/musicos-desktop.rs"
-required-features = ["mac-app"]
+required-features = ["desktop-app"]
+
+[[bin]]
+name = "musicos"
+path = "src/bin/musicos.rs"
 
 [features]
 default = []
-audio = ["dep:rodio", "dep:alsa"]
-mac-app = ["dep:minifb"]
+audio = ["desktop-audio", "device-audio"]
+desktop-audio = ["dep:rodio"]
+device-audio = ["dep:rodio", "dep:alsa"]
+desktop-app = ["dep:minifb"]
+mac-app = ["desktop-app"]
 pid1 = []

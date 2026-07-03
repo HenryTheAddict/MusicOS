@@ -4,9 +4,56 @@ use musicos_init::database::Db;
 use musicos_init::input::{Button, InputEvent};
 use musicos_init::preferences::Preferences;
 use musicos_init::renderer::Resolution;
+use musicos_init::server::{ControlCommand, ServerEvent};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn scan_library_control_is_nonblocking_and_refreshes_when_done() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-async-scan-{}", std::process::id()));
+    let db_path = root.join("media.sqlite3");
+    let music_root = root.join("music");
+    std::fs::create_dir_all(&music_root).expect("music dir");
+    std::fs::write(
+        music_root.join("Codex - Background Scanner.mp3"),
+        b"minimal mp3 test payload",
+    )
+    .expect("song");
+
+    std::env::set_var("MUSICOS_UPLOAD_DIR", music_root.display().to_string());
+    std::env::set_var("MUSICOS_REINDEX_ALL", "1");
+
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    let started = Instant::now();
+    assert!(app.handle_server_event(ServerEvent::Control(ControlCommand::ScanLibrary)));
+    assert!(
+        started.elapsed() < Duration::from_millis(100),
+        "scan command blocked the UI loop"
+    );
+    assert_eq!(app.scan_status, "Scanning library...");
+
+    for _ in 0..150 {
+        app.tick();
+        if app.scan_status.starts_with("Scan complete:") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    assert!(
+        app.scan_status.starts_with("Scan complete:"),
+        "unexpected scan status: {}",
+        app.scan_status
+    );
+    assert!(app.db.library_counts().unwrap().tracks >= 1);
+
+    std::env::remove_var("MUSICOS_UPLOAD_DIR");
+    std::env::remove_var("MUSICOS_REINDEX_ALL");
+    let _ = std::fs::remove_dir_all(root);
+}
 
 #[test]
 fn apps_launcher_and_usb_sync_have_real_destinations() {
@@ -17,8 +64,8 @@ fn apps_launcher_and_usb_sync_have_real_destinations() {
     let stage_root = root.join("stage");
     std::fs::create_dir_all(usb_root.join("musicos-update")).expect("usb update dir");
     std::fs::write(
-        usb_root.join("Artist - Demo Track.mp3"),
-        b"fake mp3 payload",
+        usb_root.join("Artist - USB Fixture.mp3"),
+        b"minimal mp3 test payload",
     )
     .expect("song");
     std::fs::write(
@@ -307,10 +354,7 @@ fn context_menu_actions_use_the_selected_library_item() {
 #[test]
 fn context_menu_only_opens_for_real_targets() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-context-targets-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("musicos-context-targets-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
 
@@ -387,11 +431,29 @@ fn album_order_and_favorites_match_music_player_expectations() {
         .unwrap();
     let first = app
         .db
-        .insert_track_with_number("/music/01-alpha.ogg", "Alpha", "Tanger", "Glow", 1, 120, 1, 1)
+        .insert_track_with_number(
+            "/music/01-alpha.ogg",
+            "Alpha",
+            "Tanger",
+            "Glow",
+            1,
+            120,
+            1,
+            1,
+        )
         .unwrap();
     let other = app
         .db
-        .insert_track_with_number("/music/01-gamma.ogg", "Gamma", "Tanger", "Night", 1, 160, 1, 1)
+        .insert_track_with_number(
+            "/music/01-gamma.ogg",
+            "Gamma",
+            "Tanger",
+            "Night",
+            1,
+            160,
+            1,
+            1,
+        )
         .unwrap();
 
     app.force_screen_for_snapshot(Screen::AlbumsList);
@@ -482,20 +544,33 @@ fn queue_screen_uses_the_real_player_queue() {
 #[test]
 fn persisted_queue_restores_paused_with_position() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-queue-restore-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("musicos-queue-restore-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let settings_path = root.join("settings.json");
     std::fs::create_dir_all(&root).unwrap();
 
     let db = Db::open(db_path.to_str().unwrap()).unwrap();
     let first = db
-        .insert_track("/music/restore-a.ogg", "Restore A", "Artist", "Album", 120, 1, 1)
+        .insert_track(
+            "/music/restore-a.ogg",
+            "Restore A",
+            "Artist",
+            "Album",
+            120,
+            1,
+            1,
+        )
         .unwrap();
     let second = db
-        .insert_track("/music/restore-b.ogg", "Restore B", "Artist", "Album", 150, 1, 1)
+        .insert_track(
+            "/music/restore-b.ogg",
+            "Restore B",
+            "Artist",
+            "Album",
+            150,
+            1,
+            1,
+        )
         .unwrap();
     drop(db);
 
@@ -524,10 +599,8 @@ fn persisted_queue_restores_paused_with_position() {
 #[test]
 fn settings_command_persists_validated_user_audio_and_library_values() {
     let _guard = ENV_LOCK.lock().unwrap();
-    let root = std::env::temp_dir().join(format!(
-        "musicos-settings-command-{}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("musicos-settings-command-{}", std::process::id()));
     let db_path = root.join("media.sqlite3");
     let settings_path = root.join("settings.json");
     std::fs::create_dir_all(&root).unwrap();

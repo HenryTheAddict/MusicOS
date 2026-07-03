@@ -83,7 +83,10 @@ impl Resolution {
             let parts: Vec<&str> = size_str.trim().split(',').collect();
             if parts.len() == 2 {
                 if let (Ok(w), Ok(h)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                    return Self { width: w, height: h };
+                    return Self {
+                        width: w,
+                        height: h,
+                    };
                 }
             }
         }
@@ -103,7 +106,10 @@ impl Resolution {
         if parts.len() == 2 {
             let w = parts[0].parse::<u32>().ok()?;
             let h = parts[1].parse::<u32>().ok()?;
-            Some(Self { width: w, height: h })
+            Some(Self {
+                width: w,
+                height: h,
+            })
         } else {
             None
         }
@@ -112,7 +118,7 @@ impl Resolution {
     pub fn offsets(&self) -> (f32, f32, f32) {
         let logical_aspect = 1280.0 / 960.0;
         let target_aspect = self.width as f32 / self.height as f32;
-        
+
         if (target_aspect - logical_aspect).abs() < 0.01 {
             (self.width as f32 / 1280.0, 0.0, 0.0)
         } else if target_aspect > logical_aspect {
@@ -940,10 +946,12 @@ impl<'a> Canvas<'a> {
         let scale = Scale::uniform(size);
         let v_metrics = primary.v_metrics(scale);
         let line_height = (v_metrics.ascent - v_metrics.descent + v_metrics.line_gap).max(size);
-        
+
         for (line_index, line) in text.lines().enumerate() {
+            let origin_y =
+                (self.resolution.scale_y(y) + v_metrics.ascent + line_height * line_index as f32)
+                    .round();
             let mut caret_x = self.resolution.scale_x(x).round();
-            let origin_y = (self.resolution.scale_y(y) + v_metrics.ascent + line_height * line_index as f32).round();
             let mut last_glyph_id = None;
             for ch in line.chars() {
                 let chosen_font = if primary.glyph(ch).id().0 != 0 {
@@ -960,10 +968,10 @@ impl<'a> Canvas<'a> {
                     caret_x += chosen_font.pair_kerning(scale, last_id, glyph.id());
                 }
                 last_glyph_id = Some(glyph.id());
-                
+
                 let positioned = glyph.positioned(point(caret_x, origin_y));
                 caret_x += positioned.unpositioned().h_metrics().advance_width;
-                
+
                 if let Some(bb) = positioned.pixel_bounding_box() {
                     positioned.draw(|gx, gy, alpha| {
                         let a = (alpha * color.a as f32).round() as u8;

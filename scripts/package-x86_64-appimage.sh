@@ -43,14 +43,14 @@ echo "Running appimagetool inside Colima VM..."
 colima ssh -- bash -lc "
   set -euo pipefail
   cd /Users/henryperzinski/Developer/MusicOS
-  
+
   # Download appimagetool if not exists
   if [ ! -f vendor/appimagetool ]; then
     echo 'Downloading appimagetool...'
     curl -L -o vendor/appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
     chmod +x vendor/appimagetool
   fi
-  
+
   # Extract appimagetool
   if [ ! -d vendor/squashfs-root ]; then
     echo 'Extracting appimagetool...'
@@ -58,7 +58,7 @@ colima ssh -- bash -lc "
     ./appimagetool --appimage-extract
     cd ..
   fi
-  
+
   # Package AppImage
   echo 'Compiling MusicOS-x86_64.AppImage...'
   ARCH=x86_64 ./vendor/squashfs-root/AppRun out/x86_64/AppDir out/x86_64/MusicOS-x86_64.AppImage

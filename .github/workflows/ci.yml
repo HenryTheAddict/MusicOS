@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - "codex/**"
+  pull_request:
+
+jobs:
+  windows:
+    name: Windows build and test
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check Rust workspace
+        run: cargo check --workspace --features desktop-app,desktop-audio
+
+      - name: Test Rust workspace
+        env:
+          MUSICOS_TEST_AUDIO_BACKEND: none
+        run: cargo test --workspace --features desktop-app,desktop-audio
+
+      - name: Check Electron and Vite frontend
+        shell: pwsh
+        run: |
+          node --check electron/main.js
+          node --check electron/preload.js
+          node --check scripts/run-electron-dev.js
+          npm run typecheck
+          npm run test:renderer
+
+      - name: Build desktop binaries
+        run: npm run build

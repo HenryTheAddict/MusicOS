@@ -2,7 +2,7 @@
 
 Minimal Rust-first embedded Linux shell for low-energy music hardware. The first
 target is Anbernic RG35XX 2024 / Allwinner H700, with a real QEMU aarch64 boot
-target for Mac development.
+target and a desktop preview loop for Windows, macOS, and Linux development.
 
 ## What Is Implemented
 
@@ -17,9 +17,20 @@ target for Mac development.
 - SQLite media indexer for local MicroSD-style media folders.
 - USB sync path that indexes mounted media and a Settings `Get Update` action
   that installs `musicos-init` updates from USB storage.
-- Native Mac app target for desktop UI testing.
-- Electron `MusicOS Sync` companion app for device mirror, keyboard input,
-  folder upload, and USB sync triggering.
+- Native desktop app target for Windows/macOS/Linux UI testing.
+- Electron `MusicOS Control Center` for the Windows/macOS/Linux desktop
+  emulator, device mirror, library sync, playlists, diagnostics, logs, and
+  local emulator controls.
+- Vite + React + TypeScript Control Center renderer using shadcn/ui components,
+  with an iTunes-style library shell for songs, Flow cover browsing, albums,
+  artists, playlists, devices, sync, updates, logs, settings, and a persistent
+  now-playing bar.
+- `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
+  USB update staging/install checks, settings, devices, and doctor output.
+- Smart dynamic mixes, playback history, queue maintenance, seek controls,
+  sleep timer commands, motion/performance settings, and cover-art cache tools.
+- Ordered playlist tracks, sync dry-run/retry tools, database repair, changed
+  versus full library rescans, and frame timing diagnostics.
 - Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
 - QEMU launch script using `qemu-system-aarch64 -M virt -cpu cortex-a53`.
 
@@ -29,15 +40,28 @@ target for Mac development.
 scripts/check-host.sh
 ```
 
-For the normal desktop development loop, run the emulator and sync companion
+On Windows PowerShell:
+
+```powershell
+.\scripts\check-host.ps1
+```
+
+For the normal desktop development loop, run the emulator and Control Center
 together:
 
 ```sh
 scripts/run-desktop.sh
 ```
 
-That launches `musicos-mac` and the Electron sync app in parallel with one shared
-SQLite database, media folder, and companion API target:
+On Windows PowerShell:
+
+```powershell
+.\scripts\run-desktop.ps1
+```
+
+That launches the Electron Control Center with one shared SQLite database, media
+folder, and companion API target. Use the emulator controls inside the app to
+build and start the desktop MusicOS runtime:
 
 - API: `http://127.0.0.1:18080`
 - DB: `out/desktop-media.sqlite3`
@@ -49,24 +73,190 @@ Override with `MUSICOS_COMPANION_PORT`, `MUSICOS_MEDIA_DB`,
 For the desktop test app by itself:
 
 ```sh
-cargo run --bin musicos-mac --features mac-app
+cargo run --bin musicos-mac --features desktop-app,desktop-audio
 ```
 
-The Mac target stores its default test database at `out/mac-media.sqlite3` and
+The desktop target stores its default test database at `out/mac-media.sqlite3` and
 serves the device API on `http://127.0.0.1:18080`. Override that with
 `MUSICOS_MEDIA_DB` or `MUSICOS_COMPANION_PORT` when needed.
 
-For the Electron sync companion by itself:
+For the Electron Control Center by itself:
 
 ```sh
 npm run sync:electron
 ```
 
-The sync app targets `http://127.0.0.1:18080` by default. Use
+The Control Center starts `target/debug/musicos-mac.exe` on Windows when you use
+its emulator controls. If the binary is missing, it runs
+`cargo build --bin musicos-mac --features desktop-app,desktop-audio`, streams the
+build output into Logs, and then launches the emulator. The app targets
+`http://127.0.0.1:18080` by default. Use
 `MUSICOS_SYNC_TARGET=http://192.168.7.2:8080` for a USB-networked device, and
 `MUSICOS_SYNC_DIR=/path/to/music` to choose the folder uploaded by the app.
+Folder sync preserves relative artist/album paths, skips unchanged files by
+size/checksum, triggers one library scan after the batch, and can export a JSON
+diagnostics bundle from the Logs view. The Device view also exposes library
+backup/restore, playlist import/export, sync history, cover-art cache clearing,
+database repair, and changed/full rescans. The Logs view combines emulator,
+runtime, sync, build, and performance events with diagnostics export and a local
+perf-smoke launcher. The Library view includes Flow, an animated cover browser
+backed by real indexed albums, and can add individual songs or whole albums to
+the selected playlist, select specific songs for sync, reorder playlist tracks,
+dry-run the selected/favorites/playlist/folder sync scope, manage the real Up
+Next queue from the now-playing bar, and retry only failed files from the last
+sync attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
+
+Windows PowerShell equivalent:
+
+```powershell
+$env:MUSICOS_SYNC_TARGET = "http://192.168.7.2:8080"
+$env:MUSICOS_SYNC_DIR = "C:\Music"
+npm run sync:electron
+```
+
+You can also use the npm shortcuts on any host with Rust and Node installed:
+
+```sh
+npm run dev
+npm run build:renderer
+npm run check
+npm run build
+npm run desktop
+npm run cli -- --help
+```
+
+For live renderer work, run:
+
+```sh
+npm run sync:electron:dev
+```
+
+That starts Vite on `http://127.0.0.1:5173` and launches Electron with
+`MUSICOS_RENDERER_URL` pointed at the dev renderer. Normal Electron launches load
+the built Vite app from `electron/renderer-vite`; if that folder does not exist,
+Electron shows a build error instead of falling back to the removed static
+renderer. Run `npm run build:renderer` before launching packaged desktop builds.
+
+## Control Center Frontend
+
+The desktop companion is now a Vite React app initialized with the requested
+shadcn preset:
+
+```powershell
+npx.cmd --yes shadcn@latest init --preset b1tgXXJFI --template vite --rtl --pointer
+```
+
+On Windows PowerShell, plain `npx shadcn@latest ...` can fail before shadcn runs
+because script execution policy blocks `npx.ps1`. Use `npx.cmd` instead. The
+first shadcn attempt also failed because the repo was still a static Electron
+renderer with no Vite/Tailwind framework for shadcn to detect. The fix was to add
+the Vite renderer (`index.html`, `src/main.tsx`, `vite.config.ts`,
+`tsconfig.json`), install Tailwind, add `tailwind.config.js`, then rerun the same
+preset command. The generated `components.json` keeps RTL support enabled, while
+the app sets the default document direction to LTR.
+
+The renderer uses the bundled MusicOS font assets from `assets/fonts`: LECO 1976
+for compact app chrome, Raster Gothic 09/12 for small labels, and Raster Gothic
+18/24 for display text. The old static Electron renderer has been retired so the
+desktop UI source of truth is the Vite + React + TypeScript app under `src/`.
+
+Useful frontend commands:
+
+```sh
+npm run shadcn:init
+npm run build:renderer
+npm run typecheck
+npm run sync:electron:dev
+```
+
+## MusicOS CLI
+
+Run the CLI through npm or Cargo:
+
+```sh
+npm run cli -- --help
+cargo run --bin musicos --features desktop-app,desktop-audio -- --help
+```
+
+Examples:
+
+```sh
+npm run cli -- scan
+npm run cli -- scan --all
+npm run cli -- library list
+npm run cli -- library stats --json
+npm run cli -- library add ./music
+npm run cli -- playlists list
+npm run cli -- playlists create "Roadtrip"
+npm run cli -- playlists add-track 1 42
+npm run cli -- devices list
+npm run cli -- sync plan desktop --json
+npm run cli -- sync start desktop --dry-run
+npm run cli -- updates scan
+npm run cli -- updates install
+npm run cli -- settings get --json
+npm run cli -- settings set user-name "Henry"
+npm run cli -- settings set device-name "MusicOS"
+npm run cli -- settings set audio-backend alsa
+npm run cli -- settings set alsa-device plughw:0,0
+npm run cli -- settings set theme red
+npm run cli -- settings set eq bass
+npm run cli -- doctor --json
+```
+
+The CLI reuses the Rust SQLite, media indexing, preferences, playlist, USB
+update, and companion upload paths. `sync start --dry-run` never writes to a
+device. `sync start desktop` uploads files from `MUSICOS_SYNC_DIR` to
+`MUSICOS_SYNC_TARGET` using the same `/api/upload` headers as the Control Center,
+then triggers one `/api/control` library scan. You can also pass an explicit
+`http://host:port` target as the device id for a reachable MusicOS companion API.
+
+On Windows, run the local runtime performance smoke test with:
+
+```powershell
+npm run perf:smoke
+```
+
+It seeds a small WAV library under `out/perf`, starts the desktop runtime,
+checks API latency, screenshot availability, input latency, scan completion,
+frame timing at the RG35XX-style `640x480` resolution, and writes
+`out/perf/runtime-performance-smoke.json`. It fails nonzero if first screenshot,
+frame p95, core API p95, scan completion, or indexed track count misses the
+default thresholds. Pass `-Resolution 1280x960` to stress the HD desktop path.
+
+Useful runtime APIs:
+
+- `GET /api/library` returns counts, playback, queue, playlists, diagnostics
+  summary, legacy `scan_status`, structured `scan`, and build `version`.
+- `GET /api/tracks?query=&limit=&offset=&sort=&filter=&artist=&album=&playlist_id=`
+  returns the compatible track array with optional filtering.
+- `GET /api/mixes` and `GET /api/mixes/:id/tracks` expose dynamic mixes such as
+  Favorites, Recently Added, Most Played, Never Played, Long Tracks, Shuffle
+  All, and Random Album.
+- `GET /api/history?limit=&offset=` returns recently played tracks.
+- `GET /api/performance` returns frame timing, motion mode, scan state, and
+  cover-art cache counters.
+- `GET /api/logs?limit=120` returns recent runtime events for diagnostics export
+  and the Control Center Logs view.
+- `POST /api/library/cover-art-cache/clear` clears persisted and in-memory
+  cover-art cache state so art can be rebuilt.
+- `POST /api/library/repair` runs SQLite integrity checks, missing-file cleanup,
+  orphan playlist cleanup, playlist position repair, and a WAL checkpoint.
+- `POST /api/library/rescan` with `{ "mode": "changed" | "full" }` starts a
+  bounded scan using changed-file skips or a full metadata/art refresh.
+- `POST /api/sync-usb` scans configured/removable USB roots, indexes USB media,
+  stages MusicOS update payloads, and installs update targets when present.
+- `POST /api/updates/install` installs an already-staged MusicOS binary or
+  system image update without requiring another USB scan.
+- `PUT /api/playlists/:id/tracks/reorder` with `{ "track_ids": [...] }`
+  persists manual playlist order.
+- `POST /api/control` accepts playback, queue, playlist, scan, seek, sleep
+  timer, and smart-mix commands.
+
+GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs the Windows
+Rust check/test, Electron JavaScript syntax checks, and desktop binary build.
 
 For static visual snapshots:
 
@@ -82,7 +272,15 @@ exports so the live clock does not pollute visual diffs.
 To test USB media/update behavior on a host:
 
 ```sh
-MUSICOS_USB_ROOTS=/path/to/usb MUSICOS_UPDATE_STAGING=out/staged-update cargo test --workspace --features mac-app
+MUSICOS_USB_ROOTS=/path/to/usb MUSICOS_UPDATE_STAGING=out/staged-update cargo test --workspace --features desktop-app,desktop-audio
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:MUSICOS_USB_ROOTS = "E:\"
+$env:MUSICOS_UPDATE_STAGING = "out\staged-update"
+cargo test --workspace --features desktop-app,desktop-audio
 ```
 
 For a USB update, put a new MusicOS image at one of these paths on the USB
@@ -100,29 +298,44 @@ scripts/build-qemu.sh
 scripts/run-qemu.sh
 ```
 
-To run QEMU and the Electron sync app together:
+To run QEMU and the Electron Control Center together:
 
 ```sh
 scripts/run-qemu-sync.sh
 ```
 
 `scripts/run-qemu.sh` defaults to `MUSICOS_QEMU_NET=sync`, which forwards the
-guest MusicOS API on port `8080` to `http://127.0.0.1:18080` for the sync app.
+guest MusicOS API on port `8080` to `http://127.0.0.1:18080` for the Control
+Center.
 Use `MUSICOS_QEMU_NET=none scripts/run-qemu.sh` for the fully offline QEMU run,
 or `MUSICOS_QEMU_HOST_PORT=18081 scripts/run-qemu-sync.sh` if port `18080` is
 already in use.
 
-On macOS, Buildroot needs GNU/Linux host tooling rather than Apple Clang. Use:
+On macOS and Windows, Buildroot needs GNU/Linux host tooling. Use Docker Desktop
+or a Linux/WSL environment for firmware images:
 
 ```sh
 scripts/build-qemu-container.sh
 scripts/run-qemu.sh
 ```
 
-For the RG35XX 2024 image on macOS, use the matching container wrapper:
+Windows PowerShell Docker wrapper:
+
+```powershell
+.\scripts\build-qemu-container.ps1
+```
+
+For the RG35XX 2024 image on macOS or Windows, use the matching container
+wrapper:
 
 ```sh
 scripts/build-rg35xx-container.sh
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\build-rg35xx-container.ps1
 ```
 
 The container wrapper builds a cached local image named
@@ -136,8 +349,9 @@ scripts/flash-knulli-music-os.sh /dev/diskN
 ```
 
 The script refuses non-removable disks and whole-drive sizes above 128GB, then
-copies the newest `musicos-knulli-ui.squashfs` payload into `/boot/knulli` and
-copies sample music to the FAT partition.
+copies the newest `musicos-knulli-ui.squashfs` payload into `/boot/knulli`.
+Music is not bundled by default; set `MUSICOS_SAMPLE_DIR=/path/to/music` only
+when you explicitly want to copy your own test tracks to the FAT partition.
 
 Use the half-scale mode with:
 
@@ -158,3 +372,11 @@ scripts/build-rg35xx.sh
 The RG35XX defconfig is a mainline-kernel starting point. Real hardware display
 and input bring-up may need the smallest available H700/RG35XX device-tree and
 driver patch set.
+
+## Audio Features
+
+Desktop builds use `desktop-audio`, which enables Rodio for the emulator and
+Control Center workflow. KNULLI/RG35XX payload builds use `pid1,device-audio`,
+which enables the ALSA probing and playback path used on device. The legacy
+`audio` feature remains available as a compatibility umbrella for both audio
+backends.

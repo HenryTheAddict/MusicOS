@@ -491,7 +491,13 @@ pub fn draw_context_menu(
     let transition_t = transitions::ease_out_cubic(transition_t);
     let menu_t = transitions::ease_out_back(transition_t);
     let (top, bottom) = theme.gradient_colors();
-    canvas.rect(0.0, 0.0, 1280.0, 960.0, Color::rgba(0, 0, 0, (transition_t * 110.0) as u8));
+    canvas.rect(
+        0.0,
+        0.0,
+        1280.0,
+        960.0,
+        Color::rgba(0, 0, 0, (transition_t * 110.0) as u8),
+    );
     let modal_w = 560.0;
     let modal_h = 896.0;
     let modal_x = 1280.0 - menu_t * 580.0; // Slides from 1280 (closed) to 700 (fully open with 20px right margin)
