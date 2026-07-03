@@ -9,6 +9,8 @@ import {
   CircleStop,
   Disc3,
   Download,
+  Eraser,
+  FileDown,
   FolderOpen,
   HardDrive,
   Heart,
@@ -27,6 +29,7 @@ import {
   SkipBack,
   SkipForward,
   SlidersHorizontal,
+  Terminal,
   Trash2,
   Unplug,
   Usb,
@@ -78,6 +81,7 @@ type Section =
   | "devices"
   | "sync"
   | "updates"
+  | "logs"
   | "settings";
 type SyncScope = "all" | "favorites" | "selected" | "playlist";
 
@@ -157,6 +161,7 @@ type SettingsState = {
   resume_queue_enabled?: boolean;
 };
 type LogLine = { at?: string; source?: string; line?: string };
+type PerformanceReport = { ok?: boolean; startedAt?: string; finishedAt?: string; output?: string; error?: string } | null;
 
 declare global {
   interface Window {
@@ -172,6 +177,10 @@ declare global {
       restoreLibrary: () => Promise<{ canceled?: boolean; restoredSettings?: boolean; restoredPlaylists?: number }>;
       exportPlaylists: () => Promise<{ canceled?: boolean; count?: number }>;
       importPlaylists: () => Promise<{ canceled?: boolean; imported?: number }>;
+      performance: {
+        smoke: () => Promise<PerformanceReport>;
+        report: () => Promise<PerformanceReport>;
+      };
       sync: {
         start: (files?: string[]) => Promise<SyncState>;
         status: () => Promise<SyncState>;
@@ -210,6 +219,7 @@ const sections: Array<{ id: Section; label: string; icon: React.ElementType; gro
   { id: "devices", label: "Devices", icon: HardDrive, group: "Device" },
   { id: "sync", label: "Sync", icon: RefreshCcw, group: "Device" },
   { id: "updates", label: "Updates", icon: Download, group: "Device" },
+  { id: "logs", label: "Logs", icon: Terminal, group: "System" },
   { id: "settings", label: "Settings", icon: Settings, group: "System" }
 ];
 
@@ -226,6 +236,7 @@ export function App() {
   const [sync, setSync] = useState<SyncState | null>(null);
   const [syncHistory, setSyncHistory] = useState<SyncState[]>([]);
   const [logs, setLogs] = useState<LogLine[]>([]);
+  const [performanceReport, setPerformanceReport] = useState<PerformanceReport>(null);
   const [query, setQuery] = useState("");
   const [targetDraft, setTargetDraft] = useState(defaultConfig.target);
   const [newPlaylist, setNewPlaylist] = useState("");
@@ -301,7 +312,8 @@ export function App() {
       refreshPlaylists(),
       refreshMixes(),
       refreshSyncState(),
-      refreshLogs()
+      refreshLogs(),
+      refreshPerformanceReport()
     ]);
   }
 
@@ -383,6 +395,14 @@ export function App() {
           .reverse()
       );
     } catch {}
+  }
+
+  async function refreshPerformanceReport() {
+    try {
+      setPerformanceReport(await ipc().performance.report());
+    } catch {
+      setPerformanceReport(null);
+    }
   }
 
   async function guarded<T>(label: string, action: () => Promise<T>) {
@@ -539,6 +559,21 @@ export function App() {
       setInstallingUpdate(false);
       setBusy(false);
     }
+  }
+
+  async function clearControlLogs() {
+    await guarded("Clearing control logs...", async () => {
+      const result = await ipc().emulator.clearLogs();
+      setConfig((current) => ({ ...current, emulator: result.status ?? current.emulator }));
+      await refreshLogs();
+    });
+  }
+
+  async function runPerformanceSmoke() {
+    await guarded("Running performance smoke...", async () => {
+      setPerformanceReport(await ipc().performance.smoke());
+      await refreshLogs();
+    });
   }
 
   function toggleTrackSelection(id: number) {
@@ -752,6 +787,21 @@ export function App() {
                   installingUpdate={installingUpdate}
                   openFolder={() => ipc().openFolder()}
                   logs={logs}
+                />
+              )}
+              {section === "logs" && (
+                <LogsView
+                  config={config}
+                  library={library}
+                  logs={logs}
+                  performanceReport={performanceReport}
+                  refresh={() => {
+                    void refreshLogs();
+                    void refreshPerformanceReport();
+                  }}
+                  clear={clearControlLogs}
+                  exportDiagnostics={() => guarded("Exporting diagnostics...", () => ipc().exportDiagnostics())}
+                  runPerformanceSmoke={runPerformanceSmoke}
                 />
               )}
               {section === "settings" && (
@@ -1496,6 +1546,95 @@ function UpdatePanel({
   );
 }
 
+function LogsView({
+  config,
+  library,
+  logs,
+  performanceReport,
+  refresh,
+  clear,
+  exportDiagnostics,
+  runPerformanceSmoke
+}: {
+  config: Config;
+  library: LibraryState | null;
+  logs: LogLine[];
+  performanceReport: PerformanceReport;
+  refresh: () => void;
+  clear: () => void;
+  exportDiagnostics: () => void;
+  runPerformanceSmoke: () => void;
+}) {
+  const emulator = config.emulator;
+  const frameTiming = library?.frame_timing;
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <Card className="rounded-lg border-white/10 bg-[#181c22]">
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Control Center Logs</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">Runtime, emulator, build, sync, and performance events.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={refresh}><RefreshCcw className="size-4" /> Refresh</Button>
+            <Button variant="outline" onClick={clear}><Eraser className="size-4" /> Clear control logs</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {logs.length ? (
+            <div className="grid max-h-[560px] gap-2 overflow-auto rounded-lg border border-white/10 bg-black/20 p-3">
+              {logs.map((log, index) => (
+                <div key={`${log.at}-${log.source}-${index}`} className="grid gap-1 rounded-md bg-[#111418] p-2 font-mono text-xs">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Badge variant="secondary" className="font-mono">{log.source || "runtime"}</Badge>
+                    <span className="truncate text-muted-foreground">{log.at ? formatDateTime(log.at) : "now"}</span>
+                  </div>
+                  <div className="break-words text-muted-foreground">{log.line || "-"}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No logs yet" body="Start the emulator, scan, sync, or run diagnostics to populate this stream." />
+          )}
+        </CardContent>
+      </Card>
+      <div className="grid content-start gap-4">
+        <Card className="rounded-lg border-white/10 bg-[#181c22]">
+          <CardHeader><CardTitle className="text-base">Diagnostics Snapshot</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <Metric label="Runtime" value={emulator?.running ? "Running" : emulator?.starting ? "Starting" : "Stopped"} />
+              <Metric label="Frame p95" value={frameTiming?.p95_ms ? `${frameTiming.p95_ms.toFixed(1)} ms` : "-"} />
+              <Metric label="Slow frames" value={frameTiming?.slow_frames ?? 0} />
+              <Metric label="Cover cache" value={library?.cover_art_cache_count ?? 0} />
+            </div>
+            <Separator />
+            <PathLine label="Target" value={config.target} />
+            <PathLine label="Audio" value={diagnosticText(library?.audio)} />
+            <PathLine label="Scan" value={library?.scan_status || library?.scan?.state || "-"} />
+          </CardContent>
+        </Card>
+        <Card className="rounded-lg border-white/10 bg-[#181c22]">
+          <CardHeader><CardTitle className="text-base">Performance Smoke</CardTitle></CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="rounded-md border border-white/10 bg-black/20 p-3 text-sm">
+              <div className="font-medium">{performanceReport ? (performanceReport.ok ? "Last run passed" : "Last run failed") : "No run captured"}</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {performanceReport?.finishedAt ? `Finished ${formatDateTime(performanceReport.finishedAt)}` : "Run the local smoke test to capture screenshot/API/frame timing evidence."}
+              </div>
+              {performanceReport?.error && <div className="mt-2 text-xs text-destructive">{performanceReport.error}</div>}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={runPerformanceSmoke}><Terminal className="size-4" /> Run smoke</Button>
+              <Button variant="outline" onClick={exportDiagnostics}><FileDown className="size-4" /> Export diagnostics</Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function SettingsView(props: {
   settings: SettingsState;
   setSettings: (update: (current: SettingsState) => SettingsState) => void;
@@ -1803,4 +1942,14 @@ function labelize(value: string) {
 
 function stringValue(value: unknown, fallback: string) {
   return typeof value === "string" ? value.toLowerCase() : fallback;
+}
+
+function diagnosticText(value: unknown) {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value).slice(0, 140);
+  } catch {
+    return "-";
+  }
 }

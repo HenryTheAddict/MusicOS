@@ -60,6 +60,7 @@ let libraryData: Record<string, unknown>;
 let tracksData: Array<Record<string, unknown>>;
 let playlistsData: Array<Record<string, unknown>>;
 let playlistTracksData: Array<Record<string, unknown>>;
+let runtimeLogsData: Array<Record<string, unknown>>;
 
 describe("MusicOS Control Center shell", () => {
   beforeEach(() => {
@@ -67,6 +68,7 @@ describe("MusicOS Control Center shell", () => {
     tracksData = [];
     playlistsData = [];
     playlistTracksData = [];
+    runtimeLogsData = [];
     vi.stubGlobal("fetch", vi.fn(fetchMock));
     vi.stubGlobal("confirm", vi.fn(() => true));
     window.musicos = {
@@ -86,6 +88,10 @@ describe("MusicOS Control Center shell", () => {
       restoreLibrary: vi.fn(),
       exportPlaylists: vi.fn(),
       importPlaylists: vi.fn(),
+      performance: {
+        smoke: vi.fn(async () => ({ ok: true, finishedAt: "2026-07-03T04:00:00.000Z", output: "ok" })),
+        report: vi.fn(async () => null)
+      },
       sync: {
         start: vi.fn(),
         status: vi.fn(async () => ({ running: false, found: 0, uploaded: 0, skipped: 0, failed: 0 })),
@@ -142,6 +148,47 @@ describe("MusicOS Control Center shell", () => {
         "http://127.0.0.1:18080/api/updates/install",
         expect.objectContaining({ method: "POST" })
       );
+    });
+  });
+
+  it("renders logs, diagnostics, and performance actions", async () => {
+    const musicos = window.musicos!;
+    musicos.emulator.logs = vi.fn(async () => ({
+      logs: [{ at: "2026-07-03T04:00:00.000Z", source: "emulator", line: "boot ready" }],
+      status: { running: true, pid: 1234 }
+    }));
+    musicos.emulator.clearLogs = vi.fn(async () => ({ logs: [], status: { running: true, pid: 1234 } }));
+    musicos.performance.report = vi.fn(async () => ({
+      ok: false,
+      finishedAt: "2026-07-03T04:01:00.000Z",
+      error: "frame budget exceeded"
+    }));
+    runtimeLogsData = [{ at: 1_783_050_000, source: "runtime", line: "scan complete" }];
+    libraryData = {
+      ...libraryResponse,
+      frame_timing: { p95_ms: 18.4, slow_frames: 1 },
+      cover_art_cache_count: 12,
+      audio: { backend: "rodio" },
+      scan_status: "Idle"
+    };
+
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Logs" }));
+    expect(await screen.findByText("Control Center Logs")).toBeInTheDocument();
+    expect(screen.getByText("boot ready")).toBeInTheDocument();
+    expect(screen.getByText("scan complete")).toBeInTheDocument();
+    expect(screen.getByText("18.4 ms")).toBeInTheDocument();
+    expect(screen.getByText("Last run failed")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Clear control logs/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Run smoke/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Export diagnostics/i }));
+
+    await waitFor(() => {
+      expect(musicos.emulator.clearLogs).toHaveBeenCalled();
+      expect(musicos.performance.smoke).toHaveBeenCalled();
+      expect(musicos.exportDiagnostics).toHaveBeenCalled();
     });
   });
 
@@ -398,7 +445,7 @@ function fetchMock(input: RequestInfo | URL, init?: RequestInit) {
   if (url.includes("/api/playlists/") && url.includes("/tracks")) return jsonResponse(playlistTracksData);
   if (url.includes("/api/playlists")) return jsonResponse(playlistsData);
   if (url.includes("/api/mixes")) return jsonResponse([]);
-  if (url.includes("/api/logs")) return jsonResponse([]);
+  if (url.includes("/api/logs")) return jsonResponse(runtimeLogsData);
   return jsonResponse({});
 }
 

@@ -23,7 +23,7 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
   local emulator controls.
 - Vite + React + TypeScript Control Center renderer using shadcn/ui components,
   with an iTunes-style library shell for songs, Flow cover browsing, albums,
-  artists, playlists, devices, sync, updates, settings, and a persistent
+  artists, playlists, devices, sync, updates, logs, settings, and a persistent
   now-playing bar.
 - `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
   USB update staging/install checks, settings, devices, and doctor output.
@@ -97,13 +97,14 @@ Folder sync preserves relative artist/album paths, skips unchanged files by
 size/checksum, triggers one library scan after the batch, and can export a JSON
 diagnostics bundle from the Logs view. The Device view also exposes library
 backup/restore, playlist import/export, sync history, cover-art cache clearing,
-database repair, changed/full rescans, and a perf-smoke launcher. The Library
-view includes Flow, an animated cover browser backed by real indexed albums, and
-can add individual songs or whole albums to the selected playlist, select
-specific songs for sync, reorder playlist tracks, dry-run the
-selected/favorites/playlist/folder sync scope, manage the real Up Next queue
-from the now-playing bar, and retry only failed files from the last sync
-attempt.
+database repair, and changed/full rescans. The Logs view combines emulator,
+runtime, sync, build, and performance events with diagnostics export and a local
+perf-smoke launcher. The Library view includes Flow, an animated cover browser
+backed by real indexed albums, and can add individual songs or whole albums to
+the selected playlist, select specific songs for sync, reorder playlist tracks,
+dry-run the selected/favorites/playlist/folder sync scope, manage the real Up
+Next queue from the now-playing bar, and retry only failed files from the last
+sync attempt.
 Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
 `U` for context, and `I` for home.
 
