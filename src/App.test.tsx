@@ -169,7 +169,8 @@ describe("MusicOS Control Center shell", () => {
       ...libraryResponse,
       counts: { tracks: 2, albums: 1, artists: 1, playlists: 1, favorites: 0 },
       player: { track: indexedTrack, is_playing: false, position: 11 },
-      queue: [indexedTrack]
+      queue: [indexedTrack, secondIndexedTrack],
+      queue_index: 0
     };
 
     render(<App />);
@@ -223,6 +224,31 @@ describe("MusicOS Control Center shell", () => {
         })
       );
     });
+
+    fireEvent.click(screen.getByRole("button", { name: /Open queue with 2 tracks/i }));
+    expect(await screen.findByText("Up Next")).toBeInTheDocument();
+    expect(screen.getAllByText("Neon Return").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[1]);
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "queue_remove", index: 1 })
+        })
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Clear queue" }));
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/api/control",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ command: "queue_clear" })
+        })
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Albums" }));
     fireEvent.pointerDown(await screen.findByRole("button", { name: /Actions for album Control Room/i }));

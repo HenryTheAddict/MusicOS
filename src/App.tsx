@@ -56,6 +56,7 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -757,6 +758,7 @@ export function App() {
             target={target}
             track={nowPlaying}
             queue={queue}
+            queueIndex={library?.queue_index ?? null}
             player={player}
             control={sendControl}
             volume={settings.volume ?? 0.85}
@@ -1523,10 +1525,11 @@ function SettingsView(props: {
   );
 }
 
-function NowPlayingBar({ target, track, queue, player, control, volume, setVolume }: {
+function NowPlayingBar({ target, track, queue, queueIndex, player, control, volume, setVolume }: {
   target: string;
   track: Track | null;
   queue: Track[];
+  queueIndex: number | null;
   player?: LibraryState["player"];
   control: (command: string, body?: Record<string, unknown>) => void;
   volume: number;
@@ -1558,6 +1561,43 @@ function NowPlayingBar({ target, track, queue, player, control, volume, setVolum
         </div>
       </div>
       <div className="flex items-center gap-3">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button size="icon" variant="ghost" aria-label={`Open queue with ${queue.length} tracks`}>
+              <ListMusic className="size-4" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent className="w-[420px] border-white/10 bg-[#181c22] sm:max-w-[420px]">
+            <SheetHeader>
+              <SheetTitle>Up Next</SheetTitle>
+              <SheetDescription>{queue.length ? `${queue.length} queued tracks` : "Queue is empty"}</SheetDescription>
+            </SheetHeader>
+            <div className="grid min-h-0 flex-1 gap-3 overflow-auto px-6 pb-4">
+              {queue.length ? queue.map((queuedTrack, index) => {
+                const isCurrent = index === queueIndex || queuedTrack.id === track?.id;
+                return (
+                  <div key={`${queuedTrack.id}-${index}`} className={cn("grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-white/10 bg-black/20 p-2", isCurrent && "border-primary/50 bg-primary/10")}>
+                    <CoverArt target={target} track={queuedTrack} />
+                    <button className="min-w-0 text-left" onClick={() => control("play_track", { id: queuedTrack.id })}>
+                      <span className="block truncate text-sm font-medium">{queuedTrack.title || fileTitle(queuedTrack.path)}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{queuedTrack.artist || "Unknown Artist"} / {formatDuration(queuedTrack.duration)}</span>
+                    </button>
+                    <div className="flex items-center gap-1">
+                      <TooltipButton label="Move up" icon={SkipBack} disabled={index === 0} onClick={() => control("queue_move", { from: index, to: index - 1 })} />
+                      <TooltipButton label="Move down" icon={SkipForward} disabled={index >= queue.length - 1} onClick={() => control("queue_move", { from: index, to: index + 1 })} />
+                      <TooltipButton label="Remove" icon={Trash2} onClick={() => control("queue_remove", { index })} />
+                    </div>
+                  </div>
+                );
+              }) : (
+                <EmptyState title="Queue is empty" body="Use song menus or playlists to add music to Up Next." />
+              )}
+            </div>
+            <SheetFooter>
+              <Button variant="outline" disabled={!queue.length} onClick={() => control("queue_clear")}>Clear queue</Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
         <span className="text-xs text-muted-foreground">Vol</span>
         <Slider value={[Math.round(volume * 100)]} onValueChange={([value]) => setVolume(value / 100)} onValueCommit={([value]) => control("volume", { value: value / 100 })} />
       </div>
@@ -1614,7 +1654,7 @@ function CoverArt({ target, track, className }: { target: string; track: Track; 
 function TooltipButton({ label, icon: Icon, ...props }: { label: string; icon: React.ElementType } & React.ComponentProps<typeof Button>) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild><Button size="icon" variant="ghost" {...props}><Icon className="size-4" /></Button></TooltipTrigger>
+      <TooltipTrigger asChild><Button size="icon" variant="ghost" aria-label={label} {...props}><Icon className="size-4" /></Button></TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
     </Tooltip>
   );
