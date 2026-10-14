@@ -328,3 +328,8 @@
 .spark-create .spark-generated-cover img { flex:none;aspect-ratio:1;object-fit:cover; }
 .spark-create .spark-name-suggestions { margin:.5rem 0; }
 .spark-create .spark-name-suggestions:empty { display:none; }
+.quick-eq label > span { line-height:1rem; }
+.eq-connections { top:1.375rem; }
+.quick-eq output { width:8ch; }
+.spark-seed-toggle { display:block;margin:0 auto .75rem;padding:.5rem .75rem;border:0;border-radius:.75rem;background:color-mix(in srgb,var(--ink) 7%,var(--surface-color));color:var(--ink);font-size:.8125rem; }
+.app-shell[data-adaptive] .collection-actions > .shuffle-button { background:transparent!important;box-shadow:none!important; }

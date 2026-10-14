@@ -1,6 +1,6 @@
 import {useEffect,useRef} from 'react';
 import {resolveArtworkTheme} from './artworkTheme';
-type Palette={tone:string;stops:string[]};
+type Palette={tone:string;stops:string[];surfaces:string[]};
 const colors=new Map<string,Palette>();
 // Calibrate against the white button surface, independently of the app palette.
 export function collectionPalette(pixels:ArrayLike<number>):Palette {
@@ -18,7 +18,7 @@ export function collectionPalette(pixels:ArrayLike<number>):Palette {
  if(!selected.length)selected.push([40,65,70]);
  while(selected.length<3)selected.push(selected[selected.length-1]);
  const stops=selected.map(rgb=>{const scale=Math.min(1,112/Math.max(...rgb));return `rgb(${rgb.map(v=>Math.round(v*scale)).join(' ')})`;});
- return {tone:stops[0],stops};
+ return {tone:stops[0],stops,surfaces:selected.map(rgb=>`rgb(${rgb.map(Math.round).join(' ')})`)};
 }
 export function useCollectionTone(spark:boolean){
  const ref=useRef<HTMLSpanElement>(null);
@@ -26,7 +26,7 @@ export function useCollectionTone(spark:boolean){
   const root=ref.current,host=root?.closest<HTMLElement>('.personal-collection,.playlist-hero,.playlist-card,.hub-collection-open');if(!root||!host)return;
   host.dataset.spark=String(spark);
   let alive=true;
-  const apply=(palette:Palette)=>{host.style.setProperty('--collection-tone',palette.tone);palette.stops.forEach((stop,i)=>{host.style.setProperty(`--collection-color-${i+1}`,stop);host.style.setProperty(`--collection-surface-${i+1}`,`color-mix(in srgb,${spark?stop:palette.tone} ${spark?35:25}%,white)`);});};
+  const apply=(palette:Palette)=>{host.style.setProperty('--collection-tone',palette.tone);palette.stops.forEach((stop,i)=>{host.style.setProperty(`--collection-color-${i+1}`,stop);host.style.setProperty(`--collection-surface-${i+1}`,`color-mix(in srgb,${palette.surfaces[spark?i:0]} ${spark?35:30}%,white)`);});};
   const update=()=>{
    const images=[...root.querySelectorAll('img')];if(!images.length||images.some(img=>!img.complete||!img.naturalWidth))return;
    const key=images.map(img=>img.currentSrc).join('|');let palette=colors.get(key);

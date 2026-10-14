@@ -32,7 +32,7 @@ test('preview listening is explicit and feedback remains part of the generation'
  fireEvent.click(screen.getByRole('button',{name:'Choose a starting song'}));fireEvent.click(screen.getByRole('button',{name:/Seed song/}));fireEvent.click(screen.getByRole('button',{name:'Dreamy'}));fireEvent.click(screen.getByRole('button',{name:'Preview Sparklist'}));
  await screen.findByText(/This mix uses 2 of 3/);expect(handlers.onPlay).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('button',{name:'Listen to preview'}));expect(handlers.onPlay).toHaveBeenCalledWith([1,2]);
- fireEvent.click(screen.getByRole('button',{name:'Less like Second song'}));
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Listen to preview'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Less like Second song'}));
  await waitFor(()=>expect(bridge.call).toHaveBeenLastCalledWith('sparklist',{request:{action:'preview',generation:{seed:1,mood:'Dreamy',less_like:[2],variant:0}}}));
 });
 
@@ -40,7 +40,7 @@ test('creation picks up model and analysis readiness without remounting',async()
  let ready=false;bridge.call.mockImplementation(async()=>ready?base:{...base,ready:false,beta:true,analyzed:0,analyzed_ids:[]});
  render(<SparkCreate {...props()}/>);await screen.findByText('Set up local audio generation');ready=true;
  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled(),{timeout:2500});
- expect(screen.getByText('2 of 3 songs have cached audio embeddings. This measures coverage, not recommendation quality.')).toBeVisible();
+ expect(screen.queryByText(/cached audio embeddings/)).not.toBeInTheDocument();
 });
 test('creation separates choosing, previewing and saving without losing the seed',async()=>{
  bridge.call.mockImplementation((_name:string,args:{request:{action:string;generation?:unknown}})=>Promise.resolve(args.request.action==='preview'?{...base,preview:{track_ids:[1,2],configuration:args.request.generation,analyzed:2,available:3,generation_version:'audio-cosine-mood-diversity-v2'}}:base));
@@ -61,7 +61,12 @@ test('name suggestions use the mood and seed without overwriting an edited name'
  bridge.call.mockImplementation(async(_command,{request})=>request.action==='status'?base:{...base,preview:{track_ids:[1,2],analyzed:2,available:3,generation_version:'test',configuration:request.generation}});
  render(<SparkCreate {...props()} library={{...library,tracks:library.tracks.map(t=>t.id===1?{...t,title:'November'}:t)}}/>);
  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());
- fireEvent.click(screen.getByRole('button',{name:/November/}));fireEvent.click(screen.getByRole('button',{name:'Melancholic'}));fireEvent.click(screen.getByRole('button',{name:'Preview Sparklist'}));
+ fireEvent.click(screen.getByRole('button',{name:'Choose a starting song'}));fireEvent.click(screen.getByRole('button',{name:/November/}));fireEvent.click(screen.getByRole('button',{name:'Melancholic'}));fireEvent.click(screen.getByRole('button',{name:'Preview Sparklist'}));
  fireEvent.click(await screen.findByRole('button',{name:'Name & save'}));expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('');expect(screen.getByRole('button',{name:'November-esque'})).toBeVisible();
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'My name'}});fireEvent.click(screen.getByRole('button',{name:'Back to preview'}));fireEvent.click(screen.getByRole('button',{name:'Name & save'}));expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('My name');
+});
+
+test('preview failures stay inside creation and can be retried',async()=>{
+ bridge.call.mockImplementation(async(_command,{request})=>request.action==='status'?base:request.action==='choose'?{...base,chosen_id:2}:{...base,preview:{track_ids:[2,1],analyzed:2,available:3,generation_version:'test',configuration:request.generation}});
+ const handlers=props();handlers.onPlay.mockRejectedValueOnce(Error('File is unavailable')).mockResolvedValue(undefined);render(<SparkCreate {...handlers}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Choose for me'}));fireEvent.click(await screen.findByRole('button',{name:'Listen to preview'}));await screen.findByText(/Could not play this preview/);await waitFor(()=>expect(screen.getByRole('button',{name:'Listen to preview'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Listen to preview'}));await waitFor(()=>expect(handlers.onPlay).toHaveBeenCalledTimes(2));
 });

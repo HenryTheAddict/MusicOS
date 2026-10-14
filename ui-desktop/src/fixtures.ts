@@ -168,7 +168,17 @@ export async function fixtureCall(
   const a = (args ?? {}) as Record<string, any>;
   switch (command) {
     case 'metadata_status': return {cached:8,checking:a.retry?2:0,unavailable:2,retryable:a.retry?0:2};
-    case 'sparklist': return {ready:false,reason:'The music model is awaiting listening evaluation and a reviewed release download. Audio generation is unavailable.',download_bytes:277183168,analyzed:0,available:tracks.filter(t=>t.available).length,analyzed_ids:[],preview:null,items:savedCollections,chosen_id:null};
+    case 'sparklist': {
+      if(!new URLSearchParams(location.search).has('sparkReady'))return {ready:false,reason:'The music model is awaiting listening evaluation and a reviewed release download. Audio generation is unavailable.',download_bytes:277183168,analyzed:0,available:tracks.filter(t=>t.available).length,analyzed_ids:[],preview:null,items:savedCollections,chosen_id:null};
+      // Explicit development fixture only; no production model-validation bypass.
+      const ids=tracks.filter(t=>t.available).map(t=>t.id),r=a.request;
+      const base={ready:true,beta:true,reason:null,download_bytes:277183168,analyzed:ids.length,available:ids.length,analyzed_ids:ids,preview:null,items:savedCollections,chosen_id:null};
+      const art='vibe/'+btoa(JSON.stringify({version:2,hue:245,energy:.4,shape:1,seed:123,variant:0,tempo:100})).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
+      if(r.action==='choose')return {...base,chosen_id:ids[0]};
+      if(r.action==='preview')return {...base,generated_artwork:art,preview:{track_ids:[r.generation.seed??ids[0],...ids.filter(id=>id!==r.generation.seed)].slice(0,6),configuration:r.generation,analyzed:ids.length,available:ids.length,generation_version:'fixture-only'}};
+      if(r.action==='save'){savedCollections.push({id:`audio/${Date.now()}`,name:r.name,kind:'audio',spark:null,track_ids:r.preview.track_ids,artwork_choice:r.artwork_choice});localStorage.setItem('musicos-fixture-collections',JSON.stringify(savedCollections));return {...base,items:savedCollections};}
+      return base;
+    }
     case 'depth_setup': return {supported:true,ready:true,running:false,downloaded:99188950,total:99188950,error:null,revision:'fixture',attribution:'Depth renderer fixture'};
     case 'depth_artwork': return {fresh:new URLSearchParams(location.search).has('freshDepth'),photo:a.path,map:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><defs><radialGradient id="g"><stop stop-color="white"/><stop offset="1" stop-color="black"/></radialGradient></defs><rect width="256" height="256" fill="url(#g)"/></svg>')};
     case 'artwork_performance': return;
