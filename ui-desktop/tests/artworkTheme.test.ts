@@ -1,0 +1,11 @@
+import { beforeEach, expect, test, vi } from "vitest";
+const {call,libraryArtwork,localArtwork}=vi.hoisted(()=>({call:vi.fn(),libraryArtwork:vi.fn(),localArtwork:vi.fn()}));
+vi.mock("../src/bridge",()=>({call,libraryArtwork,localArtwork}));
+import { clearThemeCache, resolveArtworkTheme } from "../src/artworkTheme";
+const palette={background:"#ccdddd",accent:"#115544",blob:"#77aaaa",text:"#112233"};
+beforeEach(()=>{vi.resetAllMocks();clearThemeCache();call.mockResolvedValue(palette);libraryArtwork.mockResolvedValue(null);});
+test("uses embedded album artwork when the visible cover has no indexed path",async()=>{libraryArtwork.mockResolvedValue("/cache/embedded.jpg");expect(await resolveArtworkTheme([null],42)).toEqual({palette,path:"/cache/embedded.jpg"});expect(libraryArtwork).toHaveBeenCalledWith(42);});
+test("unreadable portrait falls back to the artist's album artwork",async()=>{call.mockRejectedValueOnce(new Error("missing"));expect(await resolveArtworkTheme(["/missing-portrait","/album"],42)).toEqual({palette,path:"/album"});});
+test("tries the next artist album if the first has no artwork",async()=>{libraryArtwork.mockResolvedValueOnce(null).mockResolvedValueOnce("/second-album.jpg");expect(await resolveArtworkTheme([], [1,2])).toEqual({palette,path:"/second-album.jpg"});});
+test("missing artwork restores blue and online artwork is cached before extraction",async()=>{expect(await resolveArtworkTheme([null],42)).toBeNull();localArtwork.mockResolvedValue("/downloaded.jpg");await resolveArtworkTheme(["https://example.test/cover.jpg"]);expect(call).toHaveBeenLastCalledWith("artwork_palette",{path:"/downloaded.jpg"});});
+test("palette preparation is cached and failed sources can retry",async()=>{await resolveArtworkTheme(["/album"]);await resolveArtworkTheme(["/album"]);expect(call).toHaveBeenCalledTimes(1);clearThemeCache();call.mockRejectedValueOnce(new Error("bad"));expect(await resolveArtworkTheme(["/album"])).toBeNull();call.mockResolvedValue(palette);expect(await resolveArtworkTheme(["/album"])).not.toBeNull();});

@@ -1,4 +1,4 @@
-use musicos_init::app::{Focus, MusicOs, Screen};
+use musicos_init::app::{Focus, HomePane, MusicOs, Screen};
 use musicos_init::audio::EqPreset;
 use musicos_init::database::Db;
 use musicos_init::input::{Button, InputEvent};
@@ -9,6 +9,59 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+#[test]
+fn home_navigation_cycles_all_main_rows_and_keeps_detail_focus_deterministic() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-home-nav-{}", std::process::id()));
+    let db_path = root.join("media.sqlite3");
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    app.force_screen_for_snapshot(Screen::Home);
+    app.focus = Focus::HomeMusic;
+
+    for expected in [
+        Focus::HomeNowPlaying,
+        Focus::HomeApps,
+        Focus::HomeSettings,
+        Focus::HomeMusic,
+    ] {
+        app.handle_input(InputEvent::Button(Button::Down));
+        assert_eq!(app.focus, expected);
+    }
+    app.handle_input(InputEvent::Button(Button::Up));
+    assert_eq!(app.focus, Focus::HomeSettings);
+
+    app.focus = Focus::HomeNowPlaying;
+    app.tracks_queue.push(musicos_init::database::Track {
+        id: 1,
+        path: "/tmp/home-nav.mp3".to_string(),
+        title: "Home navigation".to_string(),
+        artist: "MusicOS".to_string(),
+        album: "Tests".to_string(),
+        track_number: 1,
+        duration: 120,
+        file_size: 0,
+        modified_at: 0,
+        indexed_at: 0,
+        cover_art_path: None,
+        cover_art_updated_at: None,
+        cover_art_source_modified_at: None,
+        favorited: false,
+        play_count: 0,
+        last_played: None,
+        rating: 0,
+    });
+    app.handle_input(InputEvent::Button(Button::Right));
+    assert_eq!(app.home_navigation.pane, HomePane::Detail);
+    assert_eq!(app.focus, Focus::HomePlaylist1);
+    app.handle_input(InputEvent::Button(Button::Down));
+    assert_eq!(app.focus, Focus::HomePlaylist2);
+    app.handle_input(InputEvent::Button(Button::Left));
+    assert_eq!(app.home_navigation.pane, HomePane::Main);
+    assert_eq!(app.focus, Focus::HomeNowPlaying);
+
+    let _ = std::fs::remove_dir_all(root);
+}
 
 #[test]
 fn scan_library_control_is_nonblocking_and_refreshes_when_done() {
@@ -56,6 +109,127 @@ fn scan_library_control_is_nonblocking_and_refreshes_when_done() {
 }
 
 #[test]
+fn queued_scan_indexes_late_files_without_clobbering_the_active_queue() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-queued-scan-{}", std::process::id()));
+    let db_path = root.join("media.sqlite3");
+    let music_root = root.join("music");
+    std::fs::create_dir_all(&music_root).unwrap();
+    std::fs::write(music_root.join("First Artist - First Song.mp3"), b"first").unwrap();
+    std::env::set_var("MUSICOS_UPLOAD_DIR", &music_root);
+
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    let queue_id = app
+        .db
+        .insert_track(
+            "/music/queue.ogg",
+            "Queue Song",
+            "Artist",
+            "Album",
+            120,
+            1,
+            1,
+        )
+        .unwrap();
+    let queue = app
+        .db
+        .get_track_by_id(queue_id)
+        .unwrap()
+        .into_iter()
+        .collect();
+    app.player.set_queue(queue, 0);
+    app.force_screen_for_snapshot(Screen::Queue);
+    app.tracks_queue = app.player.queue_tracks();
+
+    app.start_library_scan();
+    std::fs::write(music_root.join("Second Artist - Late Song.mp3"), b"second").unwrap();
+    app.start_library_scan();
+    assert!(app.scan_status.contains("then checking new files"));
+
+    for _ in 0..300 {
+        app.tick();
+        if app.scan.state == "complete" && app.db.library_counts().unwrap().tracks >= 3 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert!(app.db.library_counts().unwrap().tracks >= 3);
+    assert_eq!(app.scan.processed, app.scan.discovered);
+    assert_eq!(app.tracks_queue.len(), 1);
+    assert_eq!(app.tracks_queue[0].id, queue_id);
+
+    std::env::remove_var("MUSICOS_UPLOAD_DIR");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn settings_rows_open_real_destinations_and_restore_focus() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-settings-nav-{}", std::process::id()));
+    let db_path = root.join("media.sqlite3");
+    let music_root = root.join("music");
+    std::fs::create_dir_all(&music_root).unwrap();
+    std::env::set_var("MUSICOS_UPLOAD_DIR", &music_root);
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+
+    app.force_screen_for_snapshot(Screen::Settings);
+    app.focus = Focus::SettingsLooks;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::SettingsDetail);
+    assert_eq!(app.focus, Focus::SettingsSwitchObject);
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::Settings);
+    assert_eq!(app.focus, Focus::SettingsLooks);
+
+    app.focus = Focus::SettingsConnectivity;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::About);
+    assert_eq!(app.scan.state, "running");
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::Settings);
+    assert_eq!(app.focus, Focus::SettingsConnectivity);
+
+    for _ in 0..150 {
+        app.tick();
+        if app.scan.state == "complete" {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    std::env::remove_var("MUSICOS_UPLOAD_DIR");
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn now_playing_controls_support_vertical_grid_navigation() {
+    let root = std::env::temp_dir().join(format!(
+        "musicos-now-playing-navigation-{}",
+        std::process::id()
+    ));
+    let db_path = root.join("media.sqlite3");
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+
+    app.force_screen_for_snapshot(Screen::NowPlaying);
+    app.focus = Focus::Albums;
+    app.handle_input(InputEvent::Button(Button::Down));
+    assert_eq!(app.focus, Focus::Favorites);
+    app.handle_input(InputEvent::Button(Button::Up));
+    assert_eq!(app.focus, Focus::Albums);
+
+    app.focus = Focus::Artists;
+    app.handle_input(InputEvent::Button(Button::Up));
+    assert_eq!(app.focus, Focus::Songs);
+
+    app.focus = Focus::Playlists;
+    app.handle_input(InputEvent::Button(Button::Down));
+    assert_eq!(app.focus, Focus::History);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn apps_launcher_and_usb_sync_have_real_destinations() {
     let _guard = ENV_LOCK.lock().unwrap();
     let root = std::env::temp_dir().join(format!("musicos-product-flow-{}", std::process::id()));
@@ -79,7 +253,8 @@ fn apps_launcher_and_usb_sync_have_real_destinations() {
 
     let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
     app.force_screen_for_snapshot(Screen::Home);
-    app.handle_input(InputEvent::Button(Button::Left));
+    app.handle_input(InputEvent::Button(Button::Down));
+    app.handle_input(InputEvent::Button(Button::Down));
     assert_eq!(app.focus, Focus::HomeApps);
 
     app.handle_input(InputEvent::Button(Button::Confirm));
@@ -296,7 +471,9 @@ fn context_menu_actions_use_the_selected_library_item() {
         .position(|track| track.id == second)
         .unwrap();
     app.handle_input(InputEvent::Button(Button::Context));
-    app.handle_input(InputEvent::Button(Button::Down));
+    for _ in 0..3 {
+        app.handle_input(InputEvent::Button(Button::Down));
+    }
     app.handle_input(InputEvent::Button(Button::Confirm));
     assert!(app
         .db
@@ -313,7 +490,6 @@ fn context_menu_actions_use_the_selected_library_item() {
         .position(|album| album == "Glow")
         .unwrap();
     app.handle_input(InputEvent::Button(Button::Context));
-    app.handle_input(InputEvent::Button(Button::Down));
     app.handle_input(InputEvent::Button(Button::Down));
     app.handle_input(InputEvent::Button(Button::Confirm));
     let context_adds = app
@@ -337,7 +513,7 @@ fn context_menu_actions_use_the_selected_library_item() {
         .position(|playlist| playlist.id == playlist_id)
         .unwrap();
     app.handle_input(InputEvent::Button(Button::Context));
-    for _ in 0..4 {
+    for _ in 0..2 {
         app.handle_input(InputEvent::Button(Button::Down));
     }
     app.handle_input(InputEvent::Button(Button::Confirm));
@@ -464,7 +640,7 @@ fn album_order_and_favorites_match_music_player_expectations() {
         .position(|album| album == "Glow")
         .unwrap();
     app.handle_input(InputEvent::Button(Button::Confirm));
-    assert_eq!(app.screen, Screen::SongsList);
+    assert_eq!(app.screen, Screen::AlbumTracksList);
     assert_eq!(
         app.tracks_queue
             .iter()
@@ -698,6 +874,183 @@ fn volume_brightness_hud_and_chorded_modifier() {
     app.handle_input(InputEvent::Button(Button::Home));
     app.handle_input(InputEvent::ButtonRelease(Button::Home));
     assert_eq!(app.screen, Screen::Home);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn device_search_plays_results_and_restores_the_query_screen() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-device-search-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let db_path = root.join("media.sqlite3");
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    let alpha = app
+        .db
+        .insert_track("/music/alpha.ogg", "Alpha", "Tanger", "Glow", 120, 1, 1)
+        .unwrap();
+    app.db
+        .insert_track("/music/echo.ogg", "Echo", "Muse", "Blue", 120, 1, 1)
+        .unwrap();
+
+    app.force_screen_for_snapshot(Screen::MusicApp);
+    app.focus = Focus::Search;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::Search);
+    assert_eq!(app.focus, Focus::SearchKeyboard);
+
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.search_query, "A");
+    assert_eq!(app.search_results.len(), 1);
+    assert_eq!(app.search_results[0].id, alpha);
+
+    app.handle_input(InputEvent::Button(Button::Context));
+    assert_eq!(app.focus, Focus::SearchResults);
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::NowPlaying);
+    assert_eq!(app.player.get_current_track().unwrap().id, alpha);
+
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::Search);
+    assert_eq!(app.focus, Focus::SearchResults);
+    assert_eq!(app.search_query, "A");
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn artist_album_drilldown_rating_and_navigation_restore_exact_state() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-artist-nav-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let db_path = root.join("media.sqlite3");
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    let glow = app
+        .db
+        .insert_track("/music/glow.ogg", "Glow", "Tanger", "Glow", 120, 1, 1)
+        .unwrap();
+    app.db
+        .insert_track("/music/night.ogg", "Night", "Tanger", "Night", 120, 1, 1)
+        .unwrap();
+    app.db
+        .insert_track("/music/other.ogg", "Other", "Other", "Glow", 120, 1, 1)
+        .unwrap();
+
+    app.force_screen_for_snapshot(Screen::MusicApp);
+    app.focus = Focus::Artists;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    let artist_index = app
+        .artists_list
+        .iter()
+        .position(|artist| artist == "Tanger")
+        .unwrap();
+    app.selected_index = artist_index;
+    app.scroll_offset = 288.0;
+    app.target_scroll_offset = 288.0;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::ArtistAlbumsList);
+    assert_eq!(app.artist_albums_list, vec!["Glow", "Night"]);
+
+    app.selected_index = 0;
+    app.scroll_offset = 144.0;
+    app.target_scroll_offset = 144.0;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::AlbumTracksList);
+    assert_eq!(app.tracks_queue.len(), 1);
+    assert_eq!(app.tracks_queue[0].id, glow);
+
+    app.handle_input(InputEvent::Button(Button::Context));
+    for _ in 0..5 {
+        app.handle_input(InputEvent::Button(Button::Down));
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::RatingPicker);
+    for _ in 0..4 {
+        app.handle_input(InputEvent::Button(Button::Right));
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::AlbumTracksList);
+    assert_eq!(app.db.get_track_by_id(glow).unwrap().unwrap().rating, 4);
+
+    app.scroll_offset = 72.0;
+    app.target_scroll_offset = 72.0;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::NowPlaying);
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::AlbumTracksList);
+    assert_eq!(app.scroll_offset, 72.0);
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::ArtistAlbumsList);
+    assert_eq!(app.selected_index, 0);
+    assert_eq!(app.scroll_offset, 144.0);
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::ArtistsList);
+    assert_eq!(app.selected_index, artist_index);
+    assert_eq!(app.scroll_offset, 288.0);
+
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn queue_context_moves_removes_and_clears_upcoming() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let root = std::env::temp_dir().join(format!("musicos-queue-actions-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let db_path = root.join("media.sqlite3");
+    let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    let mut tracks = Vec::new();
+    let mut track_ids = Vec::new();
+    for id in 0..4 {
+        let track_id = app
+            .db
+            .insert_track(
+                &format!("/music/{id}.ogg"),
+                &format!("Track {id}"),
+                "Artist",
+                "Album",
+                120,
+                1,
+                1,
+            )
+            .unwrap();
+        tracks.push(app.db.get_track_by_id(track_id).unwrap().unwrap());
+        track_ids.push(track_id);
+    }
+    app.player.set_queue(tracks, 0);
+    app.screen = Screen::Queue;
+    app.focus = Focus::Queue;
+    app.tracks_queue = app.player.queue_tracks();
+    app.selected_index = 2;
+
+    app.handle_input(InputEvent::Button(Button::Context));
+    for _ in 0..3 {
+        app.handle_input(InputEvent::Button(Button::Down));
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(
+        app.player.queue_track_ids(),
+        vec![track_ids[0], track_ids[2], track_ids[1], track_ids[3]]
+    );
+
+    app.selected_index = 2;
+    app.handle_input(InputEvent::Button(Button::Context));
+    for _ in 0..6 {
+        app.handle_input(InputEvent::Button(Button::Down));
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(
+        app.player.queue_track_ids(),
+        vec![track_ids[0], track_ids[2], track_ids[3]]
+    );
+
+    app.selected_index = 1;
+    app.handle_input(InputEvent::Button(Button::Context));
+    for _ in 0..7 {
+        app.handle_input(InputEvent::Button(Button::Down));
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.player.queue_track_ids(), vec![track_ids[0]]);
+    assert_eq!(app.player.current_index(), Some(0));
 
     let _ = std::fs::remove_dir_all(root);
 }

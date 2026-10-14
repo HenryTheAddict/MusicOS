@@ -1,0 +1,4 @@
+import {useId,type ReactNode} from 'react';
+export default function ManagementTabs<T extends string>({label,value,options,onChange}:{label:string;value:T;options:{id:T;label:ReactNode}[];onChange:(id:T)=>void}){
+ const prefix=useId();return <div className="library-settings-nav" role="tablist" aria-label={label} onKeyDown={e=>{let index=options.findIndex(o=>o.id===value);if(e.key==='ArrowRight'||e.key==='ArrowDown')index=(index+1)%options.length;else if(e.key==='ArrowLeft'||e.key==='ArrowUp')index=(index+options.length-1)%options.length;else if(e.key==='Home')index=0;else if(e.key==='End')index=options.length-1;else return;e.preventDefault();onChange(options[index].id);e.currentTarget.querySelectorAll<HTMLButtonElement>('button')[index]?.focus();}}>{options.map(o=><button key={o.id} id={`${prefix}-${o.id}`} role="tab" aria-selected={value===o.id} tabIndex={value===o.id?0:-1} onClick={()=>onChange(o.id)}>{o.label}</button>)}</div>;
+}

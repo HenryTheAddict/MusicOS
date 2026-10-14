@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -7,7 +9,7 @@ use crate::database::Track;
 use crate::renderer::{Canvas, Color, CoverArt};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
-use crate::ui::transitions::{ease_out_back, ease_out_cubic, pulse01};
+use crate::ui::transitions::pulse01;
 use crate::ui::{focus_halo, text_fit, FontWeight};
 
 static PLACEHOLDER_ART: OnceLock<Option<CoverArt>> = OnceLock::new();
@@ -24,217 +26,235 @@ pub fn draw_now_playing(
     cover_art_opacity: f32,
     transition_t: f32,
 ) {
-    let transition_t = ease_out_cubic(transition_t);
-    let (top, _) =
-        if let (Some(top), Some(bottom)) = (canvas.theme_top_color, canvas.theme_bottom_color) {
-            (top, bottom)
-        } else {
-            theme.gradient_colors()
-        };
-    let accent = top;
-    canvas.vertical_gradient(Color::WHITE, accent);
-    crate::ui::liquid_glass(canvas, 0.0, 0.0, 1280.0, 960.0, 0.0, 18);
-
+    let _ = (transition_t, seconds);
+    crate::ui::draw_figma_background(canvas);
+    let accent = theme.primary_color();
     let Some(ref track) = status.track else {
-        return;
-    };
-
-    let (title, artist, album, duration, favorited) = (
-        track.title.as_str(),
-        track.artist.as_str(),
-        track.album.as_str(),
-        track.duration,
-        track.favorited,
-    );
-
-    let intro = ease_out_back(transition_t);
-    let art_x = 80.0 - (1.0 - intro) * 44.0;
-    let art_y = 86.0;
-    let art_size = 500.0;
-    let art_pulse = if status.is_playing {
-        1.0 + (seconds * 2.2).sin() * 0.012
-    } else {
-        1.0
-    };
-    let pulsed_size = art_size * art_pulse;
-    let pulsed_x = art_x - (pulsed_size - art_size) / 2.0;
-    let pulsed_y = art_y - (pulsed_size - art_size) / 2.0;
-
-    crate::ui::shadow_rr(
-        canvas,
-        pulsed_x,
-        pulsed_y,
-        pulsed_size,
-        pulsed_size,
-        72.0,
-        8.0,
-        16.0,
-    );
-    draw_cover_art(
-        canvas,
-        cover_art,
-        pulsed_x,
-        pulsed_y,
-        pulsed_size,
-        72.0,
-        cover_art_opacity,
-    );
-
-    let title_lines = wrap_lines(canvas, title, 610.0, 72.0, FontWeight::Bold, 5);
-    let title_y = 78.0 + (1.0 - transition_t) * 28.0;
-    for (index, line) in title_lines.iter().enumerate() {
-        canvas.text(
-            line,
-            610.0,
-            title_y + index as f32 * 82.0,
+        crate::ui::rr(canvas, 180.0, 260.0, 920.0, 300.0, 8.0, Color::WHITE);
+        crate::ui::rr_stroke(
+            canvas,
+            180.0,
+            260.0,
+            920.0,
+            300.0,
+            8.0,
+            2.0,
+            crate::ui::IPOD_BORDER,
+        );
+        canvas.text_centered(
+            "No song selected",
+            640.0,
+            342.0,
             72.0,
             Color::BLACK,
             FontWeight::Bold,
         );
-    }
+        canvas.text_centered(
+            "Choose a song from Music",
+            640.0,
+            438.0,
+            36.0,
+            Color::rgb(96, 101, 108),
+            FontWeight::Regular,
+        );
+        return;
+    };
 
-    outlined_text(canvas, artist, 610.0, 510.0, 64.0, Color::WHITE);
+    let art_x = 92.0;
+    let art_y = 132.0;
+    let art_size = 430.0;
+    crate::ui::shadow_rr(canvas, art_x, art_y, art_size, art_size, 8.0, 3.0, 8.0);
+    draw_cover_art(
+        canvas,
+        cover_art,
+        art_x,
+        art_y,
+        art_size,
+        8.0,
+        cover_art_opacity,
+    );
+    crate::ui::rr_stroke(
+        canvas,
+        art_x,
+        art_y,
+        art_size,
+        art_size,
+        8.0,
+        2.0,
+        crate::ui::IPOD_BORDER,
+    );
+
     text_fit(
         canvas,
-        album,
+        &track.title,
+        574.0,
+        148.0,
         610.0,
-        585.0,
-        590.0,
-        58.0,
-        Color::WHITE,
+        68.0,
+        Color::BLACK,
         FontWeight::Bold,
     );
-    if let Some(next_track) = status.queue_index.and_then(|index| queue.get(index + 1)) {
+    text_fit(
+        canvas,
+        &track.artist,
+        574.0,
+        240.0,
+        610.0,
+        48.0,
+        Color::rgb(70, 75, 82),
+        FontWeight::Bold,
+    );
+    text_fit(
+        canvas,
+        &track.album,
+        574.0,
+        304.0,
+        610.0,
+        40.0,
+        Color::rgb(104, 109, 116),
+        FontWeight::Regular,
+    );
+    if let Some(error) = status.last_error.as_deref() {
+        crate::ui::rr(
+            canvas,
+            574.0,
+            382.0,
+            610.0,
+            64.0,
+            5.0,
+            Color::rgb(168, 51, 59),
+        );
         text_fit(
             canvas,
-            &format!("Up Next: {}", next_track.title),
-            610.0,
-            648.0,
+            error,
             590.0,
+            398.0,
+            578.0,
             30.0,
-            Color::rgba(0, 0, 0, 190),
+            Color::WHITE,
             FontWeight::Bold,
+        );
+    } else if let Some(next_track) = status.queue_index.and_then(|index| queue.get(index + 1)) {
+        text_fit(
+            canvas,
+            &format!("Up next: {}", next_track.title),
+            574.0,
+            402.0,
+            610.0,
+            30.0,
+            Color::rgb(94, 99, 106),
+            FontWeight::Regular,
         );
     }
 
-    let slider_x = 136.0;
-    let slider_y = 690.0;
-    let slider_w = 1008.0;
-    let slider_h = 30.0;
-    let ratio = if duration > 0 {
-        (status.position / duration as f32).clamp(0.0, 1.0)
+    let slider_x = 104.0;
+    let slider_y = 638.0;
+    let slider_w = 1072.0;
+    let ratio = if track.duration > 0 {
+        (status.position / track.duration as f32).clamp(0.0, 1.0)
     } else {
         0.0
     };
     crate::ui::rr(
         canvas,
         slider_x,
-        slider_y + 8.0,
+        slider_y,
         slider_w,
-        10.0,
-        5.0,
-        Color::BLACK,
+        12.0,
+        6.0,
+        Color::rgb(187, 191, 196),
     );
     crate::ui::rr(
         canvas,
         slider_x,
         slider_y,
         slider_w * ratio,
-        slider_h,
-        15.0,
-        accent,
-    );
-    let knob_x = slider_x + slider_w * ratio;
-    let res = canvas.resolution();
-    canvas.circle(
-        res.scale_x(knob_x),
-        res.scale_y(slider_y + slider_h / 2.0),
-        (16.0 + pulse01(seconds, 4.0, 0.1) * 2.0) * res.scale(),
+        12.0,
+        6.0,
         accent,
     );
     canvas.text(
         &format_time(status.position),
-        slider_x + 16.0,
-        735.0,
-        34.0,
-        Color::BLACK,
+        slider_x,
+        666.0,
+        30.0,
+        Color::rgb(70, 75, 82),
         FontWeight::Bold,
     );
     canvas.text_right(
-        &format_time(duration as f32),
+        &format_time(track.duration as f32),
         slider_x + slider_w,
-        735.0,
-        34.0,
-        Color::BLACK,
+        666.0,
+        30.0,
+        Color::rgb(70, 75, 82),
         FontWeight::Bold,
     );
 
     let center_x = 640.0;
-    let controls_y = 770.0;
+    let controls_y = 760.0;
     draw_player_icon(
         canvas,
-        center_x - 160.0,
+        center_x - 170.0,
         controls_y,
         "prev",
         focus == Focus::Artists,
         status,
         seconds,
         0.0,
-        88.0,
+        78.0,
     );
     draw_player_icon(
         canvas,
         center_x,
-        controls_y - 18.0,
+        controls_y - 12.0,
         "play",
         focus == Focus::Albums,
         status,
         seconds,
         0.35,
-        112.0,
+        102.0,
     );
     draw_player_icon(
         canvas,
-        center_x + 160.0,
+        center_x + 170.0,
         controls_y,
         "next",
         focus == Focus::Playlists,
         status,
         seconds,
         0.7,
-        88.0,
+        78.0,
     );
 
-    let lower_y = 872.0;
     draw_player_icon(
         canvas,
-        center_x - 170.0,
-        lower_y,
+        388.0,
+        874.0,
         "loop",
         focus == Focus::Songs,
         status,
         seconds,
         1.05,
-        64.0,
+        58.0,
     );
     draw_heart(
         canvas,
-        center_x,
-        lower_y - 6.0,
-        favorited,
+        640.0,
+        868.0,
+        track.favorited,
         focus == Focus::Favorites,
         seconds,
     );
     draw_player_icon(
         canvas,
-        center_x + 170.0,
-        lower_y,
+        892.0,
+        874.0,
         "shuffle",
         focus == Focus::History,
         status,
         seconds,
         1.4,
-        64.0,
+        58.0,
     );
 }
 
@@ -268,8 +288,7 @@ pub fn draw_cover_art(
 pub fn placeholder_cover_art() -> Option<&'static CoverArt> {
     PLACEHOLDER_ART
         .get_or_init(|| {
-            let base_path =
-                std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| "assets".to_string());
+            let base_path = crate::ui::assets_dir();
             crate::media::load_cover_art_file(
                 Path::new(&base_path)
                     .join("icons/coverartplaceholder.png")
@@ -335,7 +354,7 @@ fn draw_player_icon(
         },
         _ => "Play.svg",
     };
-    let base_path = std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| "assets".to_string());
+    let base_path = crate::ui::assets_dir();
     let path = format!("{}/icons/nowplaying/{}", base_path, filename);
     canvas.draw_svg(&path, cx - size / 2.0, cy - size / 2.0, size, size);
 }
@@ -370,7 +389,7 @@ fn draw_heart(
             8.0,
         );
     }
-    let base_path = std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| "assets".to_string());
+    let base_path = crate::ui::assets_dir();
     let filename = if filled {
         "HeartFilled.svg"
     } else {

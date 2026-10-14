@@ -6,7 +6,7 @@ Set-Location $Root
 $Image = if ($env:MUSICOS_BUILD_IMAGE) { $env:MUSICOS_BUILD_IMAGE } else { "musicos-buildroot:24.04" }
 $OutVolume = if ($env:MUSICOS_BUILD_OUT_VOLUME) { $env:MUSICOS_BUILD_OUT_VOLUME } else { "musicos-buildroot-out" }
 $BuildrootVersion = if ($env:BUILDROOT_VERSION) { $env:BUILDROOT_VERSION } else { "2026.05" }
-$BuildJobs = if ($env:MUSICOS_BUILD_JOBS) { $env:MUSICOS_BUILD_JOBS } else { "1" }
+$BuildJobs = if ($env:MUSICOS_BUILD_JOBS) { $env:MUSICOS_BUILD_JOBS } else { [Math]::Max(1, [Environment]::ProcessorCount - 1).ToString() }
 
 docker info | Out-Null
 docker build --platform linux/amd64 -f "$Root\docker\buildroot.Dockerfile" -t $Image "$Root"

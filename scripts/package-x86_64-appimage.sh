@@ -42,7 +42,7 @@ chmod +x "$appdir/AppRun"
 echo "Running appimagetool inside Colima VM..."
 colima ssh -- bash -lc "
   set -euo pipefail
-  cd /Users/henryperzinski/Developer/MusicOS
+  cd /Users/henry/Developer/MusicOS
 
   # Download appimagetool if not exists
   if [ ! -f vendor/appimagetool ]; then

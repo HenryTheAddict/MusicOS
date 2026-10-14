@@ -4,7 +4,8 @@ use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
 use crate::ui::{
-    button, draw_globe, focus_halo, inner_shadow, liquid_glass, rr, shadow_rr, FontWeight,
+    button, button_with_radius, draw_globe, focus_halo, inner_shadow, liquid_glass, rr, shadow_rr,
+    FontWeight,
 };
 
 pub fn draw_first(
@@ -16,8 +17,25 @@ pub fn draw_first(
     transition_t: f32,
 ) {
     let t = ease_out_back(transition_t);
-    let (top, _) = theme.gradient_colors();
-    canvas.vertical_gradient(Color::WHITE, top);
+    crate::ui::draw_figma_background(canvas);
+    let accent = theme.primary_color();
+
+    canvas.text(
+        "MusicOS",
+        72.0,
+        122.0 + (1.0 - ease_out_cubic(transition_t)) * 24.0,
+        110.0,
+        Color::BLACK,
+        FontWeight::Bold,
+    );
+    canvas.text(
+        "Your music, ready when you are.",
+        76.0,
+        234.0,
+        34.0,
+        Color::rgba(0, 0, 0, 165),
+        FontWeight::Regular,
+    );
 
     let button_y = 286.0 + (1.0 - t) * 48.0;
     button(
@@ -27,7 +45,7 @@ pub fn draw_first(
         400.0,
         170.0,
         lang.translate("get_started"),
-        theme.primary_color(),
+        accent,
         Color::WHITE,
         seconds,
         focus == Focus::GetStarted,
@@ -44,13 +62,22 @@ pub fn draw_first(
         canvas.register_selected(440.0, lang_y, 400.0, 170.0, 20.0, 8.0);
     }
 
+    canvas.text_centered(
+        "A  select     B  back",
+        640.0,
+        850.0,
+        32.0,
+        Color::rgba(0, 0, 0, 150),
+        FontWeight::Regular,
+    );
+
     canvas.text(
-        "Build 1",
-        3.0,
-        900.0 + (1.0 - ease_out_cubic(transition_t)) * 20.0,
-        64.0,
-        Color::rgba(255, 255, 255, 128),
-        FontWeight::Bold,
+        "MusicOS 0.1",
+        72.0,
+        902.0 + (1.0 - ease_out_cubic(transition_t)) * 20.0,
+        30.0,
+        Color::rgba(255, 255, 255, 176),
+        FontWeight::Regular,
     );
 }
 
@@ -63,31 +90,39 @@ pub fn draw_welcome(
 ) {
     let t = ease_out_cubic(transition_t);
     let alpha = (255.0 * t).round() as u8;
-    let (top, _) = theme.gradient_colors();
-    canvas.vertical_gradient(Color::WHITE, top);
-    canvas.text(
+    let _ = theme;
+    crate::ui::draw_figma_background(canvas);
+    canvas.text_centered(
         lang.translate("hello"),
-        416.0,
-        194.0 + (1.0 - t) * 38.0,
-        256.0,
+        640.0,
+        210.0 + (1.0 - t) * 38.0,
+        190.0,
         Color::rgba(0, 0, 0, alpha),
         FontWeight::Bold,
     );
-    canvas.text(
+    canvas.text_centered(
         lang.translate("welcome"),
-        268.0,
-        450.0 + (1.0 - t) * 42.0,
-        64.0,
-        Color::rgba(255, 255, 255, alpha),
+        640.0,
+        478.0 + (1.0 - t) * 42.0,
+        56.0,
+        Color::rgba(46, 50, 56, alpha),
         FontWeight::Bold,
     );
-    canvas.text_right(
+    canvas.text_centered(
         lang.translate("grab_device"),
-        1011.0,
-        578.0 + (1.0 - t) * 46.0,
-        48.0,
-        Color::rgba(0, 0, 0, alpha),
+        640.0,
+        570.0 + (1.0 - t) * 46.0,
+        40.0,
+        Color::rgba(92, 98, 106, alpha),
         FontWeight::Bold,
+    );
+    canvas.text_centered(
+        "A  Continue",
+        640.0,
+        900.0,
+        30.0,
+        Color::rgba(0, 0, 0, alpha.saturating_sub(70)),
+        FontWeight::Regular,
     );
 }
 
@@ -100,25 +135,19 @@ pub fn draw_theme_selection(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    let (top_color, bottom_color) =
-        if let (Some(top), Some(bottom)) = (canvas.theme_top_color, canvas.theme_bottom_color) {
-            (top, bottom)
-        } else {
-            active_theme.gradient_colors()
-        };
-    canvas.vertical_gradient(top_color, bottom_color);
+    crate::ui::draw_figma_background(canvas);
 
     canvas.text(
         lang.translate("choose_theme"),
         258.0,
-        145.0 + (1.0 - t) * 38.0,
-        128.0,
+        116.0 + (1.0 - t) * 38.0,
+        82.0,
         Color::BLACK,
         FontWeight::Bold,
     );
     let panel_y = 309.0 + (1.0 - ease_out_back(transition_t)) * 52.0;
-    shadow_rr(canvas, 70.0, panel_y, 1139.0, 300.0, 150.0, 8.0, 16.0);
-    liquid_glass(canvas, 70.0, panel_y, 1139.0, 300.0, 150.0, 38);
+    shadow_rr(canvas, 70.0, panel_y, 1139.0, 300.0, 8.0, 3.0, 8.0);
+    liquid_glass(canvas, 70.0, panel_y, 1139.0, 300.0, 8.0, 238);
 
     let theme_colors = [
         (ThemeName::Blue, 232.0, ThemeName::Blue.primary_color()),
@@ -154,12 +183,13 @@ pub fn draw_theme_selection(
     let custom_selected = matches!(focus, Focus::Custom);
     let yeah_selected = matches!(focus, Focus::Yeah);
 
-    button(
+    button_with_radius(
         canvas,
         237.0,
         645.0 + (1.0 - t) * 34.0,
         400.0,
         170.0,
+        32.0,
         lang.translate("custom"),
         if custom_selected {
             Color::rgba(255, 255, 255, 230)
@@ -171,12 +201,13 @@ pub fn draw_theme_selection(
         custom_selected,
     );
 
-    button(
+    button_with_radius(
         canvas,
         659.0,
         645.0 + (1.0 - t) * 34.0,
         400.0,
         170.0,
+        32.0,
         lang.translate("yeah"),
         if yeah_selected {
             active_theme.primary_color()
@@ -204,8 +235,8 @@ pub fn draw_language_selection(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    let (top, _) = theme.gradient_colors();
-    canvas.vertical_gradient(top, Color::WHITE);
+    let _ = theme;
+    crate::ui::draw_figma_background(canvas);
     let globe_x = 74.0 - (1.0 - t) * 42.0;
     liquid_glass(canvas, globe_x, 395.0, 400.0, 170.0, 20.0, 220);
     draw_globe(canvas, globe_x + 200.0, 480.0, 64.0, 6.0, Color::BLACK);
@@ -215,7 +246,7 @@ pub fn draw_language_selection(
         92.0,
         697.0,
         775.0,
-        100.0,
+        32.0,
         220,
     );
 

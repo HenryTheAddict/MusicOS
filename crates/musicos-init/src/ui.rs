@@ -17,16 +17,22 @@ pub enum FontWeight {
     Bold,
 }
 
+pub const RADIUS_SM: f32 = 3.0;
+pub const RADIUS_MD: f32 = 5.0;
+pub const RADIUS_LG: f32 = 8.0;
+pub const IPOD_CHROME_TOP: Color = Color::rgb(251, 251, 251);
+pub const IPOD_CHROME_BOTTOM: Color = Color::rgb(202, 205, 209);
+pub const IPOD_BORDER: Color = Color::rgb(126, 130, 136);
+pub const IPOD_ROW: Color = Color::rgb(252, 252, 252);
+pub const IPOD_ROW_ALT: Color = Color::rgb(239, 241, 243);
+
 pub fn draw_figma_background(canvas: &mut Canvas<'_>) {
-    let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-    let top = accent.mix(Color::WHITE, 0.92);
-    let bottom = accent.mix(Color::WHITE, 0.72);
-    canvas.vertical_gradient(top, bottom);
+    canvas.clear(Color::rgb(244, 245, 246));
 }
 
 pub fn animated_focus_blue(seconds: f32, phase: f32) -> Color {
-    let pulse = transitions::pulse01(seconds, 3.2, phase);
-    Color::rgb(35, 108, 220).mix(Color::rgb(82, 154, 230), 0.08 + pulse * 0.08)
+    let _ = (seconds, phase);
+    Color::rgb(37, 112, 190)
 }
 
 pub fn focus_halo(
@@ -39,29 +45,16 @@ pub fn focus_halo(
     seconds: f32,
     phase: f32,
 ) {
-    let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-    let pulse = transitions::pulse01(seconds, 3.6, phase);
-    let spread = 2.0 + pulse * 3.5;
-    let alpha = (18.0 + pulse * 24.0).round() as u8;
+    let _ = (seconds, phase);
     rr_stroke(
         canvas,
-        x - spread,
-        y - spread,
-        w + spread * 2.0,
-        h + spread * 2.0,
-        r + spread,
-        3.0 + pulse * 1.5,
-        accent.with_alpha(alpha),
-    );
-    rr_stroke(
-        canvas,
-        x - spread * 0.45,
-        y - spread * 0.45,
-        w + spread * 0.9,
-        h + spread * 0.9,
-        r + spread * 0.45,
+        x - 2.0,
+        y - 2.0,
+        w + 4.0,
+        h + 4.0,
+        r + 2.0,
         2.0,
-        Color::rgba(255, 255, 255, 32),
+        Color::rgb(24, 77, 132),
     );
 }
 
@@ -90,21 +83,56 @@ pub fn button(
     seconds: f32,
     selected: bool,
 ) {
-    if selected {
-        focus_halo(canvas, x, y, w, h, 86.0, seconds, 0.0);
-    }
-    shadow_rr(canvas, x, y, w, h, 86.0, 4.0, 12.0);
+    button_with_radius(
+        canvas, x, y, w, h, 86.0, label, fill, text, seconds, selected,
+    );
+}
 
-    if fill.r == 255 && fill.g == 255 && fill.b == 255 && fill.a < 255 {
-        crate::ui::liquid_glass(canvas, x, y, w, h, 86.0, fill.a);
-    } else if selected && fill.b > 150 && fill.r < 90 {
-        rr(canvas, x, y, w, h, 86.0, animated_focus_blue(seconds, 0.0));
+#[allow(clippy::too_many_arguments)]
+pub fn button_with_radius(
+    canvas: &mut Canvas<'_>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radius: f32,
+    label: &str,
+    fill: Color,
+    text: Color,
+    seconds: f32,
+    selected: bool,
+) {
+    let _ = fill;
+    let radius = radius.min(8.0);
+    let button_fill = if selected {
+        canvas
+            .theme_top_color
+            .unwrap_or_else(|| animated_focus_blue(seconds, 0.0))
     } else {
-        rr(canvas, x, y, w, h, 86.0, fill);
-    }
+        IPOD_CHROME_TOP
+    };
+    rr_gradient(
+        canvas,
+        x,
+        y,
+        w,
+        h,
+        radius,
+        if selected {
+            button_fill.mix(Color::WHITE, 0.12)
+        } else {
+            Color::WHITE
+        },
+        if selected {
+            button_fill.mix(Color::BLACK, 0.08)
+        } else {
+            IPOD_CHROME_BOTTOM
+        },
+    );
+    rr_stroke(canvas, x, y, w, h, radius, 2.0, IPOD_BORDER);
 
     if selected {
-        canvas.register_selected(x, y, w, h, 86.0, 8.0);
+        canvas.register_selected(x, y, w, h, radius, 8.0);
     }
 
     canvas.text_centered(
@@ -112,7 +140,7 @@ pub fn button(
         x + w / 2.0,
         y + 45.0,
         80.0,
-        text,
+        if selected { Color::WHITE } else { text },
         FontWeight::Regular,
     );
 }
@@ -127,9 +155,9 @@ pub fn panel_gradient(
     top: Color,
     bottom: Color,
 ) {
-    shadow_rr(canvas, x, y, w, h, r, 8.0, 8.0);
-    rr_gradient(canvas, x, y, w, h, r, top, bottom);
-    liquid_glass(canvas, x, y, w, h, r, 18);
+    let _ = (top, bottom);
+    rr(canvas, x, y, w, h, r.min(8.0), Color::WHITE);
+    rr_stroke(canvas, x, y, w, h, r.min(8.0), 2.0, IPOD_BORDER);
 }
 
 pub fn figma_split_panels(
@@ -139,32 +167,29 @@ pub fn figma_split_panels(
     right_x: f32,
     right_w: f32,
 ) {
+    let accent = canvas
+        .theme_top_color
+        .unwrap_or_else(|| theme.primary_color());
     draw_figma_background(canvas);
     panel_gradient(
         canvas,
-        20.0,
-        32.0,
+        12.0,
+        64.0,
         left_w,
-        896.0,
-        128.0,
-        Color::rgb(178, 246, 228),
-        Color::WHITE,
+        884.0,
+        RADIUS_LG,
+        IPOD_ROW_ALT,
+        IPOD_ROW,
     );
-    let (top_color, bottom_color) =
-        if let (Some(top), Some(bottom)) = (canvas.theme_top_color, canvas.theme_bottom_color) {
-            (top, bottom)
-        } else {
-            theme.gradient_colors()
-        };
     panel_gradient(
         canvas,
         right_x,
-        32.0,
+        64.0,
         right_w,
-        896.0,
-        128.0,
-        top_color,
-        bottom_color,
+        884.0,
+        RADIUS_LG,
+        Color::WHITE,
+        accent.mix(Color::WHITE, 0.94),
     );
 }
 
@@ -177,23 +202,155 @@ pub fn figma_list_row(
     selected: bool,
     seconds: f32,
 ) {
+    let radius = RADIUS_SM.min(h / 2.0);
+    let accent = canvas
+        .theme_top_color
+        .unwrap_or_else(|| animated_focus_blue(seconds, 0.8));
     if selected {
-        focus_halo(canvas, x, y, w, h, h / 2.0, seconds, 0.8);
-        shadow_rr(canvas, x, y, w, h, h / 2.0, 4.0, 12.0);
-        rr(canvas, x, y, w, h, h / 2.0, Color::WHITE);
-        canvas.register_selected(x, y, w, h, h / 2.0, 8.0);
-    } else {
-        let faint_h = h + 4.0;
-        rr(
+        rr_gradient(
             canvas,
-            x - 2.0,
+            x,
             y,
-            w + 4.0,
-            faint_h,
-            faint_h / 2.0,
-            Color::rgba(255, 255, 255, 34),
+            w,
+            h,
+            radius,
+            accent.mix(Color::WHITE, 0.14),
+            accent.mix(Color::BLACK, 0.08),
+        );
+        rr_stroke(
+            canvas,
+            x,
+            y,
+            w,
+            h,
+            radius,
+            1.0,
+            accent.mix(Color::BLACK, 0.28),
+        );
+        canvas.register_selected(x, y, w, h, radius, 8.0);
+    } else {
+        rr(canvas, x, y, w, h, radius, IPOD_ROW);
+        rr_stroke(canvas, x, y, w, h, radius, 1.0, Color::rgb(208, 211, 215));
+    }
+}
+
+pub fn ipod_status_bar(
+    canvas: &mut Canvas<'_>,
+    title: &str,
+    clock: &str,
+    battery_text: &str,
+    theme: theme::ThemeName,
+    playing: bool,
+) {
+    rr_gradient(
+        canvas,
+        0.0,
+        0.0,
+        1280.0,
+        64.0,
+        0.0,
+        IPOD_CHROME_TOP,
+        IPOD_CHROME_BOTTOM,
+    );
+    line(canvas, 0.0, 63.0, 1280.0, 63.0, 2.0, IPOD_BORDER);
+    canvas.text(
+        clock,
+        20.0,
+        15.0,
+        30.0,
+        Color::rgb(38, 40, 44),
+        FontWeight::Bold,
+    );
+    if playing {
+        canvas.text(
+            "▶",
+            168.0,
+            14.0,
+            28.0,
+            theme.primary_color(),
+            FontWeight::Bold,
         );
     }
+    text_fit_centered(
+        canvas,
+        title,
+        640.0,
+        9.0,
+        650.0,
+        40.0,
+        Color::rgb(32, 34, 38),
+        FontWeight::Bold,
+    );
+
+    let battery_x = 1158.0;
+    rr(canvas, battery_x, 17.0, 86.0, 32.0, 5.0, Color::WHITE);
+    rr_stroke(
+        canvas,
+        battery_x,
+        17.0,
+        86.0,
+        32.0,
+        5.0,
+        2.0,
+        Color::rgb(52, 55, 60),
+    );
+    rr(
+        canvas,
+        battery_x + 86.0,
+        25.0,
+        7.0,
+        16.0,
+        2.0,
+        Color::rgb(52, 55, 60),
+    );
+    rr(
+        canvas,
+        battery_x + 5.0,
+        22.0,
+        62.0,
+        22.0,
+        2.0,
+        theme.primary_color(),
+    );
+    let battery_label = battery_text
+        .split_whitespace()
+        .find(|part| part.contains('%'))
+        .unwrap_or("--");
+    canvas.text_right(
+        battery_label,
+        1144.0,
+        18.0,
+        23.0,
+        Color::rgb(52, 55, 60),
+        FontWeight::Bold,
+    );
+}
+
+pub fn ipod_scrollbar(
+    canvas: &mut Canvas<'_>,
+    x: f32,
+    y: f32,
+    h: f32,
+    visible: usize,
+    total: usize,
+    selected: usize,
+) {
+    if total <= visible || total == 0 {
+        return;
+    }
+    rr(canvas, x, y, 8.0, h, 4.0, Color::rgb(220, 223, 226));
+    let thumb_h = (h * visible as f32 / total as f32).clamp(42.0, h);
+    let max_offset = (h - thumb_h).max(0.0);
+    let ratio = selected as f32 / total.saturating_sub(1).max(1) as f32;
+    rr(
+        canvas,
+        x,
+        y + max_offset * ratio,
+        8.0,
+        thumb_h,
+        4.0,
+        Color::rgb(105, 110, 116),
+    );
 }
 
 pub fn text_fit(
@@ -253,8 +410,19 @@ fn fitted_text(
     format!("{out}{suffix}")
 }
 
+pub fn assets_dir() -> String {
+    std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| {
+        let installed = "/usr/share/musicos/assets";
+        if std::path::Path::new(installed).is_dir() {
+            installed.to_string()
+        } else {
+            "assets".to_string()
+        }
+    })
+}
+
 pub fn icon_tile(canvas: &mut Canvas<'_>, x: f32, y: f32, kind: &str, selected: bool) {
-    let base_path = std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| "assets".to_string());
+    let base_path = assets_dir();
 
     let filename = if selected {
         match kind {
@@ -392,28 +560,31 @@ pub fn shadow_rr(
     offset_y: f32,
     blur: f32,
 ) {
-    let res = canvas.resolution();
-    canvas.shadow_rounded_rect(
-        res.scale_x(x),
-        res.scale_y(y),
-        w * res.scale(),
-        h * res.scale(),
-        r * res.scale(),
-        Color::rgba(0, 0, 0, 42),
-        offset_y * res.scale(),
-        blur * res.scale(),
+    let _ = blur;
+    let offset = offset_y.clamp(1.0, 3.0);
+    rr(
+        canvas,
+        x + offset,
+        y + offset,
+        w,
+        h,
+        r,
+        Color::rgba(54, 60, 68, 52),
     );
 }
 
 pub fn liquid_glass(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, r: f32, opacity: u8) {
-    let res = canvas.resolution();
-    canvas.liquid_glass_rounded_rect(
-        res.scale_x(x),
-        res.scale_y(y),
-        w * res.scale(),
-        h * res.scale(),
-        r * res.scale(),
-        opacity,
+    let fill = Color::rgba(255, 255, 255, opacity);
+    rr(canvas, x, y, w, h, r.min(8.0), fill);
+    rr_stroke(
+        canvas,
+        x,
+        y,
+        w,
+        h,
+        r.min(8.0),
+        1.0,
+        Color::rgb(172, 177, 184),
     );
 }
 
@@ -426,14 +597,16 @@ pub fn inner_shadow(
     r: f32,
     shadow_size: f32,
 ) {
-    let res = canvas.resolution();
-    canvas.inner_shadow_rounded_rect(
-        res.scale_x(x),
-        res.scale_y(y),
-        w * res.scale(),
-        h * res.scale(),
-        r * res.scale(),
-        shadow_size * res.scale(),
+    let _ = shadow_size;
+    rr_stroke(
+        canvas,
+        x + 1.0,
+        y + 1.0,
+        w - 2.0,
+        h - 2.0,
+        r.min(7.0),
+        1.0,
+        Color::rgba(255, 255, 255, 170),
     );
 }
 
@@ -484,7 +657,7 @@ pub fn draw_context_menu(
     focus: crate::app::Focus,
     theme: theme::ThemeName,
     title: &str,
-    is_pinned: bool,
+    actions: &[(crate::app::Focus, String, bool)],
     transition_t: f32,
     seconds: f32,
 ) {
@@ -535,32 +708,19 @@ pub fn draw_context_menu(
         FontWeight::Bold,
     );
 
-    let pin_label = if is_pinned { "Unpin" } else { "Pin" };
-    let rows = [
-        (crate::app::Focus::ContextPlay, "Play", 180.0, false),
-        (crate::app::Focus::ContextPin, pin_label, 276.0, false),
-        (
-            crate::app::Focus::ContextAddToPlaylist,
-            "Add to Playlist",
-            372.0,
-            false,
-        ),
-        (crate::app::Focus::ContextShuffle, "Shuffle", 468.0, false),
-        (crate::app::Focus::ContextDelete, "Delete", 564.0, true),
-        (crate::app::Focus::ContextCancel, "Cancel", 660.0, false),
-    ];
-
-    for (index, (row_focus, label, rel_y, danger)) in rows.into_iter().enumerate() {
+    let step = (650.0 / actions.len().max(1) as f32).min(82.0);
+    let row_h = (step - 8.0).max(54.0);
+    for (index, (row_focus, label, danger)) in actions.iter().enumerate() {
         let row_t =
             transitions::ease_out_back(transitions::stagger(transition_t, index, 0.04, 0.78));
-        let selected = focus == row_focus;
+        let selected = focus == *row_focus;
         let x = modal_x + 40.0;
-        let y = modal_y + rel_y + (1.0 - row_t) * 34.0;
+        let y = modal_y + 170.0 + index as f32 * step + (1.0 - row_t) * 34.0;
         let w = modal_w - 80.0;
-        let h = 80.0;
+        let h = row_h;
         if selected {
             focus_halo(canvas, x, y, w, h, 24.0, seconds, index as f32 * 0.35);
-            let fill = if danger {
+            let fill = if *danger {
                 Color::rgb(255, 54, 54)
             } else {
                 top.mix(
@@ -572,7 +732,7 @@ pub fn draw_context_menu(
             rr_stroke(canvas, x, y, w, h, 24.0, 5.0, Color::BLACK);
             canvas.register_selected(x, y, w, h, 24.0, 6.0);
         } else {
-            let fill = if danger {
+            let fill = if *danger {
                 Color::rgba(255, 255, 255, 176)
             } else {
                 Color::rgba(255, 255, 255, 142)
@@ -585,8 +745,8 @@ pub fn draw_context_menu(
         canvas.text_centered(
             label,
             x + w / 2.0,
-            y + 12.0,
-            46.0,
+            y + (h - 42.0) / 2.0,
+            38.0,
             if selected { Color::WHITE } else { Color::BLACK },
             FontWeight::Bold,
         );

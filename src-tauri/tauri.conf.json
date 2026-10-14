@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MusicOS",
+  "version": "0.1.0",
+  "identifier": "com.musicos.library",
+  "build": {
+    "beforeDevCommand": "node scripts/prepare-desktop.mjs --debug && npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build:ui && node scripts/prepare-desktop.mjs",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MusicOS",
+        "width": 720,
+        "height": 480,
+        "minWidth": 720,
+        "minHeight": 480,
+        "resizable": true,
+        "backgroundColor": "#00BAFF",
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: https://*.mzstatic.com; connect-src ipc: http://ipc.localhost; font-src 'self'; object-src 'none'; base-uri 'self'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Music",
+    "shortDescription": "Your music, in MusicOS.",
+    "icon": [
+      "icons/generated/32x32.png",
+      "icons/generated/128x128.png",
+      "icons/generated/128x128@2x.png",
+      "icons/generated/icon.icns",
+      "icons/generated/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/musicos-mac"
+    ],
+    "resources": {
+      "../assets/fonts/Figtree-OFL.txt": "fonts/Figtree-OFL.txt",
+      "../third_party/licenses/": "licenses/",
+      "resources/runtime/libonnxruntime.1.31.0.dylib": "runtime/libonnxruntime.1.31.0.dylib"
+    }
+  }
+}

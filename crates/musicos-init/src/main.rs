@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{error, info};
 use musicos_init::app::MusicOs;
 use musicos_init::init;
-use musicos_init::input::{InputEvent, InputSystem};
+use musicos_init::input::InputSystem;
 use musicos_init::renderer::{self, Renderer};
 use musicos_init::server::CompanionServer;
 
@@ -68,10 +68,13 @@ fn run() -> Result<()> {
     let target_fps = std::env::var("MUSICOS_TARGET_FPS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(60)
+        .unwrap_or(30)
         .clamp(15, 60);
     let frame_budget = Duration::from_micros(1_000_000 / target_fps);
-    let idle_frame_budget = Duration::from_millis(180);
+    // While idle (no animation, nothing playing) only the clock/battery change, and
+    // those tick at ~1 Hz. Redrawing at that cadence instead of every 180 ms keeps the
+    // CPU nearly idle without the display ever looking stale.
+    let idle_frame_budget = Duration::from_millis(1000);
 
     info!(
         "MusicOS starting at {}x{} target_fps={}",
@@ -96,16 +99,12 @@ fn run() -> Result<()> {
         error!("failed to set Ctrl-C handler: {err}");
     }
 
-    let mut last_frame = Instant::now();
+    let mut next_frame = Instant::now();
     while running.load(std::sync::atomic::Ordering::SeqCst) {
         app.tick();
 
         let mut screen_changed = false;
         for event in inputs.poll() {
-            if matches!(event, InputEvent::Power) {
-                info!("power event ignored by UI");
-                continue;
-            }
             if app.handle_input(event) {
                 screen_changed = true;
             }
@@ -117,20 +116,25 @@ fn run() -> Result<()> {
             }
         }
 
-        let realtime_redraw = app.animation_in_progress() || app.player.get_status().is_playing;
+        let realtime_redraw = app.animation_in_progress() || app.player.is_playing();
         let redraw_budget = if realtime_redraw {
             frame_budget
         } else {
             idle_frame_budget
         };
-        if screen_changed || last_frame.elapsed() >= redraw_budget {
+        let now = Instant::now();
+        if screen_changed || now >= next_frame {
             let draw_start = Instant::now();
             renderer.draw(|canvas| app.draw(canvas, started_at.elapsed().as_secs_f32()))?;
             app.set_last_frame_ms(draw_start.elapsed().as_secs_f32() * 1000.0);
-            last_frame = Instant::now();
+            next_frame = now + redraw_budget;
         }
 
-        std::thread::sleep(Duration::from_millis(2));
+        std::thread::sleep(if realtime_redraw {
+            Duration::from_millis(2)
+        } else {
+            Duration::from_millis(20)
+        });
     }
 
     info!("MusicOS stopping gracefully...");

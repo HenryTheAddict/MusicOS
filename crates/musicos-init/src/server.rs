@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
-use std::io::Write;
+use std::hash::{Hash, Hasher};
+use std::io::{Read, Write};
 use std::sync::mpsc::Sender;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
@@ -11,10 +12,12 @@ use sha2::{Digest, Sha256};
 use tiny_http::{Header, Response, Server, StatusCode};
 
 use crate::audio::PlaybackStatus;
-use crate::database::{LibraryCounts, Track};
+use crate::database::{LibraryCounts, MetadataUpdate, Track};
 use crate::input::{Button, InputEvent, SwipeDirection};
 use crate::preferences::Preferences;
 use crate::renderer;
+
+const DEFAULT_MAX_UPLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 pub enum ServerEvent {
     Button(Button),
@@ -22,6 +25,7 @@ pub enum ServerEvent {
     Control(ControlCommand),
     UploadComplete,
     UsbSync,
+    ShowControls,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -79,6 +83,10 @@ pub enum ControlCommand {
     PlayTrack {
         id: i64,
     },
+    PlayTracks {
+        ids: Vec<i64>,
+        start_index: usize,
+    },
     PlayPlaylist {
         id: i64,
         start_index: usize,
@@ -95,6 +103,10 @@ pub enum ControlCommand {
     },
     ToggleFavorite {
         id: i64,
+    },
+    SetRating {
+        id: i64,
+        rating: u8,
     },
     DeletePlaylist {
         id: i64,
@@ -121,6 +133,8 @@ pub enum ControlCommand {
     ScanLibrary,
     RescanLibrary {
         mode: String,
+        #[serde(default)]
+        source_id: Option<i64>,
     },
     AudioTest,
     QueueAdd {
@@ -133,6 +147,9 @@ pub enum ControlCommand {
     QueueMove {
         from: usize,
         to: usize,
+    },
+    QueueSelect {
+        index: usize,
     },
     QueueClear,
     CleanupMissingFiles,
@@ -158,10 +175,69 @@ struct RescanPayload {
     mode: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct LibrarySourcePayload {
+    path: String,
+    #[serde(default = "default_reference_kind")]
+    kind: String,
+    #[serde(default)]
+    display_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LibrarySourceUpdatePayload {
+    display_name: Option<String>,
+    enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MetadataPayload {
+    ids: Vec<i64>,
+    #[serde(default)]
+    write_to_file: bool,
+    #[serde(flatten)]
+    update: MetadataUpdate,
+}
+
+fn default_reference_kind() -> String {
+    "reference".to_string()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaylistSyncSnapshot {
+    pub stable_id: String,
+    pub name: String,
+    pub revision: i64,
+    pub track_ids: Vec<String>,
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaylistReconcilePayload {
+    base: PlaylistSyncSnapshot,
+    desktop: PlaylistSyncSnapshot,
+    device: PlaylistSyncSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaylistSyncConflict {
+    pub field: String,
+    pub desktop: serde_json::Value,
+    pub device: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PlaylistReconcileResult {
+    pub merged: PlaylistSyncSnapshot,
+    pub conflicts: Vec<PlaylistSyncConflict>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScanInfo {
     pub state: String,
     pub indexed: usize,
+    pub processed: usize,
     pub discovered: usize,
     pub current_root: Option<String>,
     pub elapsed_ms: u128,
@@ -173,6 +249,7 @@ impl Default for ScanInfo {
         Self {
             state: "idle".to_string(),
             indexed: 0,
+            processed: 0,
             discovered: 0,
             current_root: None,
             elapsed_ms: 0,
@@ -286,6 +363,146 @@ fn runtime_snapshot() -> Option<RuntimeSnapshot> {
         .and_then(|lock| lock.lock().ok().and_then(|snapshot| snapshot.clone()))
 }
 
+fn playback_revision(snapshot: &RuntimeSnapshot) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    snapshot
+        .player
+        .track
+        .as_ref()
+        .map(|track| track.id)
+        .hash(&mut hasher);
+    snapshot.player.is_playing.hash(&mut hasher);
+    (snapshot.player.position.max(0.0) as u64).hash(&mut hasher);
+    snapshot.player.queue_index.hash(&mut hasher);
+    snapshot.player.backend.hash(&mut hasher);
+    snapshot.player.last_error.hash(&mut hasher);
+    snapshot
+        .queue
+        .iter()
+        .map(|track| track.id)
+        .collect::<Vec<_>>()
+        .hash(&mut hasher);
+    hasher.finish()
+}
+
+pub fn reconcile_playlist_snapshots(
+    base: &PlaylistSyncSnapshot,
+    desktop: &PlaylistSyncSnapshot,
+    device: &PlaylistSyncSnapshot,
+) -> PlaylistReconcileResult {
+    let mut conflicts = Vec::new();
+    let name = if desktop.name == device.name {
+        desktop.name.clone()
+    } else if desktop.name == base.name {
+        device.name.clone()
+    } else if device.name == base.name {
+        desktop.name.clone()
+    } else {
+        conflicts.push(PlaylistSyncConflict {
+            field: "name".to_string(),
+            desktop: serde_json::json!(desktop.name),
+            device: serde_json::json!(device.name),
+        });
+        desktop.name.clone()
+    };
+
+    let deleted = if desktop.deleted == device.deleted {
+        desktop.deleted
+    } else if desktop.deleted == base.deleted {
+        device.deleted
+    } else if device.deleted == base.deleted {
+        desktop.deleted
+    } else {
+        conflicts.push(PlaylistSyncConflict {
+            field: "deleted".to_string(),
+            desktop: serde_json::json!(desktop.deleted),
+            device: serde_json::json!(device.deleted),
+        });
+        desktop.deleted
+    };
+    let desktop_edited = desktop.name != base.name || desktop.track_ids != base.track_ids;
+    let device_edited = device.name != base.name || device.track_ids != base.track_ids;
+    if desktop.deleted != device.deleted
+        && ((desktop.deleted && device_edited) || (device.deleted && desktop_edited))
+    {
+        conflicts.push(PlaylistSyncConflict {
+            field: "delete-versus-edit".to_string(),
+            desktop: serde_json::json!({
+                "deleted": desktop.deleted,
+                "name": desktop.name,
+                "track_ids": desktop.track_ids
+            }),
+            device: serde_json::json!({
+                "deleted": device.deleted,
+                "name": device.name,
+                "track_ids": device.track_ids
+            }),
+        });
+    }
+
+    let desktop_changed_order = desktop.track_ids != base.track_ids;
+    let device_changed_order = device.track_ids != base.track_ids;
+    let track_ids = if desktop.track_ids == device.track_ids {
+        desktop.track_ids.clone()
+    } else if !desktop_changed_order {
+        device.track_ids.clone()
+    } else if !device_changed_order {
+        desktop.track_ids.clone()
+    } else {
+        let base_set = base
+            .track_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        let desktop_set = desktop
+            .track_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        let device_set = device
+            .track_ids
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        let desktop_removed = base_set
+            .difference(&desktop_set)
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let device_removed = base_set
+            .difference(&device_set)
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        let order_only_conflict =
+            desktop_set == device_set && desktop.track_ids != device.track_ids;
+        if order_only_conflict {
+            conflicts.push(PlaylistSyncConflict {
+                field: "order".to_string(),
+                desktop: serde_json::json!(desktop.track_ids),
+                device: serde_json::json!(device.track_ids),
+            });
+            desktop.track_ids.clone()
+        } else {
+            let mut merged = Vec::new();
+            for id in desktop.track_ids.iter().chain(device.track_ids.iter()) {
+                let removed_by_other = (desktop_removed.contains(id) && device_set.contains(id))
+                    || (device_removed.contains(id) && desktop_set.contains(id));
+                if !removed_by_other && !merged.contains(id) {
+                    merged.push(id.clone());
+                }
+            }
+            merged
+        }
+    };
+
+    PlaylistReconcileResult {
+        merged: PlaylistSyncSnapshot {
+            stable_id: desktop.stable_id.clone(),
+            name,
+            revision: desktop.revision.max(device.revision) + 1,
+            track_ids,
+            deleted,
+        },
+        conflicts,
+    }
+}
+
 pub fn push_runtime_log(source: &str, line: impl Into<String>) {
     let lock = RUNTIME_LOGS.get_or_init(|| Mutex::new(VecDeque::new()));
     if let Ok(mut logs) = lock.lock() {
@@ -334,6 +551,13 @@ fn unix_seconds() -> u64 {
         .unwrap_or_default()
 }
 
+fn now_unix_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
+}
+
 pub struct CompanionServer {
     server: Server,
     tx: Sender<ServerEvent>,
@@ -367,7 +591,7 @@ impl CompanionServer {
 
             if path == "/" || path == "/index.html" {
                 let response = Response::from_string(
-                    "{\"status\":\"ok\",\"app\":\"MusicOS API\",\"control_center\":\"npm run sync:electron\"}",
+                    "{\"status\":\"ok\",\"app\":\"MusicOS API\",\"control_center\":\"cargo run -p musicos-desktop --bin musicos-control-center\"}",
                 )
                 .with_header(
                     Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap(),
@@ -375,6 +599,13 @@ impl CompanionServer {
                 .with_header(
                     Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap(),
                 );
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/preview/show-controls" && method == "POST" {
+                let _ = self.tx.send(ServerEvent::ShowControls);
+                let response = json_response(&serde_json::json!({"status": "ok"}));
                 let _ = request.respond(response);
                 continue;
             }
@@ -418,6 +649,201 @@ impl CompanionServer {
                 continue;
             }
 
+            if path == "/api/v2/tracks" && method == "GET" {
+                let params = query_params(&url);
+                let response = match crate::database::Db::open(&self.db_path).and_then(|db| {
+                    db.query_tracks_page(
+                        params
+                            .get("query")
+                            .or_else(|| params.get("q"))
+                            .map(String::as_str)
+                            .unwrap_or(""),
+                        params.get("filter").map(String::as_str).unwrap_or(""),
+                        params.get("artist").map(String::as_str).unwrap_or(""),
+                        params.get("album").map(String::as_str).unwrap_or(""),
+                        params.get("sort").map(String::as_str).unwrap_or("title"),
+                        params
+                            .get("direction")
+                            .map(|value| value == "desc")
+                            .unwrap_or(false),
+                        params
+                            .get("limit")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(100),
+                        params
+                            .get("offset")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0),
+                    )
+                }) {
+                    Ok(page) => json_response(&page),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "error", "message": err.to_string()}),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/albums" && method == "GET" {
+                let params = query_params(&url);
+                let response = match crate::database::Db::open(&self.db_path).and_then(|db| {
+                    db.album_summaries(
+                        params.get("query").map(String::as_str).unwrap_or(""),
+                        params
+                            .get("limit")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(100),
+                        params
+                            .get("offset")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0),
+                    )
+                }) {
+                    Ok(items) => json_response(&serde_json::json!({"items": items})),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "error", "message": err.to_string()}),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/artists" && method == "GET" {
+                let params = query_params(&url);
+                let response = match crate::database::Db::open(&self.db_path).and_then(|db| {
+                    db.artist_summaries(
+                        params.get("query").map(String::as_str).unwrap_or(""),
+                        params
+                            .get("limit")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(100),
+                        params
+                            .get("offset")
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(0),
+                    )
+                }) {
+                    Ok(items) => json_response(&serde_json::json!({"items": items})),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "error", "message": err.to_string()}),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/genres" && method == "GET" {
+                let response =
+                    match crate::database::Db::open(&self.db_path).and_then(|db| db.genres()) {
+                        Ok(items) => json_response(&serde_json::json!({
+                            "items": items.into_iter().map(|(name, track_count)| serde_json::json!({
+                                "name": name,
+                                "track_count": track_count
+                            })).collect::<Vec<_>>()
+                        })),
+                        Err(err) => json_response_status(
+                            &serde_json::json!({"status": "error", "message": err.to_string()}),
+                            StatusCode(500),
+                        ),
+                    };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/tracks/metadata" && method == "PATCH" {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                let response = match serde_json::from_str::<MetadataPayload>(&body) {
+                    Ok(payload) => match crate::database::Db::open(&self.db_path).and_then(|db| {
+                        let mut writable_ids = Vec::new();
+                        let mut override_ids = Vec::new();
+                        for id in &payload.ids {
+                            if payload.write_to_file || db.track_source_kind(*id)? == "managed" {
+                                writable_ids.push(*id);
+                            } else {
+                                override_ids.push(*id);
+                            }
+                        }
+                        let mut updated = 0;
+                        if !writable_ids.is_empty() {
+                            let paths = writable_ids
+                                .iter()
+                                .map(|id| {
+                                    db.get_track_by_id(*id)?
+                                        .map(|track| track.path)
+                                        .ok_or_else(|| anyhow::anyhow!("track {id} was not found"))
+                                })
+                                .collect::<Result<Vec<_>>>()?;
+                            updated += crate::media::write_metadata_batch_with(
+                                &paths,
+                                &payload.update,
+                                || db.update_track_metadata(&writable_ids, &payload.update),
+                            )?;
+                        }
+                        if !override_ids.is_empty() {
+                            updated +=
+                                db.update_track_metadata_override(&override_ids, &payload.update)?;
+                        }
+                        Ok(updated)
+                    }) {
+                        Ok(updated) => json_response(&serde_json::json!({
+                            "status": "ok",
+                            "updated": updated
+                        })),
+                        Err(err) => json_response_status(
+                            &serde_json::json!({"status": "error", "message": err.to_string()}),
+                            StatusCode(400),
+                        ),
+                    },
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "invalid_metadata", "message": err.to_string()}),
+                        StatusCode(400),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/playlists/manifest" && method == "GET" {
+                let response = match crate::database::Db::open(&self.db_path)
+                    .and_then(|db| Ok((db.playlist_manifests()?, db.playlist_tombstones()?)))
+                {
+                    Ok((playlists, tombstones)) => json_response(&serde_json::json!({
+                        "playlists": playlists,
+                        "tombstones": tombstones,
+                        "generated_at": unix_seconds()
+                    })),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "error", "message": err.to_string()}),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/v2/playlists/reconcile" && method == "POST" {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                let response = match serde_json::from_str::<PlaylistReconcilePayload>(&body) {
+                    Ok(payload) => json_response(&reconcile_playlist_snapshots(
+                        &payload.base,
+                        &payload.desktop,
+                        &payload.device,
+                    )),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "invalid_manifest", "message": err.to_string()}),
+                        StatusCode(400),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
             if path == "/api/player" && method == "GET" {
                 let body = if let Some(snapshot) = runtime_snapshot() {
                     serde_json::json!({
@@ -425,6 +851,8 @@ impl CompanionServer {
                         "player": snapshot.player,
                         "queue": snapshot.queue,
                         "queue_index": snapshot.queue_index,
+                        "revision": playback_revision(&snapshot),
+                        "active_output": snapshot.settings.audio_output_mode,
                     })
                 } else {
                     serde_json::json!({
@@ -493,6 +921,7 @@ impl CompanionServer {
                 let body = if let Ok(db) = crate::database::Db::open(&self.db_path) {
                     let counts = db.library_counts().unwrap_or_default();
                     let playlists = db.get_playlists().unwrap_or_default();
+                    let sources = db.library_sources().unwrap_or_default();
                     let cover_art_cache_count = db.cover_art_cache_count().unwrap_or_default();
                     if let Some(snapshot) = runtime_snapshot() {
                         serde_json::json!({
@@ -501,6 +930,7 @@ impl CompanionServer {
                             "settings_path": snapshot.settings_path,
                             "counts": counts,
                             "playlists": playlists,
+                            "sources": sources,
                             "player": snapshot.player,
                             "queue": snapshot.queue,
                             "queue_index": snapshot.queue_index,
@@ -523,6 +953,7 @@ impl CompanionServer {
                             "settings_path": crate::preferences::path(),
                             "counts": counts,
                             "playlists": playlists,
+                            "sources": sources,
                             "player": null,
                             "queue": [],
                             "queue_index": null,
@@ -683,6 +1114,118 @@ impl CompanionServer {
                 continue;
             }
 
+            if path == "/api/library/sources" && method == "GET" {
+                let response = match crate::database::Db::open(&self.db_path)
+                    .and_then(|db| db.library_sources())
+                {
+                    Ok(sources) => json_response(&serde_json::json!({"items": sources})),
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "error", "message": err.to_string()}),
+                        StatusCode(500),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if path == "/api/library/sources" && method == "POST" {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                let response = match serde_json::from_str::<LibrarySourcePayload>(&body) {
+                    Ok(payload) => match crate::database::Db::open(&self.db_path).and_then(|db| {
+                        db.add_library_source(&payload.kind, &payload.path, &payload.display_name)
+                    }) {
+                        Ok(source) => {
+                            let _ =
+                                self.tx
+                                    .send(ServerEvent::Control(ControlCommand::RescanLibrary {
+                                        mode: "changed".to_string(),
+                                        source_id: Some(source.id),
+                                    }));
+                            json_response(&serde_json::json!({"status": "ok", "source": source}))
+                        }
+                        Err(err) => json_response_status(
+                            &serde_json::json!({"status": "error", "message": err.to_string()}),
+                            StatusCode(400),
+                        ),
+                    },
+                    Err(err) => json_response_status(
+                        &serde_json::json!({"status": "invalid_source", "message": err.to_string()}),
+                        StatusCode(400),
+                    ),
+                };
+                let _ = request.respond(response);
+                continue;
+            }
+
+            if let Some((source_id, action)) = parse_library_source_path(&path) {
+                if method == "PATCH" && action.is_none() {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    let response = match serde_json::from_str::<LibrarySourceUpdatePayload>(&body) {
+                        Ok(payload) => {
+                            match crate::database::Db::open(&self.db_path).and_then(|db| {
+                                db.update_library_source(
+                                    source_id,
+                                    payload.display_name.as_deref(),
+                                    payload.enabled,
+                                )
+                            }) {
+                                Ok(Some(source)) => json_response(
+                                    &serde_json::json!({"status": "ok", "source": source}),
+                                ),
+                                Ok(None) => json_response_status(
+                                    &serde_json::json!({"status": "not_found"}),
+                                    StatusCode(404),
+                                ),
+                                Err(err) => json_response_status(
+                                    &serde_json::json!({"status": "error", "message": err.to_string()}),
+                                    StatusCode(400),
+                                ),
+                            }
+                        }
+                        Err(err) => json_response_status(
+                            &serde_json::json!({"status": "invalid_source", "message": err.to_string()}),
+                            StatusCode(400),
+                        ),
+                    };
+                    let _ = request.respond(response);
+                    continue;
+                }
+                if method == "DELETE" && action.is_none() {
+                    let response = match crate::database::Db::open(&self.db_path)
+                        .and_then(|db| db.remove_library_source(source_id))
+                    {
+                        Ok(true) => json_response(&serde_json::json!({"status": "ok"})),
+                        Ok(false) => json_response_status(
+                            &serde_json::json!({"status": "not_found"}),
+                            StatusCode(404),
+                        ),
+                        Err(err) => json_response_status(
+                            &serde_json::json!({"status": "error", "message": err.to_string()}),
+                            StatusCode(400),
+                        ),
+                    };
+                    let _ = request.respond(response);
+                    continue;
+                }
+                if method == "POST" && action.as_deref() == Some("rescan") {
+                    let _ = self
+                        .tx
+                        .send(ServerEvent::Control(ControlCommand::RescanLibrary {
+                            mode: "changed".to_string(),
+                            source_id: Some(source_id),
+                        }));
+                    let response = json_response(&serde_json::json!({
+                        "status": "ok",
+                        "source_id": source_id,
+                        "mode": "changed",
+                    }));
+                    let _ = request.respond(response);
+                    continue;
+                }
+            }
+
             if path == "/api/library/rescan" && method == "POST" {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
@@ -699,6 +1242,7 @@ impl CompanionServer {
                     .tx
                     .send(ServerEvent::Control(ControlCommand::RescanLibrary {
                         mode: mode.clone(),
+                        source_id: None,
                     }));
                 let response = json_response(&serde_json::json!({
                     "status": "ok",
@@ -710,12 +1254,22 @@ impl CompanionServer {
 
             if path.starts_with("/api/screenshot.png") || path.starts_with("/api/screenshot.bmp") {
                 let use_png = url.starts_with("/api/screenshot.png");
-                if let Some(bmp) = renderer::get_latest_screenshot() {
+                if let Some(frame) = renderer::get_latest_screenshot() {
                     let mut response_bytes = Vec::new();
                     let write_ok = if use_png {
-                        write_screenshot_png(&mut response_bytes, &bmp)
+                        write_screenshot_png(
+                            &mut response_bytes,
+                            &frame.bytes,
+                            frame.resolution.width as usize,
+                            frame.resolution.height as usize,
+                        )
                     } else {
-                        write_screenshot_bmp(&mut response_bytes, &bmp)
+                        write_screenshot_bmp(
+                            &mut response_bytes,
+                            &frame.bytes,
+                            frame.resolution.width as usize,
+                            frame.resolution.height as usize,
+                        )
                     };
                     if write_ok.is_ok() {
                         let content_type = if use_png { "image/png" } else { "image/bmp" };
@@ -924,10 +1478,38 @@ impl CompanionServer {
                 let mut body = String::new();
                 let _ = request.as_reader().read_to_string(&mut body);
                 if let Ok(cmd) = serde_json::from_str::<ControlCommand>(&body) {
-                    let _ = self.tx.send(ServerEvent::Control(cmd));
-                    let response = Response::from_string("{\"status\":\"ok\"}").with_header(
-                        Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap(),
-                    );
+                    let command_name = serde_json::from_str::<serde_json::Value>(&body)
+                        .ok()
+                        .and_then(|value| {
+                            value
+                                .get("command")
+                                .and_then(|value| value.as_str())
+                                .map(str::to_string)
+                        })
+                        .unwrap_or_else(|| "unknown".to_string());
+                    let accepted = self.tx.send(ServerEvent::Control(cmd)).is_ok();
+                    let revision = runtime_snapshot()
+                        .as_ref()
+                        .map(playback_revision)
+                        .unwrap_or_default();
+                    let response = if accepted {
+                        json_response_status(
+                            &serde_json::json!({
+                                "status": "accepted",
+                                "command": command_name,
+                                "player_revision": revision
+                            }),
+                            StatusCode(202),
+                        )
+                    } else {
+                        json_response_status(
+                            &serde_json::json!({
+                                "status": "unavailable",
+                                "message": "runtime command channel is closed"
+                            }),
+                            StatusCode(503),
+                        )
+                    };
                     let _ = request.respond(response);
                 } else {
                     let response = Response::from_string("{\"status\":\"invalid_command\"}")
@@ -966,8 +1548,34 @@ impl CompanionServer {
                     .map(|value| value != "0")
                     .unwrap_or(true);
 
+                let max_upload_bytes = std::env::var("MUSICOS_MAX_UPLOAD_BYTES")
+                    .ok()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .unwrap_or(DEFAULT_MAX_UPLOAD_BYTES);
+                if header_value(headers, "x-file-size")
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .is_some_and(|size| size > max_upload_bytes)
+                {
+                    let response = json_response_status(
+                        &serde_json::json!({"status": "error", "message": "upload too large"}),
+                        StatusCode(413),
+                    );
+                    let _ = request.respond(response);
+                    continue;
+                }
+
                 let mut body = Vec::new();
-                let _ = request.as_reader().read_to_end(&mut body);
+                let mut limited_reader = request.as_reader().take(max_upload_bytes + 1);
+                if limited_reader.read_to_end(&mut body).is_err()
+                    || body.len() as u64 > max_upload_bytes
+                {
+                    let response = json_response_status(
+                        &serde_json::json!({"status": "error", "message": "upload too large"}),
+                        StatusCode(413),
+                    );
+                    let _ = request.respond(response);
+                    continue;
+                }
 
                 let upload_dir =
                     std::env::var("MUSICOS_UPLOAD_DIR").unwrap_or_else(|_| "./music".to_string());
@@ -994,20 +1602,30 @@ impl CompanionServer {
                 }
 
                 let incoming_sha = hex_sha256(&body);
+                if expected_sha
+                    .as_deref()
+                    .is_some_and(|sha| sha.len() != 64 || sha != incoming_sha)
+                {
+                    push_runtime_log(
+                        "upload",
+                        format!("Rejected checksum mismatch {}", relative_path),
+                    );
+                    let response = json_response_status(
+                        &serde_json::json!({"status": "error", "message": "checksum mismatch"}),
+                        StatusCode(400),
+                    );
+                    let _ = request.respond(response);
+                    continue;
+                }
                 let skipped = if dest_path.exists() {
                     let same_size = dest_path
                         .metadata()
                         .map(|meta| meta.len() == body.len() as u64)
                         .unwrap_or(false);
-                    let same_sha = expected_sha
-                        .as_deref()
-                        .map(|sha| sha == incoming_sha)
-                        .unwrap_or_else(|| {
-                            same_size
-                                && file_sha256_hex(&dest_path)
-                                    .map(|sha| sha == incoming_sha)
-                                    .unwrap_or(false)
-                        });
+                    let same_sha = same_size
+                        && file_sha256_hex(&dest_path)
+                            .map(|sha| sha == incoming_sha)
+                            .unwrap_or(false);
                     same_size && same_sha
                 } else {
                     false
@@ -1027,7 +1645,17 @@ impl CompanionServer {
                 if let Some(parent) = dest_path.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
-                match std::fs::write(&dest_path, &body) {
+                let temp_path = dest_path.with_extension(format!(
+                    "{}.uploading-{}",
+                    dest_path
+                        .extension()
+                        .and_then(|ext| ext.to_str())
+                        .unwrap_or("tmp"),
+                    now_unix_ms()
+                ));
+                match std::fs::write(&temp_path, &body)
+                    .and_then(|_| replace_file(&temp_path, &dest_path))
+                {
                     Ok(_) => {
                         log::info!("Uploaded file saved to {}", dest_path.display());
                         push_runtime_log("upload", format!("Saved {}", relative_path));
@@ -1042,6 +1670,7 @@ impl CompanionServer {
                         let _ = request.respond(response);
                     }
                     Err(err) => {
+                        let _ = std::fs::remove_file(&temp_path);
                         log::error!("failed to write uploaded file: {err}");
                         push_runtime_log(
                             "upload",
@@ -1347,7 +1976,7 @@ impl CompanionServer {
                     .with_header(
                         Header::from_bytes(
                             &b"Access-Control-Allow-Methods"[..],
-                            &b"GET, POST, PUT, DELETE, OPTIONS"[..],
+                            &b"GET, POST, PUT, PATCH, DELETE, OPTIONS"[..],
                         )
                         .unwrap(),
                     )
@@ -1580,6 +2209,17 @@ fn parse_playlist_path(path: &str) -> Option<i64> {
     rest.parse().ok()
 }
 
+fn parse_library_source_path(path: &str) -> Option<(i64, Option<String>)> {
+    let rest = path.strip_prefix("/api/library/sources/")?;
+    let mut parts = rest.split('/');
+    let id = parts.next()?.parse().ok()?;
+    let action = parts.next().map(str::to_string);
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((id, action))
+}
+
 fn parse_playlist_tracks_path(path: &str) -> Option<i64> {
     let rest = path.strip_prefix("/api/playlists/")?;
     let id = rest.strip_suffix("/tracks")?;
@@ -1615,9 +2255,10 @@ fn parse_mix_tracks_path(path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_mix_tracks_path, parse_playlist_path, parse_playlist_reorder_path,
-        parse_playlist_track_path, parse_playlist_tracks_path, query_params, query_tracks,
-        sanitize_filename, sanitize_relative_path,
+        parse_library_source_path, parse_mix_tracks_path, parse_playlist_path,
+        parse_playlist_reorder_path, parse_playlist_track_path, parse_playlist_tracks_path,
+        query_params, query_tracks, reconcile_playlist_snapshots, sanitize_filename,
+        sanitize_relative_path, PlaylistSyncSnapshot,
     };
     use crate::database::Db;
 
@@ -1667,6 +2308,15 @@ mod tests {
             Some(12)
         );
         assert_eq!(parse_playlist_path("/api/playlists/12/tracks"), None);
+        assert_eq!(
+            parse_library_source_path("/api/library/sources/7"),
+            Some((7, None))
+        );
+        assert_eq!(
+            parse_library_source_path("/api/library/sources/7/rescan"),
+            Some((7, Some("rescan".to_string())))
+        );
+        assert_eq!(parse_library_source_path("/api/library/sources/nope"), None);
     }
 
     #[test]
@@ -1718,15 +2368,72 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn playlist_reconciliation_merges_safe_edits_and_reports_order_conflicts() {
+        let base = PlaylistSyncSnapshot {
+            stable_id: "playlist-road".to_string(),
+            name: "Road".to_string(),
+            revision: 1,
+            track_ids: vec!["a".to_string(), "b".to_string()],
+            deleted: false,
+        };
+        let desktop = PlaylistSyncSnapshot {
+            name: "Road trip".to_string(),
+            revision: 2,
+            track_ids: vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            ..base.clone()
+        };
+        let device = PlaylistSyncSnapshot {
+            revision: 3,
+            track_ids: vec!["a".to_string(), "b".to_string(), "d".to_string()],
+            ..base.clone()
+        };
+        let merged = reconcile_playlist_snapshots(&base, &desktop, &device);
+        assert_eq!(merged.merged.name, "Road trip");
+        assert_eq!(merged.merged.track_ids, vec!["a", "b", "c", "d"]);
+        assert!(merged.conflicts.is_empty());
+
+        let reordered_desktop = PlaylistSyncSnapshot {
+            track_ids: vec!["b".to_string(), "a".to_string()],
+            name: "Desktop road".to_string(),
+            ..base.clone()
+        };
+        let reordered_device = PlaylistSyncSnapshot {
+            track_ids: vec!["b".to_string(), "a".to_string()],
+            name: "Device road".to_string(),
+            ..base.clone()
+        };
+        let result = reconcile_playlist_snapshots(&base, &reordered_desktop, &reordered_device);
+        assert!(result
+            .conflicts
+            .iter()
+            .any(|conflict| conflict.field == "name"));
+
+        let deleted_desktop = PlaylistSyncSnapshot {
+            deleted: true,
+            revision: 4,
+            ..base.clone()
+        };
+        let edited_device = PlaylistSyncSnapshot {
+            name: "Road edits".to_string(),
+            revision: 4,
+            ..base.clone()
+        };
+        let result = reconcile_playlist_snapshots(&base, &deleted_desktop, &edited_device);
+        assert!(result
+            .conflicts
+            .iter()
+            .any(|conflict| conflict.field == "delete-versus-edit"));
+    }
 }
 
-fn write_screenshot_bmp<W: Write>(w: &mut W, bgra: &[u8]) -> Result<()> {
-    let len = bgra.len();
-    let (width, height) = if len == 1280 * 960 * 4 {
-        (1280, 960)
-    } else {
-        (640, 480)
-    };
+fn write_screenshot_bmp<W: Write>(
+    w: &mut W,
+    bgra: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<()> {
     write_bmp(w, width, height, bgra)
 }
 
@@ -1739,6 +2446,14 @@ fn write_cover_art_bmp<W: Write>(w: &mut W, art: &renderer::CoverArt) -> Result<
         bgra.push(255);
     }
     write_bmp(w, art.width as usize, art.height as usize, &bgra)
+}
+
+fn replace_file(temp_path: &std::path::Path, dest_path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    if dest_path.exists() {
+        std::fs::remove_file(dest_path)?;
+    }
+    std::fs::rename(temp_path, dest_path)
 }
 
 fn write_bmp<W: Write>(w: &mut W, width: usize, height: usize, bgra: &[u8]) -> Result<()> {
@@ -1766,13 +2481,13 @@ fn write_bmp<W: Write>(w: &mut W, width: usize, height: usize, bgra: &[u8]) -> R
     Ok(())
 }
 
-fn write_screenshot_png<W: Write>(w: &mut W, bgra: &[u8]) -> Result<()> {
+fn write_screenshot_png<W: Write>(
+    w: &mut W,
+    bgra: &[u8],
+    width: usize,
+    height: usize,
+) -> Result<()> {
     let len = bgra.len();
-    let (width, height) = if len == 1280 * 960 * 4 {
-        (1280, 960)
-    } else {
-        (640, 480)
-    };
     let mut rgba = vec![0u8; len];
     for i in (0..len).step_by(4) {
         if i + 3 < len {

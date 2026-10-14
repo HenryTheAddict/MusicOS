@@ -11,6 +11,9 @@ XRES="${RESOLUTION%x*}"
 YRES="${RESOLUTION#*x}"
 QEMU_NET="${MUSICOS_QEMU_NET:-sync}"
 QEMU_HOST_PORT="${MUSICOS_QEMU_HOST_PORT:-18080}"
+QEMU_HEADLESS="${MUSICOS_QEMU_HEADLESS:-0}"
+QEMU_AUDIO="${MUSICOS_QEMU_AUDIO:-1}"
+QEMU_SERIAL_LOG="${MUSICOS_QEMU_SERIAL_LOG:-${ROOT}/out/qemu-guest.log}"
 
 if [[ ! -f "${KERNEL}" || ! -f "${ROOTFS}" ]]; then
   echo "Missing ${KERNEL} or ${ROOTFS}; run scripts/build-qemu.sh first." >&2
@@ -29,12 +32,28 @@ CMD=(
   -device "virtio-gpu-pci,xres=${XRES},yres=${YRES}" \
   -device virtio-keyboard-pci \
   -device virtio-tablet-pci \
-  -device virtio-sound-pci,audiodev=snd0 \
-  -audiodev coreaudio,id=snd0 \
-  -display cocoa,show-cursor=on \
-  -serial mon:stdio \
   -no-reboot
 )
+
+if [[ "${QEMU_AUDIO}" == "1" ]]; then
+  CMD+=(
+    -device virtio-sound-pci,audiodev=snd0
+    -audiodev coreaudio,id=snd0
+  )
+fi
+
+if [[ "${QEMU_HEADLESS}" == "1" ]]; then
+  CMD+=(
+    -display none
+    -monitor none
+    -serial "file:${QEMU_SERIAL_LOG}"
+  )
+else
+  CMD+=(
+    -display cocoa,show-cursor=on
+    -serial mon:stdio
+  )
+fi
 
 if [[ "${QEMU_NET}" == "sync" ]]; then
   CMD+=(

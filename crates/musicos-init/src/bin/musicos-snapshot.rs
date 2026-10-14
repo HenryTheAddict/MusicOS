@@ -103,6 +103,7 @@ fn seed_demo_queue(app: &mut MusicOs) {
             favorited: false,
             play_count: 0,
             last_played: None,
+            rating: 4,
         },
         Track {
             id: 2,
@@ -121,6 +122,7 @@ fn seed_demo_queue(app: &mut MusicOs) {
             favorited: true,
             play_count: 0,
             last_played: None,
+            rating: 0,
         },
     ];
     app.selected_index = 1;

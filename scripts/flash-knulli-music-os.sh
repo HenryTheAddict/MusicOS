@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ $# -eq 1 && ( "$1" == "-h" || "$1" == "--help" ) ]]; then
+  cat <<'EOF'
+MusicOS Flash - Write MusicOS + KNULLI to RG35XX Plus SD card
+
+Usage:
+  ./scripts/flash-knulli-music-os.sh /dev/diskN
+
+Environment variables:
+  MUSICOS_PAYLOAD            Path to squashfs payload (default: auto-detect)
+  MUSICOS_BOOTLOGO           Path to boot logo BMP (default: auto-detect)
+  MUSICOS_SAMPLE_DIR         Music source directory
+  MUSICOS_SAMPLE_LIMIT       Max tracks to copy (0 = all)
+  MUSICOS_TRANSCODE_CODEC    Codec: vorbis|mp3|aac|flac|copy (default: vorbis)
+  MUSICOS_TRANSCODE_BITRATE  Target bitrate e.g. 96k, 128k, 192k (default: 96k)
+  MUSICOS_TRANSCODE_SAMPLE_RATE  Sample rate: 44100|48000|96000 (default: 48000)
+
+Example:
+  MUSICOS_SAMPLE_DIR=~/Music/OfflineMusic/Music \
+  MUSICOS_SAMPLE_LIMIT=200 \
+  MUSICOS_TRANSCODE_CODEC=vorbis \
+  MUSICOS_TRANSCODE_BITRATE=96k \
+  ./scripts/flash-knulli-music-os.sh /dev/disk5
+EOF
+  exit 0
+fi
+
 if [[ $# -ne 1 ]]; then
   echo "usage: $0 /dev/diskN" >&2
   echo "example: $0 /dev/disk2" >&2
@@ -18,8 +44,17 @@ payload="${MUSICOS_PAYLOAD:-$default_payload}"
 bootlogo="${MUSICOS_BOOTLOGO:-$repo_root/out/rg35xx/images/musicos-bootlogo.bmp}"
 sample_dir="${MUSICOS_SAMPLE_DIR:-}"
 sample_limit="${MUSICOS_SAMPLE_LIMIT:-0}"
-audio_format="${MUSICOS_AUDIO_FORMAT:-ogg}"
-ogg_quality="${MUSICOS_OGG_QUALITY:-5}"
+transcode_codec="${MUSICOS_TRANSCODE_CODEC:-vorbis}"
+transcode_bitrate="${MUSICOS_TRANSCODE_BITRATE:-96k}"
+transcode_sample_rate="${MUSICOS_TRANSCODE_SAMPLE_RATE:-48000}"
+
+case "$transcode_codec" in
+  copy|aac|mp3|flac|vorbis) ;;
+  *)
+    echo "unsupported transcode codec: $transcode_codec" >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -f "$image" ]]; then
   echo "missing KNULLI donor image: $image" >&2
@@ -59,6 +94,7 @@ if [[ -d "$sample_dir" ]]; then
   else
     echo "MusicOS samples: $sample_dir (limit $sample_limit)"
   fi
+  echo "Transcode codec: $transcode_codec, bitrate: $transcode_bitrate, sample rate: $transcode_sample_rate"
 else
   echo "MusicOS samples: none. Set MUSICOS_SAMPLE_DIR to copy your own music."
 fi
@@ -101,8 +137,9 @@ if [[ -d "$sample_dir" ]]; then
   MUSICOS_MOUNT_POINT="$mount_point" \
   MUSICOS_SAMPLE_DIR="$sample_dir" \
   MUSICOS_SAMPLE_LIMIT="$sample_limit" \
-  MUSICOS_AUDIO_FORMAT="$audio_format" \
-  MUSICOS_OGG_QUALITY="$ogg_quality" \
+  MUSICOS_TRANSCODE_CODEC="$transcode_codec" \
+  MUSICOS_TRANSCODE_BITRATE="$transcode_bitrate" \
+  MUSICOS_TRANSCODE_SAMPLE_RATE="$transcode_sample_rate" \
   python3 - <<'PY'
 import os
 import shutil
@@ -112,9 +149,10 @@ from pathlib import Path
 mount = Path(os.environ["MUSICOS_MOUNT_POINT"])
 sample_dir = Path(os.environ["MUSICOS_SAMPLE_DIR"])
 limit = int(os.environ.get("MUSICOS_SAMPLE_LIMIT", "0"))
-audio_format = os.environ.get("MUSICOS_AUDIO_FORMAT", "ogg").lower()
-ogg_quality = os.environ.get("MUSICOS_OGG_QUALITY", "5")
-supported = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac"}
+transcode_codec = os.environ.get("MUSICOS_TRANSCODE_CODEC", "vorbis").lower()
+transcode_bitrate = os.environ.get("MUSICOS_TRANSCODE_BITRATE", "96k")
+transcode_sample_rate = os.environ.get("MUSICOS_TRANSCODE_SAMPLE_RATE", "48000")
+supported = {".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".mp4", ".mka"}
 ffmpeg = shutil.which("ffmpeg")
 files = sorted(
     (path for path in sample_dir.rglob("*") if path.is_file() and path.suffix.lower() in supported),
@@ -127,18 +165,37 @@ for src in files:
     rel = src.relative_to(sample_dir)
     ext = src.suffix.lower()
     dest = mount / "music" / rel
-    if audio_format == "ogg" and ffmpeg and ext != ".ogg":
-        dest = dest.with_suffix(".ogg")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(
-            [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-codec:a", "libvorbis", "-q:a", ogg_quality, str(dest)],
-            check=True,
-        )
+    # Determine output extension based on codec
+    codec_ext = {
+        "opus": ".opus",
+        "mp3": ".mp3",
+        "aac": ".m4a",
+        "vorbis": ".ogg",
+        "flac": ".flac",
+        "copy": ext,
+    }.get(transcode_codec, ".ogg")
+    if transcode_codec != "copy":
+        dest = dest.with_suffix(codec_ext)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if transcode_codec != "copy" and ext != codec_ext:
+        if not ffmpeg:
+            raise RuntimeError("ffmpeg is required when transcoding is enabled")
+        # Build ffmpeg command based on codec
+        if transcode_codec == "mp3":
+            cmd = [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0", "-c:a", "libmp3lame", "-b:a", transcode_bitrate, "-ar", transcode_sample_rate, "-ac", "2", str(dest)]
+        elif transcode_codec == "aac":
+            cmd = [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0", "-c:a", "aac", "-b:a", transcode_bitrate, "-ar", transcode_sample_rate, "-ac", "2", str(dest)]
+        elif transcode_codec == "vorbis":
+            cmd = [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0", "-c:a", "vorbis", "-strict", "-2", "-b:a", transcode_bitrate, "-ar", transcode_sample_rate, "-ac", "2", str(dest)]
+        elif transcode_codec == "flac":
+            cmd = [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-map_metadata", "0", "-c:a", "flac", "-compression_level", "8", "-ar", transcode_sample_rate, str(dest)]
+        else:
+            cmd = [ffmpeg, "-v", "error", "-y", "-i", str(src), "-map", "0:a:0", "-c:a", "vorbis", "-strict", "-2", "-b:a", "96k", "-ar", "48000", "-ac", "2", str(dest)]
+        subprocess.run(cmd, check=True)
     else:
-        dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
     copied += 1
-print(f"Copied {copied} sample song(s) to {mount / 'music'}")
+print(f"Copied {copied} sample song(s) to {mount / 'music'} using codec={transcode_codec} bitrate={transcode_bitrate}")
 PY
 fi
 sync

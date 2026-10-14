@@ -10,10 +10,45 @@ use std::io::BufReader;
 #[cfg(all(feature = "device-audio", target_os = "linux"))]
 use std::sync::{
     atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 
 use crate::database::Track;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PcmCapture {
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub samples: usize,
+    pub peak: f32,
+    pub non_silent_samples: usize,
+}
+
+#[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+pub fn decode_pcm_capture(
+    path: &std::path::Path,
+    max_samples: usize,
+) -> anyhow::Result<PcmCapture> {
+    let source = Decoder::new(BufReader::new(File::open(path)?))?;
+    let sample_rate = source.sample_rate();
+    let channels = source.channels();
+    let mut peak = 0.0_f32;
+    let mut samples = 0;
+    let mut non_silent_samples = 0;
+    for sample in source.take(max_samples.max(1)) {
+        let magnitude = f32::from(sample).abs() / f32::from(i16::MAX);
+        peak = peak.max(magnitude);
+        non_silent_samples += usize::from(magnitude > 0.000_01);
+        samples += 1;
+    }
+    Ok(PcmCapture {
+        sample_rate,
+        channels,
+        samples,
+        peak,
+        non_silent_samples,
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LoopMode {
@@ -101,6 +136,16 @@ impl EqGains {
     }
 }
 
+/// An outgoing desktop sink, owned only by the desktop playback worker.
+#[cfg(feature = "desktop-audio")]
+pub struct DesktopFade { sink: Sink }
+#[cfg(feature = "desktop-audio")]
+impl DesktopFade {
+    pub fn update(&self, volume:f32, playing:bool) { self.sink.set_volume(volume); if playing {self.sink.play()} else {self.sink.pause()} }
+}
+#[cfg(feature = "desktop-audio")]
+impl Drop for DesktopFade { fn drop(&mut self) {self.sink.stop();} }
+
 pub struct AudioPlayer {
     #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     _stream: Option<OutputStream>,
@@ -119,10 +164,13 @@ pub struct AudioPlayer {
     shuffle: bool,
     play_start: Option<Instant>,
     accumulated_time: Duration,
+    current_loaded: bool,
     last_backend: String,
     selected_pcm: Option<String>,
     last_error: Option<String>,
     shuffle_seed: u64,
+    shuffle_order: Vec<usize>,
+    shuffle_cursor: usize,
 }
 
 impl AudioPlayer {
@@ -131,6 +179,16 @@ impl AudioPlayer {
         {
             if prefers_silent_backend() {
                 return Self::silent("none");
+            }
+
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
+            if std::env::var("MUSICOS_AUDIO_BACKEND")
+                .map(|value| value.eq_ignore_ascii_case("alsa"))
+                .unwrap_or(true)
+            {
+                // Direct ALSA owns the PCM on device. Opening Rodio here reserves the
+                // same hardware and makes every subsequent direct playback fail busy.
+                return Self::silent("alsa");
             }
 
             let mut stream_opt = None;
@@ -214,10 +272,13 @@ impl AudioPlayer {
                 shuffle: false,
                 play_start: None,
                 accumulated_time: Duration::ZERO,
+                current_loaded: false,
                 last_backend,
                 selected_pcm: None,
                 last_error,
                 shuffle_seed,
+                shuffle_order: Vec::new(),
+                shuffle_cursor: 0,
             }
         }
         #[cfg(not(any(feature = "desktop-audio", feature = "device-audio")))]
@@ -236,10 +297,13 @@ impl AudioPlayer {
                 shuffle: false,
                 play_start: None,
                 accumulated_time: Duration::ZERO,
+                current_loaded: false,
                 last_backend: "silent".to_string(),
                 selected_pcm: None,
                 last_error: None,
                 shuffle_seed,
+                shuffle_order: Vec::new(),
+                shuffle_cursor: 0,
             }
         }
     }
@@ -251,7 +315,18 @@ impl AudioPlayer {
         } else {
             None
         };
+        self.rebuild_shuffle_order();
         self.play_current();
+    }
+
+    pub fn queue_select(&mut self, index: usize) -> bool {
+        if index >= self.queue.len() {
+            return false;
+        }
+        self.current_index = Some(index);
+        self.rebuild_shuffle_order();
+        self.play_current();
+        true
     }
 
     pub fn restore_queue_paused(&mut self, tracks: Vec<Track>, start_index: usize, position: f32) {
@@ -262,9 +337,11 @@ impl AudioPlayer {
         } else {
             None
         };
+        self.rebuild_shuffle_order();
         self.accumulated_time = Duration::from_secs_f32(position.max(0.0));
         self.play_start = None;
         self.is_paused = true;
+        self.current_loaded = false;
     }
 
     pub fn play_current(&mut self) {
@@ -288,6 +365,7 @@ impl AudioPlayer {
             self.last_error = None;
             self.play_start = Some(Instant::now());
             self.accumulated_time = Duration::ZERO;
+            self.current_loaded = true;
             log::info!("audio none backend: {} - {}", track_title, track_artist);
             return;
         }
@@ -333,6 +411,7 @@ impl AudioPlayer {
                                 self.last_error = None;
                                 self.play_start = Some(Instant::now());
                                 self.accumulated_time = Duration::ZERO;
+                                self.current_loaded = true;
                                 log::info!("Playing track: {} - {}", track_title, track_artist);
                                 return;
                             }
@@ -387,6 +466,7 @@ impl AudioPlayer {
             self.last_error = None;
             self.play_start = Some(Instant::now());
             self.accumulated_time = Duration::ZERO;
+            self.current_loaded = true;
             log::info!("audio silent fallback: {} - {}", track_title, track_artist);
         }
     }
@@ -414,12 +494,34 @@ impl AudioPlayer {
             shuffle: false,
             play_start: None,
             accumulated_time: Duration::ZERO,
+            current_loaded: false,
             last_backend: backend.to_string(),
             selected_pcm: None,
             last_error: None,
             shuffle_seed,
+            shuffle_order: Vec::new(),
+            shuffle_cursor: 0,
         }
     }
+
+    /// Start the following queue item while retaining the outgoing sink for a finite fade.
+    /// Decode and allocate first; a failed transition leaves current playback untouched.
+    #[cfg(feature = "desktop-audio")]
+    pub fn desktop_crossfade_next(&mut self) -> Result<Option<DesktopFade>, String> {
+        if self.last_backend != "rodio" || !self.is_playing() || self.shuffle || self.loop_mode == LoopMode::One {return Ok(None);}
+        let Some(index) = self.current_index else {return Ok(None)};
+        let next = if index+1 < self.queue.len() {index+1} else if self.loop_mode == LoopMode::All && self.queue.len()>1 {0} else {return Ok(None)};
+        if self.queue[next].duration < 12 {return Ok(None);}
+        let source = Decoder::new(BufReader::new(File::open(&self.queue[next].path).map_err(|e|e.to_string())?)).map_err(|e|e.to_string())?;
+        let handle=self.stream_handle.as_ref().ok_or("Audio output is unavailable")?;
+        let incoming=Sink::try_new(handle).map_err(|e|e.to_string())?;
+        incoming.set_volume(0.);incoming.append(EqSource::new(source,self.eq_preset));incoming.play();
+        let outgoing=self.sink.replace(incoming);
+        self.current_index=Some(next);self.play_start=Some(Instant::now());self.accumulated_time=Duration::ZERO;self.current_loaded=true;self.is_paused=false;self.last_error=None;
+        Ok(outgoing.map(|sink|DesktopFade{sink}))
+    }
+    #[cfg(feature = "desktop-audio")]
+    pub fn desktop_set_gain(&self,gain:f32) {if let Some(sink)=&self.sink {sink.set_volume(self.volume*gain.clamp(0.,1.));}}
 
     pub fn pause(&mut self) {
         if !self.is_paused {
@@ -447,7 +549,13 @@ impl AudioPlayer {
             return;
         }
 
-        if self.is_paused {
+        if self.is_paused && !self.current_loaded {
+            let resume_position = self.accumulated_time.as_secs_f32();
+            self.play_current();
+            if self.current_loaded && resume_position > 0.0 {
+                self.seek(resume_position);
+            }
+        } else if self.is_paused {
             #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
             if let Some(ref sink) = self.sink {
                 sink.play();
@@ -466,7 +574,9 @@ impl AudioPlayer {
     pub fn stop(&mut self) {
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
-            if let Some(ref sink) = self.sink {
+            // rodio's `Sink::stop` is permanent: `play` cannot revive that sink.
+            // Drop it after stopping so the next track receives a fresh sink.
+            if let Some(sink) = self.sink.take() {
                 sink.stop();
             }
             #[cfg(target_os = "linux")]
@@ -476,6 +586,7 @@ impl AudioPlayer {
         }
         self.play_start = None;
         self.accumulated_time = Duration::ZERO;
+        self.current_loaded = false;
         self.is_paused = false;
     }
 
@@ -485,22 +596,28 @@ impl AudioPlayer {
         }
         if let Some(idx) = self.current_index {
             let next_idx = if self.shuffle {
-                let mut next = idx;
-                if self.queue.len() > 1 {
-                    while next == idx {
-                        self.shuffle_seed = self
-                            .shuffle_seed
-                            .wrapping_mul(1664525)
-                            .wrapping_add(1013904223);
-                        next = (self.shuffle_seed as usize) % self.queue.len();
-                    }
+                if self.shuffle_order.len() != self.queue.len() {
+                    self.rebuild_shuffle_order();
                 }
-                next
+                if self.shuffle_cursor + 1 < self.shuffle_order.len() {
+                    self.shuffle_cursor += 1;
+                    self.shuffle_order[self.shuffle_cursor]
+                } else if self.loop_mode == LoopMode::All {
+                    self.rebuild_shuffle_order();
+                    if self.shuffle_order.len() > 1 {
+                        self.shuffle_cursor = 1;
+                    }
+                    self.shuffle_order[self.shuffle_cursor]
+                } else {
+                    self.finish_current();
+                    return;
+                }
             } else if idx + 1 < self.queue.len() {
                 idx + 1
             } else if self.loop_mode == LoopMode::All {
                 0
             } else {
+                self.finish_current();
                 return;
             };
             self.current_index = Some(next_idx);
@@ -512,8 +629,15 @@ impl AudioPlayer {
         if self.queue.is_empty() {
             return;
         }
+        if self.get_position() > 3.0 {
+            self.seek(0.0);
+            return;
+        }
         if let Some(idx) = self.current_index {
-            let prev_idx = if idx > 0 {
+            let prev_idx = if self.shuffle && self.shuffle_cursor > 0 {
+                self.shuffle_cursor -= 1;
+                self.shuffle_order[self.shuffle_cursor]
+            } else if idx > 0 {
                 idx - 1
             } else if self.loop_mode == LoopMode::All {
                 self.queue.len() - 1
@@ -554,10 +678,12 @@ impl AudioPlayer {
 
     pub fn toggle_shuffle(&mut self) {
         self.shuffle = !self.shuffle;
+        self.rebuild_shuffle_order();
     }
 
     pub fn set_shuffle(&mut self, enabled: bool) {
         self.shuffle = enabled;
+        self.rebuild_shuffle_order();
     }
 
     pub fn shuffle_enabled(&self) -> bool {
@@ -581,11 +707,18 @@ impl AudioPlayer {
     }
 
     pub fn get_position(&self) -> f32 {
-        #[cfg(all(feature = "audio", target_os = "linux"))]
+        #[cfg(all(feature = "device-audio", target_os = "linux"))]
         if let Some(ref alsa) = self.alsa_playback {
             let frames = alsa.written_frames.load(Ordering::Relaxed);
             let rate = alsa.sample_rate.load(Ordering::Relaxed).max(1);
             return frames as f32 / rate as f32;
+        }
+
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+        if self.last_backend == "rodio" && self.current_loaded {
+            if let Some(sink) = &self.sink {
+                return sink.get_pos().as_secs_f32();
+            }
         }
 
         let elapsed = if !self.is_paused && self.play_start.is_some() {
@@ -644,6 +777,18 @@ impl AudioPlayer {
         self.current_index.filter(|idx| *idx < self.queue.len())
     }
 
+    pub fn is_playing(&self) -> bool {
+        #[cfg(all(feature = "device-audio", target_os = "linux"))]
+        if self
+            .alsa_playback
+            .as_ref()
+            .is_some_and(|playback| playback.finished.load(Ordering::Relaxed))
+        {
+            return false;
+        }
+        !self.is_paused && self.current_index.is_some()
+    }
+
     pub fn queue_add_next(&mut self, track: Track) {
         let insert_index = self
             .current_index()
@@ -655,6 +800,7 @@ impl AudioPlayer {
             self.current_index = Some(0);
             self.is_paused = true;
         }
+        self.rebuild_shuffle_order();
     }
 
     pub fn queue_add_later(&mut self, track: Track) {
@@ -663,28 +809,32 @@ impl AudioPlayer {
             self.current_index = Some(0);
             self.is_paused = true;
         }
+        self.rebuild_shuffle_order();
     }
 
     pub fn queue_remove(&mut self, index: usize) -> Option<Track> {
         if index >= self.queue.len() {
             return None;
         }
-        let current_track_id = self.get_current_track().map(|track| track.id);
+        let current_index = self.current_index;
+        let was_paused = self.is_paused;
         let removed = self.queue.remove(index);
         if self.queue.is_empty() {
             self.stop();
             self.current_index = None;
             self.is_paused = true;
-        } else if let Some(id) = current_track_id {
-            self.current_index = self
-                .queue
-                .iter()
-                .position(|track| track.id == id)
-                .or_else(|| Some(index.min(self.queue.len().saturating_sub(1))));
-            if removed.id == id {
-                self.pause();
+        } else if let Some(current) = current_index {
+            if index == current {
+                self.current_index = Some(index.min(self.queue.len() - 1));
+                self.play_current();
+                if was_paused {
+                    self.pause();
+                }
+            } else if index < current {
+                self.current_index = Some(current - 1);
             }
         }
+        self.rebuild_shuffle_order();
         Some(removed)
     }
 
@@ -692,12 +842,21 @@ impl AudioPlayer {
         if from >= self.queue.len() || to >= self.queue.len() || from == to {
             return false;
         }
-        let current_track_id = self.get_current_track().map(|track| track.id);
+        let current_index = self.current_index;
         let track = self.queue.remove(from);
         self.queue.insert(to, track);
-        if let Some(id) = current_track_id {
-            self.current_index = self.queue.iter().position(|track| track.id == id);
+        if let Some(current) = current_index {
+            self.current_index = Some(if current == from {
+                to
+            } else if from < current && to >= current {
+                current - 1
+            } else if from > current && to <= current {
+                current + 1
+            } else {
+                current
+            });
         }
+        self.rebuild_shuffle_order();
         true
     }
 
@@ -706,6 +865,17 @@ impl AudioPlayer {
         self.queue.clear();
         self.current_index = None;
         self.is_paused = true;
+        self.shuffle_order.clear();
+        self.shuffle_cursor = 0;
+    }
+
+    pub fn queue_clear_upcoming(&mut self) {
+        if let Some(current) = self.current_index() {
+            self.queue.truncate(current + 1);
+        } else {
+            self.queue.clear();
+        }
+        self.rebuild_shuffle_order();
     }
 
     pub fn update_track_favorite(&mut self, id: i64, favorited: bool) {
@@ -716,10 +886,18 @@ impl AudioPlayer {
         }
     }
 
+    pub fn update_track_rating(&mut self, id: i64, rating: u8) {
+        for track in &mut self.queue {
+            if track.id == id {
+                track.rating = rating.min(5);
+            }
+        }
+    }
+
     pub fn get_status(&self) -> PlaybackStatus {
         PlaybackStatus {
             track: self.get_current_track().cloned(),
-            is_playing: !self.is_paused && self.current_index.is_some(),
+            is_playing: self.is_playing(),
             position: self.get_position(),
             volume: self.volume,
             eq_preset: self.eq_preset,
@@ -729,19 +907,69 @@ impl AudioPlayer {
             queue_index: self.current_index(),
             backend: self.last_backend.clone(),
             selected_pcm: self.selected_pcm.clone(),
-            last_error: self.last_error.clone(),
+            last_error: self.last_error.clone().or_else(|| {
+                #[cfg(all(feature = "device-audio", target_os = "linux"))]
+                if let Some(playback) = &self.alsa_playback {
+                    return playback.error.lock().ok().and_then(|error| error.clone());
+                }
+                None
+            }),
         }
     }
 
     pub fn tick(&mut self) {
+        #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+        if self.last_backend == "rodio" && self.current_loaded && !self.is_paused {
+            if self.sink.as_ref().is_some_and(Sink::empty) {
+                if self.loop_mode == LoopMode::One {
+                    self.play_current();
+                } else {
+                    self.next();
+                }
+            }
+            return;
+        }
         let duration = self.get_current_track().map(|t| t.duration).unwrap_or(0);
-        if duration > 0 && self.get_position() >= duration as f32 {
+        if !self.is_paused && duration > 0 && self.get_position() >= duration as f32 {
             if self.loop_mode == LoopMode::One {
                 self.play_current();
             } else {
                 self.next();
             }
         }
+    }
+
+    fn finish_current(&mut self) {
+        let duration = self
+            .get_current_track()
+            .map(|track| track.duration)
+            .unwrap_or(0);
+        self.pause();
+        self.accumulated_time = Duration::from_secs(duration.max(0) as u64);
+    }
+
+    fn rebuild_shuffle_order(&mut self) {
+        self.shuffle_order = (0..self.queue.len()).collect();
+        let Some(current) = self.current_index.filter(|index| *index < self.queue.len()) else {
+            self.shuffle_cursor = 0;
+            return;
+        };
+        if let Some(position) = self
+            .shuffle_order
+            .iter()
+            .position(|index| *index == current)
+        {
+            self.shuffle_order.swap(0, position);
+        }
+        for index in (2..=self.shuffle_order.len()).rev() {
+            self.shuffle_seed = self
+                .shuffle_seed
+                .wrapping_mul(1664525)
+                .wrapping_add(1013904223);
+            let swap_with = 1 + (self.shuffle_seed as usize % (index - 1));
+            self.shuffle_order.swap(index - 1, swap_with);
+        }
+        self.shuffle_cursor = 0;
     }
 
     #[cfg(all(feature = "device-audio", target_os = "linux"))]
@@ -779,6 +1007,7 @@ impl AudioPlayer {
                     Some(Instant::now())
                 };
                 self.accumulated_time = Duration::from_secs_f32(start_seconds);
+                self.current_loaded = true;
                 log::info!(
                     "Playing track through ALSA from {}s: {} - {}",
                     start_seconds,
@@ -832,6 +1061,8 @@ struct AlsaPlayback {
     volume_bits: Arc<AtomicU32>,
     written_frames: Arc<AtomicU64>,
     sample_rate: Arc<AtomicU32>,
+    finished: Arc<AtomicBool>,
+    error: Arc<Mutex<Option<String>>>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -848,12 +1079,16 @@ impl AlsaPlayback {
         let volume_bits = Arc::new(AtomicU32::new(volume.clamp(0.0, 1.0).to_bits()));
         let written_frames = Arc::new(AtomicU64::new(0));
         let sample_rate = Arc::new(AtomicU32::new(44100));
+        let finished = Arc::new(AtomicBool::new(false));
+        let error = Arc::new(Mutex::new(None));
 
         let thread_stop = Arc::clone(&stop);
         let thread_paused = Arc::clone(&paused);
         let thread_volume = Arc::clone(&volume_bits);
         let thread_written = Arc::clone(&written_frames);
         let thread_rate = Arc::clone(&sample_rate);
+        let thread_finished = Arc::clone(&finished);
+        let thread_error = Arc::clone(&error);
         let thread_path = path.clone();
 
         let worker = std::thread::Builder::new()
@@ -870,7 +1105,11 @@ impl AlsaPlayback {
                     start_seconds,
                 ) {
                     log::error!("ALSA playback thread stopped for {thread_path}: {err}");
+                    if let Ok(mut playback_error) = thread_error.lock() {
+                        *playback_error = Some(err);
+                    }
                 }
+                thread_finished.store(true, Ordering::Relaxed);
             })
             .map_err(|err| format!("thread spawn failed: {err}"))?;
 
@@ -880,6 +1119,8 @@ impl AlsaPlayback {
             volume_bits,
             written_frames,
             sample_rate,
+            finished,
+            error,
             worker: Some(worker),
         })
     }
@@ -1194,11 +1435,50 @@ where
     fn total_duration(&self) -> Option<Duration> {
         self.input.total_duration()
     }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.input.try_seek(pos)?;
+        self.low_state.fill(0.0);
+        self.high_prev_in.fill(0.0);
+        self.high_prev_out.fill(0.0);
+        self.sample_index = 0;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::alsa_pcm_candidates;
+    use std::collections::HashSet;
+    use std::time::Duration;
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+    use std::{fs, fs::File, io::BufReader};
+
+    use super::{alsa_pcm_candidates, AudioPlayer};
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+    use super::{Decoder, EqPreset, EqSource, Source};
+    use crate::database::Track;
+
+    fn track(id: i64) -> Track {
+        Track {
+            id,
+            path: format!("{id}.wav"),
+            title: format!("Track {id}"),
+            artist: "Artist".to_string(),
+            album: "Album".to_string(),
+            track_number: id as i32,
+            duration: 120,
+            file_size: 0,
+            modified_at: 0,
+            indexed_at: 0,
+            cover_art_path: None,
+            cover_art_updated_at: None,
+            cover_art_source_modified_at: None,
+            favorited: false,
+            play_count: 0,
+            last_played: None,
+            rating: 0,
+        }
+    }
 
     #[test]
     fn alsa_pcm_candidates_preserve_preferred_device_and_defaults() {
@@ -1207,6 +1487,49 @@ mod tests {
         assert!(candidates.iter().any(|device| device == "default"));
         assert!(candidates.iter().any(|device| device == "plughw:0,0"));
         assert!(candidates.iter().any(|device| device == "hw:0,0"));
+    }
+
+    #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
+    #[test]
+    fn pcm_capture_proves_the_decoder_produces_non_silent_samples() {
+        let path =
+            std::env::temp_dir().join(format!("musicos-pcm-capture-{}.wav", std::process::id()));
+        let sample_rate = 8_000_u32;
+        let sample_count = 800_u32;
+        let data_len = sample_count * 2;
+        let mut bytes = Vec::with_capacity((44 + data_len) as usize);
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        for index in 0..sample_count {
+            let sample = if index % 2 == 0 {
+                12_000_i16
+            } else {
+                -12_000_i16
+            };
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        fs::write(&path, bytes).unwrap();
+        let capture = super::decode_pcm_capture(&path, 2_000).unwrap();
+        assert_eq!(capture.sample_rate, sample_rate);
+        assert_eq!(capture.channels, 1);
+        assert!(capture.samples >= sample_count as usize);
+        assert!(capture.peak > 0.1);
+        assert!(capture.non_silent_samples > 700);
+        let decoder = Decoder::new(BufReader::new(File::open(&path).unwrap())).unwrap();
+        let mut equalized = EqSource::new(decoder, EqPreset::Flat);
+        assert!(equalized.try_seek(Duration::from_millis(50)).is_ok());
+        assert!(equalized.next().is_some());
+        let _ = fs::remove_file(path);
     }
 
     #[test]
@@ -1219,5 +1542,70 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn shuffle_visits_every_track_before_repeating() {
+        let mut player = AudioPlayer::silent("test");
+        player.set_queue((1..=6).map(track).collect(), 0);
+        player.set_shuffle(true);
+        let mut visited = HashSet::from([player.current_index().unwrap()]);
+        for _ in 1..6 {
+            player.next();
+            visited.insert(player.current_index().unwrap());
+        }
+        assert_eq!(visited.len(), 6);
+        let last = player.current_index();
+        player.next();
+        assert_eq!(player.current_index(), last);
+        assert_eq!(player.get_position(), 120.0);
+    }
+
+    #[test]
+    fn previous_restarts_after_three_seconds() {
+        let mut player = AudioPlayer::silent("test");
+        player.set_queue(vec![track(1), track(2)], 1);
+        player.accumulated_time = Duration::from_secs(5);
+        player.prev();
+        assert_eq!(player.current_index(), Some(1));
+        // The silent backend still measures wall-clock time while playing, so
+        // a few microseconds may elapse between the restart and this read.
+        assert!(player.get_position() < 0.01);
+    }
+
+    #[test]
+    fn moving_duplicate_ids_preserves_the_active_queue_slot() {
+        let mut player = AudioPlayer::silent("test");
+        player.set_queue(vec![track(1), track(1), track(2)], 1);
+        assert!(player.queue_move(0, 2));
+        assert_eq!(player.current_index(), Some(0));
+    }
+
+    #[test]
+    fn clear_upcoming_and_rating_updates_preserve_current_playback_context() {
+        let mut player = AudioPlayer::silent("test");
+        player.set_queue(vec![track(1), track(2), track(3), track(4)], 1);
+        player.queue_clear_upcoming();
+        assert_eq!(player.queue_track_ids(), vec![1, 2]);
+        assert_eq!(player.current_index(), Some(1));
+
+        player.update_track_rating(2, 4);
+        assert_eq!(player.get_current_track().unwrap().rating, 4);
+    }
+
+    #[cfg(not(any(feature = "desktop-audio", feature = "device-audio")))]
+    #[test]
+    fn restored_queue_loads_current_track_before_resuming() {
+        let mut player = AudioPlayer::silent("test");
+        player.restore_queue_paused(vec![track(1), track(2)], 1, 5.0);
+        assert!(!player.current_loaded);
+        assert!(!player.is_playing());
+
+        player.play_pause();
+
+        assert!(player.current_loaded);
+        assert!(player.is_playing());
+        assert_eq!(player.current_index(), Some(1));
+        assert!((5.0..5.1).contains(&player.get_position()));
     }
 }

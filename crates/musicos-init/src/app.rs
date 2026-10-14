@@ -8,7 +8,21 @@ use crate::ui;
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::usb::UsbStatus;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
+
+#[derive(Debug, Clone)]
+pub enum LibraryScanPolicy {
+    EmbeddedDefaults,
+    Explicit(crate::media::ScanRequest),
+    ReadOnlyPreview,
+}
+
+#[derive(Debug, Clone)]
+pub struct MusicOsOptions {
+    pub db_path: PathBuf,
+    pub scan_policy: LibraryScanPolicy,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
@@ -24,9 +38,13 @@ pub enum Screen {
     SongsList,
     AlbumsList,
     ArtistsList,
+    ArtistAlbumsList,
+    AlbumTracksList,
     PlaylistsList,
     PlaylistTracksList,
     Queue,
+    Search,
+    RatingPicker,
     ContextMenu,
     Settings,
     SettingsDetail,
@@ -53,12 +71,22 @@ pub enum Focus {
     Favorites,
     Queue,
     ShuffleAll,
+    Search,
+    SearchKeyboard,
+    SearchResults,
     ContextPlay,
+    ContextPlayNext,
+    ContextAddLater,
     ContextPin,
     ContextAddToPlaylist,
     ContextShuffle,
     ContextDelete,
+    ContextRate,
+    ContextMoveUp,
+    ContextMoveDown,
+    ContextClearUpcoming,
     ContextCancel,
+    RatingStars,
     SettingsGeneral,
     SettingsAudio,
     SettingsLooks,
@@ -89,6 +117,51 @@ pub enum Focus {
     HomePlaylist4,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HomePane {
+    Main,
+    Detail,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HomeNavigation {
+    pub pane: HomePane,
+    pub main_index: usize,
+    pub detail_index: usize,
+    pub remembered_detail_index: [usize; 4],
+}
+
+impl Default for HomeNavigation {
+    fn default() -> Self {
+        Self {
+            pane: HomePane::Main,
+            main_index: 0,
+            detail_index: 0,
+            remembered_detail_index: [0; 4],
+        }
+    }
+}
+
+#[derive(Clone)]
+struct NavigationState {
+    screen: Screen,
+    focus: Focus,
+    selected_index: usize,
+    scroll_offset: f32,
+    target_scroll_offset: f32,
+    tracks_queue: Vec<Track>,
+    albums_list: Vec<String>,
+    artists_list: Vec<String>,
+    artist_albums_list: Vec<String>,
+    playlists_list: Vec<Playlist>,
+    active_playlist: Option<Playlist>,
+    active_artist: Option<String>,
+    active_album: Option<String>,
+    search_query: String,
+    search_results: Vec<Track>,
+    search_key_index: usize,
+}
+
 pub struct MusicOs {
     pub screen: Screen,
     pub focus: Focus,
@@ -115,6 +188,7 @@ pub struct MusicOs {
     pub scan: ScanInfo,
     pub audio_test_status: String,
     pub db_path: String,
+    pub scan_policy: LibraryScanPolicy,
     pub clock_hour: u8,
     pub clock_minute: u8,
     pub clock_month: u8,
@@ -126,12 +200,25 @@ pub struct MusicOs {
     pub db: Db,
     pub player: AudioPlayer,
     pub selected_index: usize,
+    pub home_navigation: HomeNavigation,
     pub tracks_queue: Vec<Track>,
+    library_tracks: Vec<Track>,
+    cached_library_counts: LibraryCounts,
     pub albums_list: Vec<String>,
     pub artists_list: Vec<String>,
+    pub artist_albums_list: Vec<String>,
     pub playlists_list: Vec<Playlist>,
     pub pins_list: Vec<Pin>,
     pub active_playlist: Option<Playlist>,
+    pub active_artist: Option<String>,
+    pub active_album: Option<String>,
+    pub search_query: String,
+    pub search_results: Vec<Track>,
+    pub search_key_index: usize,
+    pub pending_rating: u8,
+    rating_track_id: Option<i64>,
+    navigation_stack: Vec<NavigationState>,
+    navigation_restored: bool,
     pub scroll_offset: f32,
     pub target_scroll_offset: f32,
     pub current_cover_art: Option<crate::renderer::CoverArt>,
@@ -166,6 +253,7 @@ pub struct MusicOs {
     pub cover_art_opacity: f32,
     pub is_asleep: bool,
     pub last_session_save: Instant,
+    last_runtime_snapshot: Instant,
     pub last_interaction: Instant,
     pub display_dimmed: bool,
     pub wifi_sync_overlay: bool,
@@ -173,6 +261,7 @@ pub struct MusicOs {
     pub wifi_sync_timeout: Option<Instant>,
     pub sleep_timer_deadline: Option<Instant>,
     scan_rx: Option<std::sync::mpsc::Receiver<ScanMessage>>,
+    scan_pending: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +280,7 @@ struct ScanResult {
 enum ScanMessage {
     Progress {
         indexed: usize,
+        processed: usize,
         discovered: usize,
         current_root: Option<String>,
         elapsed_ms: u128,
@@ -259,7 +349,7 @@ fn sort_tracks(tracks: &mut [Track], sort: LibrarySort) {
         }),
         LibrarySort::RecentlyAdded => tracks.sort_by_key(|track| {
             (
-                std::cmp::Reverse(track.last_played.unwrap_or(0)),
+                std::cmp::Reverse(track.indexed_at),
                 track.title.to_ascii_lowercase(),
             )
         }),
@@ -308,6 +398,11 @@ fn first_label_letter(label: &str) -> char {
         .unwrap_or('#')
 }
 
+const SEARCH_KEYS: [&str; 30] = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S",
+    "T", "U", "V", "W", "X", "Y", "Z", "SPACE", "DELETE", "CLEAR", "RESULTS",
+];
+
 impl MusicOs {
     pub fn new(resolution: Resolution) -> Self {
         let db_path = std::env::var("MUSICOS_MEDIA_DB")
@@ -316,7 +411,18 @@ impl MusicOs {
     }
 
     pub fn with_db_path(resolution: Resolution, db_path: &str) -> Self {
-        let db = Db::open(db_path).unwrap_or_else(|err| {
+        Self::with_options(
+            resolution,
+            MusicOsOptions {
+                db_path: PathBuf::from(db_path),
+                scan_policy: LibraryScanPolicy::EmbeddedDefaults,
+            },
+        )
+    }
+
+    pub fn with_options(resolution: Resolution, options: MusicOsOptions) -> Self {
+        let db_path = options.db_path.display().to_string();
+        let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
             Db::open(":memory:").unwrap()
         });
@@ -374,7 +480,8 @@ impl MusicOs {
             scan_status: "Library ready".to_string(),
             scan: ScanInfo::default(),
             audio_test_status: "Audio test not run".to_string(),
-            db_path: db_path.to_string(),
+            db_path,
+            scan_policy: options.scan_policy,
             clock_hour: preferences.clock_hour.min(23),
             clock_minute: preferences.clock_minute.min(59),
             clock_month: preferences.clock_month.clamp(1, 12),
@@ -386,12 +493,25 @@ impl MusicOs {
             db,
             player,
             selected_index: 0,
+            home_navigation: HomeNavigation::default(),
             tracks_queue: Vec::new(),
+            library_tracks: Vec::new(),
+            cached_library_counts: LibraryCounts::default(),
             albums_list: Vec::new(),
             artists_list: Vec::new(),
+            artist_albums_list: Vec::new(),
             playlists_list: Vec::new(),
             pins_list: Vec::new(),
             active_playlist: None,
+            active_artist: None,
+            active_album: None,
+            search_query: String::new(),
+            search_results: Vec::new(),
+            search_key_index: 0,
+            pending_rating: 0,
+            rating_track_id: None,
+            navigation_stack: Vec::new(),
+            navigation_restored: false,
             scroll_offset: 0.0,
             target_scroll_offset: 0.0,
             current_cover_art: None,
@@ -426,6 +546,7 @@ impl MusicOs {
             cover_art_opacity: 0.0,
             is_asleep: false,
             last_session_save: Instant::now(),
+            last_runtime_snapshot: Instant::now() - Duration::from_secs(1),
             last_interaction: Instant::now(),
             display_dimmed: false,
             wifi_sync_overlay: false,
@@ -433,6 +554,7 @@ impl MusicOs {
             wifi_sync_timeout: None,
             sleep_timer_deadline: None,
             scan_rx: None,
+            scan_pending: false,
         };
         app.refresh_library();
         app
@@ -473,22 +595,14 @@ impl MusicOs {
             }
         }
 
-        if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
-            let fade_step = match self.motion_mode {
-                MotionMode::Reduced => 1.0,
-                MotionMode::BatterySaver => 0.12,
-                MotionMode::Visuals => 0.04,
-                MotionMode::Balanced => 0.05,
-            };
-            self.cover_art_opacity = (self.cover_art_opacity + fade_step).min(1.0);
-        } else {
+        if self.current_cover_art.is_none() && self.cover_art_rx.is_some() {
             self.cover_art_opacity = 0.0;
         }
 
         if self.current_list_len() > 0 {
             let (item_h, row_h, content_top, content_bottom, list_origin) = match self.screen {
                 Screen::Language => (144.0, 124.0, 92.0, 700.0, 112.0),
-                _ => (144.0, 128.0, 252.0, 850.0, 248.0),
+                _ => (144.0, 128.0, 252.0, 862.0, 260.0),
             };
             let sel = self.selected_index as f32;
             let selected_y = list_origin + sel * item_h - self.target_scroll_offset;
@@ -519,9 +633,7 @@ impl MusicOs {
             self.hud_t = (self.hud_t - dt * 4.0).max(0.0);
         }
 
-        if self.player.get_status().track.is_some()
-            && self.last_session_save.elapsed() >= Duration::from_secs(5)
-        {
+        if current_id.is_some() && self.last_session_save.elapsed() >= Duration::from_secs(5) {
             self.save_preferences(false);
             self.last_session_save = Instant::now();
         }
@@ -536,7 +648,7 @@ impl MusicOs {
                 self.display_dimmed = true;
             }
             if self.sleep_timeout_minutes > 0
-                && !self.player.get_status().is_playing
+                && !self.player.is_playing()
                 && idle >= Duration::from_secs(self.sleep_timeout_minutes as u64 * 60)
             {
                 self.enter_sleep();
@@ -549,7 +661,12 @@ impl MusicOs {
                 self.enter_sleep();
             }
         }
-        self.publish_runtime_snapshot();
+        // API snapshots perform database and system queries, so keep them well below the
+        // render loop frequency on low-power devices.
+        if self.last_runtime_snapshot.elapsed() >= Duration::from_millis(250) {
+            self.publish_runtime_snapshot();
+            self.last_runtime_snapshot = Instant::now();
+        }
     }
 
     pub fn handle_input(&mut self, event: InputEvent) -> bool {
@@ -579,6 +696,9 @@ impl MusicOs {
         let old_screen = self.screen;
         let old_focus = self.focus;
         let old_idx = self.selected_index;
+        if self.screen == Screen::Home {
+            self.sync_home_navigation_from_focus();
+        }
 
         match event {
             InputEvent::WifiSync => {
@@ -597,7 +717,9 @@ impl MusicOs {
             InputEvent::ButtonRelease(Button::Home) => {
                 self.home_held = false;
                 if !self.home_chorded {
+                    self.navigation_stack.clear();
                     self.screen = Screen::Home;
+                    self.home_navigation = HomeNavigation::default();
                     self.focus = Focus::HomeMusic;
                 }
                 self.home_chorded = false;
@@ -615,6 +737,8 @@ impl MusicOs {
                         | Screen::SongsList
                         | Screen::AlbumsList
                         | Screen::ArtistsList
+                        | Screen::ArtistAlbumsList
+                        | Screen::AlbumTracksList
                         | Screen::PlaylistsList
                         | Screen::PlaylistTracksList
                         | Screen::Queue => Focus::AppsMusic,
@@ -626,6 +750,18 @@ impl MusicOs {
             }
             InputEvent::Button(Button::Sleep) => {
                 self.enter_sleep();
+            }
+            InputEvent::Button(Button::PlayPause) => {
+                self.player.play_pause();
+                self.save_preferences(false);
+            }
+            InputEvent::Button(Button::PreviousTrack) => {
+                self.player.prev();
+                self.save_preferences(false);
+            }
+            InputEvent::Button(Button::NextTrack) => {
+                self.player.next();
+                self.save_preferences(false);
             }
             InputEvent::Button(Button::VolumeUp) => {
                 if self.home_held {
@@ -645,7 +781,24 @@ impl MusicOs {
             }
             InputEvent::Button(Button::Context) => {
                 if self.screen == Screen::Home {
-                    self.focus_home_left_side();
+                    if self.home_navigation.pane == HomePane::Main {
+                        if matches!(self.home_navigation.main_index, 0 | 1) {
+                            self.enter_home_detail();
+                        }
+                    } else if self.home_navigation.main_index == 0 && self.can_open_context_menu() {
+                        self.previous_screen = self.screen;
+                        self.previous_focus = self.focus;
+                        self.screen = Screen::ContextMenu;
+                        self.focus = Focus::ContextPlay;
+                    }
+                } else if self.screen == Screen::Search
+                    && self.focus == Focus::SearchKeyboard
+                    && !self.search_query.trim().is_empty()
+                {
+                    self.focus = Focus::SearchResults;
+                    self.selected_index = 0;
+                    self.scroll_offset = 0.0;
+                    self.target_scroll_offset = 0.0;
                 } else if self.screen != Screen::ContextMenu && self.can_open_context_menu() {
                     self.previous_screen = self.screen;
                     self.previous_focus = self.focus;
@@ -670,14 +823,19 @@ impl MusicOs {
                     self.screen = Screen::Welcome;
                 }
             }
-            InputEvent::Power => {}
+            InputEvent::Power => self.enter_sleep(),
             InputEvent::ButtonRelease(_) => {}
         }
-        if self.screen != old_screen {
+        if self.screen != old_screen
+            && self.screen != Screen::ContextMenu
+            && old_screen != Screen::ContextMenu
+            && !self.navigation_restored
+        {
             self.screen_transition = 0.0;
             self.target_scroll_offset = 0.0;
             self.scroll_offset = 0.0;
         }
+        self.navigation_restored = false;
 
         self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx
     }
@@ -687,22 +845,41 @@ impl MusicOs {
     }
 
     pub fn start_library_scan(&mut self) {
-        self.start_library_scan_with_status("Scanning library...", false);
+        self.start_library_scan_with_status("Scanning library...", false, None);
     }
 
-    pub fn start_library_rescan(&mut self, mode: &str) {
+    pub fn start_library_rescan(&mut self, mode: &str, source_id: Option<i64>) {
         let reindex_all = matches!(mode, "full" | "all" | "rebuild");
-        let status = if reindex_all {
+        let status = if source_id.is_some() {
+            "Refreshing library source..."
+        } else if reindex_all {
             "Full library rescan..."
         } else {
             "Scanning changed library files..."
         };
-        self.start_library_scan_with_status(status, reindex_all);
+        self.start_library_scan_with_status(status, reindex_all, source_id);
     }
 
-    fn start_library_scan_with_status(&mut self, status: &str, reindex_all: bool) {
+    fn start_library_scan_with_status(
+        &mut self,
+        status: &str,
+        reindex_all: bool,
+        source_id: Option<i64>,
+    ) {
+        if matches!(self.scan_policy, LibraryScanPolicy::ReadOnlyPreview) {
+            self.scan_status =
+                "Device Preview is read-only; refresh the library from the desktop app".to_string();
+            self.scan.state = "idle".to_string();
+            self.scan.last_error = None;
+            crate::server::push_runtime_log(
+                "scan",
+                "ignored scan request in read-only Device Preview".to_string(),
+            );
+            return;
+        }
         if self.scan_rx.is_some() {
-            self.scan_status = "Scan already running...".to_string();
+            self.scan_pending = true;
+            self.scan_status = "Finishing current scan, then checking new files...".to_string();
             self.scan.state = "running".to_string();
             return;
         }
@@ -711,6 +888,7 @@ impl MusicOs {
         self.scan = ScanInfo {
             state: "running".to_string(),
             indexed: 0,
+            processed: 0,
             discovered: 0,
             current_root: None,
             elapsed_ms: 0,
@@ -718,6 +896,7 @@ impl MusicOs {
         };
         crate::server::push_runtime_log("scan", status.to_string());
         let db_path = self.db_path.clone();
+        let scan_policy = self.scan_policy.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         self.scan_rx = Some(rx);
 
@@ -725,24 +904,76 @@ impl MusicOs {
             let started = Instant::now();
             let indexed = crate::database::Db::open(&db_path)
                 .and_then(|db| {
-                    if reindex_all {
-                        crate::media::reindex_default_locations_with_progress(&db, |progress| {
-                            let _ = tx.send(ScanMessage::Progress {
-                                indexed: progress.indexed,
-                                discovered: progress.discovered,
-                                current_root: progress.current_root,
-                                elapsed_ms: started.elapsed().as_millis(),
-                            });
-                        })
+                    if let Some(source_id) = source_id {
+                        crate::media::index_library_source_with_progress(
+                            &db,
+                            source_id,
+                            reindex_all,
+                            |progress| {
+                                let _ = tx.send(ScanMessage::Progress {
+                                    indexed: progress.indexed,
+                                    processed: progress.processed,
+                                    discovered: progress.discovered,
+                                    current_root: progress.current_root,
+                                    elapsed_ms: started.elapsed().as_millis(),
+                                });
+                            },
+                        )
                     } else {
-                        crate::media::index_default_locations_with_progress(&db, |progress| {
-                            let _ = tx.send(ScanMessage::Progress {
-                                indexed: progress.indexed,
-                                discovered: progress.discovered,
-                                current_root: progress.current_root,
-                                elapsed_ms: started.elapsed().as_millis(),
-                            });
-                        })
+                        match scan_policy {
+                            LibraryScanPolicy::EmbeddedDefaults if reindex_all => {
+                                crate::media::reindex_default_locations_with_progress(
+                                    &db,
+                                    |progress| {
+                                        let _ = tx.send(ScanMessage::Progress {
+                                            indexed: progress.indexed,
+                                            processed: progress.processed,
+                                            discovered: progress.discovered,
+                                            current_root: progress.current_root,
+                                            elapsed_ms: started.elapsed().as_millis(),
+                                        });
+                                    },
+                                )
+                            }
+                            LibraryScanPolicy::EmbeddedDefaults => {
+                                crate::media::index_default_locations_with_progress(
+                                    &db,
+                                    |progress| {
+                                        let _ = tx.send(ScanMessage::Progress {
+                                            indexed: progress.indexed,
+                                            processed: progress.processed,
+                                            discovered: progress.discovered,
+                                            current_root: progress.current_root,
+                                            elapsed_ms: started.elapsed().as_millis(),
+                                        });
+                                    },
+                                )
+                            }
+                            LibraryScanPolicy::Explicit(mut request) => {
+                                request.mode = if reindex_all {
+                                    crate::media::ScanMode::Full
+                                } else {
+                                    crate::media::ScanMode::Changed
+                                };
+                                let cancel = std::sync::atomic::AtomicBool::new(false);
+                                crate::media::scan_library_with_progress(
+                                    std::path::Path::new(&db_path),
+                                    &request,
+                                    &cancel,
+                                    |progress| {
+                                        let _ = tx.send(ScanMessage::Progress {
+                                            indexed: progress.indexed,
+                                            processed: progress.processed,
+                                            discovered: progress.discovered,
+                                            current_root: progress.current_root,
+                                            elapsed_ms: started.elapsed().as_millis(),
+                                        });
+                                    },
+                                )
+                                .map(|result| result.indexed)
+                            }
+                            LibraryScanPolicy::ReadOnlyPreview => Ok(0),
+                        }
                     }
                 })
                 .map_err(|err| format!("{err:#}"));
@@ -762,20 +993,22 @@ impl MusicOs {
             match rx.try_recv() {
                 Ok(ScanMessage::Progress {
                     indexed,
+                    processed,
                     discovered,
                     current_root,
                     elapsed_ms,
                 }) => {
                     self.scan.state = "running".to_string();
                     self.scan.indexed = indexed;
+                    self.scan.processed = processed;
                     self.scan.discovered = discovered;
                     self.scan.current_root = current_root.clone();
                     self.scan.elapsed_ms = elapsed_ms;
                     self.scan.last_error = None;
                     self.scan_status = if let Some(root) = current_root {
-                        format!("Scanning {root}: {indexed}/{discovered} indexed")
+                        format!("Checking {root}: {processed}/{discovered} ({indexed} updated)")
                     } else {
-                        format!("Scanning library: {indexed}/{discovered} indexed")
+                        format!("Checking library: {processed}/{discovered} ({indexed} updated)")
                     };
                 }
                 Ok(ScanMessage::Finished(result)) => break result,
@@ -820,6 +1053,10 @@ impl MusicOs {
                 crate::server::push_runtime_log("scan", self.scan_status.clone());
             }
         }
+        if self.scan_pending {
+            self.scan_pending = false;
+            self.start_library_scan_with_status("Checking newly synced files...", false, None);
+        }
     }
 
     pub fn handle_server_event(&mut self, event: ServerEvent) -> bool {
@@ -827,13 +1064,18 @@ impl MusicOs {
             ServerEvent::Button(b) => self.handle_input(InputEvent::Button(b)),
             ServerEvent::Pointer(ev) => self.handle_input(ev),
             ServerEvent::UploadComplete => {
-                self.start_library_scan_with_status("Upload complete; scanning library...", false);
+                self.start_library_scan_with_status(
+                    "Upload complete; scanning library...",
+                    false,
+                    None,
+                );
                 true
             }
             ServerEvent::UsbSync => {
                 self.run_usb_sync();
                 true
             }
+            ServerEvent::ShowControls => false,
             ServerEvent::Control(cmd) => {
                 match cmd {
                     crate::server::ControlCommand::PlayPause => self.player.play_pause(),
@@ -893,6 +1135,21 @@ impl MusicOs {
                             self.save_preferences(false);
                         }
                     }
+                    crate::server::ControlCommand::PlayTracks { ids, start_index } => {
+                        let tracks: Vec<_> = ids
+                            .into_iter()
+                            .take(5000)
+                            .filter_map(|id| self.db.get_track_by_id(id).ok().flatten())
+                            .collect();
+                        if !tracks.is_empty() {
+                            let start_index = start_index.min(tracks.len().saturating_sub(1));
+                            self.player.set_queue(tracks, start_index);
+                            self.apply_shuffle_default();
+                            self.screen = Screen::NowPlaying;
+                            self.focus = Focus::Albums;
+                            self.save_preferences(false);
+                        }
+                    }
                     crate::server::ControlCommand::PlayPlaylist { id, start_index } => {
                         if id == 0 {
                             if let Ok(tracks) = self.db.get_tracks() {
@@ -936,6 +1193,30 @@ impl MusicOs {
                     crate::server::ControlCommand::ToggleFavorite { id } => {
                         if let Ok(favorited) = self.db.toggle_favorite(id) {
                             self.player.update_track_favorite(id, favorited);
+                            for track in &mut self.library_tracks {
+                                if track.id == id {
+                                    track.favorited = favorited;
+                                }
+                            }
+                            self.cached_library_counts = self
+                                .db
+                                .library_counts()
+                                .unwrap_or(self.cached_library_counts);
+                        }
+                    }
+                    crate::server::ControlCommand::SetRating { id, rating } => {
+                        if rating <= 5 && self.db.set_track_rating(id, rating).is_ok() {
+                            self.player.update_track_rating(id, rating);
+                            for track in &mut self.tracks_queue {
+                                if track.id == id {
+                                    track.rating = rating;
+                                }
+                            }
+                            for track in &mut self.search_results {
+                                if track.id == id {
+                                    track.rating = rating;
+                                }
+                            }
                         }
                     }
                     crate::server::ControlCommand::DeletePlaylist { id } => {
@@ -971,8 +1252,8 @@ impl MusicOs {
                     crate::server::ControlCommand::ScanLibrary => {
                         self.scan_library();
                     }
-                    crate::server::ControlCommand::RescanLibrary { mode } => {
-                        self.start_library_rescan(&mode);
+                    crate::server::ControlCommand::RescanLibrary { mode, source_id } => {
+                        self.start_library_rescan(&mode, source_id);
                     }
                     crate::server::ControlCommand::AudioTest => {
                         self.run_audio_test();
@@ -997,6 +1278,12 @@ impl MusicOs {
                     }
                     crate::server::ControlCommand::QueueMove { from, to } => {
                         if self.player.queue_move(from, to) {
+                            self.save_preferences(false);
+                        }
+                    }
+                    crate::server::ControlCommand::QueueSelect { index } => {
+                        if self.player.queue_select(index) {
+                            self.screen = Screen::NowPlaying;
                             self.save_preferences(false);
                         }
                     }
@@ -1031,11 +1318,16 @@ impl MusicOs {
         let (tt_color, tb_color) = self.active_theme.gradient_colors();
         let dt = (seconds - self.last_draw_seconds).max(0.0).min(0.1);
         self.last_draw_seconds = seconds;
-        let motion_seconds = match self.motion_mode {
-            MotionMode::Reduced => 0.0,
-            MotionMode::BatterySaver => seconds * 0.5,
-            MotionMode::Visuals | MotionMode::Balanced => seconds,
-        };
+        let motion = self.motion_mode.profile();
+        let motion_seconds = seconds * motion.ambient_time_scale;
+
+        if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
+            self.cover_art_opacity = if motion.artwork_seconds <= f32::EPSILON {
+                1.0
+            } else {
+                (self.cover_art_opacity + dt / motion.artwork_seconds).min(1.0)
+            };
+        }
 
         if !self.theme_colors_initialized {
             self.cur_top_r = tt_color.r as f32;
@@ -1083,12 +1375,13 @@ impl MusicOs {
                 1.0,
             );
             let title = self.context_menu_title();
+            let actions = self.context_actions();
             ui::draw_context_menu(
                 canvas,
                 self.focus,
                 self.active_theme,
                 &title,
-                self.context_item_is_pinned(),
+                &actions,
                 transition_t,
                 motion_seconds,
             );
@@ -1101,6 +1394,15 @@ impl MusicOs {
                 transition_t,
             );
         }
+
+        ui::ipod_status_bar(
+            canvas,
+            self.screen_title(),
+            &self.format_clock(),
+            &crate::system::battery_summary(),
+            self.active_theme,
+            self.player.is_playing(),
+        );
 
         let screen_changed = Some(self.screen) != self.last_drawn_screen;
         self.last_drawn_screen = Some(self.screen);
@@ -1115,7 +1417,11 @@ impl MusicOs {
                 self.outline_thick = t_thick;
                 self.outline_active = true;
             } else {
-                let factor = (15.0 * dt).min(1.0);
+                let factor = if motion.selection_response.is_finite() {
+                    (motion.selection_response * dt).min(1.0)
+                } else {
+                    1.0
+                };
                 self.outline_x += (tx - self.outline_x) * factor;
                 self.outline_y += (ty - self.outline_y) * factor;
                 self.outline_w += (tw - self.outline_w) * factor;
@@ -1124,7 +1430,7 @@ impl MusicOs {
                 self.outline_thick += (t_thick - self.outline_thick) * factor;
             }
 
-            let outline_pulse = if self.motion_mode == MotionMode::Reduced {
+            let outline_pulse = if motion.ambient_fps == 0 {
                 0.0
             } else {
                 crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
@@ -1156,7 +1462,11 @@ impl MusicOs {
         }
 
         if self.screen_transition < 1.0 {
-            self.screen_transition = (self.screen_transition + dt * 5.5).min(1.0);
+            self.screen_transition = if motion.screen_seconds <= f32::EPSILON {
+                1.0
+            } else {
+                (self.screen_transition + dt / motion.screen_seconds).min(1.0)
+            };
         }
 
         if self.hud_t > 0.0 {
@@ -1376,7 +1686,6 @@ impl MusicOs {
         transition_t: f32,
     ) {
         log::debug!("draw_screen: screen={:?}, focus={:?}", screen, focus);
-        let active_playlists = self.db.get_playlists().unwrap_or_default();
         let time_str = self.format_clock();
 
         match screen {
@@ -1432,31 +1741,30 @@ impl MusicOs {
             Screen::Home => ui::home::draw_home(
                 canvas,
                 focus,
+                self.home_navigation.pane,
+                self.home_navigation.main_index,
                 seconds,
                 self.active_language,
                 self.active_theme,
-                &active_playlists,
-                &self.db.get_tracks().unwrap_or_default(),
+                &self.playlists_list,
+                &self.library_tracks,
                 &self.player.get_status(),
                 self.current_cover_art.as_ref(),
                 &crate::system::battery_summary(),
                 &time_str,
                 transition_t,
             ),
-            Screen::MusicApp => {
-                let pins = self.db.get_pins().unwrap_or_default();
-                ui::music::draw_music_menu(
-                    canvas,
-                    focus,
-                    seconds,
-                    self.active_language,
-                    self.active_theme,
-                    &pins,
-                    self.library_counts(),
-                    self.player.queue_tracks().len(),
-                    transition_t,
-                )
-            }
+            Screen::MusicApp => ui::music::draw_music_menu(
+                canvas,
+                focus,
+                seconds,
+                self.active_language,
+                self.active_theme,
+                &self.pins_list,
+                self.cached_library_counts,
+                self.player.queue_tracks().len(),
+                transition_t,
+            ),
             Screen::SongsList => ui::music::draw_tracks_list(
                 canvas,
                 self.active_language.translate("songs"),
@@ -1481,6 +1789,26 @@ impl MusicOs {
                 canvas,
                 self.active_language.translate("artists"),
                 &self.artists_list,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::ArtistAlbumsList => ui::music::draw_items_list(
+                canvas,
+                self.active_artist.as_deref().unwrap_or("Artist Albums"),
+                &self.artist_albums_list,
+                self.selected_index,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::AlbumTracksList => ui::music::draw_tracks_list(
+                canvas,
+                self.active_album.as_deref().unwrap_or("Album"),
+                &self.tracks_queue,
                 self.selected_index,
                 self.active_theme,
                 self.scroll_offset,
@@ -1528,6 +1856,32 @@ impl MusicOs {
                 transition_t,
                 seconds,
             ),
+            Screen::Search => ui::music::draw_search(
+                canvas,
+                &self.search_query,
+                &self.search_results,
+                self.search_key_index,
+                self.selected_index,
+                focus,
+                self.active_theme,
+                self.scroll_offset,
+                transition_t,
+                seconds,
+            ),
+            Screen::RatingPicker => {
+                let title = self
+                    .rating_track_id
+                    .and_then(|id| self.db.get_track_by_id(id).ok().flatten())
+                    .map(|track| track.title)
+                    .unwrap_or_else(|| "Track".to_string());
+                ui::music::draw_rating_picker(
+                    canvas,
+                    &title,
+                    self.pending_rating,
+                    self.active_theme,
+                    seconds,
+                )
+            }
             Screen::NowPlaying => {
                 let status = self.player.get_status();
                 ui::nowplaying::draw_now_playing(
@@ -1616,6 +1970,8 @@ impl MusicOs {
             Screen::TestComplete => Focus::GetStarted,
             Screen::NowPlaying => Focus::Albums,
             Screen::Queue => Focus::Queue,
+            Screen::Search => Focus::SearchKeyboard,
+            Screen::RatingPicker => Focus::RatingStars,
             Screen::Settings => Focus::SettingsGeneral,
             Screen::SettingsDetail => Focus::SettingsLanguage,
             Screen::Apps => Focus::AppsMusic,
@@ -1629,6 +1985,82 @@ impl MusicOs {
         self.selected_index = 0;
         self.scroll_offset = 0.0;
         self.target_scroll_offset = 0.0;
+    }
+
+    fn push_navigation(&mut self) {
+        self.navigation_stack.push(NavigationState {
+            screen: self.screen,
+            focus: self.focus,
+            selected_index: self.selected_index,
+            scroll_offset: self.scroll_offset,
+            target_scroll_offset: self.target_scroll_offset,
+            tracks_queue: self.tracks_queue.clone(),
+            albums_list: self.albums_list.clone(),
+            artists_list: self.artists_list.clone(),
+            artist_albums_list: self.artist_albums_list.clone(),
+            playlists_list: self.playlists_list.clone(),
+            active_playlist: self.active_playlist.clone(),
+            active_artist: self.active_artist.clone(),
+            active_album: self.active_album.clone(),
+            search_query: self.search_query.clone(),
+            search_results: self.search_results.clone(),
+            search_key_index: self.search_key_index,
+        });
+    }
+
+    fn pop_navigation(&mut self) -> bool {
+        let Some(state) = self.navigation_stack.pop() else {
+            return false;
+        };
+        self.screen = state.screen;
+        self.focus = state.focus;
+        self.selected_index = state.selected_index;
+        self.scroll_offset = state.scroll_offset;
+        self.target_scroll_offset = state.target_scroll_offset;
+        self.tracks_queue = state.tracks_queue;
+        self.albums_list = state.albums_list;
+        self.artists_list = state.artists_list;
+        self.artist_albums_list = state.artist_albums_list;
+        self.playlists_list = state.playlists_list;
+        self.active_playlist = state.active_playlist;
+        self.active_artist = state.active_artist;
+        self.active_album = state.active_album;
+        self.search_query = state.search_query;
+        self.search_results = state.search_results;
+        self.search_key_index = state.search_key_index;
+        self.navigation_restored = true;
+        true
+    }
+
+    fn refresh_search_results(&mut self) {
+        self.search_results = self
+            .db
+            .search_tracks(&self.search_query, 200)
+            .unwrap_or_default();
+        self.selected_index = self
+            .selected_index
+            .min(self.search_results.len().saturating_sub(1));
+    }
+
+    fn activate_search_key(&mut self) {
+        match SEARCH_KEYS[self.search_key_index] {
+            "SPACE" => self.search_query.push(' '),
+            "DELETE" => {
+                self.search_query.pop();
+            }
+            "CLEAR" => self.search_query.clear(),
+            "RESULTS" => {
+                if !self.search_query.trim().is_empty() {
+                    self.focus = Focus::SearchResults;
+                    self.selected_index = 0;
+                    self.scroll_offset = 0.0;
+                    self.target_scroll_offset = 0.0;
+                }
+                return;
+            }
+            key => self.search_query.push_str(key),
+        }
+        self.refresh_search_results();
     }
 
     fn init_language_screen(&mut self) {
@@ -1646,12 +2078,15 @@ impl MusicOs {
 
     fn current_list_len(&self) -> usize {
         match self.screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
-                self.tracks_queue.len()
-            }
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self.tracks_queue.len(),
             Screen::AlbumsList => self.albums_list.len(),
             Screen::ArtistsList => self.artists_list.len(),
+            Screen::ArtistAlbumsList => self.artist_albums_list.len(),
             Screen::PlaylistsList => self.playlists_list.len(),
+            Screen::Search if self.focus == Focus::SearchResults => self.search_results.len(),
             Screen::Language => 5,
             _ => 0,
         }
@@ -1659,7 +2094,10 @@ impl MusicOs {
 
     fn jump_active_list(&mut self, direction: i32) {
         match self.screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => {
                 let labels = self
                     .tracks_queue
                     .iter()
@@ -1680,6 +2118,22 @@ impl MusicOs {
                     .artists_list
                     .iter()
                     .map(|item| item.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            Screen::ArtistAlbumsList => {
+                let labels = self
+                    .artist_albums_list
+                    .iter()
+                    .map(|item| item.as_str())
+                    .collect::<Vec<_>>();
+                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
+            }
+            Screen::Search if self.focus == Focus::SearchResults => {
+                let labels = self
+                    .search_results
+                    .iter()
+                    .map(|track| track.title.as_str())
                     .collect::<Vec<_>>();
                 self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
             }
@@ -1740,17 +2194,18 @@ impl MusicOs {
                     self.focus = Focus::HomeMusic;
                 }
             }
-            (Screen::Home, Focus::HomePlaylist1) => self.play_home_playlist(0),
-            (Screen::Home, Focus::HomePlaylist2) => self.play_home_playlist(1),
-            (Screen::Home, Focus::HomePlaylist3) => self.play_home_playlist(2),
-            (Screen::Home, Focus::HomePlaylist4) => self.play_home_playlist(3),
+            (Screen::Home, focus) if Self::home_detail_focus_index(focus).is_some() => {
+                self.activate_home_detail()
+            }
             (Screen::Home, Focus::HomeMusic) => {
+                self.push_navigation();
                 self.previous_screen = Screen::Home;
                 self.previous_focus = self.focus;
                 self.screen = Screen::MusicApp;
                 self.focus = Focus::Albums;
             }
             (Screen::Home, Focus::HomeNowPlaying) => {
+                self.push_navigation();
                 self.previous_screen = Screen::Home;
                 self.previous_focus = self.focus;
                 self.screen = Screen::NowPlaying;
@@ -1770,12 +2225,14 @@ impl MusicOs {
             }
             (Screen::Home, _) => {}
             (Screen::Apps, Focus::AppsMusic) => {
+                self.push_navigation();
                 self.previous_screen = Screen::Apps;
                 self.previous_focus = self.focus;
                 self.screen = Screen::MusicApp;
                 self.focus = Focus::Albums;
             }
             (Screen::Apps, Focus::AppsNowPlaying) => {
+                self.push_navigation();
                 self.previous_screen = Screen::Apps;
                 self.previous_focus = self.focus;
                 self.screen = Screen::NowPlaying;
@@ -1795,7 +2252,9 @@ impl MusicOs {
                 self.focus = Focus::SettingsAbout;
             }
             (Screen::MusicApp, Focus::Songs) => {
-                if let Ok(tracks) = self.db.get_tracks() {
+                if let Ok(mut tracks) = self.db.get_tracks() {
+                    sort_tracks(&mut tracks, self.library_sort);
+                    self.push_navigation();
                     self.tracks_queue = tracks;
                     self.screen = Screen::SongsList;
                     self.reset_list_state();
@@ -1803,13 +2262,29 @@ impl MusicOs {
             }
             (Screen::MusicApp, Focus::Albums) => {
                 if let Ok(albums) = self.db.get_albums() {
+                    self.push_navigation();
                     self.albums_list = albums;
                     self.screen = Screen::AlbumsList;
                     self.reset_list_state();
                 }
             }
+            (Screen::MusicApp, Focus::Search) => {
+                self.push_navigation();
+                self.search_query.clear();
+                self.search_results.clear();
+                self.search_key_index = 0;
+                self.screen = Screen::Search;
+                self.focus = Focus::SearchKeyboard;
+                self.reset_list_state();
+            }
             (Screen::ContextMenu, Focus::ContextPlay) => {
                 self.activate_context_play(false);
+            }
+            (Screen::ContextMenu, Focus::ContextPlayNext) => {
+                self.apply_context_queue_action(Focus::ContextPlayNext);
+            }
+            (Screen::ContextMenu, Focus::ContextAddLater) => {
+                self.apply_context_queue_action(Focus::ContextAddLater);
             }
             (Screen::ContextMenu, Focus::ContextPin) => {
                 if let Some((pin_type, target_id)) = self.context_pin_target() {
@@ -1835,12 +2310,45 @@ impl MusicOs {
                 self.screen = self.previous_screen;
                 self.focus = self.previous_focus;
             }
+            (Screen::ContextMenu, Focus::ContextRate) => self.open_rating_picker(),
+            (Screen::ContextMenu, Focus::ContextMoveUp) => {
+                if self.previous_screen == Screen::Queue && self.selected_index > 0 {
+                    let to = self.selected_index - 1;
+                    let _ = self.player.queue_move(self.selected_index, to);
+                    self.selected_index = to;
+                    self.tracks_queue = self.player.queue_tracks();
+                    self.save_preferences(false);
+                }
+                self.close_context();
+            }
+            (Screen::ContextMenu, Focus::ContextMoveDown) => {
+                if self.previous_screen == Screen::Queue
+                    && self.selected_index + 1 < self.tracks_queue.len()
+                {
+                    let to = self.selected_index + 1;
+                    let _ = self.player.queue_move(self.selected_index, to);
+                    self.selected_index = to;
+                    self.tracks_queue = self.player.queue_tracks();
+                    self.save_preferences(false);
+                }
+                self.close_context();
+            }
+            (Screen::ContextMenu, Focus::ContextClearUpcoming) => {
+                self.player.queue_clear_upcoming();
+                self.tracks_queue = self.player.queue_tracks();
+                self.selected_index = self
+                    .selected_index
+                    .min(self.tracks_queue.len().saturating_sub(1));
+                self.save_preferences(false);
+                self.close_context();
+            }
             (Screen::ContextMenu, Focus::ContextCancel) => {
                 self.screen = self.previous_screen;
                 self.focus = self.previous_focus;
             }
             (Screen::MusicApp, Focus::Artists) => {
                 if let Ok(artists) = self.db.get_artists() {
+                    self.push_navigation();
                     self.artists_list = artists;
                     self.screen = Screen::ArtistsList;
                     self.reset_list_state();
@@ -1848,6 +2356,7 @@ impl MusicOs {
             }
             (Screen::MusicApp, Focus::Playlists) => {
                 if let Ok(playlists) = self.db.get_playlists() {
+                    self.push_navigation();
                     self.playlists_list = playlists;
                     self.screen = Screen::PlaylistsList;
                     self.reset_list_state();
@@ -1855,12 +2364,14 @@ impl MusicOs {
             }
             (Screen::MusicApp, Focus::Favorites) => {
                 if let Ok(favorites) = self.db.get_favorites() {
+                    self.push_navigation();
                     self.tracks_queue = favorites;
                     self.screen = Screen::SongsList;
                     self.reset_list_state();
                 }
             }
             (Screen::MusicApp, Focus::Queue) => {
+                self.push_navigation();
                 self.tracks_queue = self.player.queue_tracks();
                 self.selected_index = self.player.current_index().unwrap_or(0);
                 if self.selected_index >= self.tracks_queue.len() {
@@ -1874,6 +2385,7 @@ impl MusicOs {
             }
             (Screen::MusicApp, Focus::History) => {
                 if let Ok(history) = self.db.get_history(25) {
+                    self.push_navigation();
                     self.tracks_queue = history;
                     self.screen = Screen::SongsList;
                     self.reset_list_state();
@@ -1889,10 +2401,19 @@ impl MusicOs {
                     }
                 }
             }
-            (Screen::SongsList, _) | (Screen::Queue, _) => {
+            (Screen::Queue, _) => {
+                if self.player.queue_select(self.selected_index) {
+                    self.push_navigation();
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                    self.save_preferences(false);
+                }
+            }
+            (Screen::SongsList, _) => {
                 if self.selected_index < self.tracks_queue.len() {
                     let track = self.tracks_queue[self.selected_index].clone();
                     let _ = self.db.increment_play_count(track.id);
+                    self.push_navigation();
                     self.player
                         .set_queue(self.tracks_queue.clone(), self.selected_index);
                     self.apply_shuffle_default();
@@ -1902,24 +2423,60 @@ impl MusicOs {
             }
             (Screen::AlbumsList, _) => {
                 if self.selected_index < self.albums_list.len() {
-                    let album = &self.albums_list[self.selected_index];
-                    self.tracks_queue = self.db.get_album_tracks(album).unwrap_or_default();
-                    self.screen = Screen::SongsList;
+                    let album = self.albums_list[self.selected_index].clone();
+                    let tracks = self.db.get_album_tracks(&album).unwrap_or_default();
+                    self.push_navigation();
+                    self.active_artist = None;
+                    self.active_album = Some(album);
+                    self.tracks_queue = tracks;
+                    self.screen = Screen::AlbumTracksList;
                     self.reset_list_state();
                 }
             }
             (Screen::ArtistsList, _) => {
                 if self.selected_index < self.artists_list.len() {
-                    let artist = &self.artists_list[self.selected_index];
-                    self.tracks_queue = self.db.get_artist_tracks(artist).unwrap_or_default();
-                    self.screen = Screen::SongsList;
+                    let artist = self.artists_list[self.selected_index].clone();
+                    let albums = self.db.get_artist_albums(&artist).unwrap_or_default();
+                    self.push_navigation();
+                    self.active_artist = Some(artist);
+                    self.artist_albums_list = albums;
+                    self.screen = Screen::ArtistAlbumsList;
                     self.reset_list_state();
+                }
+            }
+            (Screen::ArtistAlbumsList, _) => {
+                if let (Some(artist), Some(album)) = (
+                    self.active_artist.clone(),
+                    self.artist_albums_list.get(self.selected_index).cloned(),
+                ) {
+                    let tracks = self
+                        .db
+                        .get_artist_album_tracks(&artist, &album)
+                        .unwrap_or_default();
+                    self.push_navigation();
+                    self.active_album = Some(album);
+                    self.tracks_queue = tracks;
+                    self.screen = Screen::AlbumTracksList;
+                    self.reset_list_state();
+                }
+            }
+            (Screen::AlbumTracksList, _) => {
+                if self.selected_index < self.tracks_queue.len() {
+                    let track = self.tracks_queue[self.selected_index].clone();
+                    let _ = self.db.increment_play_count(track.id);
+                    self.push_navigation();
+                    self.player
+                        .set_queue(self.tracks_queue.clone(), self.selected_index);
+                    self.apply_shuffle_default();
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
                 }
             }
             (Screen::PlaylistsList, _) => {
                 if self.selected_index < self.playlists_list.len() {
                     let playlist = self.playlists_list[self.selected_index].clone();
                     if let Ok(tracks) = self.db.get_playlist_tracks(playlist.id) {
+                        self.push_navigation();
                         self.tracks_queue = tracks;
                         self.active_playlist = Some(playlist.clone());
                         self.screen = Screen::PlaylistTracksList;
@@ -1931,12 +2488,44 @@ impl MusicOs {
                 if self.selected_index < self.tracks_queue.len() {
                     let track = self.tracks_queue[self.selected_index].clone();
                     let _ = self.db.increment_play_count(track.id);
+                    self.push_navigation();
                     self.player
                         .set_queue(self.tracks_queue.clone(), self.selected_index);
                     self.apply_shuffle_default();
                     self.screen = Screen::NowPlaying;
                     self.focus = Focus::Albums;
                 }
+            }
+            (Screen::Search, Focus::SearchKeyboard) => self.activate_search_key(),
+            (Screen::Search, Focus::SearchResults) => {
+                if self.selected_index < self.search_results.len() {
+                    let track = self.search_results[self.selected_index].clone();
+                    let _ = self.db.increment_play_count(track.id);
+                    self.push_navigation();
+                    self.player
+                        .set_queue(self.search_results.clone(), self.selected_index);
+                    self.apply_shuffle_default();
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+            }
+            (Screen::RatingPicker, Focus::RatingStars) => {
+                if let Some(id) = self.rating_track_id {
+                    if self.db.set_track_rating(id, self.pending_rating).is_ok() {
+                        self.player.update_track_rating(id, self.pending_rating);
+                        for track in &mut self.tracks_queue {
+                            if track.id == id {
+                                track.rating = self.pending_rating;
+                            }
+                        }
+                        for track in &mut self.search_results {
+                            if track.id == id {
+                                track.rating = self.pending_rating;
+                            }
+                        }
+                    }
+                }
+                self.pop_navigation();
             }
             (Screen::NowPlaying, _) => match self.focus {
                 Focus::Albums => self.player.play_pause(),
@@ -1994,30 +2583,37 @@ impl MusicOs {
             (Screen::Settings, Focus::SettingsLooks) | (Screen::Settings, Focus::SettingsTheme) => {
                 self.previous_screen = self.screen;
                 self.previous_focus = self.focus;
-                self.screen = Screen::Theme;
-                self.focus = Focus::ThemeSelect;
+                self.screen = Screen::SettingsDetail;
+                self.focus = Focus::SettingsSwitchObject;
             }
             (Screen::Settings, Focus::SettingsAbout) => {
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsAbout;
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
             (Screen::Settings, Focus::SettingsConnectivity) => {
-                self.run_usb_sync();
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsConnectivity;
+                self.start_library_scan();
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
             (Screen::Settings, Focus::SettingsGetUpdate) => {
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsGetUpdate;
                 self.run_usb_update();
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
             (Screen::Settings, Focus::SettingsUser) => {
+                self.previous_screen = Screen::Settings;
+                self.previous_focus = Focus::SettingsUser;
+                self.run_usb_sync();
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
-            (Screen::About, _) => {
-                self.run_usb_sync();
-            }
+            (Screen::About, _) => {}
             (Screen::Language, _) => {
                 self.save_preferences(false);
                 if self.previous_screen == Screen::SettingsDetail {
@@ -2121,6 +2717,7 @@ impl MusicOs {
 
     fn music_focus_name(&self) -> &'static str {
         match self.focus {
+            Focus::Search | Focus::SearchKeyboard | Focus::SearchResults => "search",
             Focus::Songs | Focus::ShuffleAll => "songs",
             Focus::Artists => "artists",
             Focus::Playlists => "playlists",
@@ -2282,7 +2879,7 @@ impl MusicOs {
 
     pub fn refresh_library(&mut self) {
         if let Ok(tracks) = self.db.get_tracks() {
-            self.tracks_queue = tracks;
+            self.library_tracks = tracks.clone();
         }
         if let Ok(albums) = self.db.get_albums() {
             self.albums_list = albums;
@@ -2296,11 +2893,15 @@ impl MusicOs {
         if let Ok(pins) = self.db.get_pins() {
             self.pins_list = pins;
         }
-        self.sort_library();
+        self.cached_library_counts = self.db.library_counts().unwrap_or_default();
+        sort_tracks(&mut self.library_tracks, self.library_sort);
+        if !self.search_query.trim().is_empty() {
+            self.refresh_search_results();
+        }
     }
 
     fn sort_library(&mut self) {
-        sort_tracks(&mut self.tracks_queue, self.library_sort);
+        sort_tracks(&mut self.library_tracks, self.library_sort);
     }
 
     pub fn run_usb_sync(&mut self) {
@@ -2327,8 +2928,12 @@ impl MusicOs {
 
     fn can_open_context_menu(&self) -> bool {
         match self.screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
-                self.tracks_queue.get(self.selected_index).is_some()
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self.tracks_queue.get(self.selected_index).is_some(),
+            Screen::Search if self.focus == Focus::SearchResults => {
+                self.search_results.get(self.selected_index).is_some()
             }
             Screen::AlbumsList => self
                 .albums_list
@@ -2347,23 +2952,189 @@ impl MusicOs {
         }
     }
 
-    fn focus_home_left_side(&mut self) {
-        if self.home_left_item_count() > 0 {
-            self.focus = Focus::HomePlaylist1;
+    fn context_actions(&self) -> Vec<(Focus, String, bool)> {
+        if self.previous_screen == Screen::Queue {
+            return vec![
+                (Focus::ContextPlay, "Play".to_string(), false),
+                (
+                    Focus::ContextPlayNext,
+                    "Move to Play Next".to_string(),
+                    false,
+                ),
+                (Focus::ContextAddLater, "Move to End".to_string(), false),
+                (Focus::ContextMoveUp, "Move Up".to_string(), false),
+                (Focus::ContextMoveDown, "Move Down".to_string(), false),
+                (Focus::ContextRate, "Rate Track".to_string(), false),
+                (Focus::ContextDelete, "Remove from Queue".to_string(), true),
+                (
+                    Focus::ContextClearUpcoming,
+                    "Clear Upcoming".to_string(),
+                    true,
+                ),
+                (Focus::ContextCancel, "Cancel".to_string(), false),
+            ];
+        }
+
+        if self.context_selected_track().is_some() {
+            let mut actions = vec![
+                (Focus::ContextPlay, "Play".to_string(), false),
+                (Focus::ContextPlayNext, "Play Next".to_string(), false),
+                (Focus::ContextAddLater, "Add to Up Next".to_string(), false),
+                (
+                    Focus::ContextPin,
+                    if self.context_item_is_pinned() {
+                        "Unpin".to_string()
+                    } else {
+                        "Pin".to_string()
+                    },
+                    false,
+                ),
+                (
+                    Focus::ContextAddToPlaylist,
+                    "Add to Playlist".to_string(),
+                    false,
+                ),
+                (Focus::ContextRate, "Rate Track".to_string(), false),
+            ];
+            if self.previous_screen == Screen::PlaylistTracksList {
+                actions.push((
+                    Focus::ContextDelete,
+                    "Remove from Playlist".to_string(),
+                    true,
+                ));
+            }
+            actions.push((Focus::ContextCancel, "Cancel".to_string(), false));
+            return actions;
+        }
+
+        if self.previous_screen == Screen::PlaylistsList {
+            return vec![
+                (Focus::ContextPlay, "Play".to_string(), false),
+                (
+                    Focus::ContextPin,
+                    if self.context_item_is_pinned() {
+                        "Unpin".to_string()
+                    } else {
+                        "Pin".to_string()
+                    },
+                    false,
+                ),
+                (Focus::ContextDelete, "Delete Playlist".to_string(), true),
+                (Focus::ContextCancel, "Cancel".to_string(), false),
+            ];
+        }
+
+        vec![
+            (Focus::ContextPlay, "Play".to_string(), false),
+            (
+                Focus::ContextAddToPlaylist,
+                "Add to Playlist".to_string(),
+                false,
+            ),
+            (Focus::ContextShuffle, "Shuffle".to_string(), false),
+            (Focus::ContextCancel, "Cancel".to_string(), false),
+        ]
+    }
+
+    fn context_selected_track(&self) -> Option<Track> {
+        match self.previous_screen {
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self.tracks_queue.get(self.selected_index).cloned(),
+            Screen::Search => self.search_results.get(self.selected_index).cloned(),
+            Screen::NowPlaying => self.player.get_current_track().cloned(),
+            _ => None,
         }
     }
 
-    fn home_left_item_count(&self) -> usize {
-        let playlist_count = self
-            .db
-            .get_playlists()
-            .map(|playlists| playlists.len())
+    fn move_context_focus(&mut self, delta: isize) {
+        let actions = self.context_actions();
+        if actions.is_empty() {
+            return;
+        }
+        let current = actions
+            .iter()
+            .position(|(focus, _, _)| *focus == self.focus)
             .unwrap_or(0);
-        let track_count = self.db.get_tracks().map(|tracks| tracks.len()).unwrap_or(0);
-        playlist_count.max(track_count).min(4)
+        let next = (current as isize + delta).rem_euclid(actions.len() as isize) as usize;
+        self.focus = actions[next].0;
     }
 
-    fn home_left_focus_index(focus: Focus) -> Option<usize> {
+    fn close_context(&mut self) {
+        self.screen = self.previous_screen;
+        self.focus = self.previous_focus;
+    }
+
+    fn open_rating_picker(&mut self) {
+        let Some(track) = self.context_selected_track() else {
+            self.close_context();
+            return;
+        };
+        self.close_context();
+        self.push_navigation();
+        self.rating_track_id = Some(track.id);
+        self.pending_rating = track.rating;
+        self.screen = Screen::RatingPicker;
+        self.focus = Focus::RatingStars;
+    }
+
+    fn apply_context_queue_action(&mut self, action: Focus) {
+        let Some(track) = self.context_selected_track() else {
+            self.close_context();
+            return;
+        };
+        if self.previous_screen == Screen::Queue {
+            let selected = self.selected_index;
+            match action {
+                Focus::ContextPlayNext => {
+                    let to = self
+                        .player
+                        .current_index()
+                        .map(|index| (index + 1).min(self.tracks_queue.len().saturating_sub(1)))
+                        .unwrap_or(0);
+                    let _ = self.player.queue_move(selected, to);
+                    self.selected_index = to;
+                }
+                Focus::ContextAddLater => {
+                    let to = self.tracks_queue.len().saturating_sub(1);
+                    let _ = self.player.queue_move(selected, to);
+                    self.selected_index = to;
+                }
+                _ => {}
+            }
+        } else if action == Focus::ContextPlayNext {
+            self.player.queue_add_next(track);
+        } else {
+            self.player.queue_add_later(track);
+        }
+        if self.previous_screen == Screen::Queue {
+            self.tracks_queue = self.player.queue_tracks();
+        }
+        self.save_preferences(false);
+        self.close_context();
+    }
+
+    fn home_detail_item_count(&self) -> usize {
+        match self.home_navigation.main_index {
+            0 => self
+                .playlists_list
+                .len()
+                .max(self.library_tracks.len())
+                .min(4),
+            1 => {
+                usize::from(
+                    self.player.get_status().track.is_some()
+                        || !self.library_tracks.is_empty()
+                        || !self.tracks_queue.is_empty(),
+                ) * 4
+            }
+            2 | 3 => 4,
+            _ => 0,
+        }
+    }
+
+    fn home_detail_focus_index(focus: Focus) -> Option<usize> {
         match focus {
             Focus::HomePlaylist1 => Some(0),
             Focus::HomePlaylist2 => Some(1),
@@ -2373,7 +3144,7 @@ impl MusicOs {
         }
     }
 
-    fn home_left_focus_for_index(index: usize) -> Focus {
+    fn home_detail_focus_for_index(index: usize) -> Focus {
         match index.min(3) {
             0 => Focus::HomePlaylist1,
             1 => Focus::HomePlaylist2,
@@ -2382,30 +3153,143 @@ impl MusicOs {
         }
     }
 
-    fn move_home_left_focus(&mut self, delta: isize) {
-        let count = self.home_left_item_count();
-        if count == 0 {
-            self.focus = Focus::HomeMusic;
-            return;
+    fn home_main_focus_for_index(index: usize) -> Focus {
+        match index.min(3) {
+            0 => Focus::HomeMusic,
+            1 => Focus::HomeNowPlaying,
+            2 => Focus::HomeApps,
+            _ => Focus::HomeSettings,
         }
-
-        let current = Self::home_left_focus_index(self.focus).unwrap_or(0);
-        let next = (current as isize + delta).rem_euclid(count as isize) as usize;
-        self.focus = Self::home_left_focus_for_index(next);
     }
 
-    fn focus_home_left_or(&mut self, index: usize, fallback: Focus) {
-        if index < self.home_left_item_count() {
-            self.focus = Self::home_left_focus_for_index(index);
-        } else {
-            self.focus = fallback;
+    fn sync_home_navigation_from_focus(&mut self) {
+        let main_index = match self.focus {
+            Focus::HomeMusic => Some(0),
+            Focus::HomeNowPlaying => Some(1),
+            Focus::HomeApps => Some(2),
+            Focus::HomeSettings => Some(3),
+            _ => None,
+        };
+        if let Some(main_index) = main_index {
+            self.home_navigation.pane = HomePane::Main;
+            self.home_navigation.main_index = main_index;
+        } else if let Some(detail_index) = Self::home_detail_focus_index(self.focus) {
+            self.home_navigation.pane = HomePane::Detail;
+            self.home_navigation.detail_index = detail_index;
         }
+    }
+
+    fn move_home_main(&mut self, delta: isize) {
+        self.home_navigation.pane = HomePane::Main;
+        self.home_navigation.main_index =
+            (self.home_navigation.main_index as isize + delta).rem_euclid(4) as usize;
+        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+    }
+
+    fn move_home_detail(&mut self, delta: isize) {
+        let count = self.home_detail_item_count();
+        if count == 0 {
+            self.leave_home_detail();
+            return;
+        }
+        let current = self.home_navigation.detail_index.min(count - 1);
+        let next = (current as isize + delta).rem_euclid(count as isize) as usize;
+        self.home_navigation.detail_index = next;
+        self.home_navigation.remembered_detail_index[self.home_navigation.main_index] = next;
+        self.focus = Self::home_detail_focus_for_index(next);
+    }
+
+    fn enter_home_detail(&mut self) {
+        if self.home_navigation.pane != HomePane::Main {
+            return;
+        }
+        let count = self.home_detail_item_count();
+        if count == 0 {
+            return;
+        }
+        let index = self.home_navigation.remembered_detail_index[self.home_navigation.main_index]
+            .min(count - 1);
+        self.home_navigation.pane = HomePane::Detail;
+        self.home_navigation.detail_index = index;
+        self.focus = Self::home_detail_focus_for_index(index);
+    }
+
+    fn leave_home_detail(&mut self) {
+        if self.home_navigation.pane != HomePane::Detail {
+            return;
+        }
+        self.home_navigation.remembered_detail_index[self.home_navigation.main_index] =
+            self.home_navigation.detail_index;
+        self.home_navigation.pane = HomePane::Main;
+        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+    }
+
+    fn activate_home_detail(&mut self) {
+        let index = self.home_navigation.detail_index;
+        match self.home_navigation.main_index {
+            0 => self.play_home_playlist(index),
+            1 => match index {
+                0 => self.player.play_pause(),
+                1 => self.player.prev(),
+                2 => self.player.next(),
+                _ => {
+                    self.push_navigation();
+                    self.previous_screen = Screen::Home;
+                    self.screen = Screen::Queue;
+                    self.focus = Focus::Queue;
+                    self.tracks_queue = self.player.queue_tracks();
+                    self.selected_index = self.player.current_index().unwrap_or(0);
+                }
+            },
+            2 => match index {
+                0 => {
+                    self.push_navigation();
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Albums;
+                }
+                1 => {
+                    self.push_navigation();
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+                2 => {
+                    self.run_usb_sync();
+                }
+                _ => {
+                    self.screen = Screen::Apps;
+                    self.focus = Focus::AppsUsbSync;
+                }
+            },
+            3 => {
+                self.previous_screen = Screen::Home;
+                self.screen = if index == 3 {
+                    Screen::Settings
+                } else {
+                    Screen::SettingsDetail
+                };
+                self.focus = match index {
+                    0 => Focus::SettingsLanguage,
+                    1 => Focus::SettingsVolume,
+                    2 => Focus::SettingsLooks,
+                    _ => Focus::SettingsGetUpdate,
+                };
+            }
+            _ => {}
+        }
+        self.save_preferences(false);
     }
 
     fn context_pin_target(&self) -> Option<(&'static str, i64)> {
         match self.previous_screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => self
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self
                 .tracks_queue
+                .get(self.selected_index)
+                .map(|track| ("track", track.id)),
+            Screen::Search => self
+                .search_results
                 .get(self.selected_index)
                 .map(|track| ("track", track.id)),
             Screen::PlaylistsList => self
@@ -2443,11 +3327,24 @@ impl MusicOs {
 
     pub fn context_menu_title(&self) -> String {
         match self.previous_screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => self
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => self
                 .tracks_queue
                 .get(self.selected_index)
                 .map(|track| track.title.clone())
                 .unwrap_or_else(|| "Track".to_string()),
+            Screen::Search => self
+                .search_results
+                .get(self.selected_index)
+                .map(|track| track.title.clone())
+                .unwrap_or_else(|| "Search Result".to_string()),
+            Screen::ArtistAlbumsList => self
+                .artist_albums_list
+                .get(self.selected_index)
+                .cloned()
+                .unwrap_or_else(|| "Album".to_string()),
             Screen::PlaylistsList => self
                 .playlists_list
                 .get(self.selected_index)
@@ -2509,6 +3406,8 @@ impl MusicOs {
             if let Some(track) = tracks.get(index) {
                 let _ = self.db.increment_play_count(track.id);
             }
+            self.close_context();
+            self.push_navigation();
             if shuffle {
                 self.player.set_shuffle(true);
             }
@@ -2526,12 +3425,31 @@ impl MusicOs {
 
     fn context_queue(&self) -> Option<(Vec<Track>, usize)> {
         match self.previous_screen {
-            Screen::SongsList | Screen::PlaylistTracksList | Screen::Queue => {
+            Screen::SongsList
+            | Screen::AlbumTracksList
+            | Screen::PlaylistTracksList
+            | Screen::Queue => {
                 if self.selected_index < self.tracks_queue.len() {
                     Some((self.tracks_queue.clone(), self.selected_index))
                 } else {
                     None
                 }
+            }
+            Screen::Search => {
+                if self.selected_index < self.search_results.len() {
+                    Some((self.search_results.clone(), self.selected_index))
+                } else {
+                    None
+                }
+            }
+            Screen::ArtistAlbumsList => {
+                let artist = self.active_artist.as_deref()?;
+                let album = self.artist_albums_list.get(self.selected_index)?;
+                self.db
+                    .get_artist_album_tracks(artist, album)
+                    .ok()
+                    .filter(|tracks| !tracks.is_empty())
+                    .map(|tracks| (tracks, 0))
             }
             Screen::AlbumsList => self
                 .albums_list
@@ -2725,9 +3643,15 @@ impl MusicOs {
                     self.focus = Focus::ThemeSelect;
                 }
             }
-            Screen::Home => {}
+            Screen::Home => {
+                if self.home_navigation.pane == HomePane::Detail {
+                    self.leave_home_detail();
+                }
+            }
             Screen::MusicApp => {
-                if self.previous_screen == Screen::Apps {
+                if self.pop_navigation() {
+                    return;
+                } else if self.previous_screen == Screen::Apps {
                     self.screen = Screen::Apps;
                     self.focus = Focus::AppsMusic;
                 } else {
@@ -2737,28 +3661,56 @@ impl MusicOs {
                 self.reset_list_state();
             }
             Screen::SongsList => {
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Songs;
+                if !self.pop_navigation() {
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Songs;
+                }
             }
             Screen::AlbumsList => {
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Albums;
+                if !self.pop_navigation() {
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Albums;
+                }
             }
             Screen::ArtistsList => {
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Artists;
+                if !self.pop_navigation() {
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Artists;
+                }
+            }
+            Screen::ArtistAlbumsList | Screen::AlbumTracksList => {
+                self.pop_navigation();
             }
             Screen::PlaylistsList => {
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Playlists;
+                if !self.pop_navigation() {
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Playlists;
+                }
             }
             Screen::PlaylistTracksList => {
-                self.screen = Screen::PlaylistsList;
-                self.selected_index = 0;
+                if !self.pop_navigation() {
+                    self.screen = Screen::PlaylistsList;
+                    self.selected_index = 0;
+                }
             }
             Screen::Queue => {
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Queue;
+                if !self.pop_navigation() {
+                    self.screen = Screen::MusicApp;
+                    self.focus = Focus::Queue;
+                }
+            }
+            Screen::Search => {
+                if self.focus == Focus::SearchResults {
+                    self.focus = Focus::SearchKeyboard;
+                } else if !self.search_query.is_empty() {
+                    self.search_query.pop();
+                    self.refresh_search_results();
+                } else {
+                    self.pop_navigation();
+                }
+            }
+            Screen::RatingPicker => {
+                self.pop_navigation();
             }
             Screen::Language => {
                 if self.previous_screen == Screen::SettingsDetail {
@@ -2773,7 +3725,9 @@ impl MusicOs {
                 }
             }
             Screen::NowPlaying => {
-                if self.previous_screen == Screen::Apps {
+                if self.pop_navigation() {
+                    return;
+                } else if self.previous_screen == Screen::Apps {
                     self.screen = Screen::Apps;
                     self.focus = Focus::AppsNowPlaying;
                 } else {
@@ -2808,13 +3762,12 @@ impl MusicOs {
                     self.focus = Focus::AppsUsbSync;
                 } else {
                     self.screen = Screen::Settings;
-                    self.focus = Focus::SettingsAbout;
+                    self.focus = self.previous_focus;
                 }
             }
             Screen::TestComplete => self.screen = Screen::Welcome,
             Screen::ContextMenu => {
-                self.screen = self.previous_screen;
-                self.focus = self.previous_focus;
+                self.close_context();
             }
         }
     }
@@ -2832,16 +3785,10 @@ impl MusicOs {
                 }
             }
             Screen::Home => {
-                if Self::home_left_focus_index(self.focus).is_some() {
-                    self.move_home_left_focus(1);
+                if self.home_navigation.pane == HomePane::Detail {
+                    self.move_home_detail(1);
                 } else {
-                    self.focus = match self.focus {
-                        Focus::HomeApps => Focus::HomeSettings,
-                        Focus::HomeSettings => Focus::HomeApps,
-                        Focus::HomeMusic => Focus::HomeNowPlaying,
-                        Focus::HomeNowPlaying => Focus::HomeMusic,
-                        _ => self.focus,
-                    };
+                    self.move_home_main(1);
                 }
             }
             Screen::Apps => {
@@ -2855,6 +3802,7 @@ impl MusicOs {
             }
             Screen::MusicApp => {
                 self.focus = match self.focus {
+                    Focus::Search => Focus::Albums,
                     Focus::Albums => Focus::Songs,
                     Focus::Songs => Focus::Artists,
                     Focus::Artists => Focus::Playlists,
@@ -2862,11 +3810,22 @@ impl MusicOs {
                     Focus::Favorites => Focus::Queue,
                     Focus::Queue => Focus::History,
                     Focus::History => Focus::ShuffleAll,
-                    Focus::ShuffleAll => Focus::Albums,
+                    Focus::ShuffleAll => Focus::Search,
                     _ => self.focus,
                 };
             }
-            Screen::SongsList | Screen::Queue => {
+            Screen::NowPlaying => {
+                self.focus = match self.focus {
+                    Focus::Artists => Focus::Songs,
+                    Focus::Albums => Focus::Favorites,
+                    Focus::Playlists => Focus::History,
+                    Focus::Songs => Focus::Artists,
+                    Focus::Favorites => Focus::Albums,
+                    Focus::History => Focus::Playlists,
+                    _ => Focus::Albums,
+                };
+            }
+            Screen::SongsList | Screen::AlbumTracksList | Screen::Queue => {
                 if !self.tracks_queue.is_empty() {
                     self.selected_index = (self.selected_index + 1) % self.tracks_queue.len();
                 }
@@ -2879,6 +3838,11 @@ impl MusicOs {
             Screen::ArtistsList => {
                 if !self.artists_list.is_empty() {
                     self.selected_index = (self.selected_index + 1) % self.artists_list.len();
+                }
+            }
+            Screen::ArtistAlbumsList => {
+                if !self.artist_albums_list.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.artist_albums_list.len();
                 }
             }
             Screen::PlaylistsList => {
@@ -2907,11 +3871,11 @@ impl MusicOs {
                 self.focus = match self.focus {
                     Focus::SettingsGeneral => Focus::SettingsAudio,
                     Focus::SettingsAudio => Focus::SettingsLooks,
-                    Focus::SettingsLooks => Focus::SettingsAbout,
-                    Focus::SettingsAbout => Focus::SettingsConnectivity,
-                    Focus::SettingsConnectivity => Focus::SettingsGetUpdate,
-                    Focus::SettingsGetUpdate => Focus::SettingsUser,
-                    Focus::SettingsUser => Focus::SettingsGeneral,
+                    Focus::SettingsLooks => Focus::SettingsConnectivity,
+                    Focus::SettingsConnectivity => Focus::SettingsUser,
+                    Focus::SettingsUser => Focus::SettingsGetUpdate,
+                    Focus::SettingsGetUpdate => Focus::SettingsAbout,
+                    Focus::SettingsAbout => Focus::SettingsGeneral,
                     Focus::SettingsTheme => Focus::SettingsGeneral,
                     Focus::SettingsLanguage => Focus::SettingsGeneral,
                     _ => self.focus,
@@ -2931,17 +3895,16 @@ impl MusicOs {
             Screen::DateTimeSetup => {
                 self.adjust_date_time(1);
             }
-            Screen::ContextMenu => {
-                self.focus = match self.focus {
-                    Focus::ContextPlay => Focus::ContextPin,
-                    Focus::ContextPin => Focus::ContextAddToPlaylist,
-                    Focus::ContextAddToPlaylist => Focus::ContextShuffle,
-                    Focus::ContextShuffle => Focus::ContextDelete,
-                    Focus::ContextDelete => Focus::ContextCancel,
-                    Focus::ContextCancel => Focus::ContextPlay,
-                    _ => self.focus,
-                };
+            Screen::Search if self.focus == Focus::SearchKeyboard => {
+                self.search_key_index = (self.search_key_index + 6) % SEARCH_KEYS.len();
             }
+            Screen::Search => {
+                if !self.search_results.is_empty() {
+                    self.selected_index = (self.selected_index + 1) % self.search_results.len();
+                }
+            }
+            Screen::RatingPicker => self.pending_rating = self.pending_rating.saturating_sub(1),
+            Screen::ContextMenu => self.move_context_focus(1),
             _ => {}
         }
     }
@@ -2959,16 +3922,10 @@ impl MusicOs {
                 }
             }
             Screen::Home => {
-                if Self::home_left_focus_index(self.focus).is_some() {
-                    self.move_home_left_focus(-1);
+                if self.home_navigation.pane == HomePane::Detail {
+                    self.move_home_detail(-1);
                 } else {
-                    self.focus = match self.focus {
-                        Focus::HomeSettings => Focus::HomeApps,
-                        Focus::HomeApps => Focus::HomeSettings,
-                        Focus::HomeNowPlaying => Focus::HomeMusic,
-                        Focus::HomeMusic => Focus::HomeNowPlaying,
-                        _ => self.focus,
-                    };
+                    self.move_home_main(-1);
                 }
             }
             Screen::Apps => {
@@ -2982,7 +3939,8 @@ impl MusicOs {
             }
             Screen::MusicApp => {
                 self.focus = match self.focus {
-                    Focus::Albums => Focus::ShuffleAll,
+                    Focus::Search => Focus::ShuffleAll,
+                    Focus::Albums => Focus::Search,
                     Focus::Songs => Focus::Albums,
                     Focus::Artists => Focus::Songs,
                     Focus::Playlists => Focus::Artists,
@@ -2993,7 +3951,18 @@ impl MusicOs {
                     _ => self.focus,
                 };
             }
-            Screen::SongsList | Screen::Queue => {
+            Screen::NowPlaying => {
+                self.focus = match self.focus {
+                    Focus::Artists => Focus::Songs,
+                    Focus::Albums => Focus::Favorites,
+                    Focus::Playlists => Focus::History,
+                    Focus::Songs => Focus::Artists,
+                    Focus::Favorites => Focus::Albums,
+                    Focus::History => Focus::Playlists,
+                    _ => Focus::Albums,
+                };
+            }
+            Screen::SongsList | Screen::AlbumTracksList | Screen::Queue => {
                 if !self.tracks_queue.is_empty() {
                     self.selected_index = if self.selected_index == 0 {
                         self.tracks_queue.len() - 1
@@ -3015,6 +3984,15 @@ impl MusicOs {
                 if !self.artists_list.is_empty() {
                     self.selected_index = if self.selected_index == 0 {
                         self.artists_list.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::ArtistAlbumsList => {
+                if !self.artist_albums_list.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.artist_albums_list.len() - 1
                     } else {
                         self.selected_index - 1
                     };
@@ -3056,11 +4034,11 @@ impl MusicOs {
             }
             Screen::Settings => {
                 self.focus = match self.focus {
-                    Focus::SettingsGeneral => Focus::SettingsUser,
-                    Focus::SettingsUser => Focus::SettingsGetUpdate,
-                    Focus::SettingsGetUpdate => Focus::SettingsConnectivity,
-                    Focus::SettingsConnectivity => Focus::SettingsAbout,
-                    Focus::SettingsAbout => Focus::SettingsLooks,
+                    Focus::SettingsGeneral => Focus::SettingsAbout,
+                    Focus::SettingsAbout => Focus::SettingsGetUpdate,
+                    Focus::SettingsGetUpdate => Focus::SettingsUser,
+                    Focus::SettingsUser => Focus::SettingsConnectivity,
+                    Focus::SettingsConnectivity => Focus::SettingsLooks,
                     Focus::SettingsLooks => Focus::SettingsAudio,
                     Focus::SettingsAudio => Focus::SettingsGeneral,
                     Focus::SettingsTheme => Focus::SettingsLooks,
@@ -3082,17 +4060,21 @@ impl MusicOs {
             Screen::DateTimeSetup => {
                 self.adjust_date_time(-1);
             }
-            Screen::ContextMenu => {
-                self.focus = match self.focus {
-                    Focus::ContextPlay => Focus::ContextCancel,
-                    Focus::ContextCancel => Focus::ContextDelete,
-                    Focus::ContextDelete => Focus::ContextShuffle,
-                    Focus::ContextShuffle => Focus::ContextAddToPlaylist,
-                    Focus::ContextAddToPlaylist => Focus::ContextPin,
-                    Focus::ContextPin => Focus::ContextPlay,
-                    _ => self.focus,
-                };
+            Screen::Search if self.focus == Focus::SearchKeyboard => {
+                self.search_key_index =
+                    (self.search_key_index + SEARCH_KEYS.len() - 6) % SEARCH_KEYS.len();
             }
+            Screen::Search => {
+                if !self.search_results.is_empty() {
+                    self.selected_index = if self.selected_index == 0 {
+                        self.search_results.len() - 1
+                    } else {
+                        self.selected_index - 1
+                    };
+                }
+            }
+            Screen::RatingPicker => self.pending_rating = (self.pending_rating + 1).min(5),
+            Screen::ContextMenu => self.move_context_focus(-1),
             _ => {}
         }
     }
@@ -3114,15 +4096,7 @@ impl MusicOs {
                 }
                 _ => {}
             },
-            Screen::Home => match self.focus {
-                Focus::HomePlaylist1 | Focus::HomePlaylist2 => self.focus = Focus::HomeApps,
-                Focus::HomePlaylist3 | Focus::HomePlaylist4 => self.focus = Focus::HomeSettings,
-                Focus::HomeApps => self.focus = Focus::HomeMusic,
-                Focus::HomeSettings => self.focus = Focus::HomeNowPlaying,
-                Focus::HomeMusic => self.focus_home_left_or(0, Focus::HomeMusic),
-                Focus::HomeNowPlaying => self.focus_home_left_or(2, Focus::HomeNowPlaying),
-                _ => {}
-            },
+            Screen::Home => self.enter_home_detail(),
             Screen::NowPlaying => {
                 self.focus = match self.focus {
                     Focus::Songs => Focus::Artists,
@@ -3137,9 +4111,18 @@ impl MusicOs {
             Screen::SongsList
             | Screen::AlbumsList
             | Screen::ArtistsList
+            | Screen::ArtistAlbumsList
+            | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
             | Screen::Queue => self.jump_active_list(1),
+            Screen::Search if self.focus == Focus::SearchKeyboard => {
+                let row = self.search_key_index / 6;
+                let col = self.search_key_index % 6;
+                self.search_key_index = row * 6 + (col + 1) % 6;
+            }
+            Screen::Search => self.focus = Focus::SearchResults,
+            Screen::RatingPicker => self.pending_rating = (self.pending_rating + 1).min(5),
             Screen::SettingsDetail => match self.focus {
                 Focus::SettingsBrightness => self.adjust_brightness(5),
                 Focus::SettingsVolume => self.adjust_volume(0.05),
@@ -3178,15 +4161,7 @@ impl MusicOs {
                 }
                 _ => {}
             },
-            Screen::Home => match self.focus {
-                Focus::HomeMusic => self.focus = Focus::HomeApps,
-                Focus::HomeApps => self.focus_home_left_or(0, Focus::HomeMusic),
-                Focus::HomeNowPlaying => self.focus = Focus::HomeSettings,
-                Focus::HomeSettings => self.focus_home_left_or(2, Focus::HomeNowPlaying),
-                Focus::HomePlaylist1 | Focus::HomePlaylist2 => self.focus = Focus::HomeMusic,
-                Focus::HomePlaylist3 | Focus::HomePlaylist4 => self.focus = Focus::HomeNowPlaying,
-                _ => {}
-            },
+            Screen::Home => self.leave_home_detail(),
             Screen::NowPlaying => {
                 self.focus = match self.focus {
                     Focus::Songs => Focus::Favorites,
@@ -3201,9 +4176,18 @@ impl MusicOs {
             Screen::SongsList
             | Screen::AlbumsList
             | Screen::ArtistsList
+            | Screen::ArtistAlbumsList
+            | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
             | Screen::Queue => self.jump_active_list(-1),
+            Screen::Search if self.focus == Focus::SearchKeyboard => {
+                let row = self.search_key_index / 6;
+                let col = self.search_key_index % 6;
+                self.search_key_index = row * 6 + (col + 5) % 6;
+            }
+            Screen::Search => self.focus = Focus::SearchKeyboard,
+            Screen::RatingPicker => self.pending_rating = self.pending_rating.saturating_sub(1),
             Screen::SettingsDetail => match self.focus {
                 Focus::SettingsBrightness => self.adjust_brightness(-5),
                 Focus::SettingsVolume => self.adjust_volume(-0.05),
@@ -3308,6 +4292,15 @@ impl MusicOs {
                         queued.favorited = favorited;
                     }
                 }
+                for library_track in &mut self.library_tracks {
+                    if library_track.id == track.id {
+                        library_track.favorited = favorited;
+                    }
+                }
+                self.cached_library_counts = self
+                    .db
+                    .library_counts()
+                    .unwrap_or(self.cached_library_counts);
             }
             Err(err) => log::warn!("failed to toggle favorite for {}: {err:#}", track.id),
         }
@@ -3329,6 +4322,35 @@ impl MusicOs {
         let disp_hours = if hours % 12 == 0 { 12 } else { hours % 12 };
 
         format!("{disp_hours}:{minutes:02} {am_pm}")
+    }
+
+    fn screen_title(&self) -> &'static str {
+        match self.screen {
+            Screen::First => "MusicOS",
+            Screen::Welcome => "Welcome",
+            Screen::Theme => "Appearance",
+            Screen::DateTimeSetup => "Date & Time",
+            Screen::Home => "MusicOS",
+            Screen::MusicApp => "Music",
+            Screen::Language => "Language",
+            Screen::TestComplete => "Ready",
+            Screen::NowPlaying => "Now Playing",
+            Screen::SongsList => "Songs",
+            Screen::AlbumsList => "Albums",
+            Screen::ArtistsList => "Artists",
+            Screen::ArtistAlbumsList => "Artist",
+            Screen::AlbumTracksList => "Album",
+            Screen::PlaylistsList => "Playlists",
+            Screen::PlaylistTracksList => "Playlist",
+            Screen::Queue => "On-The-Go",
+            Screen::Search => "Search",
+            Screen::RatingPicker => "Rating",
+            Screen::ContextMenu => "Options",
+            Screen::Settings => "Settings",
+            Screen::SettingsDetail => "Settings",
+            Screen::Apps => "Extras",
+            Screen::About => "About",
+        }
     }
 
     pub fn enter_sleep(&mut self) {

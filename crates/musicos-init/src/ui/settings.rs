@@ -5,7 +5,8 @@ use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, pulse01, stagger};
 use crate::ui::{
-    focus_halo, liquid_glass, panel_gradient, rr, rr_stroke, text_fit_centered, FontWeight,
+    figma_list_row, focus_halo, liquid_glass, panel_gradient, rr, rr_stroke, text_fit_centered,
+    FontWeight,
 };
 
 pub fn draw_settings(
@@ -18,72 +19,49 @@ pub fn draw_settings(
 ) {
     let _ = lang;
     let transition_t = ease_out_cubic(transition_t);
-    let (theme_top, theme_bottom) = theme.gradient_colors();
-    let theme_focus = theme_top.mix(theme_bottom, 0.35);
+    let _ = theme;
     crate::ui::draw_figma_background(canvas);
 
     let items = [
-        (Focus::SettingsGeneral, "General", 32.0, 22.0),
-        (Focus::SettingsAudio, "Audio", 32.0, 151.0),
-        (Focus::SettingsLooks, "Looks", 32.0, 280.0),
-        (Focus::SettingsAbout, "About", 32.0, 409.0),
-        (Focus::SettingsConnectivity, "Connectivity", 26.0, 538.0),
-        (Focus::SettingsGetUpdate, "Get Update", 32.0, 667.0),
-        (Focus::SettingsUser, "User", 32.0, 796.0),
+        (Focus::SettingsGeneral, "General", 84.0),
+        (Focus::SettingsAudio, "Audio", 202.0),
+        (Focus::SettingsLooks, "Appearance", 320.0),
+        (Focus::SettingsConnectivity, "Library Scan", 438.0),
+        (Focus::SettingsUser, "USB Import", 556.0),
+        (Focus::SettingsGetUpdate, "Updates", 674.0),
+        (Focus::SettingsAbout, "About", 792.0),
     ];
 
-    for (index, (item_focus, label, x, y)) in items.into_iter().enumerate() {
+    for (index, (item_focus, label, y)) in items.into_iter().enumerate() {
         let row_t = ease_out_back(stagger(transition_t, index, 0.05, 0.78));
-        let x = x - (1.0 - row_t) * 64.0;
+        let x = 32.0 - (1.0 - row_t) * 64.0;
         let selected = matches!(
             (focus, item_focus),
             (Focus::SettingsTheme, Focus::SettingsLooks)
                 | (Focus::SettingsLanguage, Focus::SettingsGeneral)
         ) || focus == item_focus;
-        if selected {
-            focus_halo(
-                canvas,
-                x,
-                y,
-                1222.0,
-                135.0,
-                67.5,
-                seconds,
-                index as f32 * 0.32,
-            );
-        }
-        rr(
-            canvas,
-            x,
-            y,
-            1222.0,
-            135.0,
-            67.5,
-            if selected {
-                let pulse = pulse01(seconds, 3.2, index as f32 * 0.32);
-                theme_focus.mix(theme_top.mix(Color::WHITE, pulse * 0.14), 0.34)
-            } else {
-                Color::rgb(244, 246, 248)
-            },
-        );
-        liquid_glass(
-            canvas,
-            x,
-            y,
-            1222.0,
-            135.0,
-            67.5,
-            if selected { 22 } else { 36 },
-        );
-        text_fit_centered(
+        figma_list_row(canvas, x, y, 1222.0, 104.0, selected, seconds);
+        crate::ui::text_fit(
             canvas,
             label,
-            x + 611.0,
-            y + 19.5,
-            1120.0,
-            96.0,
+            x + 28.0,
+            y + 18.0,
+            1040.0,
+            64.0,
             if selected { Color::WHITE } else { Color::BLACK },
-            FontWeight::Regular,
+            FontWeight::Bold,
+        );
+        canvas.text_right(
+            "›",
+            x + 1180.0,
+            y + 21.0,
+            58.0,
+            if selected {
+                Color::WHITE
+            } else {
+                Color::rgb(100, 104, 110)
+            },
+            FontWeight::Bold,
         );
     }
 }
@@ -101,31 +79,47 @@ pub fn draw_settings_detail(
 ) {
     let transition_t = ease_out_cubic(transition_t);
     crate::ui::draw_figma_background(canvas);
-    let (theme_top, theme_bottom) = theme.gradient_colors();
-
-    rr(canvas, 29.0, 32.0, 1222.0, 135.0, 67.5, theme_top);
-    liquid_glass(canvas, 29.0, 32.0, 1222.0, 135.0, 67.5, 18);
+    rr(
+        canvas,
+        29.0,
+        76.0,
+        1222.0,
+        102.0,
+        8.0,
+        Color::rgb(232, 234, 237),
+    );
+    rr_stroke(
+        canvas,
+        29.0,
+        76.0,
+        1222.0,
+        102.0,
+        8.0,
+        2.0,
+        crate::ui::IPOD_BORDER,
+    );
     text_fit_centered(
         canvas,
         "Settings",
         640.0,
-        51.5,
+        89.0,
         1120.0,
-        96.0,
-        Color::WHITE,
-        FontWeight::Regular,
+        64.0,
+        Color::BLACK,
+        FontWeight::Bold,
     );
 
-    rr(
+    rr(canvas, 29.0, 192.0, 1222.0, 736.0, 8.0, Color::WHITE);
+    rr_stroke(
         canvas,
         29.0,
-        183.0,
+        192.0,
         1222.0,
-        746.0,
-        128.0,
-        theme_bottom.with_alpha(190),
+        736.0,
+        8.0,
+        2.0,
+        crate::ui::IPOD_BORDER,
     );
-    liquid_glass(canvas, 29.0, 183.0, 1222.0, 746.0, 128.0, 26);
 
     detail_row(
         canvas,
@@ -167,7 +161,7 @@ pub fn draw_settings_detail(
         seconds,
         1.4,
     );
-    detail_row_left(
+    detail_row(
         canvas,
         802.0 + detail_offset(transition_t, 5),
         &format!("Theme {}", theme_label(theme)),
@@ -176,8 +170,6 @@ pub fn draw_settings_detail(
         1.75,
     );
 
-    let res = canvas.resolution();
-    let toggle_pulse = pulse01(seconds, 4.2, 1.1);
     canvas.text_centered(
         battery_text,
         640.0,
@@ -185,12 +177,6 @@ pub fn draw_settings_detail(
         26.0,
         Color::rgba(0, 0, 0, 180),
         FontWeight::Bold,
-    );
-    canvas.circle(
-        res.scale_x(1064.0),
-        res.scale_y(826.0),
-        (31.0 + toggle_pulse * 3.0) * res.scale(),
-        Color::rgb(38, 142, 0).mix(Color::rgb(90, 210, 55), toggle_pulse * 0.25),
     );
 }
 
@@ -282,7 +268,7 @@ pub fn draw_date_time_setup(
 
     let selected = focus == Focus::DateDone;
     if selected {
-        focus_halo(canvas, 690.0, 602.0, 400.0, 148.0, 74.0, seconds, 1.75);
+        focus_halo(canvas, 690.0, 602.0, 400.0, 148.0, 32.0, seconds, 1.75);
     }
     rr(
         canvas,
@@ -290,7 +276,7 @@ pub fn draw_date_time_setup(
         602.0,
         400.0,
         148.0,
-        74.0,
+        32.0,
         if selected {
             canvas
                 .theme_top_color
@@ -300,9 +286,9 @@ pub fn draw_date_time_setup(
             Color::WHITE
         },
     );
-    liquid_glass(canvas, 690.0, 602.0, 400.0, 148.0, 74.0, 26);
+    liquid_glass(canvas, 690.0, 602.0, 400.0, 148.0, 32.0, 26);
     if selected {
-        canvas.register_selected(690.0, 602.0, 400.0, 148.0, 74.0, 7.0);
+        canvas.register_selected(690.0, 602.0, 400.0, 148.0, 32.0, 7.0);
     }
     text_fit_centered(
         canvas,
@@ -338,46 +324,30 @@ fn detail_row(
     seconds: f32,
     phase: f32,
 ) {
+    let _ = phase;
     let h = 108.0;
-    let r = 54.0;
-    let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-    if selected {
-        focus_halo(canvas, 149.0, y, 982.0, h, r, seconds, phase);
-    }
-    rr(
-        canvas,
-        149.0,
-        y,
-        982.0,
-        h,
-        r,
-        if selected {
-            accent.with_alpha(52)
-        } else {
-            Color::rgba(0, 0, 0, 26)
-        },
-    );
-    liquid_glass(
-        canvas,
-        149.0,
-        y,
-        982.0,
-        h,
-        r,
-        if selected { 28 } else { 34 },
-    );
-    if selected {
-        rr_stroke(canvas, 149.0, y, 982.0, h, r, 3.0, accent.with_alpha(120));
-    }
-    text_fit_centered(
+    figma_list_row(canvas, 149.0, y, 982.0, h, selected, seconds);
+    crate::ui::text_fit(
         canvas,
         label,
-        640.0,
+        178.0,
         y + 16.0,
-        860.0,
+        820.0,
         76.0,
-        Color::BLACK,
-        FontWeight::Regular,
+        if selected { Color::WHITE } else { Color::BLACK },
+        FontWeight::Bold,
+    );
+    canvas.text_right(
+        "›",
+        1094.0,
+        y + 20.0,
+        58.0,
+        if selected {
+            Color::WHITE
+        } else {
+            Color::rgb(100, 104, 110)
+        },
+        FontWeight::Bold,
     );
 }
 
@@ -423,7 +393,7 @@ fn date_card_sized(
     seconds: f32,
     phase: f32,
 ) {
-    let radius = (h * 0.25).min(58.0);
+    let radius = if h > 180.0 { 32.0 } else { 24.0 };
     if selected {
         focus_halo(canvas, x, y, w, h, radius, seconds, phase);
     }
@@ -466,56 +436,5 @@ fn date_card_sized(
         h * 0.42,
         if selected { Color::WHITE } else { Color::BLACK },
         FontWeight::Bold,
-    );
-}
-
-fn detail_row_left(
-    canvas: &mut Canvas<'_>,
-    y: f32,
-    label: &str,
-    selected: bool,
-    seconds: f32,
-    phase: f32,
-) {
-    let h = 108.0;
-    let r = 54.0;
-    let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-    if selected {
-        focus_halo(canvas, 149.0, y, 982.0, h, r, seconds, phase);
-    }
-    rr(
-        canvas,
-        149.0,
-        y,
-        982.0,
-        h,
-        r,
-        if selected {
-            accent.with_alpha(52)
-        } else {
-            Color::rgba(0, 0, 0, 26)
-        },
-    );
-    liquid_glass(
-        canvas,
-        149.0,
-        y,
-        982.0,
-        h,
-        r,
-        if selected { 28 } else { 34 },
-    );
-    if selected {
-        rr_stroke(canvas, 149.0, y, 982.0, h, r, 3.0, accent.with_alpha(120));
-    }
-    crate::ui::text_fit(
-        canvas,
-        label,
-        188.0,
-        y + 16.0,
-        840.0,
-        76.0,
-        Color::BLACK,
-        FontWeight::Regular,
     );
 }

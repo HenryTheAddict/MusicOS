@@ -31,6 +31,14 @@ Libs: -L\${libdir} -lasound
 Cflags:
 PC
 
+# Homebrew's Rust toolchain is missing the aarch64-linux std libraries and shadows
+# rustup on PATH. Prefer the rustup-managed toolchain so the cross target resolves.
+if command -v rustup >/dev/null 2>&1; then
+  if rustc_path="$(rustup which rustc 2>/dev/null)"; then
+    export PATH="$(dirname "$rustc_path"):$PATH"
+  fi
+fi
+
 export CC_aarch64_unknown_linux_gnu="$repo_root/scripts/zig-aarch64-linux-gnu-cc"
 export AR_aarch64_unknown_linux_gnu="zig ar"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$repo_root/scripts/zig-aarch64-linux-gnu-cc"

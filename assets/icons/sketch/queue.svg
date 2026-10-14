@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>queue</title>
+    <defs>
+        <path d="M0,0 L32,0 L32,32 L0,32 Z" id="path-1"></path>
+    </defs>
+    <g id="queue" stroke="none" fill="none" xlink:href="#path-1">
+        <path d="M7,21.6 L7,10.4 C7,8.15978998 7,7.03968496 7.4359739,6.184038 C7.8194674,5.43138963 8.43138963,4.8194674 9.184038,4.4359739 C10.039685,4 11.15979,4 13.4,4 L18.6,4 C20.84021,4 21.960315,4 22.815962,4.4359739 C23.5686104,4.8194674 24.1805326,5.43138963 24.5640261,6.184038 C25,7.03968496 25,8.15978998 25,10.4 L25,21.6 C25,23.84021 25,24.960315 24.5640261,25.815962 C24.1805326,26.5686104 23.5686104,27.1805326 22.815962,27.5640261 C21.960315,28 20.84021,28 18.6,28 L13.4,28 C11.15979,28 10.039685,28 9.184038,27.5640261 C8.43138963,27.1805326 7.8194674,26.5686104 7.4359739,25.815962 C7,24.960315 7,23.84021 7,21.6 Z" id="Path" stroke="#000000" stroke-width="2"></path>
+        <line x1="10" y1="10" x2="22" y2="10" id="Path" stroke="#000000" stroke-width="2" stroke-linecap="round"></line>
+        <line x1="10" y1="16" x2="22" y2="16" id="Path" stroke="#000000" stroke-width="2" stroke-linecap="round"></line>
+        <line x1="10" y1="22" x2="19" y2="22" id="Path" stroke="#000000" stroke-width="2" stroke-linecap="round"></line>
+    </g>
+</svg>

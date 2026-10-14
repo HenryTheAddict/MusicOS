@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="8px" height="8px" viewBox="0 0 8 8" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>tinyMaximize</title>
+    <defs>
+        <path d="M0,0 L8,0 L8,8 L0,8 Z" id="path-1"></path>
+    </defs>
+    <g id="tinyMaximize" stroke="none" fill="none" xlink:href="#path-1" fill-rule="evenodd">
+        <g id="Group" stroke-width="1" transform="translate(1, 1)" stroke="#979797" stroke-linecap="round">
+            <polyline id="Path" points="3 1 5 1 5 3"></polyline>
+            <polyline id="Path" points="3 5 1 5 1 3"></polyline>
+        </g>
+    </g>
+</svg>

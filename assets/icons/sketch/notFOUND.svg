@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>notFOUND</title>
+    <defs>
+        <path d="M0,0 L32,0 L32,32 L0,32 L0,0 Z" id="path-1"></path>
+    </defs>
+    <g id="notFOUND" stroke="none" fill="none" xlink:href="#path-1">
+        <line x1="11" y1="6" x2="11" y2="8" id="Path" stroke="#979797" stroke-width="2" stroke-linecap="round"></line>
+        <line x1="19" y1="4" x2="19" y2="8" id="Path" stroke="#979797" stroke-width="2" stroke-linecap="round"></line>
+        <line x1="11" y1="16" x2="21" y2="14" id="Path" stroke="#979797" stroke-width="2" stroke-linecap="round"></line>
+        <path d="M6,19 L6,22 C6,22.5522847 6.44771525,23 7,23 L9,23 C9.55228475,23 10,22.5522847 10,22 L10,19 L10,27" id="Path" stroke="#979797" stroke-width="1" stroke-linecap="round"></path>
+        <path d="M15,19 L17,19 C17.5522847,19 18,19.4477153 18,20 L18,26 C18,26.5522847 17.5522847,27 17,27 L15,27 C14.4477153,27 14,26.5522847 14,26 L14,20 C14,19.4477153 14.4477153,19 15,19 Z" id="Path" stroke="#979797" stroke-width="1" stroke-linecap="round"></path>
+        <path d="M22,19 L22,22 C22,22.5522847 22.4477153,23 23,23 L25,23 C25.5522847,23 26,22.5522847 26,22 L26,19 L26,27" id="Path" stroke="#979797" stroke-width="1" stroke-linecap="round"></path>
+    </g>
+</svg>

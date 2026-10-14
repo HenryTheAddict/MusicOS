@@ -1,0 +1,187 @@
+/* Reference geometry: musicosdesk.sketch, 720 × 480 at 100%.
+   Keep these sizes at larger window widths; only explicit interface size scales them. */
+:root { --ink: #000; }
+.app-shell { color: var(--ink); }
+.app-header { gap: 1rem; height: 3.875rem; min-height: 3.875rem; padding: .4375rem 1.125rem .4375rem 0; }
+.window-drag-region { flex: 0 0 114px; }
+.header-drag-spacer { display: none; }
+.app-header > .menu-trigger { flex: 0 0 13.875rem; height: 3rem; border-radius: 1.125rem; gap: .5rem; grid-template-columns: 1rem minmax(0,1fr) 1.5rem; }
+.section-name { font-size: 1.5rem; font-weight: 300; }
+.chevron svg { display: block; width: 1.5rem; height: .75rem; fill: none; stroke: currentColor; stroke-width: 1; }
+.now-playing { flex: 1; width: auto; min-width: 0; height: 3rem; padding: .375rem .4375rem; gap: .25rem; }
+.now-playing-info { min-width: 0; }
+.now-playing-info strong { font-size: .75rem; font-weight: 700; }
+.now-playing-info > span { font-size: .5rem; }
+.now-playing .mini-controls { display: grid; width: 1.75rem; }
+.now-playing > .icon-button:last-child { order: 3; width: 1rem; height: 1rem; }
+.now-playing > .icon-button:last-child .icon { width: 1rem; height: 1rem; }
+.now-playing .transport { order: 4; }
+.now-playing .mini-controls { order: 3; }
+.transport .icon-button, .transport .icon { width: 2rem; height: 2rem; }
+.workspace { padding: .125rem .25rem .125rem .125rem; grid-template-columns: 12.25rem minmax(0,1fr); gap: .125rem; }
+.workspace.full-width { grid-template-columns: minmax(0,1fr); }
+.library-sidebar { background: #a8e7ff; border-radius: 1.125rem; }
+.sidebar-label { background: #d4f2ff; height: 1.25rem; flex: 0 0 1.25rem; color: #000; }
+.library-sidebar nav { gap: .125rem; }
+.library-sidebar nav button { height: 2rem; min-height: 2rem; font-size: .875rem; color: #000; }
+.library-sidebar nav button.active { font-weight: 500; }
+.library-sidebar nav button .icon:last-child:not(:first-child) { width: 2rem; }
+.library-shortcuts { padding-top: 1.5rem; padding-bottom: .5rem; gap: .125rem; border-radius: 1.125rem; background: #5bd0ff; margin-top: .125rem; }
+.library-shortcuts > button, .library-shortcuts > .menu-trigger { font-size: .75rem; background: #00dcff; border-radius: .875rem; }
+.personal-library { margin-top: .25rem; border-color: #0045ff; background: linear-gradient(#87d9ff, #72ceff); }
+.personal-library h2 { background: linear-gradient(#a8e7ff, #00baff); font-size: .75rem; font-weight: 700; }
+.personal-library > button { background: #d5f2ff90; min-height: 2.625rem; border-radius: .5rem; gap: .125rem; }
+.personal-library > button .icon { width: 2rem; height: 2rem; }
+.personal-library strong { font-size: .75rem; border-bottom: 1px solid #0064df; line-height: 1.25; }
+.personal-library small { font-size: .5rem; }
+.sidebar-footer { padding: .25rem .5rem; font-size: .5rem; }
+.library-toolbar { height: 2rem; min-height: 2rem; border-radius: 1rem; padding: 0 .5rem; margin-bottom: .25rem; gap: 0; }
+.toolbar-title { font-size: .875rem; }
+.search { width: min(16rem,55%); justify-content: center; gap: .125rem; background: #8d9fff; }
+.search .icon { width: 2rem; height: 2rem; }
+.search input { font-size: 1.5rem; padding: 0; width: 5.5rem; flex: 0 1 auto; font-weight: 300; }
+.search:focus-within input, .search input:not(:placeholder-shown) { width: 100%; font-size: .875rem; padding-right: .5rem; }
+.page-frame { border: 1px solid #0045ff; border-radius: 1.125rem; }
+.page-content { padding: 1.25rem; }
+.collection-grid { grid-template-columns: repeat(auto-fill,8rem); justify-content: space-between; gap: .75rem 2.5rem; }
+.collection-card { width: 8rem; padding: 0; }
+.card-open .cover { width: 8rem; border-radius: 1.125rem; }
+.card-open strong { font-size: .875rem; font-weight: 500; margin-top: .375rem; line-height: 1.2; }
+.card-open small { font-size: .5625rem; font-weight: 700; color: #000; line-height: 1.2; }
+.album-hero { grid-template-columns: 8rem minmax(0,1fr); gap: 1rem; margin-bottom: 1.6875rem; }
+.album-copy, .album-detail .album-copy { min-height: 8rem; position: relative; padding: 0 0 2.25rem; display: flex; flex-direction: column; }
+.album-copy h1 { font-size: 2rem; font-weight: 900; line-height: 1; margin: 0; }
+.album-detail .collection-meta { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.album-detail .artist-link { position: absolute; left: 0; bottom: 0; max-width: calc(100% - 6.5rem); font-size: 1.5rem; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.album-detail .quality { position: absolute; right: .5rem; bottom: 2.5rem; gap: .375rem; margin: 0; font-size: .75rem; line-height: 1; color: #006787; }
+.album-detail .quality .icon { width: 2rem; height: 2rem; }
+.album-detail .collection-actions { position: absolute; right: .75rem; bottom: 0; gap: .25rem; margin: 0; }
+.album-detail .collection-actions > button:not(.menu-trigger) { padding: 0; background: transparent; }
+.album-detail .collection-actions > button > span:not(.icon) { display: none; }
+.album-detail .collection-actions .shuffle-button { background: #00deff; }
+.album-detail .track-row { height: 3rem; margin-bottom: .25rem; padding-inline: .375rem; grid-template-columns: .75rem minmax(0,1fr) 2rem; font-size: 1rem; }
+.artist-detail { margin-top: -.75rem; }
+.artist-hero { max-width: 30rem; grid-template-columns: minmax(0,1fr) 12rem minmax(0,1fr); column-gap: .5rem; margin: 0 auto .75rem; }
+.artist-hero > h1 { font-size: 3.75rem; font-weight: 900; line-height: 1; margin-bottom: -2rem; }
+.artist-hero > .cover { width: 12rem; border-radius: 32%; }
+.artist-about { margin-top: 1.8rem; max-height: 10.125rem; border-radius: .875rem; overflow: auto; }
+.artist-about h2 { font-size: 1rem; font-weight: 300; line-height: 1.75rem; }
+.artist-about > p { font-size: .75rem; line-height: 1; padding: .125rem; }
+.artist-statistics { font-size: .75rem; line-height: 1; padding-top: 3.5rem; gap: .125rem; }
+.artist-statistics .collection-actions { margin-top: 2rem; }
+.artist-detail .section-title { font-size: 1.5rem; line-height: 1.2; margin: .5rem 0 .25rem; }
+.album-strip { justify-content: space-around; gap: 1.25rem; padding: .625rem 1rem .25rem; background: #a8e3ff; }
+.album-strip > button { flex: 0 0 7rem; }
+.album-strip .cover { width: 6rem; }
+.album-strip span { font-size: .75rem; margin-top: .375rem; }
+@container (max-width:26rem) {
+  .collection-grid { grid-template-columns: repeat(auto-fill,minmax(6rem,1fr)); gap: .75rem; }
+  .collection-card { width: 100%; }
+  .card-open .cover { width: 100%; }
+  .album-detail .album-copy { display: contents; }
+  .album-detail .album-hero { grid-template-columns: 6rem minmax(0,1fr); gap: .6rem .75rem; }
+  .album-detail .artist-link { position: static; max-width: 100%; white-space: normal; font-size: 1.125rem; }
+  .album-detail .quality { position: static; grid-row: 3; justify-self: start; }
+  .album-detail .collection-actions { position: static; grid-row: 4; justify-self: start; }
+  .artist-detail { margin-top: 0; }
+  .artist-hero { grid-template-columns: 8rem minmax(0,1fr); gap: 1rem; }
+  .artist-hero > h1 { margin-bottom: 0; font-size: 2.75rem; }
+  .artist-hero > .cover { width: 8rem; }
+  .artist-statistics { padding-top: 0; line-height: 1.25; }
+  .artist-statistics .collection-actions { margin-top: .5rem; }
+  .artist-about { max-height: none; }
+}
+@media (max-width:800px) {
+  .window-drag-region { flex-basis: 114px; }
+  .app-shell:is([data-size="125"],[data-size="150"]) .app-header { height: auto; }
+}
+.now-playing .mini-controls { order: 0; grid-template-columns: 1fr 1fr; grid-template-rows: 1rem 1rem; }
+.now-playing .mini-controls .icon-button { width: .875rem; height: 1rem; }
+.now-playing .mini-controls .icon { width: .875rem; height: .875rem; }
+.playback-format { display: grid; place-items: center; }
+.library-toolbar > .menu-trigger { justify-content: flex-start; gap: .125rem; font-size: .875rem; font-weight: 300; min-height: 2rem; }
+.library-toolbar > .menu-trigger svg { width: 1rem; height: 1rem; fill: none; stroke: #5e7d8b; stroke-width: 1; }
+.library-sidebar nav button.back > .icon:first-child { visibility: hidden; width: 1rem; }
+.album-detail .collection-actions .shuffle-button { background: #00deff !important; }
+
+/* Colors sampled from the actual Sketch layers, rather than nearby blues. */
+.app-header > .menu-trigger, .now-playing { border-radius: 1rem; box-shadow: none; }
+.library-sidebar { background: #cbf1ff; border-radius: 1rem; }
+.sidebar-label { background: transparent; }
+.library-sidebar nav button { background: #aae4ff; border-radius: .5rem; }
+.library-sidebar nav button.active { background: #009aff; }
+.library-shortcuts { background: #00baff80; padding-bottom: .5rem; border-radius: 1rem; }
+.personal-library { background: #54b9ff; border-color: #0041ff; border-radius: 1rem; margin: .625rem .125rem 0; scrollbar-gutter: stable; }
+.sidebar-footer { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.personal-library h2 { background: #cbf1ff80; }
+.personal-library > button { background: #e3e3e380; margin: .125rem; width: calc(100% - .25rem); min-height: 2.5625rem; }
+.library-toolbar { background: #d6edfd; padding-right: 0; }
+.search { background: #869fff; border-radius: .5rem; }
+.page-frame { border-color: #0018ff; border-radius: 1rem; }
+.collection-grid { grid-template-columns: repeat(auto-fill,8rem); column-gap: 2.625rem; justify-content: start; }
+.collection-card { min-height: 10.25rem; }
+.card-open .cover { border-radius: 1rem; }
+.card-open small { font-size: .5rem; }
+.album-detail .track-row { background: #0034ff40; }
+.album-detail .track-row:hover { background: #0034ff55; }
+.album-detail .track-row.selected { background: #0034ff66; }
+.album-detail .track-row.playing { background: #0034ff55; }
+.album-detail .track-table { margin-right: .4375rem; }
+.artist-detail { margin-inline: -.25rem; }
+.artist-about { background: #0096ff; border-radius: .75rem; }
+.artist-about h2 { background: #d6effd; border-radius: .75rem; }
+.album-strip { background: #8ed1ff; border-radius: 1rem; justify-content: flex-start; gap: 0; padding: .5625rem 0 .3125rem 1.625rem; margin-right: .8125rem; }
+.album-strip > button { flex-basis: 9.25rem; }
+.album-strip span { line-height: 1; margin: .375rem 0 0; }
+.artist-statistics { position: relative; height: 12rem; padding-bottom: 2rem; }
+.artist-statistics .collection-actions { position: absolute; bottom: 0; margin: 0; gap: .5rem; flex-wrap: nowrap; }
+.artist-statistics .collection-actions .shuffle-button { order: -1; background: white; }
+
+/* A row reveals its control and makes room with a slide, as in the selected
+   Sketch row. Only composited transforms change: row heights and scroll stay put. */
+.track-title { position: relative; gap: 0; }
+.track-title > .track-label { width: calc(100% - 2.25rem); transform: translateX(0); transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
+.track-title .row-play { position: absolute; z-index: 1; left: 0; width: 2rem; height: 2rem; opacity: 0; transform: translateX(-.25rem) scale(.45); transition: opacity 140ms ease-out, transform 180ms cubic-bezier(.2,.7,.2,1); }
+.track-row:is(:hover,:focus-within,.selected,.playing) .track-label { transform: translateX(2.25rem); }
+.track-row:is(:hover,:focus-within,.selected,.playing) .row-play { opacity: 1; transform: none; pointer-events: auto; }
+.track-row .row-play:active:not(:disabled) { transform: scale(.86); }
+.card-open .cover, .album-strip .cover { transition: transform 180ms cubic-bezier(.2,.7,.2,1), box-shadow 180ms ease-out; }
+.card-open:hover .cover, .card-open:focus-visible .cover, .album-strip button:hover .cover { opacity: 1; transform: translateY(-2px); box-shadow: 0 4px 10px #00509b30; }
+.card-open:active .cover, .album-strip button:active .cover { transform: scale(.97); box-shadow: none; }
+.collection-card > .menu-trigger { transition: opacity 140ms, transform 180ms cubic-bezier(.2,.7,.2,1); transform: scale(.85); }
+.collection-card:is(:hover,:focus-within) > .menu-trigger { transform: none; }
+.collection-actions > button, .transport .icon-button { transition: transform 140ms ease-out, background-color 140ms; }
+.collection-actions > button:active:not(:disabled), .transport .icon-button:active:not(:disabled) { transform: scale(.88); }
+.now-playing-info strong { animation: playing-title-in 180ms ease-out; }
+.sketch-icon { display: inline-flex; flex-shrink: 0; }
+.sketch-icon > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.app-header > .menu-trigger .chevron { transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
+.app-header > .menu-trigger[data-state="open"] .chevron { transform: rotate(180deg); }
+.dropdown[data-state="open"] { animation: pop-menu-in 160ms cubic-bezier(.2,.7,.2,1) both; }
+.dropdown[data-state="closed"] { animation: pop-menu-out 120ms ease-in both; pointer-events: none; }
+@keyframes playing-title-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes control-state-in { from { opacity: .3; transform: scale(.85); } to { opacity: 1; transform: none; } }
+@keyframes pop-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes pop-menu-out { to { opacity: 0; transform: translateY(-2px) scale(.98); } }
+@container (max-width:26rem) {
+  .collection-grid { grid-template-columns: repeat(auto-fill,minmax(6rem,1fr)); gap: .75rem; }
+  .artist-statistics { height: auto; padding-bottom: 0; }
+  .artist-statistics .collection-actions { position: static; margin-top: .5rem; }
+}
+@media (hover:none) {
+  .track-title > .track-label { transform: translateX(2.25rem); }
+  .track-title .row-play { opacity: 1; transform: none; pointer-events: auto; }
+}
+@media (prefers-reduced-motion:reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .card-open:hover .cover, .card-open:active .cover, .album-strip button:hover .cover { transform: none; }
+}
+
+/* One responsive grid for small and virtualized collections. The component
+   supplies column geometry; these rules own identical artwork/caption heights. */
+.collection-grid-container { width: 100%; min-width: 0; }
+.collection-grid-container .collection-grid { row-gap: .75rem; justify-content: stretch; }
+.collection-grid-container .collection-card { width: 100%; min-height: 0; }
+.collection-grid-container .card-open .cover { width: 100%; max-width: 100%; height: auto; aspect-ratio: 1; }
+.collection-grid-container .card-caption { display: block; height: 2.25rem; padding-top: .375rem; }
+.collection-grid-container .card-open strong { margin-top: 0; }

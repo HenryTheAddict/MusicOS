@@ -56,3 +56,10 @@ preferences.json
 .env
 .env.*
 !.env.example
+
+# Tauri generated artifacts
+/src-tauri/binaries/
+/src-tauri/gen/
+
+# Generated audio used by desktop seek regression test
+!src-tauri/tests/fixtures/seek.flac

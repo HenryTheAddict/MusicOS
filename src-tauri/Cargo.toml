@@ -1,0 +1,59 @@
+[package]
+name = "musicos-tauri"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "musicos_tauri"
+path = "src/lib.rs"
+
+[[bin]]
+name = "musicos-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+musicos-desktop = { path = "../crates/musicos-desktop", default-features = false }
+musicos-init = { path = "../crates/musicos-init", features = ["desktop-app", "desktop-audio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+sha2 = "0.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+image = { version = "0.24", default-features = false, features = ["png", "jpeg", "webp"] }
+lofty = "0.21.1"
+rustfft = "6.4"
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-24"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+# Desktop-only decoder selection: native claxon FLAC sources cannot seek.
+rodio = { version = "0.19", default-features = false, features = ["symphonia-all", "desktop-seek-length"] }
+url = "2"
+unicode-normalization = "0.1"
+md5 = "0.7"
+base64 = "0.22"
+tokio = { version = "1", features = ["time", "sync", "macros", "rt"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-media-player = "0.3"
+objc2-vision = { version="0.3", default-features=false, features= ["VNDetectFaceLandmarksRequest", "VNDetectFaceRectanglesRequest", "VNRequest", "VNRequestHandler", "VNObservation", "VNTypes", "objc2-core-foundation"] }
+objc2-app-kit = { version="0.3", default-features=false, features= ["NSWindow", "NSView", "NSButton", "NSControl", "NSResponder"] }
+objc2-foundation = { version="0.3", default-features=false, features= ["NSGeometry"] }
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+
+[dev-dependencies]
+tempfile = "3"

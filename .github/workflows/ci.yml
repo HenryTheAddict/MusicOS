@@ -9,6 +9,35 @@ on:
   pull_request:
 
 jobs:
+  native-control-center:
+    name: Native Control Center (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GPUI Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libfontconfig-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev libwayland-dev
+
+      - name: Check native Control Center
+        run: cargo check -p musicos-desktop
+
+      - name: Test native desktop services
+        run: cargo test -p musicos-desktop --lib --no-default-features
+
+      - name: Build native Control Center
+        run: cargo build --release -p musicos-desktop --bin musicos-control-center
+
   windows:
     name: Windows build and test
     runs-on: windows-latest
@@ -23,27 +52,49 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-
-      - name: Install npm dependencies
-        run: npm ci
 
       - name: Check Rust workspace
-        run: cargo check --workspace --features desktop-app,desktop-audio
+        run: cargo check --workspace --exclude musicos-tauri --features desktop-app,desktop-audio
 
       - name: Test Rust workspace
         env:
           MUSICOS_TEST_AUDIO_BACKEND: none
-        run: cargo test --workspace --features desktop-app,desktop-audio
-
-      - name: Check Electron and Vite frontend
-        shell: pwsh
-        run: |
-          node --check electron/main.js
-          node --check electron/preload.js
-          node --check scripts/run-electron-dev.js
-          npm run typecheck
-          npm run test:renderer
+        run: cargo test --workspace --exclude musicos-tauri --features desktop-app,desktop-audio
 
       - name: Build desktop binaries
-        run: npm run build
+        run: npm run build:legacy
+
+      - name: Run 10,000-track performance acceptance
+        env:
+          MUSICOS_PERF_SKIP_BUILD: "1"
+          MUSICOS_PERF_TRACKS: "10000"
+        run: npm run perf:smoke
+
+  react-tauri:
+    name: React and Tauri (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev
+      - run: npm ci
+      - run: npm run build
+      - run: npm run test:tauri
+        env:
+          MUSICOS_TEST_AUDIO_BACKEND: none
+      - run: npm run test:ui
+      - run: npx playwright install --with-deps chromium
+      - name: Browser integration checks
+        run: npm run test:e2e

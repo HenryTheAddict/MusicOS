@@ -162,16 +162,16 @@ pub fn install_pending_update() -> Result<Option<PathBuf>> {
 
 fn discover_usb_roots() -> Vec<PathBuf> {
     let mut roots = BTreeSet::new();
-    mount_removable_candidates(&mut roots);
     if let Some(value) = std::env::var_os("MUSICOS_USB_ROOTS") {
         for path in std::env::split_paths(&value) {
             if path.exists() {
-                roots.insert(path.clone());
-                collect_children(&path, &mut roots, 2);
+                roots.insert(path);
             }
         }
         return roots.into_iter().collect();
     }
+
+    mount_removable_candidates(&mut roots);
 
     for candidate in ["/mnt/usb", "/media", "/run/media", "/Volumes"] {
         let path = PathBuf::from(candidate);
@@ -229,12 +229,25 @@ fn mount_removable_candidates(_out: &mut BTreeSet<PathBuf>) {}
 #[cfg(target_os = "linux")]
 fn is_usb_block_partition(name: &str) -> bool {
     let bytes = name.as_bytes();
-    (bytes.len() == 3 && bytes[0] == b's' && bytes[1] == b'd' && bytes[2].is_ascii_lowercase())
-        || (bytes.len() == 4
-            && bytes[0] == b's'
-            && bytes[1] == b'd'
-            && bytes[2].is_ascii_lowercase()
-            && bytes[3].is_ascii_digit())
+    let valid_name =
+        (bytes.len() == 3 && bytes[0] == b's' && bytes[1] == b'd' && bytes[2].is_ascii_lowercase())
+            || (bytes.len() == 4
+                && bytes[0] == b's'
+                && bytes[1] == b'd'
+                && bytes[2].is_ascii_lowercase()
+                && bytes[3].is_ascii_digit());
+    if !valid_name {
+        return false;
+    }
+
+    let base = name.trim_end_matches(|ch: char| ch.is_ascii_digit());
+    let removable = std::fs::read_to_string(format!("/sys/class/block/{base}/removable"))
+        .map(|value| value.trim() == "1")
+        .unwrap_or(false);
+    let usb_transport = std::fs::canonicalize(format!("/sys/class/block/{base}/device"))
+        .map(|path| path.to_string_lossy().contains("/usb"))
+        .unwrap_or(false);
+    removable || usb_transport
 }
 
 fn collect_children(path: &Path, out: &mut BTreeSet<PathBuf>, depth: usize) {

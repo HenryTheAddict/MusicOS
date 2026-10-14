@@ -1,25 +1,253 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex, OnceLock,
+};
 use std::time::UNIX_EPOCH;
 use walkdir::WalkDir;
 
-use crate::database::{Db, Track};
+use crate::database::{Db, MetadataUpdate, Track};
 use crate::renderer::{Color, CoverArt};
+use id3::frame::PictureType as Id3PictureType;
 use id3::Tag;
 use image::GenericImageView;
+use lofty::config::WriteOptions;
 use lofty::file::{AudioFile, TaggedFileExt};
-use lofty::tag::Accessor;
+use lofty::picture::{Picture, PictureType};
+use lofty::tag::{Accessor, Tag as LoftyTag};
+use sha2::{Digest, Sha256};
 
 static COVER_ART_CACHE: OnceLock<Mutex<HashMap<String, Option<CoverArt>>>> = OnceLock::new();
 static LAST_SCAN_ROOTS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+const COVER_ART_CACHE_VERSION_DIR: &str = "v2";
+
+pub fn write_metadata_batch(paths: &[String], update: &MetadataUpdate) -> Result<()> {
+    write_metadata_batch_with(paths, update, || Ok(()))
+}
+
+pub fn write_metadata_batch_with<T>(
+    paths: &[String],
+    update: &MetadataUpdate,
+    commit: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    let mut backups = Vec::new();
+    for (index, value) in paths.iter().enumerate() {
+        let path = Path::new(value);
+        anyhow::ensure!(
+            path.is_file(),
+            "metadata target is missing: {}",
+            path.display()
+        );
+        let backup = path.with_extension(format!(
+            "{}.musicos-metadata-{}-{index}.bak",
+            path.extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("audio"),
+            std::process::id()
+        ));
+        std::fs::copy(path, &backup)?;
+        backups.push((path.to_path_buf(), backup));
+    }
+
+    let result = paths
+        .iter()
+        .try_for_each(|value| write_metadata(Path::new(value), update))
+        .and_then(|()| commit());
+    if let Err(err) = result {
+        for (path, backup) in &backups {
+            let _ = std::fs::copy(backup, path);
+        }
+        for (_, backup) in backups {
+            let _ = std::fs::remove_file(backup);
+        }
+        return Err(err);
+    }
+    for (_, backup) in backups {
+        let _ = std::fs::remove_file(backup);
+    }
+    result
+}
+
+fn write_metadata(path: &Path, update: &MetadataUpdate) -> Result<()> {
+    let mut tagged = lofty::read_from_path(path)?;
+    if tagged.primary_tag().is_none() {
+        tagged.insert_tag(LoftyTag::new(tagged.primary_tag_type()));
+    }
+    let tag = tagged
+        .primary_tag_mut()
+        .ok_or_else(|| anyhow::anyhow!("{} does not support writable metadata", path.display()))?;
+    if let Some(value) = update.title.as_ref() {
+        tag.set_title(value.trim().to_string());
+    }
+    if let Some(value) = update.artist.as_ref() {
+        tag.set_artist(value.trim().to_string());
+    }
+    if let Some(value) = update.album.as_ref() {
+        tag.set_album(value.trim().to_string());
+    }
+    if let Some(value) = update.genre.as_ref() {
+        tag.set_genre(value.trim().to_string());
+    }
+    if let Some(value) = update.year {
+        tag.set_year(value.max(0) as u32);
+    }
+    if let Some(value) = update.track_number {
+        tag.set_track(value.max(0) as u32);
+    }
+    if let Some(value) = update.disc_number {
+        tag.set_disk(value.max(0) as u32);
+    }
+    if let Some(value) = update
+        .artwork_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let mut artwork = std::fs::File::open(value)?;
+        let mut picture = Picture::from_reader(&mut artwork)?;
+        picture.set_pic_type(PictureType::CoverFront);
+        tag.remove_picture_type(PictureType::CoverFront);
+        tag.push_picture(picture);
+    }
+    tagged.save_to_path(path, WriteOptions::default())?;
+    Ok(())
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct ScanProgress {
     pub indexed: usize,
+    pub processed: usize,
     pub discovered: usize,
     pub current_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ScanMode {
+    #[default]
+    Changed,
+    Full,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScanRequest {
+    pub managed_root: PathBuf,
+    pub reference_source_ids: Option<Vec<i64>>,
+    pub mode: ScanMode,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ScanResult {
+    pub indexed: usize,
+    pub processed: usize,
+    pub discovered: usize,
+    pub cancelled: bool,
+}
+
+/// Scans a desktop library using explicit paths. This deliberately avoids
+/// `MUSICOS_UPLOAD_DIR`, allowing the GPUI application to own its library
+/// without a companion process or process-global path mutation.
+pub fn scan_library_with_progress<F>(
+    db_path: &Path,
+    request: &ScanRequest,
+    cancel: &AtomicBool,
+    mut progress: F,
+) -> Result<ScanResult>
+where
+    F: FnMut(ScanProgress),
+{
+    std::fs::create_dir_all(&request.managed_root)?;
+    let db = Db::open(
+        db_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("library database path is not valid UTF-8"))?,
+    )?;
+    let managed_path = request.managed_root.display().to_string();
+    let managed_name = request
+        .managed_root
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("MusicOS Library");
+    let managed = db.add_library_source("managed", &managed_path, managed_name)?;
+    let requested_references = request.reference_source_ids.as_ref();
+    let mut sources = db
+        .library_sources()?
+        .into_iter()
+        .filter(|source| {
+            source.enabled
+                && (source.id == managed.id
+                    || (source.kind == "reference"
+                        && requested_references
+                            .map(|ids| ids.contains(&source.id))
+                            .unwrap_or(true)))
+        })
+        .collect::<Vec<_>>();
+    sources.sort_by_key(|source| (source.id != managed.id, source.id));
+
+    let mut result = ScanResult::default();
+    let mut claimed_paths = std::collections::HashSet::new();
+    for source in sources {
+        if cancel.load(Ordering::Relaxed) {
+            result.cancelled = true;
+            break;
+        }
+        let root = Path::new(&source.path);
+        if !root.is_dir() {
+            db.mark_library_source(source.id, false, Some("Folder is unavailable"))?;
+            continue;
+        }
+        let files = audio_files_under(root)
+            .into_iter()
+            .filter(|path| claimed_paths.insert(path.clone()))
+            .collect::<Vec<_>>();
+        result.discovered += files.len();
+        progress(ScanProgress {
+            indexed: result.indexed,
+            processed: result.processed,
+            discovered: result.discovered,
+            current_root: Some(source.path.clone()),
+        });
+
+        let indexed_before = result.indexed;
+        let processed_before = result.processed;
+        let local_processed = std::cell::Cell::new(0usize);
+        let discovered = result.discovered;
+        result.indexed += index_files(
+            &db,
+            &files,
+            request.mode == ScanMode::Full,
+            Some(source.id),
+            Some(cancel),
+            |local_indexed, processed| {
+                local_processed.set(processed);
+                progress(ScanProgress {
+                    indexed: indexed_before + local_indexed,
+                    processed: processed_before + processed,
+                    discovered,
+                    current_root: Some(source.path.clone()),
+                });
+            },
+        )?;
+        result.processed += local_processed.get();
+        if cancel.load(Ordering::Relaxed) {
+            result.cancelled = true;
+            break;
+        }
+        let existing_paths = files
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>();
+        db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
+        db.mark_library_source(source.id, true, None)?;
+    }
+    progress(ScanProgress {
+        indexed: result.indexed,
+        processed: result.processed,
+        discovered: result.discovered,
+        current_root: None,
+    });
+    Ok(result)
 }
 
 pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
@@ -47,8 +275,14 @@ pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
 pub fn cached_cover_art_for_track(db: &Db, track: &Track) -> Option<CoverArt> {
     if track.cover_art_source_modified_at == Some(track.modified_at) {
         if let Some(path) = track.cover_art_path.as_deref() {
-            if let Some(art) = load_cover_art_file(Path::new(path)) {
-                return Some(art);
+            let path = Path::new(path);
+            let versioned_local_cache =
+                path.starts_with(db.cover_art_dir().join(COVER_ART_CACHE_VERSION_DIR));
+            let downloaded_cache = path.starts_with(db.cover_art_dir().join("musicbrainz"));
+            if versioned_local_cache || downloaded_cache {
+                if let Some(art) = load_cover_art_file(path) {
+                    return Some(art);
+                }
             }
         } else {
             return None;
@@ -90,12 +324,8 @@ pub fn extract_cover_art(track_path: &str) -> Option<CoverArt> {
     if let Ok(tagged_file) = lofty::read_from_path(track_path) {
         let picture = tagged_file
             .primary_tag()
-            .and_then(|tag| tag.pictures().first())
-            .or_else(|| {
-                tagged_file
-                    .first_tag()
-                    .and_then(|tag| tag.pictures().first())
-            });
+            .and_then(preferred_lofty_picture)
+            .or_else(|| tagged_file.first_tag().and_then(preferred_lofty_picture));
         if let Some(picture) = picture {
             match image::load_from_memory(picture.data()) {
                 Ok(img) => return Some(cover_art_from_image(img)),
@@ -112,7 +342,15 @@ pub fn extract_cover_art(track_path: &str) -> Option<CoverArt> {
 
     // some mp3s only expose art through the old id3 path
     if let Ok(tag) = Tag::read_from_path(track_path) {
-        if let Some(picture) = tag.pictures().next() {
+        let picture = tag
+            .pictures()
+            .find(|picture| picture.picture_type == Id3PictureType::CoverFront)
+            .or_else(|| {
+                tag.pictures()
+                    .find(|picture| picture.picture_type == Id3PictureType::Other)
+            })
+            .or_else(|| tag.pictures().next());
+        if let Some(picture) = picture {
             match image::load_from_memory(&picture.data) {
                 Ok(img) => return Some(cover_art_from_image(img)),
                 Err(err) => log::warn!(
@@ -125,9 +363,17 @@ pub fn extract_cover_art(track_path: &str) -> Option<CoverArt> {
     }
 
     // Folder art still shows up a lot, especially from older rips. Search the
-    // album folder first, then its parent, and accept common case variants.
+    // album folder and only walk up once when the track is inside a clearly
+    // named disc subfolder. Blindly searching the parent used to pick artist
+    // portraits and unrelated covers from the artist directory.
     if let Some(parent) = Path::new(track_path).parent() {
-        for dir in parent.ancestors().take(2) {
+        let mut directories = vec![parent];
+        if is_disc_directory(parent) {
+            if let Some(album_directory) = parent.parent() {
+                directories.push(album_directory);
+            }
+        }
+        for dir in directories {
             if let Some(path) = find_folder_cover_art(dir) {
                 if let Some(art) = load_cover_art_file(&path) {
                     return Some(art);
@@ -139,12 +385,34 @@ pub fn extract_cover_art(track_path: &str) -> Option<CoverArt> {
     None
 }
 
+fn preferred_lofty_picture(tag: &LoftyTag) -> Option<&Picture> {
+    tag.get_picture_type(PictureType::CoverFront)
+        .or_else(|| tag.get_picture_type(PictureType::Other))
+        .or_else(|| tag.pictures().first())
+}
+
+fn is_disc_directory(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    let compact = name
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .collect::<String>();
+    ["cd", "disc", "disk"].iter().any(|prefix| {
+        compact.strip_prefix(prefix).is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
+        })
+    })
+}
+
 pub fn load_cover_art_file(path: &Path) -> Option<CoverArt> {
     image::open(path).ok().map(cover_art_from_image)
 }
 
 fn cover_art_from_image(img: image::DynamicImage) -> CoverArt {
-    let img = img.resize_to_fill(600, 600, image::imageops::FilterType::Lanczos3);
+    let img = img.resize_to_fill(600, 600, image::imageops::FilterType::Triangle);
     let (w, h) = img.dimensions();
     let pixels = img.to_rgba8().into_raw();
     let mut colors = Vec::with_capacity((w * h) as usize);
@@ -164,7 +432,7 @@ fn persist_cover_art(
     art: &CoverArt,
     source_modified_at: i64,
 ) -> Result<()> {
-    let dir = db.cover_art_dir();
+    let dir = db.cover_art_dir().join(COVER_ART_CACHE_VERSION_DIR);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{track_id}.png"));
     let mut rgba = Vec::with_capacity(art.pixels.len() * 4);
@@ -256,6 +524,62 @@ where
     index_default_locations_with_mode(db, true, progress)
 }
 
+pub fn index_library_source_with_progress<F>(
+    db: &Db,
+    source_id: i64,
+    reindex_all: bool,
+    mut progress: F,
+) -> Result<usize>
+where
+    F: FnMut(ScanProgress),
+{
+    let source = db
+        .library_source(source_id)?
+        .ok_or_else(|| anyhow::anyhow!("library source {source_id} was not found"))?;
+    let root = Path::new(&source.path);
+    if !root.is_dir() {
+        db.mark_library_source(source.id, false, Some("Folder is unavailable"))?;
+        anyhow::bail!("{} is unavailable", source.display_name);
+    }
+    let files = audio_files_under(root);
+    progress(ScanProgress {
+        indexed: 0,
+        processed: 0,
+        discovered: files.len(),
+        current_root: Some(source.path.clone()),
+    });
+    let indexed = index_files(
+        db,
+        &files,
+        reindex_all,
+        Some(source.id),
+        None,
+        |indexed, processed| {
+            progress(ScanProgress {
+                indexed,
+                processed,
+                discovered: files.len(),
+                current_root: Some(source.path.clone()),
+            });
+        },
+    )?;
+    db.remove_missing_tracks_for_source(
+        source.id,
+        &files
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+    )?;
+    db.mark_library_source(source.id, true, None)?;
+    progress(ScanProgress {
+        indexed,
+        processed: files.len(),
+        discovered: files.len(),
+        current_root: None,
+    });
+    Ok(indexed)
+}
+
 fn index_default_locations_with_mode<F>(
     db: &Db,
     reindex_all: bool,
@@ -264,7 +588,11 @@ fn index_default_locations_with_mode<F>(
 where
     F: FnMut(ScanProgress),
 {
-    let roots = default_scan_roots();
+    let sources = scan_sources(db)?;
+    let roots = sources
+        .iter()
+        .map(|source| source.path.clone())
+        .collect::<Vec<_>>();
 
     if let Ok(mut last) = LAST_SCAN_ROOTS
         .get_or_init(|| Mutex::new(Vec::new()))
@@ -274,32 +602,56 @@ where
     }
 
     let mut indexed = 0;
+    let mut processed = 0;
     let mut discovered = 0;
-    for root in roots {
+    let mut claimed_paths = std::collections::HashSet::new();
+    for source in sources {
+        let root = source.path;
         let root_path = Path::new(&root);
         if !root_path.exists() {
+            db.mark_library_source(source.id, false, Some("Folder is unavailable"))?;
             continue;
         }
 
-        let files = audio_files_under(root_path);
+        let files = audio_files_under(root_path)
+            .into_iter()
+            .filter(|path| claimed_paths.insert(path.clone()))
+            .collect::<Vec<_>>();
         discovered += files.len();
         progress(ScanProgress {
             indexed,
+            processed,
             discovered,
             current_root: Some(root.clone()),
         });
 
-        indexed += index_files(db, &files, reindex_all, |local_indexed| {
-            progress(ScanProgress {
-                indexed: indexed + local_indexed,
-                discovered,
-                current_root: Some(root.clone()),
-            });
-        })?;
+        indexed += index_files(
+            db,
+            &files,
+            reindex_all,
+            Some(source.id),
+            None,
+            |local_indexed, local_processed| {
+                progress(ScanProgress {
+                    indexed: indexed + local_indexed,
+                    processed: processed + local_processed,
+                    discovered,
+                    current_root: Some(root.clone()),
+                });
+            },
+        )?;
+        let existing_paths = files
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>();
+        let _ = db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
+        db.mark_library_source(source.id, true, None)?;
+        processed += files.len();
     }
 
     progress(ScanProgress {
         indexed,
+        processed,
         discovered,
         current_root: None,
     });
@@ -330,7 +682,48 @@ fn default_scan_roots() -> Vec<String> {
             }
         }
     }
-    roots
+    let mut unique = Vec::new();
+    for root in roots {
+        let path = Path::new(&root);
+        if !path.exists() {
+            continue;
+        }
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !unique
+            .iter()
+            .any(|existing: &PathBuf| *existing == canonical)
+        {
+            unique.push(canonical);
+        }
+    }
+    unique
+        .into_iter()
+        .map(|path| path.display().to_string())
+        .collect()
+}
+
+fn scan_sources(db: &Db) -> Result<Vec<crate::database::LibrarySource>> {
+    for root in default_scan_roots() {
+        let name = Path::new(&root)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("MusicOS Library");
+        let _ = db.add_library_source("managed", &root, name)?;
+    }
+    let mut sources = db
+        .library_sources()?
+        .into_iter()
+        .filter(|source| source.enabled)
+        .collect::<Vec<_>>();
+    sources.sort_by(|left, right| {
+        let left_priority = i32::from(left.kind == "reference");
+        let right_priority = i32::from(right.kind == "reference");
+        right_priority
+            .cmp(&left_priority)
+            .then_with(|| right.path.len().cmp(&left.path.len()))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(sources)
 }
 
 pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
@@ -339,61 +732,136 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
     }
 
     let files = audio_files_under(root);
-    index_files(db, &files, false, |_| {})
+    index_files(db, &files, false, None, None, |_, _| {})
 }
 
 fn audio_files_under(root: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    for entry in WalkDir::new(root).follow_links(false).into_iter().flatten() {
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(|entry| !ignored_library_entry(entry.path(), entry.depth()))
+        .flatten()
+    {
         if entry.file_type().is_file() && is_audio(entry.path()) {
             files.push(entry.into_path());
         }
     }
+    files.sort_unstable();
     files
 }
 
-fn index_files<F>(db: &Db, files: &[PathBuf], reindex_all: bool, mut progress: F) -> Result<usize>
+fn index_files<F>(
+    db: &Db,
+    files: &[PathBuf],
+    reindex_all: bool,
+    source_id: Option<i64>,
+    cancel: Option<&AtomicBool>,
+    mut progress: F,
+) -> Result<usize>
 where
-    F: FnMut(usize),
+    F: FnMut(usize, usize),
 {
-    db.begin_transaction()?;
+    use rayon::prelude::*;
 
     let mut indexed = 0;
     let reindex_all = reindex_all || std::env::var("MUSICOS_REINDEX_ALL").as_deref() == Ok("1");
+    let imported_hashes = managed_import_hashes(files);
 
     let total = files.len();
-    for (idx, path) in files.iter().enumerate() {
-        let pct = if total > 0 { (idx * 100) / total } else { 100 };
-        log::info!("[INDEXING] {}%", pct);
+    let mut processed = 0usize;
+    let mut last_pct = -1i32;
+    let mut report = |indexed: usize, processed: usize| {
+        let pct = if total > 0 {
+            (processed * 100) / total
+        } else {
+            100
+        } as i32;
+        if pct != last_pct {
+            log::info!("[INDEXING] {}%", pct);
+            last_pct = pct;
+        }
+        progress(indexed, processed);
+    };
 
+    let mut pending: Vec<(PathBuf, FileStats, Option<String>)> = Vec::new();
+    for path in files {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            break;
+        }
         let path_str = path.display().to_string();
         let Ok(stats) = file_stats(path) else {
+            processed += 1;
+            report(indexed, processed);
             continue;
         };
         if !reindex_all {
             if let Ok(true) = db.track_is_fresh(&path_str, stats.file_size, stats.modified_at) {
+                if let Some(source_id) = source_id {
+                    if let Err(error) = db.assign_track_source_by_path(&path_str, source_id) {
+                        log::warn!(
+                            "failed to repair source membership for {}: {error}",
+                            path.display()
+                        );
+                    }
+                }
+                processed += 1;
+                report(indexed, processed);
                 continue;
             }
         }
-        match index_file(db, path, stats) {
-            Ok(()) => {
-                indexed += 1;
-                progress(indexed);
+        pending.push((path.clone(), stats, imported_hashes.get(path).cloned()));
+    }
+
+    let workers = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(4)
+        .max(1);
+    let chunk_size = (workers * 4).max(1);
+    'outer: for chunk in pending.chunks(chunk_size) {
+        if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+            break;
+        }
+        let prepared: Vec<Result<PreparedTrack>> = chunk
+            .par_iter()
+            .map(|(path, stats, known_hash)| prepare_index(path, *stats, known_hash.as_deref()))
+            .collect();
+        for (entry, result) in chunk.iter().zip(prepared) {
+            match result {
+                Ok(prepared) => match commit_index(db, &prepared, source_id) {
+                    Ok(()) => indexed += 1,
+                    Err(err) => log::warn!("failed to index file {}: {err}", entry.0.display()),
+                },
+                Err(err) => log::warn!("failed to index file {}: {err}", entry.0.display()),
             }
-            Err(err) => log::warn!("failed to index file {}: {err}", path.display()),
+            processed += 1;
+            report(indexed, processed);
+            if cancel.is_some_and(|cancel| cancel.load(Ordering::Relaxed)) {
+                break 'outer;
+            }
         }
     }
     log::info!("[INDEXING] 100%");
 
-    if let Err(err) = db.commit_transaction() {
-        let _ = db.rollback_transaction();
-        return Err(err);
-    }
-
     Ok(indexed)
 }
 
-fn index_file(db: &Db, path: &Path, stats: FileStats) -> Result<()> {
+struct PreparedTrack {
+    path_str: String,
+    title: String,
+    artist: String,
+    album: String,
+    track_number: i32,
+    disc_number: Option<i32>,
+    genre: Option<String>,
+    year: Option<i32>,
+    duration: i32,
+    file_size: i64,
+    modified_at: i64,
+    content_hash: String,
+}
+
+fn prepare_index(path: &Path, stats: FileStats, known_hash: Option<&str>) -> Result<PreparedTrack> {
     let path_str = path.display().to_string();
     let fallback = metadata_from_path(path);
     let scraped = scrape_embedded_metadata(path).unwrap_or_default();
@@ -413,33 +881,91 @@ fn index_file(db: &Db, path: &Path, stats: FileStats) -> Result<()> {
     } else {
         estimate_duration(stats.file_size)
     };
-
-    let track_id = db.insert_track_with_number(
-        &path_str,
-        &title,
-        &artist,
-        &album,
+    let content_hash = match known_hash {
+        Some(hash) => hash.to_string(),
+        None => sha256_path(path)?,
+    };
+    Ok(PreparedTrack {
+        path_str,
+        title,
+        artist,
+        album,
         track_number,
+        disc_number: scraped.disc_number,
+        genre: scraped.genre,
+        year: scraped.year,
         duration,
-        stats.file_size,
-        stats.modified_at,
+        file_size: stats.file_size,
+        modified_at: stats.modified_at,
+        content_hash,
+    })
+}
+
+fn commit_index(db: &Db, prepared: &PreparedTrack, source_id: Option<i64>) -> Result<()> {
+    let id = db.insert_track_with_number(
+        &prepared.path_str,
+        &prepared.title,
+        &prepared.artist,
+        &prepared.album,
+        prepared.track_number,
+        prepared.duration,
+        prepared.file_size,
+        prepared.modified_at,
     )?;
-    cache_cover_art_for_indexed_track(db, track_id, path, stats.modified_at);
+    if let Some(source_id) = source_id {
+        db.assign_track_source(id, source_id)?;
+    }
+    db.update_track_metadata(
+        &[id],
+        &MetadataUpdate {
+            disc_number: prepared.disc_number,
+            genre: prepared.genre.clone(),
+            year: prepared.year,
+            ..MetadataUpdate::default()
+        },
+    )?;
+    db.set_track_content_hash(id, &prepared.content_hash)?;
     Ok(())
 }
 
-fn cache_cover_art_for_indexed_track(db: &Db, track_id: i64, path: &Path, source_modified_at: i64) {
-    let track_path = path.display().to_string();
-    if let Some(art) = extract_cover_art(&track_path) {
-        if let Err(err) = persist_cover_art(db, track_id, &art, source_modified_at) {
-            log::warn!("failed to cache cover art for {}: {err}", path.display());
+fn managed_import_hashes(files: &[PathBuf]) -> HashMap<PathBuf, String> {
+    let env_root = std::env::var_os("MUSICOS_UPLOAD_DIR").map(PathBuf::from);
+    let discovered_root = files.first().and_then(|path| {
+        path.ancestors()
+            .find(|ancestor| ancestor.join(".musicos-import-index.json").is_file())
+            .map(Path::to_path_buf)
+    });
+    let Some(root) = discovered_root.or(env_root) else {
+        return HashMap::new();
+    };
+    let Ok(file) = std::fs::File::open(root.join(".musicos-import-index.json")) else {
+        return HashMap::new();
+    };
+    let Ok(index) = serde_json::from_reader::<_, HashMap<String, String>>(file) else {
+        return HashMap::new();
+    };
+    index
+        .into_iter()
+        .map(|(hash, relative)| (root.join(relative), hash))
+        .collect()
+}
+
+fn sha256_path(path: &Path) -> Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    // GPUI's background executor uses deliberately small worker stacks. Keep
+    // the hashing buffer on the heap so scanning a previously unseen file
+    // cannot overflow one of those worker stacks.
+    let mut buffer = vec![0_u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
         }
-    } else if let Err(err) = db.set_track_cover_art(track_id, None, source_modified_at) {
-        log::warn!(
-            "failed to update empty cover-art cache for {}: {err}",
-            path.display()
-        );
+        hasher.update(&buffer[..read]);
     }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -454,6 +980,9 @@ struct EmbeddedMetadata {
     artist: Option<String>,
     album: Option<String>,
     track_number: Option<i32>,
+    disc_number: Option<i32>,
+    genre: Option<String>,
+    year: Option<i32>,
     duration: i32,
 }
 
@@ -495,6 +1024,15 @@ fn scrape_embedded_metadata(path: &Path) -> Option<EmbeddedMetadata> {
         metadata.album = clean_tag(tag.album().as_deref());
         metadata.track_number = tag
             .track()
+            .and_then(|value| i32::try_from(value).ok())
+            .filter(|value| *value > 0);
+        metadata.disc_number = tag
+            .disk()
+            .and_then(|value| i32::try_from(value).ok())
+            .filter(|value| *value > 0);
+        metadata.genre = clean_tag(tag.genre().as_deref());
+        metadata.year = tag
+            .year()
             .and_then(|value| i32::try_from(value).ok())
             .filter(|value| *value > 0);
     }
@@ -599,7 +1137,7 @@ fn trim_track_prefix(value: &str) -> &str {
     }
 }
 
-fn track_number_from_stem(stem: &str) -> Option<i32> {
+pub fn track_number_from_stem(stem: &str) -> Option<i32> {
     let trimmed = stem.trim();
     let digits: String = trimmed
         .chars()
@@ -609,8 +1147,10 @@ fn track_number_from_stem(stem: &str) -> Option<i32> {
         return None;
     }
 
-    let rest = trimmed[digits.len()..].trim_start();
-    if rest.is_empty() || !matches!(rest.chars().next(), Some('.') | Some('-') | Some('_')) {
+    let suffix = &trimmed[digits.len()..];
+    let spaced_prefix=digits.len()>=2 && suffix.starts_with(char::is_whitespace);
+    let rest = suffix.trim_start();
+    if rest.is_empty() || (!spaced_prefix && !matches!(rest.chars().next(), Some('.') | Some('-') | Some('_'))) {
         return None;
     }
 
@@ -675,7 +1215,14 @@ fn is_track_number(value: &str) -> bool {
 fn is_noise_folder(value: &str) -> bool {
     matches!(
         value.to_ascii_lowercase().as_str(),
-        "music" | "media.localized" | "automatically add to music" | "unknown artist"
+        "music"
+            | "audio"
+            | "downloads"
+            | "tracks"
+            | "offline music"
+            | "media.localized"
+            | "automatically add to music"
+            | "unknown artist"
     )
 }
 
@@ -689,13 +1236,103 @@ fn is_audio(path: &Path) -> bool {
             .and_then(|e| e.to_str())
             .map(|e| e.to_ascii_lowercase())
             .as_deref(),
-        Some("mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac")
+        Some("mp3" | "flac" | "ogg" | "oga" | "wav" | "m4a" | "aac")
     )
+}
+
+fn ignored_library_entry(path: &Path, depth: usize) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if name.starts_with('.')
+        || matches!(
+            name.to_ascii_lowercase().as_str(),
+            "$recycle.bin" | "system volume information" | "node_modules" | "target" | "__macosx"
+        )
+    {
+        return true;
+    }
+    if path.is_dir() {
+        return matches!(
+            path.extension()
+                .and_then(|value| value.to_str())
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("app" | "bundle" | "framework" | "plugin" | "component" | "pkg")
+        );
+    }
+    false
+}
+
+#[cfg(test)]
+#[test]
+fn unsupported_opus_files_are_not_indexed() {
+    assert!(!is_audio(Path::new("album/track.opus")));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn explicit_scan_request_uses_its_paths_and_reports_cancellation() {
+        let root =
+            std::env::temp_dir().join(format!("musicos-explicit-scan-{}", std::process::id()));
+        let media_dir = root.join("managed");
+        let db_path = root.join("library.sqlite3");
+        std::fs::create_dir_all(&media_dir).unwrap();
+        std::fs::write(
+            media_dir.join("Local Artist - Explicit Path.mp3"),
+            b"minimal fixture",
+        )
+        .unwrap();
+
+        let cancel = AtomicBool::new(false);
+        let mut observed = Vec::new();
+        let result = scan_library_with_progress(
+            &db_path,
+            &ScanRequest {
+                managed_root: media_dir.clone(),
+                reference_source_ids: Some(Vec::new()),
+                mode: ScanMode::Changed,
+            },
+            &cancel,
+            |progress| observed.push(progress),
+        )
+        .unwrap();
+        assert_eq!(result.discovered, 1);
+        assert_eq!(result.processed, 1);
+        assert!(!observed.is_empty());
+        assert_eq!(
+            Db::open(db_path.to_str().unwrap())
+                .unwrap()
+                .library_counts()
+                .unwrap()
+                .tracks,
+            1
+        );
+
+        cancel.store(true, Ordering::Relaxed);
+        let cancelled = scan_library_with_progress(
+            &db_path,
+            &ScanRequest {
+                managed_root: media_dir,
+                reference_source_ids: Some(Vec::new()),
+                mode: ScanMode::Full,
+            },
+            &cancel,
+            |_| {},
+        )
+        .unwrap();
+        assert!(cancelled.cancelled);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn apple_music_paths_use_folders_before_track_numbers() {
@@ -765,6 +1402,37 @@ mod tests {
     }
 
     #[test]
+    fn album_art_does_not_leak_from_artist_folder() {
+        let root =
+            std::env::temp_dir().join(format!("musicos-cover-art-boundary-{}", std::process::id()));
+        let artist = root.join("Artist");
+        let album = artist.join("Album");
+        std::fs::create_dir_all(&album).unwrap();
+        let artist_image = image::RgbaImage::from_pixel(2, 2, image::Rgba([200, 10, 20, 255]));
+        artist_image.save(artist.join("cover.png")).unwrap();
+
+        assert!(extract_cover_art(album.join("01 Song.mp3").to_str().unwrap()).is_none());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn disc_subfolders_can_use_their_album_folder_art() {
+        let root =
+            std::env::temp_dir().join(format!("musicos-cover-art-disc-{}", std::process::id()));
+        let album = root.join("Album");
+        let disc = album.join("Disc 2");
+        std::fs::create_dir_all(&disc).unwrap();
+        let album_image = image::RgbaImage::from_pixel(2, 2, image::Rgba([30, 90, 180, 255]));
+        album_image.save(album.join("folder.png")).unwrap();
+
+        let art = extract_cover_art(disc.join("01 Song.flac").to_str().unwrap()).unwrap();
+        assert_eq!(art.pixels[0], Color::rgba(30, 90, 180, 255));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn cached_cover_art_is_persisted_and_reused() {
         let root =
             std::env::temp_dir().join(format!("musicos-cover-art-cache-{}", std::process::id()));
@@ -797,6 +1465,13 @@ mod tests {
         let refreshed = db.get_track_by_id(track_id).unwrap().unwrap();
         let cached_path = refreshed.cover_art_path.as_ref().unwrap();
         assert!(Path::new(cached_path).exists());
+        assert_eq!(
+            Path::new(cached_path)
+                .parent()
+                .and_then(Path::file_name)
+                .and_then(|value| value.to_str()),
+            Some(COVER_ART_CACHE_VERSION_DIR)
+        );
         assert_eq!(refreshed.cover_art_source_modified_at, Some(55));
         assert_eq!(db.cover_art_cache_count().unwrap(), 1);
 
@@ -805,4 +1480,29 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(root);
     }
+
+    #[test]
+    fn scanner_supports_ogg_audio_and_skips_application_bundles() {
+        let root = std::env::temp_dir().join(format!("musicos-scan-filter-{}", std::process::id()));
+        let album = root.join("Artist").join("Album");
+        let application = root
+            .join("Mounted Tool.app")
+            .join("Contents")
+            .join("Resources");
+        std::fs::create_dir_all(&album).unwrap();
+        std::fs::create_dir_all(&application).unwrap();
+        std::fs::write(album.join("01 Song.ogg"), b"fixture").unwrap();
+        std::fs::write(album.join("02 Song.oga"), b"fixture").unwrap();
+        std::fs::write(application.join("alert.wav"), b"fixture").unwrap();
+
+        let files = audio_files_under(&root);
+        assert_eq!(files.len(), 2);
+        assert!(files
+            .iter()
+            .all(|path| !path.to_string_lossy().contains(".app")));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
+
+#[cfg(test)] mod filename_order_tests {use super::*;#[test]fn padded_track_prefix_can_use_whitespace(){assert_eq!(track_number_from_stem("12 ARE WE STILL FRIENDS-"),Some(12));assert_eq!(track_number_from_stem("01. IGOR'S THEME"),Some(1));assert_eq!(track_number_from_stem("2019 - IGOR"),None);assert_eq!(track_number_from_stem("7 rings"),None);assert_eq!(track_number_from_stem("12"),None);}}

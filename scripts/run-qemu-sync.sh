@@ -11,10 +11,6 @@ export MUSICOS_SYNC_DIR="${MUSICOS_SYNC_DIR:-./music}"
 
 mkdir -p "${MUSICOS_SYNC_DIR}"
 
-if [ ! -d node_modules/electron ]; then
-  npm install
-fi
-
 scripts/run-qemu.sh &
 qemu_pid=$!
 
@@ -33,4 +29,4 @@ done
 
 MUSICOS_SYNC_TARGET="${MUSICOS_SYNC_TARGET}" \
 MUSICOS_SYNC_DIR="${MUSICOS_SYNC_DIR}" \
-npm run sync:electron
+cargo run -p musicos-desktop --bin musicos-control-center

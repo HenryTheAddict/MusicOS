@@ -12,6 +12,9 @@ pub enum Button {
     Sleep,
     VolumeUp,
     VolumeDown,
+    PlayPause,
+    PreviousTrack,
+    NextTrack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,11 +43,26 @@ mod linux {
     use std::os::fd::AsRawFd;
     use std::time::{Duration, Instant};
 
+    const REPEAT_DELAY: Duration = Duration::from_millis(360);
+    const REPEAT_INTERVAL: Duration = Duration::from_millis(105);
+
     pub struct InputSystem {
         devices: Vec<Device>,
         pointer: PointerTracker,
         pressed_buttons: std::collections::HashSet<Button>,
         pressed_keys: std::collections::HashSet<u16>,
+        hat_x: i32,
+        hat_y: i32,
+        held_direction: Option<Button>,
+        held_since: Instant,
+        last_repeat: Instant,
+    }
+
+    fn is_direction(button: Button) -> bool {
+        matches!(
+            button,
+            Button::Up | Button::Down | Button::Left | Button::Right
+        )
     }
 
     impl InputSystem {
@@ -72,11 +90,17 @@ mod linux {
                 }
             }
 
+            let now = Instant::now();
             Self {
                 devices,
                 pointer: PointerTracker::default(),
                 pressed_buttons: std::collections::HashSet::new(),
                 pressed_keys: std::collections::HashSet::new(),
+                hat_x: 0,
+                hat_y: 0,
+                held_direction: None,
+                held_since: now,
+                last_repeat: now,
             }
         }
 
@@ -110,6 +134,9 @@ mod linux {
                                 if value == 0 {
                                     self.pressed_buttons.remove(&button);
                                     out.push(InputEvent::ButtonRelease(button));
+                                } else if value == 2 && is_direction(button) {
+                                    // OS auto-repeat for direction keys is replaced by our own
+                                    // D-pad repeat logic below, so drop the duplicate event.
                                 } else {
                                     self.pressed_buttons.insert(button);
 
@@ -129,6 +156,17 @@ mod linux {
                         }
                         InputEventKind::AbsAxis(axis) => {
                             let value = event.value();
+                            match axis {
+                                AbsoluteAxisType::ABS_HAT0X
+                                | AbsoluteAxisType::ABS_HAT1X
+                                | AbsoluteAxisType::ABS_HAT2X
+                                | AbsoluteAxisType::ABS_HAT3X => self.hat_x = value,
+                                AbsoluteAxisType::ABS_HAT0Y
+                                | AbsoluteAxisType::ABS_HAT1Y
+                                | AbsoluteAxisType::ABS_HAT2Y
+                                | AbsoluteAxisType::ABS_HAT3Y => self.hat_y = value,
+                                _ => {}
+                            }
                             if let Some(event) = map_abs_dpad(axis, value) {
                                 log_input(&format!(
                                     "axis {:?} value={} -> {:?}",
@@ -145,7 +183,47 @@ mod linux {
                     }
                 }
             }
+            self.apply_direction_repeat(&mut out);
             out
+        }
+
+        fn current_direction(&self) -> Option<Button> {
+            if self.hat_y < 0 {
+                return Some(Button::Up);
+            }
+            if self.hat_y > 0 {
+                return Some(Button::Down);
+            }
+            if self.hat_x < 0 {
+                return Some(Button::Left);
+            }
+            if self.hat_x > 0 {
+                return Some(Button::Right);
+            }
+            [Button::Up, Button::Down, Button::Left, Button::Right]
+                .into_iter()
+                .find(|button| self.pressed_buttons.contains(button))
+        }
+
+        fn apply_direction_repeat(&mut self, out: &mut Vec<InputEvent>) {
+            let now = Instant::now();
+            match self.current_direction() {
+                Some(dir) if self.held_direction != Some(dir) => {
+                    self.held_direction = Some(dir);
+                    self.held_since = now;
+                    self.last_repeat = now;
+                }
+                Some(_) => {}
+                None => self.held_direction = None,
+            }
+            if let Some(dir) = self.held_direction {
+                if now.duration_since(self.held_since) >= REPEAT_DELAY
+                    && now.duration_since(self.last_repeat) >= REPEAT_INTERVAL
+                {
+                    out.push(InputEvent::Button(dir));
+                    self.last_repeat = now;
+                }
+            }
         }
     }
 
@@ -163,11 +241,22 @@ mod linux {
     }
 
     fn map_key_to_button(key: Key) -> Option<Button> {
+        let anbernic_layout = std::env::var("MUSICOS_GAMEPAD_LAYOUT")
+            .map(|value| value.eq_ignore_ascii_case("anbernic"))
+            .unwrap_or_else(|_| std::path::Path::new("/etc/musicos-release").exists());
+        if anbernic_layout {
+            match key {
+                Key::BTN_EAST => return Some(Button::Confirm),
+                Key::BTN_SOUTH | Key::BTN_SELECT => return Some(Button::Back),
+                Key::BTN_START => return Some(Button::Menu),
+                _ => {}
+            }
+        }
+
         Some(match key {
             Key::KEY_ENTER
             | Key::KEY_SPACE
             | Key::KEY_OK
-            | Key::KEY_PLAYPAUSE
             | Key::KEY_SELECT
             | Key::BTN_SOUTH
             | Key::BTN_SELECT
@@ -178,15 +267,20 @@ mod linux {
                 Button::Back
             }
             Key::KEY_X | Key::BTN_NORTH | Key::BTN_TR => Button::Context,
+            Key::BTN_TL2 => Button::PreviousTrack,
+            Key::BTN_TR2 => Button::NextTrack,
             Key::KEY_Y | Key::BTN_WEST => Button::Home,
             Key::KEY_MENU | Key::KEY_HOMEPAGE | Key::BTN_MODE | Key::BTN_TRIGGER => Button::Menu,
             Key::KEY_SLEEP | Key::KEY_SUSPEND => Button::Sleep,
             Key::KEY_VOLUMEUP => Button::VolumeUp,
             Key::KEY_VOLUMEDOWN => Button::VolumeDown,
+            Key::KEY_PLAYPAUSE => Button::PlayPause,
+            Key::KEY_PREVIOUSSONG => Button::PreviousTrack,
+            Key::KEY_NEXTSONG => Button::NextTrack,
             Key::KEY_UP | Key::BTN_DPAD_UP => Button::Up,
             Key::KEY_DOWN | Key::BTN_DPAD_DOWN => Button::Down,
-            Key::KEY_LEFT | Key::KEY_PREVIOUSSONG | Key::BTN_DPAD_LEFT => Button::Left,
-            Key::KEY_RIGHT | Key::KEY_NEXTSONG | Key::BTN_DPAD_RIGHT => Button::Right,
+            Key::KEY_LEFT | Key::BTN_DPAD_LEFT => Button::Left,
+            Key::KEY_RIGHT | Key::BTN_DPAD_RIGHT => Button::Right,
             _ => return None,
         })
     }
@@ -224,7 +318,10 @@ mod linux {
     }
 
     fn log_input(line: &str) {
-        log::info!("input {line}");
+        log::debug!("input {line}");
+        if std::env::var("MUSICOS_INPUT_LOG").as_deref() != Ok("1") {
+            return;
+        }
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)

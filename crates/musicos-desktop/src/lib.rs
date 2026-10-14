@@ -1,0 +1,22 @@
+pub mod api_client;
+#[cfg(feature = "gpui-ui")]
+pub mod assets;
+pub mod backup;
+pub mod diagnostics;
+pub mod library_import;
+pub mod local;
+pub mod models;
+pub mod motion;
+pub mod operations;
+pub mod platform;
+pub mod playlist_sync;
+pub mod reference_sources;
+pub mod runtime_manager;
+pub mod state;
+pub mod storage;
+pub mod sync;
+pub mod transcode;
+#[cfg(feature = "gpui-ui")]
+pub mod ui;
+
+pub use models::*;

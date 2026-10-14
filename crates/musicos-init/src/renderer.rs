@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Result};
@@ -12,18 +12,45 @@ use crate::assets;
 use crate::framebuffer::FbDev;
 use crate::ui::FontWeight;
 
-static LATEST_SCREENSHOT: OnceLock<Mutex<Vec<u8>>> = OnceLock::new();
-
-pub fn get_latest_screenshot() -> Option<Vec<u8>> {
-    LATEST_SCREENSHOT
-        .get()
-        .and_then(|m| m.lock().ok().map(|guard| guard.clone()))
+#[derive(Clone)]
+pub struct ScreenshotFrame {
+    pub bytes: Arc<[u8]>,
+    pub resolution: Resolution,
 }
 
-pub fn update_latest_screenshot(bytes: &[u8]) {
-    let mutex = LATEST_SCREENSHOT.get_or_init(|| Mutex::new(Vec::new()));
+struct ScreenshotState {
+    frame: Option<ScreenshotFrame>,
+    last_update: Option<Instant>,
+}
+
+static LATEST_SCREENSHOT: OnceLock<Mutex<ScreenshotState>> = OnceLock::new();
+
+pub fn get_latest_screenshot() -> Option<ScreenshotFrame> {
+    LATEST_SCREENSHOT
+        .get()
+        .and_then(|mutex| mutex.lock().ok()?.frame.clone())
+}
+
+pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
+    let mutex = LATEST_SCREENSHOT.get_or_init(|| {
+        Mutex::new(ScreenshotState {
+            frame: None,
+            last_update: None,
+        })
+    });
     if let Ok(mut guard) = mutex.lock() {
-        *guard = bytes.to_vec();
+        if guard.frame.is_some()
+            && guard
+                .last_update
+                .is_some_and(|last| last.elapsed() < Duration::from_millis(100))
+        {
+            return;
+        }
+        guard.frame = Some(ScreenshotFrame {
+            bytes: Arc::from(bytes),
+            resolution,
+        });
+        guard.last_update = Some(Instant::now());
     }
 }
 
@@ -236,12 +263,12 @@ impl Renderer {
         match self {
             Renderer::Fb(fb) => fb.draw(|canvas| {
                 f(canvas);
-                update_latest_screenshot(canvas.buffer);
+                update_latest_screenshot(canvas.buffer, canvas.resolution);
             }),
             Renderer::Memory(surface) => {
                 let mut canvas = surface.canvas()?;
                 f(&mut canvas);
-                update_latest_screenshot(canvas.buffer);
+                update_latest_screenshot(canvas.buffer, canvas.resolution);
                 Ok(())
             }
         }
@@ -311,9 +338,21 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn clear(&mut self, color: Color) {
-        for y in 0..self.resolution.height as i32 {
-            for x in 0..self.resolution.width as i32 {
-                self.put_pixel(x, y, color);
+        if color.a == 0 {
+            return;
+        }
+        if color.a == 255 {
+            for chunk in self.buffer.chunks_exact_mut(4) {
+                chunk[0] = color.b;
+                chunk[1] = color.g;
+                chunk[2] = color.r;
+                chunk[3] = 255;
+            }
+        } else {
+            for y in 0..self.resolution.height as i32 {
+                for x in 0..self.resolution.width as i32 {
+                    self.put_pixel(x, y, color);
+                }
             }
         }
     }
@@ -522,31 +561,71 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn put_pixel(&mut self, x: i32, y: i32, color: Color) {
+        if color.a == 0 {
+            return;
+        }
         if x < 0 || y < 0 || x >= self.resolution.width as i32 || y >= self.resolution.height as i32
         {
             return;
         }
         let offset = y as usize * self.stride + x as usize * 4;
-        let dst = Color::rgb(
-            self.buffer[offset + 2],
-            self.buffer[offset + 1],
-            self.buffer[offset],
-        );
-        let out = color.over(dst);
-        self.buffer[offset] = out.b;
-        self.buffer[offset + 1] = out.g;
-        self.buffer[offset + 2] = out.r;
-        self.buffer[offset + 3] = 255;
+        if color.a == 255 {
+            self.buffer[offset] = color.b;
+            self.buffer[offset + 1] = color.g;
+            self.buffer[offset + 2] = color.r;
+            self.buffer[offset + 3] = 255;
+        } else {
+            let dst = Color::rgb(
+                self.buffer[offset + 2],
+                self.buffer[offset + 1],
+                self.buffer[offset],
+            );
+            let out = color.over(dst);
+            self.buffer[offset] = out.b;
+            self.buffer[offset + 1] = out.g;
+            self.buffer[offset + 2] = out.r;
+            self.buffer[offset + 3] = 255;
+        }
     }
 
     pub fn rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
-        let x0 = x.round() as i32;
-        let y0 = y.round() as i32;
-        let x1 = (x + w).round() as i32;
-        let y1 = (y + h).round() as i32;
-        for yy in y0..y1 {
-            for xx in x0..x1 {
-                self.put_pixel(xx, yy, color);
+        if color.a == 0 {
+            return;
+        }
+        let x0 = (x.round() as i32).max(0);
+        let y0 = (y.round() as i32).max(0);
+        let x1 = ((x + w).round() as i32).min(self.resolution.width as i32);
+        let y1 = ((y + h).round() as i32).min(self.resolution.height as i32);
+        if x0 >= x1 || y0 >= y1 {
+            return;
+        }
+        if color.a == 255 {
+            for yy in y0..y1 {
+                let row_offset = yy as usize * self.stride;
+                for xx in x0..x1 {
+                    let offset = row_offset + xx as usize * 4;
+                    self.buffer[offset] = color.b;
+                    self.buffer[offset + 1] = color.g;
+                    self.buffer[offset + 2] = color.r;
+                    self.buffer[offset + 3] = 255;
+                }
+            }
+        } else {
+            for yy in y0..y1 {
+                let row_offset = yy as usize * self.stride;
+                for xx in x0..x1 {
+                    let offset = row_offset + xx as usize * 4;
+                    let dst = Color::rgb(
+                        self.buffer[offset + 2],
+                        self.buffer[offset + 1],
+                        self.buffer[offset],
+                    );
+                    let out = color.over(dst);
+                    self.buffer[offset] = out.b;
+                    self.buffer[offset + 1] = out.g;
+                    self.buffer[offset + 2] = out.r;
+                    self.buffer[offset + 3] = 255;
+                }
             }
         }
     }

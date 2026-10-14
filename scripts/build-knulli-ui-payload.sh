@@ -6,14 +6,16 @@ rootfs_tar="$repo_root/out/rg35xx/images/rootfs.tar"
 out_root="$repo_root/out/rg35xx/knulli-ui-root"
 payload="$repo_root/out/rg35xx/images/musicos-knulli-ui.squashfs"
 
-if [[ ! -f "$rootfs_tar" ]]; then
-  echo "missing rootfs tar: $rootfs_tar" >&2
+if [[ -f "$rootfs_tar" ]]; then
+  rm -rf "$out_root"
+  mkdir -p "$out_root"
+  tar -xf "$rootfs_tar" -C "$out_root"
+elif [[ -d "$out_root/usr/lib" ]]; then
+  echo "Using pre-extracted KNULLI rootfs at $out_root"
+else
+  echo "missing rootfs tar and extracted KNULLI rootfs: $rootfs_tar" >&2
   exit 1
 fi
-
-rm -rf "$out_root"
-mkdir -p "$out_root"
-tar -xf "$rootfs_tar" -C "$out_root"
 if [[ ! -e "$out_root/bin/sh" ]]; then
   ln -s ash "$out_root/bin/sh"
 fi
@@ -64,7 +66,7 @@ export MUSICOS_RESOLUTION=640x480
 export MUSICOS_MEDIA_DB=/boot/musicos/media.sqlite3
 export MUSICOS_SETTINGS_PATH=/boot/musicos/settings.json
 export MUSICOS_ASSETS_DIR=/usr/share/musicos/assets
-export MUSICOS_TARGET_FPS=60
+export MUSICOS_TARGET_FPS=30
 export MUSICOS_AUDIO_BACKEND=alsa
 export MUSICOS_ALSA_DEVICE=${MUSICOS_ALSA_DEVICE:-plughw:0,0}
 export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
@@ -145,6 +147,7 @@ while true; do sleep 5; done
 SH
 chmod +x "$out_root/sbin/init"
 
+mkdir -p "$(dirname "$payload")"
 rm -f "$payload"
 mksquashfs "$out_root" "$payload" -comp gzip -noappend -all-root
 unsquashfs -ll "$payload" | grep -E 'sbin/init|sbin/musicos-init|libasound|/music' | head -60

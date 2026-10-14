@@ -112,6 +112,53 @@ impl MotionMode {
             Self::Reduced => "Reduced Motion",
         }
     }
+
+    pub fn profile(self) -> MotionProfile {
+        match self {
+            Self::Visuals => MotionProfile {
+                screen_seconds: 0.28,
+                artwork_seconds: 0.42,
+                selection_response: 15.0,
+                ambient_time_scale: 1.0,
+                ambient_fps: 60,
+                overshoot: 0.04,
+            },
+            Self::Balanced => MotionProfile {
+                screen_seconds: 0.21,
+                artwork_seconds: 0.32,
+                selection_response: 17.0,
+                ambient_time_scale: 0.8,
+                ambient_fps: 30,
+                overshoot: 0.02,
+            },
+            Self::BatterySaver => MotionProfile {
+                screen_seconds: 0.12,
+                artwork_seconds: 0.14,
+                selection_response: 22.0,
+                ambient_time_scale: 0.35,
+                ambient_fps: 12,
+                overshoot: 0.0,
+            },
+            Self::Reduced => MotionProfile {
+                screen_seconds: 0.0,
+                artwork_seconds: 0.0,
+                selection_response: f32::INFINITY,
+                ambient_time_scale: 0.0,
+                ambient_fps: 0,
+                overshoot: 0.0,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MotionProfile {
+    pub screen_seconds: f32,
+    pub artwork_seconds: f32,
+    pub selection_response: f32,
+    pub ambient_time_scale: f32,
+    pub ambient_fps: u16,
+    pub overshoot: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,7 +211,9 @@ impl Default for Preferences {
             theme: ThemeName::Blue,
             language: Language::En,
             setup_complete: false,
-            time_configured: false,
+            // The RG35XX boot chain initializes the system clock. Keep manual date/time
+            // available in Settings without forcing a six-step wizard on first boot.
+            time_configured: true,
             clock_hour: 7,
             clock_minute: 0,
             clock_month: 6,
@@ -385,5 +434,20 @@ mod tests {
 
         std::env::remove_var("MUSICOS_SETTINGS_PATH");
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn motion_profiles_scale_down_without_losing_state_feedback() {
+        let visuals = MotionMode::Visuals.profile();
+        let balanced = MotionMode::Balanced.profile();
+        let saver = MotionMode::BatterySaver.profile();
+        let reduced = MotionMode::Reduced.profile();
+
+        assert!(visuals.artwork_seconds > balanced.artwork_seconds);
+        assert!(balanced.artwork_seconds > saver.artwork_seconds);
+        assert_eq!(saver.ambient_fps, 12);
+        assert_eq!(reduced.ambient_fps, 0);
+        assert_eq!(reduced.screen_seconds, 0.0);
+        assert_eq!(reduced.overshoot, 0.0);
     }
 }

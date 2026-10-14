@@ -1,0 +1,12 @@
+import {afterEach,expect,test,vi} from 'vitest';
+import {cleanup,fireEvent,render,screen} from '@testing-library/react';
+import ThemedSwitch from '../src/ThemedSwitch';
+import {trackCredits} from '../src/credits';
+import {registerAlbumArtwork,albumArtwork} from '../src/albumArtwork';
+import {filterAlbums,defaultFilters} from '../src/LibraryFilter';
+import type {Library,Track} from '../src/types';
+afterEach(()=>{cleanup();registerAlbumArtwork({albums:[]} as unknown as Library);});
+test('time switches have separate accessible labels, visible tracks and independent values',()=>{const change=vi.fn();const {container}=render(<><ThemedSwitch label="Show song durations" checked onChange={change}/><ThemedSwitch label="Show Now Playing time" checked={false} onChange={vi.fn()}/></>);expect(container.querySelectorAll('.switch-track')).toHaveLength(2);fireEvent.click(screen.getByRole('switch',{name:'Show song durations'}));expect(change).toHaveBeenCalledWith(false);expect(screen.getByRole('switch',{name:'Show Now Playing time'})).not.toBeChecked();});
+test('title collaborators survive a sole primary artist and duplicate credits are removed',()=>{expect(trackCredits({artist:'Daft Punk',title:'Get Lucky (feat. Pharrell Williams & Nile Rodgers)'} as Track)).toEqual(['Daft Punk','Pharrell Williams','Nile Rodgers']);expect(trackCredits({artist:'Daft Punk; Pharrell Williams',title:'Get Lucky (feat. Pharrell Williams)'} as Track)).toEqual(['Daft Punk','Pharrell Williams']);});
+test('every song receives its album cover, including a missing-cover placeholder',()=>{registerAlbumArtwork({albums:[{cover:'/album.png',track_ids:[1,2]},{cover:null,track_ids:[3]}]} as Library);expect(albumArtwork(1)).toBe('/album.png');expect(albumArtwork(2)).toBe('/album.png');expect(albumArtwork(3)).toBeNull();expect(albumArtwork(99)).toBeUndefined();});
+test('quality filters keep unknown files honest and combine with favorites and availability',()=>{const library={albums:[{id:'mixed',track_ids:[1,2]},{id:'unknown',track_ids:[3]}],tracks:[{id:1,genre:'Pop',favorited:true,available:true,audio_quality:{lossless:true}},{id:2,genre:'Pop',available:false,audio_quality:{lossless:false}},{id:3,genre:'Rock',available:true,audio_quality:null}]} as Library;expect(filterAlbums(library,{...defaultFilters,quality:'mixed',favorites:true,genre:'Pop'}).map(a=>a.id)).toEqual(['mixed']);expect(filterAlbums(library,{...defaultFilters,quality:'lossy'})).toEqual([]);expect(filterAlbums(library,{...defaultFilters,availability:'unavailable'}).map(a=>a.id)).toEqual(['mixed']);});

@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "id": "clap-general-v1",
+  "checkpoint": "laion/larger_clap_general",
+  "revision": "ada0c23a36c4e8582805bb38fec3905903f18b41",
+  "license": "Apache-2.0",
+  "license_url": "https://huggingface.co/laion/larger_clap_general/tree/ada0c23a36c4e8582805bb38fec3905903f18b41",
+  "preprocessing": "clap-music-slaney-48k-1024-480-repeatpad-v1",
+  "runtime": "onnxruntime-1.31.0",
+  "dimensions": 512,
+  "status": "evaluation_candidate",
+  "download_base": null,
+  "files": [
+    {
+      "name": "audio.onnx",
+      "bytes": 281165749,
+      "sha256": "0cc6fa08e10644765b907c04bf945ababf97ad1632f03e665de2b37fb4a4a78d"
+    },
+    {
+      "name": "moods.json",
+      "bytes": 67753,
+      "sha256": "cb31d08809b7f60bb3f8dba142249e4682a32936a7686889e160ab0b1b37f732"
+    },
+    {
+      "name": "preprocessor_config.json",
+      "bytes": 541,
+      "sha256": "9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753"
+    }
+  ]
+}

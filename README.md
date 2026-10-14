@@ -1,5 +1,7 @@
 # MusicOS
 
+Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
+
 Minimal Rust-first embedded Linux shell for low-energy music hardware. The first
 target is Anbernic RG35XX 2024 / Allwinner H700, with a real QEMU aarch64 boot
 target and a desktop preview loop for Windows, macOS, and Linux development.
@@ -8,8 +10,8 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
 
 - Rust `musicos-init` binary intended to install as `/sbin/init`.
 - PID 1 setup for `/proc`, `/sys`, `/dev`, `/run`, and `/var/lib/musicos`.
-- Figma-matched setup, hello, home, apps, music, now-playing, settings, status,
-  and test-complete screens.
+- Classic-iPod-inspired setup, home, music, now-playing, settings, status, and
+  overlay screens with restrained accent themes.
 - Raster Gothic font rendering from the bundled font archive.
 - `640x480` and `1280x960` logical display modes.
 - Linux framebuffer rendering with in-memory fallback for host checks.
@@ -18,13 +20,12 @@ target and a desktop preview loop for Windows, macOS, and Linux development.
 - USB sync path that indexes mounted media and a Settings `Get Update` action
   that installs `musicos-init` updates from USB storage.
 - Native desktop app target for Windows/macOS/Linux UI testing.
-- Electron `MusicOS Control Center` for the Windows/macOS/Linux desktop
-  emulator, device mirror, library sync, playlists, diagnostics, logs, and
-  local emulator controls.
-- Vite + React + TypeScript Control Center renderer using shadcn/ui components,
-  with an iTunes-style library shell for songs, Flow cover browsing, albums,
-  artists, playlists, devices, sync, updates, logs, settings, and a persistent
-  now-playing bar.
+- Legacy GPUI `MusicOS Control Center` for Windows, macOS, and Linux, with an
+  iTunes 9-inspired library shell, virtualized song rows, Cover Flow, playback
+  chrome, device operations, diagnostics, and local emulator controls.
+- Framework-independent Rust services for managed imports, reference sources,
+  sync, transcoding, playlist reconciliation, persistence, and runtime process
+  management.
 - `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
   USB update staging/install checks, settings, devices, and doctor output.
 - Smart dynamic mixes, playback history, queue maintenance, seek controls,
@@ -46,129 +47,64 @@ On Windows PowerShell:
 .\scripts\check-host.ps1
 ```
 
-For the normal desktop development loop, run the emulator and Control Center
-together:
+## React desktop app
+
+The default desktop is now React + TypeScript in Tauri 2, backed by the existing
+Rust library, audio, metadata, and device services without GPUI. It uses the
+Sketch blue appearance and bundled Rodin fonts, native macOS window controls,
+and ordinary overflow scrolling.
 
 ```sh
-scripts/run-desktop.sh
+./run.sh                 # install JS dependencies if needed; launch Tauri dev
+npm run build            # build frontend, preview sidecar, and desktop binary
+npm run package -- --bundles app  # macOS app bundle
 ```
 
-On Windows PowerShell:
+Windows entry point: `scripts/run-desktop.ps1`. Development requires Node 22.12+
+(or Node 24), Rust, and the platform's Tauri prerequisites. A browser-only
+`npm run dev` preview has no filesystem or playback access.
 
-```powershell
-.\scripts\run-desktop.ps1
+Library includes Songs, Albums, Artists, Genres, album/artist details, native
+folder import, managed copies, reference folders, rescan, and metadata review.
+Discover has been removed from the desktop interface. Settings has Appearance,
+Audio, Library, Integrations and General tabs. Library settings includes batch
+metadata editing and folder management; appearance preferences remain Coverflow
+Colors, Your name, and Interface size. Devices connects to the existing API,
+launches the bundled embedded preview, and reviews a folder before syncing.
+
+The app reuses the Rust desktop configuration's database and media paths.
+Compatible C++ appearance preferences migrate on first launch. Originals remain
+in place during reference imports; managed import explicitly copies files.
+See [desktop architecture and usage](docs/react-desktop.md) and the
+[current verification record](docs/react-desktop-qa.md) for exact behavior and
+remaining acceptance checks.
+
+```sh
+npm run test:desktop-core
+npm run test:tauri
+npm run test:ui
+npx playwright install chromium
+npm run dev             # separate terminal for browser integration tests
+npm run test:e2e
 ```
 
-That launches the Electron Control Center with one shared SQLite database, media
-folder, and companion API target. Use the emulator controls inside the app to
-build and start the desktop MusicOS runtime:
+## Legacy desktop implementations
 
-- API: `http://127.0.0.1:18080`
-- DB: `out/desktop-media.sqlite3`
-- Upload folder: `./music`
+Both previous implementations remain available explicitly:
 
-Override with `MUSICOS_COMPANION_PORT`, `MUSICOS_MEDIA_DB`,
-`MUSICOS_SYNC_TARGET`, or `MUSICOS_SYNC_DIR` when needed.
+```sh
+scripts/run-desktop-cpp.sh   # SDL/C++ Sketch implementation
+scripts/run-desktop-gpui.sh  # GPUI Control Center
+npm run desktop:legacy      # GPUI directly
+npm run package:legacy      # legacy cargo-packager workflow
+```
 
-For the desktop test app by itself:
+PowerShell GPUI launcher: `scripts/run-desktop-gpui.ps1`.
+The embedded MusicOS runtime and its `musicos-mac` preview remain unchanged by
+the React rewrite. To launch that runtime directly:
 
 ```sh
 cargo run --bin musicos-mac --features desktop-app,desktop-audio
-```
-
-The desktop target stores its default test database at `out/mac-media.sqlite3` and
-serves the device API on `http://127.0.0.1:18080`. Override that with
-`MUSICOS_MEDIA_DB` or `MUSICOS_COMPANION_PORT` when needed.
-
-For the Electron Control Center by itself:
-
-```sh
-npm run sync:electron
-```
-
-The Control Center starts `target/debug/musicos-mac.exe` on Windows when you use
-its emulator controls. If the binary is missing, it runs
-`cargo build --bin musicos-mac --features desktop-app,desktop-audio`, streams the
-build output into Logs, and then launches the emulator. The app targets
-`http://127.0.0.1:18080` by default. Use
-`MUSICOS_SYNC_TARGET=http://192.168.7.2:8080` for a USB-networked device, and
-`MUSICOS_SYNC_DIR=/path/to/music` to choose the folder uploaded by the app.
-Folder sync preserves relative artist/album paths, skips unchanged files by
-size/checksum, triggers one library scan after the batch, and can export a JSON
-diagnostics bundle from the Logs view. The Device view also exposes library
-backup/restore, playlist import/export, sync history, cover-art cache clearing,
-database repair, and changed/full rescans. The Logs view combines emulator,
-runtime, sync, build, and performance events with diagnostics export and a local
-perf-smoke launcher. The Library view includes Flow, an animated cover browser
-backed by real indexed albums, and can add individual songs or whole albums to
-the selected playlist, select specific songs for sync, reorder playlist tracks,
-dry-run the selected/favorites/playlist/folder sync scope, manage the real Up
-Next queue from the now-playing bar, and retry only failed files from the last
-sync attempt.
-Keyboard controls are `W/A/S/D` for direction, `J` for confirm, `H` for back,
-`U` for context, and `I` for home.
-
-Windows PowerShell equivalent:
-
-```powershell
-$env:MUSICOS_SYNC_TARGET = "http://192.168.7.2:8080"
-$env:MUSICOS_SYNC_DIR = "C:\Music"
-npm run sync:electron
-```
-
-You can also use the npm shortcuts on any host with Rust and Node installed:
-
-```sh
-npm run dev
-npm run build:renderer
-npm run check
-npm run build
-npm run desktop
-npm run cli -- --help
-```
-
-For live renderer work, run:
-
-```sh
-npm run sync:electron:dev
-```
-
-That starts Vite on `http://127.0.0.1:5173` and launches Electron with
-`MUSICOS_RENDERER_URL` pointed at the dev renderer. Normal Electron launches load
-the built Vite app from `electron/renderer-vite`; if that folder does not exist,
-Electron shows a build error instead of falling back to the removed static
-renderer. Run `npm run build:renderer` before launching packaged desktop builds.
-
-## Control Center Frontend
-
-The desktop companion is now a Vite React app initialized with the requested
-shadcn preset:
-
-```powershell
-npx.cmd --yes shadcn@latest init --preset b1tgXXJFI --template vite --rtl --pointer
-```
-
-On Windows PowerShell, plain `npx shadcn@latest ...` can fail before shadcn runs
-because script execution policy blocks `npx.ps1`. Use `npx.cmd` instead. The
-first shadcn attempt also failed because the repo was still a static Electron
-renderer with no Vite/Tailwind framework for shadcn to detect. The fix was to add
-the Vite renderer (`index.html`, `src/main.tsx`, `vite.config.ts`,
-`tsconfig.json`), install Tailwind, add `tailwind.config.js`, then rerun the same
-preset command. The generated `components.json` keeps RTL support enabled, while
-the app sets the default document direction to LTR.
-
-The renderer uses the bundled MusicOS font assets from `assets/fonts`: LECO 1976
-for compact app chrome, Raster Gothic 09/12 for small labels, and Raster Gothic
-18/24 for display text. The old static Electron renderer has been retired so the
-desktop UI source of truth is the Vite + React + TypeScript app under `src/`.
-
-Useful frontend commands:
-
-```sh
-npm run shadcn:init
-npm run build:renderer
-npm run typecheck
-npm run sync:electron:dev
 ```
 
 ## MusicOS CLI
@@ -213,25 +149,60 @@ device. `sync start desktop` uploads files from `MUSICOS_SYNC_DIR` to
 then triggers one `/api/control` library scan. You can also pass an explicit
 `http://host:port` target as the device id for a reachable MusicOS companion API.
 
-On Windows, run the local runtime performance smoke test with:
+### Agent sync CLI
 
-```powershell
+`musicos-agent` is the non-interactive sync interface for scripts and automation
+agents. It shares the Control Center's file validation, transcoding,
+SHA-256 hashing, upload, skip detection, and library scan implementation.
+The command is now a Rust binary backed by `musicos-desktop`; the npm shortcut
+retains the existing command line, JSON/JSON-lines output, and exit-code contract.
+
+```sh
+npm run agent -- device status --target http://192.168.7.2:8080 --json
+npm run agent -- devices list --target http://192.168.7.2:8080 --json
+npm run agent -- sync plan --source ~/Music --codec vorbis --bitrate 96k --json
+npm run agent -- sync start --source ~/Music --target http://192.168.7.2:8080 \
+  --codec vorbis --bitrate 96k --sample-rate 48000 --json-lines
+```
+
+Use repeated `--file <path>` options for a scoped sync. `--json` emits one final
+document; `--json-lines` emits progress events as JSON Lines. Exit codes are `0`
+for success, `2` for invalid arguments, `3` when the configured device is
+unreachable, and `4` when a sync completes with failures. Device listing probes
+the configured target; it does not scan the local network.
+
+Run the cross-platform runtime performance acceptance test with:
+
+```sh
 npm run perf:smoke
 ```
 
-It seeds a small WAV library under `out/perf`, starts the desktop runtime,
-checks API latency, screenshot availability, input latency, scan completion,
-frame timing at the RG35XX-style `640x480` resolution, and writes
+It seeds 10,000 WAV tracks under `out/perf`, starts the desktop runtime, checks
+SQL-backed paging and search latency, screenshot availability, input latency,
+scan completion, and frame timing at the RG35XX-style `640x480` resolution. It writes
 `out/perf/runtime-performance-smoke.json`. It fails nonzero if first screenshot,
-frame p95, core API p95, scan completion, or indexed track count misses the
-default thresholds. Pass `-Resolution 1280x960` to stress the HD desktop path.
+frame p95, core API p95, search p95, scan completion, or indexed track count
+misses the acceptance thresholds. Override the seed with
+`MUSICOS_PERF_TRACKS`, the resolution with `MUSICOS_PERF_RESOLUTION`, or skip
+the build with `MUSICOS_PERF_SKIP_BUILD=1`.
 
 Useful runtime APIs:
 
 - `GET /api/library` returns counts, playback, queue, playlists, diagnostics
   summary, legacy `scan_status`, structured `scan`, and build `version`.
+- `GET/POST /api/library/sources` lists or adds managed/reference roots;
+  `PATCH/DELETE /api/library/sources/:id` updates or removes a reference, and
+  `POST /api/library/sources/:id/rescan` requests a refresh.
 - `GET /api/tracks?query=&limit=&offset=&sort=&filter=&artist=&album=&playlist_id=`
   returns the compatible track array with optional filtering.
+- `GET /api/v2/tracks`, `/api/v2/albums`, `/api/v2/artists`, and
+  `/api/v2/genres` provide SQL-backed paginated library browsing with stable
+  track identities and content hashes.
+- `PATCH /api/v2/tracks/metadata` transactionally writes common audio tags and
+  refreshes the indexed metadata.
+- `GET /api/v2/playlists/manifest` and `POST /api/v2/playlists/reconcile`
+  expose revisioned, hash-based playlist manifests and three-way conflict
+  detection for desktop/device synchronization.
 - `GET /api/mixes` and `GET /api/mixes/:id/tracks` expose dynamic mixes such as
   Favorites, Recently Added, Most Played, Never Played, Long Tracks, Shuffle
   All, and Random Album.
@@ -253,10 +224,13 @@ Useful runtime APIs:
 - `PUT /api/playlists/:id/tracks/reorder` with `{ "track_ids": [...] }`
   persists manual playlist order.
 - `POST /api/control` accepts playback, queue, playlist, scan, seek, sleep
-  timer, and smart-mix commands.
+  timer, and smart-mix commands and returns an acknowledged command result with
+  the current player revision.
 
-GitHub Actions CI is defined in `.github/workflows/ci.yml` and runs the Windows
-Rust check/test, Electron JavaScript syntax checks, and desktop binary build.
+GitHub Actions CI is defined in `.github/workflows/ci.yml`. The native Control
+Center checks, tests, and release-builds on macOS, Windows, and Linux; the
+temporary compatibility job continues to exercise the Electron renderer and
+legacy Node parity tests until the cutover gate is complete.
 
 For static visual snapshots:
 

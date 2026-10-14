@@ -39,18 +39,12 @@ impl ThemeName {
     }
 
     pub fn gradient_colors(&self) -> (Color, Color) {
-        let top = match self {
-            Self::Blue => Color::rgb(63, 143, 229),
-            Self::Red => Color::rgb(225, 94, 103),
-            Self::Green => Color::rgb(64, 177, 126),
-            Self::Purple => Color::rgb(157, 117, 211),
+        let accent = match self {
+            Self::Blue => Color::rgb(37, 112, 190),
+            Self::Red => Color::rgb(178, 68, 76),
+            Self::Green => Color::rgb(48, 137, 91),
+            Self::Purple => Color::rgb(116, 82, 155),
         };
-        let bottom = match self {
-            Self::Blue => Color::rgb(233, 243, 255),
-            Self::Red => Color::rgb(255, 235, 238),
-            Self::Green => Color::rgb(231, 249, 238),
-            Self::Purple => Color::rgb(243, 236, 255),
-        };
-        (top, bottom)
+        (accent, accent.mix(Color::WHITE, 0.18))
     }
 }

@@ -1,0 +1,11 @@
+import {useState} from 'react';
+import {call,errorText} from './bridge';
+import MetadataWorkspace from './MetadataWorkspace';
+import {Icon} from './components';
+import type {Library} from './types';
+export default function LibraryTools({view,initialIds,library,busy,onAdd,onTask,onRefresh}:{view:'sources'|'review';initialIds?:number[];library:Library;busy:boolean;onAdd:(copy:boolean)=>void;onTask:(kind:string)=>void;onRefresh:()=>Promise<void>;onError:(error:string)=>void}){
+ const [pending,setPending]=useState<number|null>(null),[error,setError]=useState('');
+ async function changeSource(id:number,enabled:boolean){setPending(id);setError('');try{await call('library_source',{id,enabled});await onRefresh();}catch(e){setError(errorText(e));}finally{setPending(null);}}
+ if(view==='review')return <MetadataWorkspace library={library} initialIds={initialIds} busy={busy} onTask={onTask} onRefresh={onRefresh}/>;
+ return <section className="library-tools"><header className="page-heading"><h1>Music folders</h1><p>Keep music where it is, or copy it into your MusicOS library.</p></header><div className="tool-actions"><button disabled={busy} onClick={()=>onAdd(false)}>Add a music folder</button><button disabled={busy} onClick={()=>onAdd(true)}>Copy into MusicOS</button><button disabled={busy} onClick={()=>onTask('rescan')}>Rescan folders</button></div>{error&&<p role="alert">{error}</p>}<div className="source-list">{library.sources.map(source=><article className="source-row" key={source.id}><Icon name="Storage"/><div><h2>{source.display_name}</h2><p>{source.path}</p>{source.last_error&&<details><summary>Folder needs attention</summary><p>{source.last_error}</p></details>}</div><span className={`connection ${source.available?'connected':''}`}>{source.enabled===false?'Removed':source.available?'Available':'Offline'}</span>{source.kind!=='managed'&&<button disabled={busy||pending!==null} onClick={()=>void changeSource(source.id,source.enabled===false)}>{pending===source.id?'Updating…':source.enabled===false?'Restore folder':'Remove from library'}</button>}</article>)}</div><p className="muted">Removing a folder hides its songs and preserves files, favorites, metadata, and playlist membership. Restore it here anytime.</p></section>;
+}

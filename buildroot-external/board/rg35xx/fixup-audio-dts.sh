@@ -8,7 +8,7 @@ if [ ! -f "$dts" ]; then
   exit 0
 fi
 
-if grep -q '"Line Out"[[:space:]]*,[[:space:]]*"LINEOUT"' "$dts" \
+if grep -q '"Speaker"[[:space:]]*,[[:space:]]*"LINEOUT"' "$dts" \
   && grep -q 'allwinner,pa-gpios[[:space:]]*=[[:space:]]*<&pio[[:space:]]*8[[:space:]]*5[[:space:]]*GPIO_ACTIVE_HIGH>' "$dts"; then
   printf 'MusicOS RG35XX audio DTS fixup: upstream route and PI5 amp GPIO already present\n'
   exit 0
@@ -20,12 +20,9 @@ cat >>"$dts" <<'DTS'
  * selected Linux tree carries the H700 codec route and PI5 speaker amp GPIO.
  */
 &codec {
+	allwinner,audio-routing = "Speaker", "LINEOUT",
+				  "Headphone", "LINEOUT";
 	allwinner,pa-gpios = <&pio 8 5 GPIO_ACTIVE_HIGH>; /* PI5 */
-};
-
-&sound {
-	simple-audio-card,routing =
-		"Line Out", "LINEOUT";
 };
 DTS
 

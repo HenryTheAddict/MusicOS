@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/musicos-init"]
+members = ["crates/musicos-init", "crates/musicos-desktop", "src-tauri"]
 exclude = ["out", "out/**", "out/qemu/build/musicos-init"]
 resolver = "2"
 
@@ -12,3 +12,6 @@ repository = "https://github.com/HenryTheAddict/MusicOS"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[patch.crates-io]
+rodio = { path = "third_party/rodio" }

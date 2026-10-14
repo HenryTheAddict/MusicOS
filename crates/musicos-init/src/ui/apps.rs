@@ -4,7 +4,7 @@ use crate::renderer::{Canvas, Color, Resolution};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{focus_halo, panel_gradient, rr_stroke, text_fit, FontWeight};
+use crate::ui::{figma_list_row, panel_gradient, rr_stroke, text_fit, FontWeight};
 use crate::usb::UsbStatus;
 
 pub fn draw_apps(
@@ -20,21 +20,29 @@ pub fn draw_apps(
     let transition_t = ease_out_cubic(transition_t);
     crate::ui::draw_figma_background(canvas);
 
-    crate::ui::shadow_rr(canvas, 31.0, 37.0, 370.0, 886.0, 100.0, 8.0, 16.0);
     crate::ui::rr(
         canvas,
-        31.0,
-        37.0,
+        20.0,
+        76.0,
         370.0,
-        886.0,
-        100.0,
-        Color::rgb(178, 246, 228),
+        852.0,
+        8.0,
+        Color::rgb(235, 237, 240),
     );
-    crate::ui::liquid_glass(canvas, 31.0, 37.0, 370.0, 886.0, 100.0, 32);
+    rr_stroke(
+        canvas,
+        20.0,
+        76.0,
+        370.0,
+        852.0,
+        8.0,
+        2.0,
+        crate::ui::IPOD_BORDER,
+    );
 
-    canvas.text_centered("Apps", 216.0, 120.0, 96.0, Color::BLACK, FontWeight::Bold);
+    canvas.text_centered("Extras", 205.0, 100.0, 62.0, Color::BLACK, FontWeight::Bold);
 
-    let stat_y = 280.0;
+    let stat_y = 240.0;
     canvas.text_centered(
         &format!("Tracks: {}", counts.tracks),
         216.0,
@@ -93,17 +101,16 @@ pub fn draw_apps(
         FontWeight::Regular,
     );
 
-    let (theme_top, theme_bottom) = theme.gradient_colors();
-    crate::ui::shadow_rr(canvas, 427.0, 37.0, 822.0, 886.0, 100.0, 8.0, 16.0);
+    let _ = theme;
     panel_gradient(
         canvas,
         427.0,
-        37.0,
+        76.0,
         822.0,
-        886.0,
-        100.0,
-        theme_top,
-        theme_bottom,
+        852.0,
+        8.0,
+        Color::WHITE,
+        Color::WHITE,
     );
     crate::ui::liquid_glass(canvas, 427.0, 37.0, 822.0, 886.0, 100.0, 28);
 
@@ -114,16 +121,16 @@ pub fn draw_apps(
             "Now Playing",
             "Player",
             "NowPlaying.svg",
-            248.0,
+            250.0,
         ),
         (
             Focus::AppsSettings,
             "Settings",
             "Device",
             "settings.svg",
-            404.0,
+            408.0,
         ),
-        (Focus::AppsUsbSync, "USB Sync", "Import", "Apps.svg", 560.0),
+        (Focus::AppsUsbSync, "USB Sync", "Import", "Apps.svg", 566.0),
     ];
 
     for (index, (item_focus, label, subtitle, icon, y)) in items.into_iter().enumerate() {
@@ -162,16 +169,10 @@ fn app_row(
 ) {
     let w = 702.0;
     let h = 138.0;
-    if selected {
-        focus_halo(canvas, x, y, w, h, 69.0, seconds, phase);
-        crate::ui::shadow_rr(canvas, x, y, w, h, 69.0, 4.0, 12.0);
-        crate::ui::liquid_glass(canvas, x, y, w, h, 69.0, 204);
-        canvas.register_selected(x, y, w, h, 69.0, 8.0);
-    } else {
-        crate::ui::liquid_glass(canvas, x, y, w, h, 69.0, 54);
-    }
+    let _ = phase;
+    figma_list_row(canvas, x, y, w, h, selected, seconds);
 
-    let base_path = std::env::var("MUSICOS_ASSETS_DIR").unwrap_or_else(|_| "assets".to_string());
+    let base_path = crate::ui::assets_dir();
     let path = format!("{}/icons/appicons/{}", base_path, icon_filename);
     canvas.draw_svg(&path, x + 28.0, y + 16.0, 106.0, 106.0);
 
@@ -182,8 +183,8 @@ fn app_row(
         y + 22.0,
         480.0,
         54.0,
-        Color::BLACK,
-        FontWeight::Regular,
+        if selected { Color::WHITE } else { Color::BLACK },
+        FontWeight::Bold,
     );
     text_fit(
         canvas,
@@ -192,7 +193,23 @@ fn app_row(
         y + 80.0,
         480.0,
         30.0,
-        Color::rgba(0, 0, 0, 178),
+        if selected {
+            Color::WHITE
+        } else {
+            Color::rgba(0, 0, 0, 178)
+        },
+        FontWeight::Bold,
+    );
+    canvas.text_right(
+        "›",
+        x + w - 24.0,
+        y + 36.0,
+        54.0,
+        if selected {
+            Color::WHITE
+        } else {
+            Color::rgb(100, 104, 110)
+        },
         FontWeight::Bold,
     );
 }
