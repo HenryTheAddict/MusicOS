@@ -1,16 +1,16 @@
 import type {PointerEvent as ReactPointerEvent} from 'react';
 import type {Track} from './types';
 
-export type SongDrag = {id:number;x:number;y:number;drop:boolean;cancelled:boolean};
+export type SongDrag = {id:number;ids?:number[];x:number;y:number;drop:boolean;cancelled:boolean};
 // Pointer drags stay inside MusicOS and never become operating-system file drops.
-export function startSongDrag(event:ReactPointerEvent,track:Track) {
+export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[track.id]) {
   if(event.button!==0||event.pointerType==='touch')return;
   event.preventDefault();
   const target=event.currentTarget as HTMLElement;
   target.setPointerCapture?.(event.pointerId);
   const start={x:event.clientX,y:event.clientY},pointer=event.pointerId;
   let moving=false,ghost:HTMLDivElement|null=null;
-  const emit=(x:number,y:number,drop=false,cancelled=false)=>window.dispatchEvent(new CustomEvent<SongDrag>('musicos-song-drag',{detail:{id:track.id,x,y,drop,cancelled}}));
+  const emit=(x:number,y:number,drop=false,cancelled=false)=>window.dispatchEvent(new CustomEvent<SongDrag>('musicos-song-drag',{detail:{id:track.id,ids,x,y,drop,cancelled}}));
   const move=(e:PointerEvent)=>{
     if(e.pointerId!==pointer)return;
     if(!moving&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<6)return;

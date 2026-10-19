@@ -69,6 +69,10 @@ fn safe_duration(value: f32) -> f32 {
     }
 }
 pub fn plan(a: Track<'_>, b: Track<'_>, config: &Config, contiguous_album: bool) -> Option<Plan> {
+    plan_after(a,b,config,contiguous_album,0.)
+}
+/// Earliest cue is in audible source seconds, leaving time for deck preparation.
+pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,earliest:f32)->Option<Plan> {
     if !config.enabled {
         return None;
     }
@@ -121,84 +125,73 @@ pub fn plan(a: Track<'_>, b: Track<'_>, config: &Config, contiguous_album: bool)
     {
         return Some(fallback("Beat grid uncertain"));
     }
-    let tempo = ba / bb;
-    if !(0.94..=1.06).contains(&tempo) {
-        return Some(fallback("Tempo difference exceeds six percent"));
+    // These are evidence-supported beat sequences, not an extrapolated BPM clock.
+    if !valid_beats(&sa.beats)||!valid_beats(&sb.beats) {
+        return Some(fallback("Measured beats unavailable"));
     }
     let allowed = |cue: f32| {
-        cue >= length * 2. / 3.
-            && cue < length
-            && sa.regions.iter().all(|r| {
-                !r.repeated || r.confidence < 0.5 || cue <= r.start + 0.15 || cue >= r.end - 0.15
-            })
+        cue >= (length * 2. / 3.).max(earliest) && cue < length
+            && preserves_section(sa,cue)
     };
     let mut best: Option<(f32, Plan)> = None;
-    for beats in [4., 8., 16.] {
-        let duration = beats * 60. / ba;
-        if !(2. ..=16.).contains(&duration) {
-            continue;
-        }
-        for end in &sa.phrases {
-            let cue = end.seconds - duration;
-            if end.confidence < 0.5 || !allowed(cue) || end.seconds > length {
-                continue;
-            }
-            // A cue must itself land at a supported boundary: do not cut the preceding phrase.
-            if !sa
-                .phrases
-                .iter()
-                .any(|p| p.confidence >= 0.5 && (p.seconds - cue).abs() < 0.15)
-            {
-                continue;
-            }
-            for start in sb.phrases.iter().filter(|p| {
-                p.confidence >= 0.5
-                    && p.seconds <= incoming_length / 3.
-                    && p.seconds + duration * tempo < incoming_length
-            }) {
-                let outgoing_density = density(sa, cue, duration);
-                let incoming_density = density(sb, start.seconds, duration * tempo);
-                let dense_overlap = outgoing_density * incoming_density;
+    let (mut tempo_rejected,mut unstable_rejected,mut drift_rejected)=(0,0,0);
+    for exit in sa.phrases.iter().filter(|p|p.confidence>=0.5&&allowed(p.seconds)) {
+        let Some(ai)=boundary_beat(&sa.beats,exit.seconds) else {continue};
+        for count in [4_usize,8,16,32] {
+            let Some(&end)=sa.beats.get(ai+count) else {continue};
+            let duration=end-sa.beats[ai];
+            if !(2. ..=16.).contains(&duration)||end>length||!preserves_section(sa,end) {continue;}
+            let Some(end_boundary)=sa.phrases.iter().find(|p|p.confidence>=0.5&&(p.seconds-end).abs()<=0.05) else {continue};
+            for entry in sb.phrases.iter().filter(|p|p.confidence>=0.5&&p.seconds<=incoming_length/3.&&preserves_section(sb,p.seconds)) {
+                let Some(bi)=boundary_beat(&sb.beats,entry.seconds) else {continue};
+                let Some(&incoming_end)=sb.beats.get(bi+count) else {continue};
+                if incoming_end>=incoming_length {continue;}
+                let incoming_duration=incoming_end-sb.beats[bi];
+                let tempo=incoming_duration/duration;
+                if !(0.94..=1.06).contains(&tempo) {tempo_rejected+=1;continue;}
+                // Reject unstable or wrongly phased local grids, even if global BPM matches.
+                if !stable_window(&sa.beats[ai..=ai+count],ba)
+                    ||!stable_window(&sb.beats[bi..=bi+count],bb) {unstable_rejected+=1;continue;}
+                let drift=(0..=count).map(|j|((sa.beats[ai+j]-sa.beats[ai])
+                    -(sb.beats[bi+j]-sb.beats[bi])/tempo).abs()).fold(0_f32,f32::max);
+                if drift>0.05 {drift_rejected+=1;continue;}
+                let outgoing_density=density(sa,sa.beats[ai],duration);
+                let incoming_density=density(sb,sb.beats[bi],incoming_duration);
+                let dense_overlap=outgoing_density*incoming_density;
                 let harmonic=harmonic_distance(a.key_index,b.key_index);
-                let score = dense_overlap + harmonic*duration/16.
-                    + (sa.energy-sb.energy).abs()*duration/16.
-                    + (length - end.seconds) / length * 0.15
-                    + start.seconds / incoming_length * 0.1;
-                let effect = if dense_overlap < 0.2 {
-                    Effect::CleanBlend
-                } else if config.character == Character::Creative
-                    && outgoing_density > incoming_density * 1.5
-                {
-                    Effect::EchoBounce
-                } else if outgoing_density > incoming_density {
-                    Effect::EchoTail
-                } else {
-                    Effect::ReverbTail
-                };
-                let p = Plan {
-                    outgoing_cue: cue,
-                    incoming_cue: start.seconds,
-                    duration,
-                    incoming_tempo: tempo,
-                    effect,
-                    confidence: sa
-                        .beat_confidence
-                        .min(sb.beat_confidence)
-                        .min(end.confidence)
-                        .min(start.confidence),
-                    reason: format!(
-                        "{}-beat blend at supported phrase boundaries",
-                        beats as usize
-                    ),
-                };
-                if best.as_ref().is_none_or(|(old, _)| score < *old) {
-                    best = Some((score, p));
-                }
+                let confidence=sa.beat_confidence.min(sb.beat_confidence)
+                    .min(exit.confidence).min(entry.confidence).min(end_boundary.confidence);
+                let energy=(outgoing_density-incoming_density).abs();
+                let skipped=(length-end)/length+sb.beats[bi]/incoming_length;
+                let score=dense_overlap*0.35+harmonic*0.15+energy*0.2
+                    +(1.-confidence)*0.2+drift/0.05*0.2+skipped*0.25;
+                let effect=if dense_overlap<0.2 {Effect::CleanBlend}
+                    else if config.character==Character::Creative&&outgoing_density>incoming_density*1.5 {Effect::EchoBounce}
+                    else if outgoing_density>incoming_density {Effect::EchoTail}else{Effect::ReverbTail};
+                let p=Plan{outgoing_cue:sa.beats[ai],incoming_cue:sb.beats[bi],duration,
+                    incoming_tempo:tempo,effect,confidence,
+                    reason:format!("{count}-beat measured boundary blend; drift {:.1}ms, confidence {confidence:.2}, density {dense_overlap:.3}, energy {energy:.3}, harmony {harmonic:.2}, skipped {skipped:.3}, score {score:.3}",drift*1000.)};
+                if best.as_ref().is_none_or(|(old,_)|score<*old){best=Some((score,p));}
             }
         }
     }
-    Some(best.map(|(_, p)| p).unwrap_or_else(||fallback("No compatible supported phrase boundaries")))
+    Some(best.map(|(_, p)| p).unwrap_or_else(||fallback(&format!("No compatible supported phrase boundaries (tempo {tempo_rejected}, unstable {unstable_rejected}, drift {drift_rejected})"))))
 }
+fn preserves_section(s:&Structure,time:f32)->bool{s.regions.iter().all(|r|!r.repeated||r.confidence<0.5||time<=r.start+0.05||time>=r.end-0.05)}
+fn valid_beats(beats:&[f32])->bool {beats.len()>=5&&beats.iter().all(|t|t.is_finite()&&*t>=0.)&&beats.windows(2).all(|p|p[1]>p[0])}
+fn boundary_beat(beats:&[f32],time:f32)->Option<usize>{
+    let i=beats.partition_point(|b|*b<time);[i.checked_sub(1),Some(i)].into_iter().flatten()
+        .filter(|i|beats.get(*i).is_some_and(|b|(*b-time).abs()<=0.05))
+        .min_by(|i,j|(beats[*i]-time).abs().total_cmp(&(beats[*j]-time).abs()))
+}
+fn stable_window(beats:&[f32],bpm:f32)->bool{
+    let period=(beats[beats.len()-1]-beats[0])/(beats.len()-1)as f32;
+    let local=60./period;
+    // Octave-compatible global estimates are allowed only with actual local beat evidence.
+    let octave_agrees=[0.5,1.,2.].iter().any(|factor|(local/(bpm*factor)-1.).abs()<=0.15);
+    octave_agrees&&beats.windows(2).all(|p|((p[1]-p[0])/period-1.).abs()<=0.12)
+}
+
 fn density(s: &Structure, start: f32, duration: f32) -> f32 {
     if !s.energy_step.is_finite() || s.energy_step <= 0. {
         return 1.;
@@ -338,6 +331,7 @@ mod tests {
     #[test]
     fn compatible_boundaries_plan_bounded_pitch_preserving_tempo() {
         let a = Structure {
+            beats:(0..=360).map(|i|i as f32*0.5).collect(),
             beat_confidence: 1.,
             phrases: vec![
                 Boundary {
@@ -352,6 +346,7 @@ mod tests {
             ..Default::default()
         };
         let b = Structure {
+            beats:(0..=372).map(|i|i as f32*60./124.).collect(),
             beat_confidence: 1.,
             phrases: vec![Boundary {
                 seconds: 0.,
@@ -368,6 +363,40 @@ mod tests {
         .unwrap();
         assert!(p.confidence >= 0.5 && p.outgoing_cue >= 120. && (2. ..=16.).contains(&p.duration));
         assert!((0.94..=1.06).contains(&p.incoming_tempo));
+    }
+    fn measured(period:f32)->Structure {
+        Structure{beat_confidence:0.9,beats:(0..=400).map(|i|i as f32*period).collect(),
+            phrases:(0..=25).map(|i|Boundary{seconds:i as f32*16.*period,confidence:0.9}).collect(),..Default::default()}
+    }
+    #[test]fn measured_beats_override_bpm_rounding_and_octave_hints(){
+        let a=measured(0.502);let b=measured(0.49);
+        let p=plan(track(180.,Some(60.),Some(&a)),track(180.,Some(122.),Some(&b)),&config(),false).unwrap();
+        assert!(p.confidence>=0.5);assert!((p.incoming_tempo-0.49/0.502).abs()<0.0001);
+        let ai=boundary_beat(&a.beats,p.outgoing_cue).unwrap();let bi=boundary_beat(&b.beats,p.incoming_cue).unwrap();
+        for j in 0..=16 {let drift=((a.beats[ai+j]-p.outgoing_cue)-(b.beats[bi+j]-p.incoming_cue)/p.incoming_tempo).abs();assert!(drift<=0.05);}
+    }
+    #[test]fn constant_ratio_cannot_hide_local_drift(){
+        let a=measured(0.5);let mut b=measured(0.5);
+        for (i,beat) in b.beats.iter_mut().enumerate(){if i%2==1{*beat+=0.055;}}
+        let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false).unwrap();
+        assert_eq!(p.confidence,0.);assert_eq!(p.incoming_tempo,1.);
+    }
+    #[test]fn future_planning_does_not_reuse_missed_phrase(){
+        let a=measured(0.5);let b=measured(0.5);
+        let p=plan_after(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false,162.).unwrap();
+        assert!(p.outgoing_cue>=162.);assert!(p.confidence>=0.5);
+        let p=plan_after(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false,177.).unwrap();
+        assert_eq!(p.confidence,0.);assert_eq!(p.outgoing_cue,178.);
+    }
+    #[test]fn overlap_must_not_finish_inside_a_protected_section(){
+        let mut a=measured(0.5);let b=measured(0.5);
+        a.phrases.retain(|p|p.seconds==128.||p.seconds==136.);
+        a.regions=vec![Region{start:128.,end:170.,repeated:true,confidence:0.9}];
+        let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false).unwrap();assert_eq!(p.confidence,0.);
+    }
+    #[test]fn beats_without_structural_evidence_never_force_a_mix(){
+        let mut a=measured(0.5);a.phrases.clear();let b=measured(0.5);
+        let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false).unwrap();assert_eq!(p.confidence,0.);
     }
     #[test]
     fn album_handoff_has_no_overlap() {

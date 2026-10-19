@@ -36,6 +36,7 @@ pub mod apple {
         fn mos_audio_close(handle:*mut c_void);
         fn mos_audio_probe(path:*const c_char,rate:*mut f64,duration:*mut f64,codec:*mut u32,channels:*mut u32,bits:*mut u32,bitrate:*mut f64)->i32;
         fn mos_oriented_png(source:*const c_char,destination:*const c_char)->i32;
+        fn mos_artwork_png(source:*const c_char,destination:*const c_char,maximum:u32)->i32;
         fn mos_depth(package:*const c_char,source:*const c_char,destination:*const c_char,error:*mut c_char,size:usize)->i32;
     }
     /// Requires a live WKWebView pointer on the AppKit main thread.
@@ -69,6 +70,8 @@ pub mod apple {
         fn try_seek(&mut self,pos:Duration)->std::result::Result<(),SeekError>{let mut error=[0;1024];if unsafe{mos_audio_seek(self.handle.as_ptr(),pos.as_secs_f64(),error.as_mut_ptr(),error.len())}<0{return Err(SeekError::Other(Box::new(std::io::Error::other(failure(&error).to_string()))));}self.index=0;self.len=0;self.error=None;Ok(())}
     }
     pub fn oriented_png(source:&Path,destination:&Path)->Result<()>{anyhow::ensure!(unsafe{mos_oriented_png(path(source)?.as_ptr(),path(destination)?.as_ptr())}==0,"Cannot orient portrait");Ok(())}
+    /// ImageIO prepares a bounded, orientation-correct display image.
+    pub fn artwork_png(source:&Path,destination:&Path,maximum:u32)->Result<()>{anyhow::ensure!(unsafe{mos_artwork_png(path(source)?.as_ptr(),path(destination)?.as_ptr(),maximum)}==0,"Cannot prepare artwork");Ok(())}
     /// Caller serializes inference and validates the package before this call.
     pub fn depth(package:&Path,source:&Path,destination:&Path)->Result<()>{let mut error=[0;1024];anyhow::ensure!(unsafe{mos_depth(path(package)?.as_ptr(),path(source)?.as_ptr(),path(destination)?.as_ptr(),error.as_mut_ptr(),error.len())}==0,"{}",failure(&error));Ok(())}
 }

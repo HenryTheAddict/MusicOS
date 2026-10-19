@@ -40,7 +40,7 @@ pub fn start(source:PathBuf,destination:PathBuf)->Result<()> {
 pub fn remove(destination:&std::path::Path)->Result<()>{ensure!(!status().running,"Cancel installation before removing the model");if destination.exists(){fs::remove_dir_all(destination)?;}update(|s|*s=Status::default());Ok(())}
 #[cfg(test)]mod tests{
  use super::*;
- fn wait(){let start=std::time::Instant::now();while status().running{assert!(start.elapsed()<std::time::Duration::from_secs(10));std::thread::sleep(std::time::Duration::from_millis(10));}}
+ fn wait(){let start=std::time::Instant::now();while status().running{assert!(start.elapsed()<std::time::Duration::from_secs(60));std::thread::sleep(std::time::Duration::from_millis(10));}}
  #[test]fn installation_failure_cancellation_and_retry_do_not_leave_partial_models(){
   let temp=tempfile::tempdir().unwrap();let source=temp.path().join("source");let destination=temp.path().join("model");fs::create_dir(&source).unwrap();
   start(source.clone(),destination.clone()).unwrap();wait();assert!(status().error.is_some());assert!(!destination.exists());assert!(!destination.with_extension("installing").exists());

@@ -1,3 +1,15 @@
+import {invalidateDisplay,type LibraryChanged} from './displayData';
+import {KeepView} from './ViewScope';
+import {mergePlaybackUpdate} from './playbackPresentation';
+import {captureAlbumCover,captureAlbumReturn,captureArtistCover,captureArtistReturn,captureLibraryToolbar} from './albumTransitions';
+import MiniPlayer from './MiniPlayer';
+import usePanelPresence from './usePanelPresence';
+import useAnalyzedTempos from './useAnalyzedTempos';
+import {dragWindow} from './windowDrag';
+import {TrackSelection} from './TrackSelection';
+import {appearance,themePalette,readableInk} from './appearance';
+import {albumArtists,trackCredits} from './credits';
+import ThemedSwitch from './ThemedSwitch';
 import LibraryFilter,{defaultFilters,filterAlbums} from './LibraryFilter';
 import {registerAlbumArtwork} from './albumArtwork';
 import QuickAudio from "./QuickAudio";
@@ -6,9 +18,12 @@ import ArtworkViewer from "./ArtworkViewer";
 import AlbumArtwork from './AlbumCoverMotion';
 import AlbumArtists from "./AlbumArtists";
 import CollectionCreate from "./CollectionDesign";
-import SparkCreate from "./SparkCreate";
+import PlaylistPicker from "./PlaylistPicker";
+const SparkCreate = lazy(()=>import("./SparkCreate"));
 import VolumeControl from "./VolumeControl";
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -26,7 +41,6 @@ import {
   subscribe,
   native,
   localArtwork,
-  invalidateArtwork,
   errorText,
   emptyLibrary,
   emptyPlayback,
@@ -53,20 +67,20 @@ import {
   type CollectionItem,
 } from "./components";
 import {PlaylistDetail,PlaylistArtwork,AudioSparkDetail} from './PlaylistLibrary';
-import CollectionManager from './CollectionManager';
-import AudioAnalysis from './AudioAnalysis';
-import Settings from "./Settings";
+const CollectionManager = lazy(()=>import("./CollectionManager"));
+const AudioAnalysis = lazy(()=>import("./AudioAnalysis"));
+const Settings = lazy(()=>import("./Settings"));
 import ArtistOverview from "./ArtistOverview";
 import { resolveArtworkTheme, clearThemeCache } from "./artworkTheme";
 import { useNativeChrome } from "./nativeChrome";
-import Devices from "./Devices";
-import LibraryTools from "./LibraryTools";
-import { useJellyMotion, usePageEntrance, useOverscrollFeedback } from "./motion";
+const Devices = lazy(()=>import("./Devices"));
+const LibraryTools = lazy(()=>import("./LibraryTools"));
+import { usePageEntrance } from "./motion";
 import { useSmoothCorners } from "./smoothCorners";
 import PlaybackProgress from "./PlaybackProgress";
 import AudioQuality from "./AudioQuality";
 import AlbumDescription from "./AlbumDescription";
-import SuperCommand from "./SuperCommand";
+const SuperCommand = lazy(()=>import("./SuperCommand"));
 import type {
   SavedCollection,
   Album,
@@ -101,22 +115,34 @@ function contrastInk(hex:string){
 export default function App() {
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataIds,setMetadataIds]=useState<number[]>([]);
-  function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[]){captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");setSection("Settings");}
+  function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[]){captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
   const [collections,setCollections]=useState<SavedCollection[]>([]);
+  const [rowSelection,setRowSelection]=useState<Set<number>>(new Set());
+  const rowAnchor=useRef(0);
+  const [playlistTrack,setPlaylistTrack]=useState<(Track&{selectionIds?:number[]})|null>(null);
   const [creatingCollection,setCreatingCollection]=useState<"manual"|"spark"|null>(null);
   const [collectionError,setCollectionError]=useState("");
+  useEffect(()=>{const drag=(event:Event)=>{const value=(event as CustomEvent<import('./songDrag').SongDrag>).detail;document.querySelectorAll('[data-song-drop]').forEach(el=>el.removeAttribute('data-song-drop'));const target=document.elementFromPoint(value.x,value.y)?.closest<HTMLElement>('[data-manual-collection]');if(!target||value.cancelled)return;if(!value.drop){target.dataset.songDrop='true';return;}void call('collections',{request:{action:'add',id:target.dataset.manualCollection,track_ids:value.ids??[value.id]}}).then(setCollections).catch(e=>setCollectionError(errorText(e)));};window.addEventListener('musicos-song-drag',drag);return()=>window.removeEventListener('musicos-song-drag',drag);},[]);
   const favoritePending=useRef(new Map<number,Promise<void>>());
 
   const [library, setRawLibrary] = useState<Library>(emptyLibrary);
   const setLibrary:typeof setRawLibrary=next=>setRawLibrary(old=>{const value=typeof next==='function'?next(old):next;registerAlbumArtwork(value);return value;});
   const tracksById=useMemo(()=>new Map(library.tracks.map(t=>[t.id,t])),[library.tracks]);
+  const librarySummary=useMemo(()=>({favorites:library.tracks.filter(t=>t.favorited).length,duration:library.tracks.reduce((sum,t)=>sum+t.duration,0)}),[library.tracks]);
+  const collectionSummaries=useMemo(()=>new Map(collections.map(item=>{let duration=0,available=0;for(const id of item.track_ids){const track=tracksById.get(id);if(track){duration+=track.duration;available++;}}return [item.id,{duration,available}];})),[collections,tracksById]);
   const [preferences, setPreferences] = useState(defaultPreferences);
   useSmoothCorners();
-  useNativeChrome();
+  const [miniMode,setMiniMode]=useState<'normal'|'tall'|'queue'>('normal');
+  const miniChanging=useRef(false);
+  const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
+  useNativeChrome(miniMode==='normal');
   const [rawPlayer, setPlayer] = useState<Playback>(emptyPlayback);
-  const player=useMemo(()=>({...rawPlayer,track:rawPlayer.track?(tracksById.get(rawPlayer.track.id)??rawPlayer.track):null,queue:rawPlayer.queue.map(t=>tracksById.get(t.id)??t)}),[rawPlayer,tracksById]);
+  const presentedQueue=useMemo(()=>rawPlayer.queue.map(t=>tracksById.get(t.id)??t),[rawPlayer.queue,tracksById]);
+  const player=useMemo(()=>({...rawPlayer,track:rawPlayer.track?(tracksById.get(rawPlayer.track.id)??rawPlayer.track):null,queue:presentedQueue}),[rawPlayer,tracksById,presentedQueue]);
   const [task, setTask] = useState<Task>(emptyTask);
   const [loading, setLoading] = useState(true);
+  const tempoIdentity=useMemo(()=>library.tracks.map(track=>`${track.id}:${track.path}`).join('\n'),[library.tracks]);
+  const tempos=useAnalyzedTempos(!loading,tempoIdentity);
   const [error, setError] = useState("");
   const [dismissedPlaybackError, setDismissedPlaybackError] = useState<
     string | null
@@ -130,6 +156,7 @@ export default function App() {
   const [section, setSection] = useState<"Library" | "Devices" | "Settings">(
     "Library",
   );
+  const [fileDrop,setFileDrop]=useState(false);
   const [pendingImport, setPendingImport] = useState<{
     paths: string[];
     folders: boolean;
@@ -139,68 +166,99 @@ export default function App() {
     if (pendingImport) importDialog.current?.showModal();
   }, [pendingImport]);
   const [queueOpen, setQueueOpen] = useState(false);
+  const queuePresent=usePanelPresence(queueOpen);
   useEffect(()=>{const open=()=>{setQueueOpen(false);setSection('Settings');sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page','quality');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:'quality'}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
   const [commandOpen,setCommandOpen]=useState(false);
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
   const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
   const [resolvedThemeCover, setResolvedThemeCover] = useState<string | null>(null);
+  useEffect(()=>{if(loading)return;const warm=()=>{void import('./Settings');void import('./CollectionManager');if(native)void call('library_ready').catch(()=>{});};const id=window.setTimeout(warm,1200);return()=>clearTimeout(id);},[loading]);
   const [themeEpoch, setThemeEpoch] = useState(0);
   useEffect(() => { const clear = () => { clearThemeCache(); setThemeEpoch(n=>n+1); }; window.addEventListener("musicos-artwork-invalidated", clear); return () => window.removeEventListener("musicos-artwork-invalidated", clear); }, []);
-  const [palette, setPalette] = useState<Palette | null>(null);
-  const [previousPalette, setPreviousPalette] = useState<Palette | null>(null);
+  const [artPalette,setArtPalette]=useState<Palette|null>(null);
+  const [systemDark,setSystemDark]=useState(()=>matchMedia('(prefers-color-scheme: dark)').matches);
+  useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)');const change=()=>setSystemDark(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
+  const look=appearance(preferences);
+  useEffect(()=>{document.documentElement.dataset.themeMode=look.mode==='system'?(systemDark?'dark':'light'):look.mode;},[look.mode,systemDark]);
+  const palette=useMemo(()=>themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark]);
+  useLayoutEffect(()=>{document.documentElement.dataset.playerLayout=miniMode;return()=>{delete document.documentElement.dataset.playerLayout;};},[miniMode]);
+  const launchThemeSettled=useRef(false);
+  const [themeResolved,setThemeResolved]=useState(false);
+  useLayoutEffect(()=>{document.documentElement.dataset.themePhase="launch";return()=>{delete document.documentElement.dataset.themePhase;delete document.documentElement.dataset.themeMotion;};},[]);
+  useEffect(()=>{
+    if(launchThemeSettled.current||!themeResolved)return;
+    const timer=setTimeout(()=>{launchThemeSettled.current=true;document.documentElement.dataset.themePhase="ready";},1600);
+    return()=>clearTimeout(timer);
+  },[themeResolved]);
+  const appliedTheme=useRef<{appearance:string;resolved:boolean;palette:Palette|null}|null>(null);
+  const appearanceKey=JSON.stringify([look,look.mode==='system'?systemDark:null]);
   useLayoutEffect(()=>{
-    const tokens={'--accent':palette?.accent??'#0064df','--surface-color':palette?.background??'#cbf1ff','--blob-color':palette?.blob??'#54b9ff','--ink':palette?.text??'#111820','--accent-ink':contrastInk(palette?.accent??'#0064df')};
+    const previous=appliedTheme.current;
+    if(previous?.appearance!==appearanceKey||look.source!=='artwork'){
+      delete document.documentElement.dataset.themeMotion;
+      if(previous?.resolved&&previous.appearance!==appearanceKey){launchThemeSettled.current=true;document.documentElement.dataset.themePhase='ready';}
+    }
+    else if(previous.resolved&&themeResolved&&previous.palette!==palette)document.documentElement.dataset.themeMotion='artwork';
+    const tokens={'--page-color':palette?.background??(section==='Library'?'#00aeff':'#c9efff'),'--shell-color':palette?.blob??'#00baff','--accent':palette?.accent??'#0064df','--surface-color':palette?.background??'#cbf1ff','--blob-color':palette?.blob??'#54b9ff','--ink':palette?.text??'#111820','--accent-ink':look.source==='artwork'?(look.mode==='dark'||(look.mode==='system'&&systemDark)?'#000000':'#ffffff'):readableInk(palette?.accent??'#0064df')};
+    document.documentElement.style.setProperty('--playback-tone',tokens['--ink']);
     for(const [name,value] of Object.entries(tokens))document.documentElement.style.setProperty(name,value);
-  },[palette]);
+    appliedTheme.current={appearance:appearanceKey,resolved:themeResolved,palette};
+  },[palette,section,themeResolved,appearanceKey]);
   const [navigation, dispatch] = useReducer(navigationReducer, undefined, () =>
     restoreNavigation(sessionStorage.getItem("musicos-navigation-v1")),
   );
   const route = navigation.current;
+  const liveView=useRef({section,miniMode}),scrollRestoring=useRef(false);
+  if(liveView.current.section!==section||liveView.current.miniMode!==miniMode)scrollRestoring.current=true;
+  liveView.current={section,miniMode};
   const scrollRef = useRef<HTMLElement>(null);
-  useJellyMotion();
-  useOverscrollFeedback(scrollRef,!loading);
-  usePageEntrance(scrollRef, `${section}:${route.view}:${route.id ?? ""}`, !loading);
+  const settingsScroll=useRef(new Map<string,number>()),settingsKey=useRef(sessionStorage.getItem('musicos-settings-tab')??'Appearance');
+  useLayoutEffect(()=>{
+    let frame=0,settled=0,generation=0;
+    const save=()=>{if(!scrollRestoring.current&&liveView.current.section==='Settings'&&liveView.current.miniMode==='normal'&&scrollRef.current)settingsScroll.current.set(settingsKey.current,scrollRef.current.scrollTop);};
+    const restore=()=>{const current=++generation,position=settingsScroll.current.get(settingsKey.current)??0;scrollRestoring.current=true;cancelAnimationFrame(frame);cancelAnimationFrame(settled);frame=requestAnimationFrame(()=>{if(current!==generation)return;if(scrollRef.current)scrollRef.current.scrollTop=position;settled=requestAnimationFrame(()=>{if(current===generation)scrollRestoring.current=false;});});};
+    const tab=(event:Event)=>{save();settingsKey.current=String((event as CustomEvent).detail);restore();};
+    const node=scrollRef.current;node?.addEventListener('scroll',save,{passive:true});window.addEventListener('musicos-settings-selected',tab);
+    if(section==='Settings'&&miniMode==='normal')restore();else scrollRestoring.current=false;
+    return()=>{generation++;cancelAnimationFrame(frame);cancelAnimationFrame(settled);node?.removeEventListener('scroll',save);window.removeEventListener('musicos-settings-selected',tab);};
+  },[section,miniMode]);
+
+  usePageEntrance(scrollRef, `${section}:${route.view}:${route.id ?? ""}`, !loading&&miniMode==='normal');
   const savePending = useRef<Preferences|null>(null);
   const savingPreferences=useRef(false);
   const scale = preferences.interface_percent / 100;
   const mounted = useRef(true);
-  const refresh = useCallback(async () => {
-    try {
+  const refreshWork=useRef<Promise<void>|null>(null),refreshAgain=useRef(false);
+  const refresh = useCallback(() => {
+    if(refreshWork.current){refreshAgain.current=true;return refreshWork.current;}
+    const work=(async()=>{do{refreshAgain.current=false;try{
       const next=await call("refresh_library");
-      setLibrary(next);
-      void call("collections",{}).then(setCollections).catch(e=>setCollectionError(errorText(e)));
+      setLibrary(next);invalidateDisplay("album_metadata");
+      setCollections(await call("collections",{}));setCollectionError('');
       dispatch({type:"reconcile",albums:next.albums.map(a=>a.id),artists:next.artists.map(a=>a.id),genres:next.genres.map(g=>g.id)});
-      invalidateArtwork();
-    } catch (e) {
-      setError(errorText(e));
-    }
+    }catch(e){setError(errorText(e));}}while(refreshAgain.current);})();
+    refreshWork.current=work;void work.finally(()=>{refreshWork.current=null;});return work;
   }, []);
   useEffect(() => {
     mounted.current = true;
     let cleanups: (() => void)[] = [];
     let gone = false;
-    void call("bootstrap")
-      .then((data) => {
-        if (gone) return;
-        setLibrary(data.library);
-        void call("collections",{}).then(setCollections).catch(e=>setCollectionError(errorText(e)));
-        setPreferences(data.preferences);
-        setPlayer(data.playback);
-        setTask(data.task);
-        if (data.preference_error) setSaveError(data.preference_error);
-      })
-      .catch((e) => setError(errorText(e)))
-      .finally(() => {
-        if (!gone) setLoading(false);
-      });
+    const lightweight=call("bootstrap_state").then(data=>{
+      if(gone)return;setPreferences(data.preferences);setPlayer(data.playback);setTask(data.task);
+      if(data.preference_error)setSaveError(data.preference_error);
+    });
+    const libraryLoad=call("refresh_library").then(data=>{if(!gone)setLibrary(data);});
+    void Promise.all([lightweight,libraryLoad]).then(()=>{
+      if(!gone)void call("collections",{}).then(setCollections).catch(e=>setCollectionError(errorText(e)));
+    }).catch(e=>{if(!gone)setError(errorText(e));}).finally(()=>{if(!gone)setLoading(false);});
     async function events() {
       const listeners = await Promise.all([
         subscribe<Partial<Playback>>("playback", (update) =>
-          setPlayer((old) => ({ ...old, ...update })),
+          setPlayer((old) => mergePlaybackUpdate(old,update)),
         ),
         subscribe<Task>("task", setTask),
-        subscribe("library-changed", () => void refresh()),
+        subscribe<LibraryChanged | null>("library-changed", (change) => {if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));void refresh();}),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
         subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
         subscribe<{track_id:number;path:string}>("song-artwork-found",update=>setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id?{...t,cover_art_path:update.path}:t)}))),
@@ -227,6 +285,8 @@ export default function App() {
       if (native) {
         const unlisten = await getCurrentWebviewWindow().onDragDropEvent(
           (e) => {
+            if(e.payload.type==="enter"&&e.payload.paths.length>0)setFileDrop(true);
+            if(e.payload.type==="leave"||e.payload.type==="drop")setFileDrop(false);
             if (e.payload.type === "drop") {
               const paths = e.payload.paths;
               if (!paths.length) return;
@@ -270,13 +330,17 @@ export default function App() {
   const artist = library.artists.find((a) => a.id === route.id||a.legacy_ids?.includes(route.id??""));
   const artistCoverAlbums = useMemo(() => {
     const covers = new Map<string, Album>();
-    for (const a of library.albums) {
-      for (const id of library.artists.filter(artist=>artist.album_ids.includes(a.id)).map(artist=>artist.id)) {
-      if (
-        !covers.has(id) ||
-        (!covers.get(id)?.cover && a.cover)
-      )
-        covers.set(id, a);
+    const artistsByAlbum = new Map<string, string[]>();
+    for (const artist of library.artists) {
+      for (const id of artist.album_ids) {
+        const artists = artistsByAlbum.get(id) ?? [];
+        artists.push(artist.id);
+        artistsByAlbum.set(id, artists);
+      }
+    }
+    for (const album of library.albums) {
+      for (const id of artistsByAlbum.get(album.id) ?? []) {
+        if (!covers.has(id) || (!covers.get(id)?.cover && album.cover)) covers.set(id, album);
       }
     }
     return covers;
@@ -341,15 +405,17 @@ export default function App() {
   const themeTrackId = section === "Library" && route.view === "album"
     ? album?.track_ids[0]
     : section === "Library" && route.view === "artist" ? artistThemeTracks : playingAlbum?.track_ids[0]??player.track?.id;
+  const themeRequest=JSON.stringify([[source,section==='Library'&&route.view==='artist'?firstArtistAlbum?.cover:null],themeTrackId]);
   useEffect(() => {
     let gone=false;
     async function resolve() {
-      const artistFallback=section==="Library" && route.view==="artist" ? firstArtistAlbum?.cover : null;
-      const result=preferences.coverflow_colors ? await resolveArtworkTheme([source,artistFallback],themeTrackId) : null;
-      if(!gone){setResolvedThemeCover(result?.path??null);setPalette(old=>{setPreviousPalette(old);return result?.palette??null;});}
+      if(loading)return;
+      const [paths,tracks]=JSON.parse(themeRequest) as [(string|null)[],number|number[]|undefined];
+      const result=look.source==='artwork'?await resolveArtworkTheme(paths,tracks??undefined):null;
+      if(!gone){setResolvedThemeCover(result?.path??null);setArtPalette(result?.palette??null);setThemeResolved(true);}
     }
     void resolve();return ()=>{gone=true;};
-  }, [preferences.coverflow_colors, source, themeTrackId, firstArtistAlbum?.cover, route.view, section, themeEpoch]);
+  }, [loading,look.source,themeRequest,themeEpoch]);
   const run = useCallback(async (action: PlaybackAction) => {
     try {
       setPlayer(await call("playback", { action }));
@@ -397,6 +463,12 @@ export default function App() {
     return () => window.removeEventListener("keydown", listener);
   }, [run, section, queueOpen, player.track?.id]);
   function changePreferences(next: Preferences) {
+    // A deliberate theme choice must not continue the launch interpolation:
+    // intermediate light/dark ink and surfaces can be unreadable together.
+    if(JSON.stringify(appearance(next))!==JSON.stringify(look)){
+      launchThemeSettled.current=true;
+      document.documentElement.dataset.themePhase='ready';
+    }
     setPreferences(next);
     setSaveError("");
     savePending.current=next;
@@ -408,6 +480,7 @@ export default function App() {
     })();
   }
   function captureScroll() {
+    if(section==='Settings'&&scrollRef.current)settingsScroll.current.set(settingsKey.current,scrollRef.current.scrollTop);
     if (section === "Library" && scrollRef.current)
       dispatch({
         type: "patch",
@@ -415,15 +488,17 @@ export default function App() {
       });
   }
   function goBack() {
+    if(section==='Library'&&route.view==='album')captureAlbumReturn(scrollRef.current);
+    else if(section==='Library'&&route.view==='artist')captureArtistReturn(scrollRef.current);
     captureScroll();
     dispatch({ type: "back" });
   }
   function chooseSection(next: "Library" | "Devices" | "Settings") {
-    if(next==='Settings') { sessionStorage.setItem('musicos-settings-tab','Appearance');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Appearance'})); }
     captureScroll();
     setSection(next);
   }
   function openRoute(next: Route) {
+    if(section==='Library'&&['album','artist'].includes(next.view))captureLibraryToolbar(scrollRef.current);
     captureScroll();
     dispatch({ type: "open", route: next });
   }
@@ -431,10 +506,12 @@ export default function App() {
     captureScroll();
     dispatch({ type: "scope", view });
   }
-  function openAlbum(a: Album) {
+  function openAlbum(a: Album,from?:HTMLElement) {
+    captureAlbumCover(a.id,from);
     openRoute({ view: "album", id: a.id, search: "", scroll: 0 });
   }
-  function openArtist(a: Artist) {
+  function openArtist(a: Artist,from?:HTMLElement) {
+    captureArtistCover(a.id,from);
     openRoute({ view: "artist", id: a.id, search: "", scroll: 0 });
   }
   function artistFor(track: Track, name?:string) {
@@ -486,11 +563,11 @@ export default function App() {
     let records = library.tracks;
     if (route.view === "album")
       records = (album?.track_ids ?? [])
-        .map((id) => library.tracks.find((t) => t.id === id)!)
+        .map((id) => tracksById.get(id)!)
         .filter(Boolean);
     if (route.view === "artist")
       records = records.filter((t) => artist?.track_ids.includes(t.id));
-    if(route.view==="playlist")records=(collections.find(c=>c.id===route.id)?.track_ids??[]).map(id=>library.tracks.find(t=>t.id===id)!).filter(Boolean);
+    if(route.view==="playlist")records=(collections.find(c=>c.id===route.id)?.track_ids??[]).map(id=>tracksById.get(id)!).filter(Boolean);
     if (route.view === "favorites")
       records = records.filter((t) => t.favorited);
     return records.filter((t) => match(t.title, t.artist, t.album, t.genre));
@@ -505,8 +582,10 @@ export default function App() {
       playing:a.track_ids.includes(player.track?.id??-1),
       isPlaying:player.is_playing,
       levels:player.audio_levels,
-      onClick: () => openAlbum(a),
+      onClick: event => openAlbum(a,event?.currentTarget),
       menu: [
+        {label:"Add to playlist…",icon:"Playlist",onSelect:()=>setPlaylistTrack({...library.tracks.find(t=>t.id===a.track_ids[0])!,selectionIds:a.track_ids})},
+        {label:"Edit metadata",icon:"File",onSelect:()=>openManagement("review",a.track_ids)},
         { label: "Play", icon: "play", onSelect: () => playIds(a.track_ids) },
         {
           label: "Shuffle",
@@ -526,7 +605,7 @@ export default function App() {
   }
   const selected = (id: string) =>
     dispatch({ type: "patch", patch: { selected: id } });
-  const rows = (records: Track[]) => (
+  const rows = (records: Track[]) => {const content=(
     <TrackRows
       tracks={records}
       showDurations={preferences.show_song_durations!==false}
@@ -536,6 +615,7 @@ export default function App() {
       scale={scale}
       initialOffset={route.scroll}
       playingId={player.track?.id}
+      tempos={tempos}
       isPlaying={player.is_playing}
       selected={route.selected}
       onSelect={selected}
@@ -549,11 +629,11 @@ export default function App() {
       onToggle={()=>void run({type:"toggle"})}
       onArtist={artistFor}
       onAlbum={albumFor}
-      onEdit={track=>openManagement("review",[track.id])}
+      onEdit={(track,ids)=>openManagement("review",ids??[track.id])}
       onFavorite={track=>void favorite(track)}
-      playlistActions={track=>[{label:"Play next",icon:"Song",disabled:!track.available,onSelect:()=>void run({type:"play_next",id:track.id})},{label:"Add to Up next",icon:"Song",disabled:!track.available,onSelect:()=>void run({type:"add_to_queue",id:track.id})},...collections.filter(c=>!c.spark).map(c=>({label:`${c.track_ids.includes(track.id)?'Remove from':'Add to'} ${c.name}`,icon:'Song',onSelect:()=>void call('collections',{request:{action:c.track_ids.includes(track.id)?'remove':'add',id:c.id,track_ids:[track.id]}}).then(setCollections).catch(e=>setError(errorText(e)))}))]}
+      playlistActions={(track,ids)=>[{label:"Play next",icon:"Play Next",disabled:!track.available,onSelect:()=>void run({type:"play_next",id:track.id})},{label:"Add to queue",icon:"Add to queue",disabled:!track.available,onSelect:()=>void run({type:"add_to_queue",id:track.id})},{label:"Add to playlist…",icon:"Playlist",onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})}]}
     />
-  );
+  );return route.view==='playlist'?content:<TrackSelection.Provider value={{ids:rowSelection,select:(id,index,event)=>{setRowSelection(old=>{if(event.shiftKey)return new Set(records.slice(Math.min(rowAnchor.current,index),Math.max(rowAnchor.current,index)+1).map(t=>t.id));rowAnchor.current=index;if(event.metaKey||event.ctrlKey){const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;}return new Set([id]);});},remove:()=>{},selectAll:()=>setRowSelection(new Set(records.map(t=>t.id)))}}>{content}</TrackSelection.Provider>;};
   const grid = (items: CollectionItem[]) => (
     <CollectionGrid
       parallax={preferences.artwork_parallax!==false}
@@ -607,23 +687,16 @@ export default function App() {
       />
     </div>
   );
-  const paletteStyle = (p: Palette | null): CSSProperties =>
-    p
-      ? {
-          backgroundColor: p.background,
-          backgroundImage: `radial-gradient(ellipse at 15% 25%, ${p.blob}55, transparent 65%),radial-gradient(ellipse at 90% 90%, ${p.blob}33, transparent 65%)`,
-        }
-      : { backgroundColor: section === "Library" ? "#00aeff" : "#c9efff" };
   let content;
   if (loading)
     content = (
       <div className="loading" role="status">
-        Opening your library…
+
       </div>
     );
   else if (route.view === "album" && album)
     content = (
-      <article className="album-detail">
+      <article className="album-detail" data-album-id={album.id}>
         <header className="album-hero">
           <AlbumArtwork key={album.id} album={album} scrollRef={scrollRef} depth={!!preferences.artwork_depth} motion={preferences.artwork_parallax!==false}/>
           <div className="album-copy">
@@ -651,8 +724,8 @@ export default function App() {
     );
     const fallbackAlbum = artistCoverAlbums.get(artist.id);
     content = (
-      <article className="artist-detail">
-        <ArtistOverview scrollRef={scrollRef} depth={!!preferences.artwork_depth&&preferences.artwork_parallax!==false} key={artist.id} artist={artist} albums={albums} tracks={tracks} info={artistInfo}
+      <article className="artist-detail" data-artist-id={artist.id}>
+        <ArtistOverview key={artist.id} artist={artist} albums={albums} tracks={tracks} info={artistInfo}
           fallback={fallbackAlbum} actions={collectionActions(artist.track_ids)}
           onProvider={url=>void call("open_provider",{url}).catch(e=>setError(errorText(e)))} />
         <h2 className="section-title">Albums</h2>
@@ -661,6 +734,7 @@ export default function App() {
             <button
               key={item.id}
               aria-label={item.title}
+              className="artist-album-link" data-album-id={item.id}
               onClick={item.onClick}
             >
               <Cover
@@ -720,7 +794,7 @@ export default function App() {
   else if(route.view==='playlist') {
     const item=collections.find(c=>c.id===route.id);
     const Detail=item?.kind==='audio'?AudioSparkDetail:PlaylistDetail;
-    content=item?<Detail key={item.id} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} actions={collectionActions(tracks.map(t=>t.id))}>{rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
+    content=item?<Detail key={item.id} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} visibleTrackIds={tracks.map(t=>t.id)} actions={collectionActions(tracks.map(t=>t.id))}>{rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
   }
   else if (route.view === "songs" || route.view === "favorites")
     content = tracks.length ? (
@@ -732,7 +806,7 @@ export default function App() {
     );
   else if (route.view === "artists")
     content = grid(
-      library.artists
+      (preferences.artists_album_only?albumArtists(library):library.artists)
         .filter((a) => match(a.name))
         .map((a) => ({
           id: a.id,
@@ -745,7 +819,7 @@ export default function App() {
           playing:a.track_ids.includes(player.track?.id??-1),
           isPlaying:player.is_playing,
       levels:player.audio_levels,
-          onClick: () => openArtist(a),
+          onClick: event => openArtist(a,event?.currentTarget),
           menu: [
             {
               label: "Play",
@@ -802,37 +876,56 @@ export default function App() {
       </>
     );
   }
+  async function changeMini(mode:'normal'|'tall'|'queue') {
+    if(miniChanging.current)return;
+    miniChanging.current=true;
+    try {if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
+    catch(e){if(native)await call('mini_player',{mode:'normal'}).catch(()=>{});setMiniMode('normal');setError(errorText(e));}
+    finally {miniChanging.current=false;}
+  }
+  async function toggleWindowPin(){
+    const enabled=!(miniMode==='normal'?windowPinned:miniPinned);
+    try{if(native)await call('window_pin',{enabled});if(miniMode==='normal')setWindowPinned(enabled);else setMiniPinned(enabled);}
+    catch(e){setError(errorText(e));}
+  }
+  async function showPlaying(kind:'artist'|'album',name?:string) {
+    if(miniMode!=='normal')await changeMini('normal');
+    if(player.track){setSection('Library');if(kind==='artist')artistFor(player.track,name);else albumFor(player.track);}
+  }
+  async function showQueue(){if(miniMode!=='normal')await changeMini('normal');setQueueOpen(true);}
+  const nowActions = player.track ? [
+    {label:player.track.favorited?'Unfavorite song':'Favorite song',icon:player.track.favorited?'hearted':'noheart',onSelect:()=>favorite(player.track!)},
+    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setPlaylistTrack(player.track);})();}},
+    {label:'Show artist',icon:'Artist',onSelect:()=>void showPlaying('artist')},
+    {label:'Show album',icon:'Album',onSelect:()=>void showPlaying('album')},
+    {label:'Edit song details',icon:'Song',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');openManagement('review',[player.track!.id]);})();}},
+  ] : [];
+
   const displayScope = (
     ["album", "artist", "genre"].includes(route.view)
       ? `${route.view}s`
       : route.view
   ) as Scope;
-  return (
-    <div
+  return (<>
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
+    <KeepView className="main-view" active={miniMode==='normal'}><div
       className="app-shell"
       data-size={preferences.interface_percent}
       data-adaptive={!!palette}
-      style={
-        {
-          "--accent": palette?.accent ?? "#0064df",
-          "--shell-color": palette?.blob ?? "#00baff",
-          "--surface-color": palette?.background ?? "#cbf1ff",
-          "--blob-color": palette?.blob ?? "#54b9ff",
-          "--ink": palette?.text ?? "#111820",
-          "--accent-ink": palette?.accent && contrastInk(palette.accent),
-        } as CSSProperties
-      }
+      data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}
     >
       <a className="skip-link" href="#library-content">
         Skip to content
       </a>
-      <header className="app-header">
+      <header className="app-header" onMouseDown={e=>dragWindow(e,setError)}>
         <div
           className="window-drag-region"
-          data-tauri-drag-region
-        ><div className="header-brand" data-tauri-drag-region><Icon name="Album"/><span>MusicOS</span></div></div>
+        ><div className="header-brand"><Icon name="Album"/><span>MusicOS</span></div></div>
+        <div className="section-control">
         <Menu
           label="Choose section"
+          selectedLabel={section}
+          onIntent={()=>{void import("./Settings");void import("./Devices");void import("./CollectionManager");}}
           items={(["Library", "Devices", "Settings"] as const).map((label) => ({
             label,
             onSelect: () => chooseSection(label),
@@ -841,8 +934,11 @@ export default function App() {
           <span className="section-name">{section}</span>
           <span className="chevron" aria-hidden="true"><svg viewBox="0 0 24 12"><path d="M1 1 12 10 23 1" /></svg></span>
         </Menu>
-        <div className="header-drag-spacer" data-tauri-drag-region />
-        <section className="now-playing" aria-label="Now playing">
+        <Menu label="MusicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><Icon name="3dots_(nocircle)"/></Menu>
+        </div>
+        <div className="header-drag-spacer" />
+        <section className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
+          <Overflow contextOnly items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:windowPinned?'Unpin window':'Pin window',icon:windowPinned?'unPin':'Pin',onSelect:()=>void toggleWindowPin()},...nowActions]}/>
           <button
             className="now-playing-cover"
             aria-label="Show playing album"
@@ -863,14 +959,10 @@ export default function App() {
           </button>
           <div className="now-playing-info">
             <strong key={player.track?.id ?? "empty"} title={player.track?.title}>
-              {player.track?.title ?? "Nothing playing yet"}
+              {player.track?.title ?? (loading?"":"Nothing playing yet")}
             </strong>
-            <span>
-              {player.track
-                ? `${player.track.artist} · ${player.track.album}`
-                : "Your next favorite is waiting."}
-            </span>
-            <PlaybackProgress showTime={preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
+            <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button onClick={()=>void showPlaying('album')} title={player.track.album}>{player.track.album}</button></>:loading?"":"Your next favorite is waiting."}</span>
+            <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}})); }} />
           </div>
@@ -947,9 +1039,7 @@ export default function App() {
               <button className="sketch-button secondary" onClick={()=>setCreatingCollection('spark')}><Icon name="Sparklist"/><span>Create Sparklist</span></button>
             </div>
             <section className="personal-library">
-              <div className="collections-heading"><h2 title={`${preferences.display_name}'s stuff`}>
-                {preferences.display_name}'s stuff
-              </h2><button aria-label="Manage collections" onClick={()=>{setSection('Library');goScope('playlists');}}><Icon name="Playlist"/></button></div>
+              <div className="collections-heading"><h2><button className="collections-heading-link" aria-label="Manage collections" onClick={()=>{setSection('Library');goScope('playlists');}}>{preferences.display_name}'s stuff</button></h2></div>
               <button
                 className={route.view === "favorites" ? "active" : ""}
                 onClick={() => goScope("favorites")}
@@ -957,27 +1047,25 @@ export default function App() {
                 <Icon name="hearted" />
                 <span>
                   <strong>Favorites</strong>
-                  <small>
-                    {library.tracks.filter((t) => t.favorited).length} songs
+                  <small aria-busy={loading}>
+                    {loading?'\u00a0':`${librarySummary.favorites} songs`}
                   </small>
                 </span>
               </button>
               <div className="personal-collections">{collections.map(item=>{
-                const members=item.track_ids.map(id=>tracksById.get(id)).filter(Boolean);
+                const summary=collectionSummaries.get(item.id)!;
                 const icon=item.kind==='audio'?'Sparklist':'Playlist';
-                return <div key={item.id} className={`personal-collection ${route.id===item.id?'active':''}`}>
-                  <button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong><span>{item.name}</span><Icon name={icon}/></strong><small>{item.kind==='rule'?'Smart playlist · ':''}{item.track_ids.length} {item.track_ids.length===1?'song':'songs'} · {collectionDuration(members.reduce((sum,t)=>sum+(t?.duration??0),0))}</small></span></button>
-                  <button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!members.length} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button>
+                return <div key={item.id} data-manual-collection={item.kind!=='audio'&&!item.spark?item.id:undefined} className={`personal-collection ${route.id===item.id?'active':''}`}>
+                  <button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong><span>{item.name}</span><Icon name={icon}/></strong><small>{item.kind==='rule'?'Smart playlist · ':''}{item.track_ids.length} {item.track_ids.length===1?'song':'songs'} · {collectionDuration(summary.duration)}</small></span></button>
+                  <button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button>
                 </div>;
               })}</div>
               {collectionError&&<small role="alert">{collectionError}</small>}
             </section>
             <footer className="sidebar-footer">
-              <span>{library.tracks.length} songs</span>
+              <span aria-busy={loading}>{loading?"":`${library.tracks.length} songs`}</span>
               <span>
-                {collectionDuration(
-                  library.tracks.reduce((s, t) => s + t.duration, 0),
-                )}
+                {loading?"":collectionDuration(librarySummary.duration)}
               </span>
             </footer>
           </aside>
@@ -1011,25 +1099,18 @@ export default function App() {
                               : route.view[0].toUpperCase() +
                                 route.view.slice(1)}
                 </span>}
+                {route.view==="artists"&&<ThemedSwitch label="Album Artists" checked={!!preferences.artists_album_only} onChange={artists_album_only=>changePreferences({...preferences,artists_album_only})}/>}
               </div>
             )}
           <div className="page-frame">
-            <div
-              className="theme-layer previous-theme"
-              style={paletteStyle(previousPalette)}
-            />
-            <div
-              className="theme-layer current-theme"
-              key={`${source ?? "blue"}:${palette?.background ?? "default"}:${section}`}
-              style={paletteStyle(palette)}
-            />
+            <div className="theme-layer current-theme" aria-hidden="true"/>
             <main
               id="library-content"
               className={`page-scroll ${section.toLowerCase()}-page`}
               ref={scrollRef}
             >
             <div className="page-content">
-              {section === "Settings" ? (
+              <KeepView active={section === "Settings"}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading settings" aria-busy="true"/>}>
                 <Settings
                   preferences={preferences}
                   onChange={changePreferences}
@@ -1042,17 +1123,15 @@ export default function App() {
                   libraryView={settingsLibraryView}
                   onLibraryView={view=>{setSettingsLibraryView(view);setMetadataIds([]);}}
                   onManageCollections={()=>{setSection("Library");goScope("playlists");}}
-                  libraryContent={<LibraryTools key={`${settingsLibraryView}:${metadataIds.join(',')}`} view={settingsLibraryView==='review'?'review':'sources'} initialIds={metadataIds} library={library} busy={task.running} onAdd={copy=>void chooseFolder(copy)} onTask={startTask} onRefresh={refresh} onError={setError}/>}
+                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} initialIds={metadataIds} library={library} busy={task.running} onAdd={copy=>void chooseFolder(copy)} onTask={startTask} onRefresh={refresh} onError={setError}/>}
 
                 />
-              ) : section === "Devices" ? (
+              </Suspense></KeepView><KeepView className="library-view" active={section==='Library'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
                 <Devices
                   busy={task.running}
                   onSync={(root) => startTask("sync", root)}
                 />
-              ) : (
-                content
-              )}
+              </Suspense>) : null}
             </div>
           </main>
           </div>
@@ -1101,7 +1180,9 @@ export default function App() {
           )}
         </div>
       </div>
-      {creatingCollection&&<CollectionCreate kind={creatingCollection} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)} sparkContent={<SparkCreate preferences={preferences} onPreferences={changePreferences} playingId={player.track?.id} isPlaying={player.is_playing} onToggle={async()=>setPlayer(await call("playback",{action:{type:"toggle"}}))} onPlay={async ids=>{const playable=ids.filter(id=>availableIds.has(id));if(!playable.length)throw Error("No available preview songs.");setPlayer(await call("playback",{action:{type:"play",ids:playable,start_index:0,shuffle:false}}));}} onSetup={()=>{sessionStorage.setItem("musicos-audio-page","spark");window.dispatchEvent(new CustomEvent("musicos-audio-page",{detail:"spark"}));setCreatingCollection(null);captureScroll();sessionStorage.setItem("musicos-settings-tab","Audio");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Audio"}));setSection("Settings");}} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)}/>}/>}
+      {fileDrop&&<div className="file-drop-hint" role="status"><Icon name="Song"/><strong>Copy music into MusicOS</strong><span>Drop songs or folders. Originals stay where they are.</span></div>}
+      {playlistTrack&&<PlaylistPicker ids={(playlistTrack as Track&{selectionIds?:number[]}).selectionIds} track={playlistTrack} library={library} items={collections} onChange={setCollections} onClose={()=>setPlaylistTrack(null)}/>}
+      {creatingCollection&&<CollectionCreate kind={creatingCollection} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)} sparkContent={<Suspense fallback={<div className="screen-placeholder" aria-label="Loading Sparklist" aria-busy="true"/>}><SparkCreate preferences={preferences} onPreferences={changePreferences} playingId={player.track?.id} isPlaying={player.is_playing} onToggle={async()=>setPlayer(await call("playback",{action:{type:"toggle"}}))} onPlay={async ids=>{const playable=ids.filter(id=>availableIds.has(id));if(!playable.length)throw Error("No available preview songs.");setPlayer(await call("playback",{action:{type:"play",ids:playable,start_index:0,shuffle:false}}));}} onSetup={()=>{sessionStorage.setItem("musicos-audio-page","spark");window.dispatchEvent(new CustomEvent("musicos-audio-page",{detail:"spark"}));setCreatingCollection(null);captureScroll();sessionStorage.setItem("musicos-settings-tab","Audio");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Audio"}));setSection("Settings");}} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)}/></Suspense>}/>}
       {pendingImport && (
         <dialog
           ref={importDialog}
@@ -1153,8 +1234,8 @@ export default function App() {
       )}
       <QuickAudio player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
-      {queueOpen&&<AudioPanel player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {commandOpen&&<SuperCommand library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/>}
+      {queuePresent&&<AudioPanel closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
+      {commandOpen&&<Suspense fallback={null}><SuperCommand library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">
           <span>{error || visiblePlaybackError}</span>
@@ -1174,6 +1255,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div>
+    </div></KeepView></>
   );
 }

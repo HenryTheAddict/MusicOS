@@ -1,13 +1,18 @@
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {call,errorText} from './bridge';
 import ThemedSwitch from './ThemedSwitch';
+import ListeningPanelHeader from './ListeningPanelHeader';
 import {eqConnections} from './eqConnections';
 import VolumeControl from './VolumeControl';
+import ReverbPad from './ReverbPad';
 import type {AudioQualityInfo,Listening,Playback,Preferences,Track} from './types';
-export const defaultListening:Listening={bands:3,gains3:[0,0,0],gains8:[0,0,0,0,0,0,0,0],speed:1,pitch:0,linked:true,reverb:0};
+export const defaultListening:Listening={bands:3,gains3:[0,0,0],gains8:[0,0,0,0,0,0,0,0],speed:1,pitch:0,linked:true,reverb:0,reverb_depth:.5};
 export default function QuickAudio({player,preferences,onChange,onVolume,error}:{player:Playback;preferences:Preferences;onChange:(p:Preferences)=>void;onVolume:(v:number)=>void;error:string}){
  const panel=useRef<HTMLElement>(null),opener=useRef<HTMLElement|null>(null),[context,setContext]=useState<Track|null>(null),[opened,setOpened]=useState(false),[specs,setSpecs]=useState<AudioQualityInfo|null>(null),[specError,setSpecError]=useState('');
  const value={...defaultListening,...preferences.listening};
+ const [applicationLate,setApplicationLate]=useState(false);
+ const pending=player.listening_applied===false||(player.applied_reverb!==undefined&&Math.abs(player.applied_reverb-(value.reverb??0))>.001)||(player.applied_reverb_depth!==undefined&&Math.abs(player.applied_reverb_depth-(value.reverb_depth??.5))>.001);
+ useEffect(()=>{setApplicationLate(false);if(!pending)return;const timer=setTimeout(()=>setApplicationLate(true),2500);return()=>clearTimeout(timer);},[pending,value.reverb,value.reverb_depth,value.speed,value.pitch]);
  const track=player.track??context;
  const update=(patch:Partial<Listening>)=>onChange({...preferences,listening:{...value,...patch}});
  useEffect(()=>{const open=(e:Event)=>{const detail=(e as CustomEvent<{anchor:HTMLElement;track:Track|null}>).detail;opener.current=detail.anchor;setContext(detail.track);setOpened(true);};window.addEventListener('musicos-quick-audio',open);return()=>window.removeEventListener('musicos-quick-audio',open);},[]);
@@ -17,16 +22,16 @@ export default function QuickAudio({player,preferences,onChange,onVolume,error}:
  function pitch(n:number){update({pitch:n,...value.linked?{speed:2**(n/12)}:{}});}
  const gains=value.bands===8?value.gains8:value.gains3,labels=value.bands===8?['63','125','250','500','1k','2k','4k','8k']:['Bass','Mid','Treble'];
  return <aside ref={panel} popover="auto" role="dialog" aria-label="Audio controls" className="quick-audio" onToggle={e=>{if(e.newState==='closed'){setOpened(false);requestAnimationFrame(()=>{if(document.activeElement===document.body||panel.current?.contains(document.activeElement))opener.current?.focus({preventScroll:true});});}}}>
- <header><h2>Audio</h2><button aria-label="Close audio controls" onClick={()=>panel.current?.hidePopover()}>×</button></header>
- <div className="quick-audio-specs"><strong>{track?.title??'Nothing playing'}</strong><small>{specs?`${specs.lossless?'Lossless':'Lossy'} · ${specs.format}${specs.sample_rate?` · ${specs.sample_rate/1000} kHz`:''}${specs.bit_depth?` · ${specs.bit_depth}-bit`:''}${specs.channels?` · ${specs.channels===2?'Stereo':specs.channels===1?'Mono':`${specs.channels} channels`}`:''}${specs.bitrate?` · ${specs.bitrate} kbps`:''}`:specError?'Specifications unavailable':track?'Reading specifications…':'Play a song to see specifications'}</small></div>
+ <ListeningPanelHeader title="Audio" closeLabel="Close audio controls" onClose={()=>panel.current?.hidePopover()} track={track} detail={specs?`${specs.lossless?'Lossless':'Lossy'} · ${specs.format}${specs.sample_rate?` · ${specs.sample_rate/1000} kHz`:''}${specs.bit_depth?` · ${specs.bit_depth}-bit`:''}${specs.channels?` · ${specs.channels===2?'Stereo':specs.channels===1?'Mono':`${specs.channels} channels`}`:''}${specs.bitrate?` · ${specs.bitrate} kbps`:''}`:specError?'Specifications unavailable':track?'Reading specifications…':'Play a song to see specifications'}/>
  <div className="audio-bento" data-bands={value.bands}>
  <section className="audio-volume audio-card"><VolumeControl value={player.volume} onChange={onVolume}/></section>
  <fieldset className="quick-eq audio-card"><legend>Equalizer <small>{value.bands} bands</small></legend><div className="eq-bands"><svg className="eq-connections" viewBox="0 0 180 68" preserveAspectRatio="none" aria-hidden="true"><path d={eqConnections(gains)}/></svg>{labels.map((label,i)=><label key={label}><span>{label}</span><input aria-label={`${label} gain`} style={{'--range-fill':`${((gains[i]??0)+12)/24*100}%`} as CSSProperties} type="range" min="-12" max="12" step="0.5" value={gains[i]??0} onChange={e=>{const next=[...gains];next[i]=Number(e.target.value);update(value.bands===8?{gains8:next}:{gains3:next});}}/><output>{(gains[i]??0)>0?'+':''}{gains[i]??0} dB</output></label>)}</div></fieldset>
  <section className="audio-card audio-rate"><label className="audio-adjustment"><span>Speed</span><input aria-label="Playback speed" style={{'--range-fill':`${(value.speed-.5)/1.5*100}%`} as CSSProperties} type="range" min="0.5" max="2" step="0.01" value={value.speed} onChange={e=>speed(Number(e.target.value))}/><output>{value.speed.toFixed(2)}×</output></label>
  <label className="audio-adjustment"><span>Pitch</span><input aria-label="Playback pitch" style={{'--range-fill':`${(value.pitch+12)/24*100}%`} as CSSProperties} type="range" min="-12" max="12" step="0.1" value={value.pitch} onChange={e=>pitch(Number(e.target.value))}/><output>{value.pitch.toFixed(1)} st</output></label>
  <div className="audio-link"><ThemedSwitch label="Link pitch & speed" checked={value.linked} onChange={linked=>update({linked,...linked?{pitch:12*Math.log2(value.speed)}:{}})}/></div></section>
- <section className="audio-card audio-reverb"><ThemedSwitch label="Reverb" checked={(value.reverb??0)>0} onChange={enabled=>update({reverb:enabled?.45:0})}/><label className="audio-adjustment"><span>Amount</span><input aria-label="Reverb amount" style={{'--range-fill':`${(value.reverb??0)*100}%`} as CSSProperties} type="range" min="0" max="1" step="0.01" value={value.reverb??0} onChange={e=>update({reverb:Number(e.target.value)})}/><output>{Math.round((value.reverb??0)*100)}%</output></label></section>
+ <section className="audio-card audio-reverb"><ThemedSwitch label="Reverb" checked={(value.reverb??0)>0} onChange={enabled=>update({reverb:enabled?.45:0})}/><ReverbPad wet={value.reverb??0} depth={value.reverb_depth??.5} onChange={(reverb,reverb_depth)=>update({reverb,reverb_depth})}/></section>
  </div>
- <footer><button onClick={()=>{onChange({...preferences,listening:{...defaultListening,bands:value.bands}});onVolume(1);}}>Reset audio</button><small role="status">{error?'Could not apply controls':player.listening_applied===false?'Applying audio controls…':'Applies to all songs'}</small></footer>{error&&<p role="alert">{error}</p>}
+ <footer><button onClick={()=>{onChange({...preferences,listening:{...defaultListening,bands:value.bands}});onVolume(1);}}>Reset audio</button><small role="status">{error?'Could not apply controls':applicationLate?'Audio controls have not applied.':pending?'Applying audio controls…':'Applies to all songs'}</small></footer>{applicationLate&&<p role="alert">{player.error??'Playback has not confirmed these settings.'} <button onClick={()=>onChange({...preferences,listening:value})}>Retry audio controls</button></p>}{error&&<p role="alert">{error}</p>}
+ <details className="audio-application-details"><summary>Playback details</summary><small>Controls {player.requested_listening_revision??'—'} · Applied {player.applied_listening_revision??'—'}<br/>Room {Math.round((player.applied_reverb??0)*100)}% · Depth {Math.round((player.applied_reverb_depth??.5)*100)}%<br/>Reverb frames {player.reverb_processed_frames??0}</small></details>
  </aside>;
 }

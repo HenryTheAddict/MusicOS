@@ -22,6 +22,7 @@ export interface Album {
   legacy_ids?:string[];
   release_type?:string|null;
   release_type_source?:string|null;
+  release_track_total?:number|null;
   id: string;
   artist_id: string;
   title: string;
@@ -47,7 +48,7 @@ export interface Genre {
   album_ids: string[];
   track_ids: number[];
 }
-export interface Source {
+export interface Source {song_count?:number;
   id: number;
   kind?: string;
   enabled?: boolean;
@@ -62,10 +63,15 @@ export interface Library {
   artists: Artist[];
   genres: Genre[];
   sources: Source[];
+  protected_source_ids?:number[];
 }
 export interface LibraryFilters {sort:'recent'|'title';genre:string;quality:'all'|'lossless'|'lossy'|'mixed';favorites:boolean;availability:'all'|'available'|'unavailable';separate_singles:boolean}
-export interface Listening {bands:3|8;gains3:number[];gains8:number[];speed:number;pitch:number;linked:boolean;reverb?:number}
+export interface Listening {bands:3|8;gains3:number[];gains8:number[];speed:number;pitch:number;linked:boolean;reverb?:number;reverb_depth?:number}
+export interface Appearance {mode:"system"|"light"|"dark";source:"artwork"|"blue"|"custom";accent:string;saturation:number;tint:number}
 export interface Preferences {
+  mini_player_view?:"artwork"|"queue";
+  appearance?:Appearance;
+  artists_album_only?:boolean;
   listening?:Listening;
   library_filters?:LibraryFilters;
   version: number;
@@ -84,7 +90,7 @@ export interface AudioFeatures {track_id:number;bpm:number|null;bpm_confidence:n
 export interface AnalysisStatus {running:boolean;paused:boolean;processed:number;total:number;features:AudioFeatures[];errors:string[]}
 export interface Playback {
   listening?:Listening;
-  listening_applied?:boolean;
+  listening_applied?:boolean;applied_reverb?:number;applied_reverb_depth?:number;reverb_processed_frames?:number;applied_listening_revision?:number;requested_listening_revision?:number;transition_outcome?:{request_id:number;outgoing_entry:number;incoming_entry:number;status:string;reason:string}|null;failed_entries?:number[];
   audio_levels?:number[];
   dj_transition?:{plan_id?:number;outgoing_entry:number;incoming_entry:number;status?:"preparing"|"scheduled"|"active";active:boolean;outgoing_cue:number;incoming_cue:number;seconds:number;source_seconds?:number;tempo:number}|null;
   queue_entry_ids?:number[];
@@ -149,7 +155,7 @@ export interface Palette {
   blob: string;
   text: string;
 }
-export interface Review {
+export interface Review {candidate_identity?:string;
   track_id: number;
   current_title: string;
   current_artist: string;
@@ -228,10 +234,10 @@ export type IntegrationRequest =
   | { action: "disconnect_lastfm" };
 
 export interface SparkDefinition {name:string;match_mode:'all'|'any';rules:{field:string;op:string;value:string}[];limit:number|null}
-export interface SavedCollection {updated_at?:number;id:string;name:string;track_ids:number[];spark:SparkDefinition|null;kind?:'manual'|'rule'|'audio';description?:string;artwork?:string|null;artwork_choice?:string|null}
-export interface CollectionRequest {action:'cover'|'create'|'rename'|'describe'|'delete'|'add'|'remove'|'reorder'|'create_spark'|'update_spark';id?:string;name?:string;track_ids?:number[];definition?:SparkDefinition;description?:string;artwork_choice?:string}
+export interface SavedCollection {updated_at?:number;id:string;name:string;track_ids:number[];spark:SparkDefinition|null;kind?:'manual'|'rule'|'audio';description?:string;artwork?:string|null;artwork_choice?:string|null;target_count?:number|null}
+export interface CollectionRequest {action:'length'|'cover'|'create'|'rename'|'describe'|'delete'|'add'|'remove'|'reorder'|'create_spark'|'update_spark';id?:string;name?:string;track_ids?:number[];definition?:SparkDefinition;description?:string;artwork_choice?:string;target_count?:number}
 
-export interface SparkGeneration {seed:number|null;mood:string|null;less_like:number[];variant:number}
+export interface SparkGeneration {seed:number|null;mood:string|null;less_like:number[];variant:number;target_count:number}
 export interface SparkPreview {track_ids:number[];analyzed:number;available:number;generation_version:string;configuration:SparkGeneration}
 export interface SparkState {
  installed?:boolean;generated_artwork?:string|null;analysis?:{running:boolean;paused:boolean;processed:number;total:number};staged_available?:boolean;beta?:boolean;installation?:{running:boolean;copied:number;total:number;error:string|null};ready:boolean;reason:string|null;download_bytes:number;analyzed:number;available:number;analyzed_ids:number[];preview:SparkPreview|null;items:SavedCollection[];chosen_id:number|null}
@@ -246,4 +252,6 @@ export type DepthArtwork={photo:string;map:string;full_map?:string;identity?:str
 
 export interface MetadataHistory {id:number;created_at:number;undone:boolean;conflict:boolean;changes:{track_id:number;before:Record<string,unknown>;after:Record<string,unknown>;current:Record<string,unknown>|null;conflict:boolean}[]}
 export interface MetadataWorkspace {lookup?:Record<string,number>;items?:Review[];total?:number;offset?:number;history?:MetadataHistory[]}
-export interface MetadataWorkspaceRequest {action:'list'|'apply'|'dismiss'|'history'|'undo';search?:string;offset?:number;id?:number;trackId?:number;revision?:number;token?:string;fields?:string[]}
+export interface MetadataWorkspaceRequest {action:'list'|'apply'|'dismiss'|'ignore'|'ignored'|'restore'|'history'|'undo';search?:string;offset?:number;id?:number;trackId?:number;revision?:number;token?:string;fingerprint?:string;fields?:string[]}
+
+export interface AlbumReview{album_id:string;title:string;artist:string;cover?:string;resolution?:number[];token:string;rows:{track_id:number;current:Record<string,unknown>;candidate:Record<string,unknown>|null;candidate_token?:string;art_resolution?:number[]}[]}

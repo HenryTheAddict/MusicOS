@@ -5,7 +5,7 @@ use anyhow::{ensure,Result};
 use rustfft::{FftPlanner,num_complex::Complex};
 use serde::{Deserialize,Serialize};
 use std::path::Path;
-pub const VERSION:&str="structure-3-dp-onsets-11025-2048-256";
+pub const VERSION:&str="structure-4-measured-phrases-11025-2048-256";
 const RATE:usize=11025;
 const HOP:usize=256;
 #[derive(Clone,Debug,Default,Serialize,Deserialize)]
@@ -84,17 +84,18 @@ pub fn phrase_candidates(beats:&[f32],changes:&[Boundary],confidence:f32)->Vec<B
  let matched=changes.iter().filter_map(|change|beats.iter().enumerate().min_by(|(_,a),(_,b)|(*a-change.seconds).abs().total_cmp(&(*b-change.seconds).abs())).filter(|(_,beat)|(**beat-change.seconds).abs()<0.3).map(|(index,_)|(index,change.confidence))).collect::<Vec<_>>();
  if matched.len()<4{return Vec::new();}
  let mut winner=None;
- for meter in [8,4] {let mut votes=vec![0_f32;meter];for &(index,weight) in &matched{votes[index%meter]+=weight;}
+ for meter in [32,16,8,4] {let mut votes=vec![0_f32;meter];for &(index,weight) in &matched{votes[index%meter]+=weight;}
   let total=votes.iter().sum::<f32>();if total<=0.{continue;}
   for phase in 0..meter {let support=(votes[phase]+0.25*(votes[(phase+1)%meter]+votes[(phase+meter-1)%meter]))/total;
-   if support>=0.6&&winner.as_ref().is_none_or(|(_,_,old):&(usize,usize,f32)|support>*old){winner=Some((meter,phase,support));}
+   let distinct=matched.iter().filter(|(index,_)|index%meter==phase).map(|(index,_)|index/meter).collect::<std::collections::BTreeSet<_>>().len();
+   if distinct>=3&&support>=0.6&&winner.as_ref().is_none_or(|(_,_,old):&(usize,usize,f32)|support>*old){winner=Some((meter,phase,support));}
   }
  }
  let Some((meter,phase,support))=winner else{return Vec::new()};
  beats.iter().enumerate().filter(|(i,_)|i%meter==phase).map(|(_,beat)|Boundary{seconds:*beat,confidence:confidence.min(support)}).collect()
 }
 #[cfg(test)]mod tests {use super::*;
- #[test]fn phrase_phase_requires_structural_evidence(){let beats=(0..128).map(|i|i as f32*0.5).collect::<Vec<_>>();assert!(phrase_candidates(&beats,&[],1.).is_empty());let changes=[16,32,48,64,80].map(|i|Boundary{seconds:beats[i],confidence:0.6});let phrases=phrase_candidates(&beats,&changes,0.8);assert!(phrases.len()>8);assert!(phrases.iter().all(|p|(p.seconds/4.).fract()==0.&&p.confidence>=0.5));}
+ #[test]fn phrase_phase_requires_structural_evidence(){let beats=(0..128).map(|i|i as f32*0.5).collect::<Vec<_>>();assert!(phrase_candidates(&beats,&[],1.).is_empty());let changes=[16,32,48,64,80].map(|i|Boundary{seconds:beats[i],confidence:0.6});let phrases=phrase_candidates(&beats,&changes,0.8);assert!(phrases.len()>=8);assert!(phrases.iter().all(|p|(p.seconds/8.).fract()==0.&&p.confidence>=0.5));}
  #[test]fn silence_never_invents_beats_or_repetition(){let s=summarize(30.,&vec![0.;646],&vec![0.;646],&vec![[0.;8];646],Some(120.),1.);assert!(s.beats.is_empty()&&s.phrases.is_empty());assert_eq!(s.silence.len(),1);assert!(s.regions.iter().all(|r|!r.repeated));}
  #[test]fn irregular_low_confidence_never_forces_beats(){let s=summarize(30.,&vec![0.1;646],&vec![1.;646],&vec![[0.2;8];646],Some(120.),0.1);assert_eq!(s.beat_confidence,0.);assert!(s.beats.is_empty());}
 }

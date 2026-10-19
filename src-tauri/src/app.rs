@@ -55,6 +55,12 @@ pub struct Task {
     pub cancelled: bool,
 }
 pub struct AppState {
+    mini_player: Mutex<Option<PlayerWindowBounds>>,
+    mini_menu_position: Mutex<Option<tauri::PhysicalPosition<i32>>>,
+    mini_layout: Mutex<String>,
+    mini_sizes: Mutex<std::collections::HashMap<String, tauri::PhysicalSize<u32>>>,
+    mini_menu_size: Mutex<Option<tauri::PhysicalSize<u32>>>,
+    player_window_operation: tokio::sync::Mutex<()>,
     analysis: crate::analysis::Analysis,
     integrations: IntegrationService,
     config: Mutex<ControlCenterConfig>,
@@ -69,6 +75,8 @@ pub struct AppState {
     search_generation: AtomicU64,
     stopped: AtomicBool,
     metadata_running: AtomicBool,
+    startup_ready: AtomicBool,
+    library_snapshot: Mutex<Option<library::Library>>,
     artist_jobs: Mutex<std::collections::BTreeSet<String>>,
     artist_running: AtomicBool,
 }
@@ -76,7 +84,9 @@ impl AppState {
     fn new() -> Result<Self> {
         let config = storage::load_config()?;
         let repo = LocalLibraryRepository::new(&config.db_path, &config.media_dir);
+        let recovery_error=crate::file_tags::recover(&config.db_path).and_then(|_|crate::file_organization::recover(&config.db_path)).err().map(|e|format!("An interrupted file operation needs review. Files were retained. {e:#}"));
         repo.ensure_ready()?;
+        crate::source_forget::recover(&config.db_path)?;
         crate::desktop_metadata::repair_automatic_albums(&config.db_path)?;
         let playback = LocalPlaybackService::start_with_preferences(
             config.db_path.clone(),
@@ -92,8 +102,15 @@ impl AppState {
         } else {
             None
         };
+        let preference_error=preference_error.or(recovery_error);
         let integrations = IntegrationService::start(playback.client())?;
         Ok(Self {
+            mini_player: Mutex::new(None),
+            mini_menu_position: Mutex::new(None),
+            mini_layout: Mutex::new("normal".into()),
+            mini_sizes: Mutex::new(Default::default()),
+            mini_menu_size: Mutex::new(None),
+            player_window_operation: tokio::sync::Mutex::new(()),
             analysis: Default::default(),
             integrations,
             config: Mutex::new(config),
@@ -108,6 +125,8 @@ impl AppState {
             search_generation: AtomicU64::new(0),
             stopped: AtomicBool::new(false),
             metadata_running: AtomicBool::new(false),
+            startup_ready: AtomicBool::new(false),
+            library_snapshot: Mutex::new(None),
             artist_jobs: Mutex::new(Default::default()),
             artist_running: AtomicBool::new(false),
         })
@@ -119,6 +138,147 @@ impl AppState {
             .clone()
     }
 }
+#[derive(Clone)]
+struct PlayerWindowBounds {
+    size: tauri::PhysicalSize<u32>,
+    position: tauri::PhysicalPosition<i32>,
+    maximized: bool,
+    fullscreen: bool,
+    always_on_top: bool,
+}
+#[tauri::command]
+async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, mode: String, menu_open: Option<bool>, pinned: Option<bool>) -> ApiResult<()> {
+    let mode=if mode=="slim" {"tall".to_owned()} else {mode};
+    if !matches!(mode.as_str(), "normal" | "tall" | "queue") {
+        return Err(anyhow::anyhow!("Unknown player layout.").into());
+    }
+    let _operation = state.player_window_operation.lock().await;
+    let result: Result<()> = async {
+    // Never hold a state mutex while dispatching AppKit work. Resize/focus
+    // callbacks can ask for chrome state on the main thread.
+    let saved = state.mini_player.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    if mode != "normal" && saved.is_none() {
+        let bounds = PlayerWindowBounds {
+            size: window.inner_size()?, position: window.outer_position()?,
+            maximized: window.is_maximized()?, fullscreen: window.is_fullscreen()?,
+            always_on_top: window.is_always_on_top()?,
+        };
+        *state.mini_player.lock().unwrap_or_else(|e| e.into_inner()) = Some(bounds);
+    }
+    if mode == "normal" {
+        if let Some(bounds) = saved.as_ref() {
+            window.set_always_on_top(bounds.always_on_top)?;
+            window.set_max_size(None::<tauri::LogicalSize<f64>>)?;
+            window.set_resizable(true)?;
+            #[cfg(not(target_os = "macos"))]
+            window.set_decorations(true)?;
+            window.set_min_size(Some(tauri::LogicalSize::new(720.0, 480.0)))?;
+            window.set_size(bounds.size)?;
+            window.set_position(bounds.position)?;
+            if bounds.maximized { window.maximize()?; }
+            if bounds.fullscreen { window.set_fullscreen(true)?; }
+        }
+    } else {
+        let factor = window.scale_factor()?;
+        let old_layout = state.mini_layout.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        let menu_size = *state.mini_menu_size.lock().unwrap_or_else(|e| e.into_inner());
+        let key = |_layout: &str| "expanded";
+        if old_layout != "normal" && menu_size.is_none() {
+            state.mini_sizes.lock().unwrap_or_else(|e| e.into_inner()).insert(key(&old_layout).into(), window.inner_size()?);
+        }
+        let base_size = menu_size.or_else(|| state.mini_sizes.lock().unwrap_or_else(|e| e.into_inner()).get(key(&mode)).copied())
+            .unwrap_or_else(|| tauri::LogicalSize::new(244.0, 320.0).to_physical::<u32>(factor));
+        let expanded = menu_open == Some(true);
+        if expanded {
+            let position = window.outer_position()?;
+            state.mini_menu_position.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert(position);
+            *state.mini_menu_size.lock().unwrap_or_else(|e| e.into_inner()) = Some(base_size);
+        }
+        window.set_fullscreen(false)?;
+        window.unmaximize()?;
+        window.set_min_size(None::<tauri::LogicalSize<f64>>)?;
+        window.set_max_size(None::<tauri::LogicalSize<f64>>)?;
+        #[cfg(not(target_os = "macos"))]
+        window.set_decorations(false)?;
+        window.set_resizable(!expanded)?;
+        let size = tauri::PhysicalSize::new(base_size.width, base_size.height + if expanded {(244.0 * factor).round() as u32} else {0});
+        window.set_size(size)?;
+        window.set_min_size(Some(tauri::LogicalSize::new(244.0, if expanded {size.height as f64 / factor} else {320.0})))?;
+        window.set_always_on_top(pinned.unwrap_or(true))?;
+        if expanded {
+            if let Some(monitor) = window.current_monitor()? {
+                let area = monitor.work_area();
+                let position = window.outer_position()?;
+                let right = area.position.x + area.size.width as i32 - size.width as i32;
+                let bottom = area.position.y + area.size.height as i32 - size.height as i32;
+                window.set_position(tauri::PhysicalPosition::new(position.x.clamp(area.position.x, right.max(area.position.x)),position.y.clamp(area.position.y,bottom.max(area.position.y))))?;
+            }
+        } else {
+            *state.mini_menu_size.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            let position = state.mini_menu_position.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(position) = position { window.set_position(position)?; }
+        }
+
+    }
+    window.set_background_color(if mode == "normal" {None} else {Some(tauri::window::Color(0,0,0,0))})?;
+    #[cfg(target_os = "macos")]
+    {
+        let normal = mode == "normal";
+        let resizable = menu_open != Some(true);
+        let focus = menu_open != Some(false);
+        let (send, receive) = tokio::sync::oneshot::channel();
+        window.with_webview(move |webview| {
+            use objc2_app_kit::{NSWindow, NSWindowStyleMask};
+            let native: &NSWindow = unsafe { &*webview.ns_window().cast() };
+            // Apply the complete mask once, after Tao's queued resize changes.
+            // A retained overlay titlebar intercepts clicks in a 48px player.
+            let mask = if normal {
+                NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Miniaturizable | NSWindowStyleMask::Resizable | NSWindowStyleMask::FullSizeContentView
+            } else if resizable { NSWindowStyleMask::Borderless | NSWindowStyleMask::Resizable } else { NSWindowStyleMask::Borderless };
+            if native.styleMask() != mask { native.setStyleMask(mask); }
+            native.setOpaque(normal);
+            native.setMovable(true);
+            if focus { native.makeKeyAndOrderFront(None); }
+            let _ = send.send(());
+        })?;
+        receive.await.map_err(|_| anyhow::anyhow!("The player window could not be updated."))?;
+    }
+    *state.mini_layout.lock().unwrap_or_else(|e| e.into_inner()) = mode.clone();
+    if mode == "normal" {
+        *state.mini_menu_size.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *state.mini_player.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *state.mini_menu_position.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+    #[cfg(not(target_os = "macos"))]
+    if menu_open != Some(false) { window.set_focus()?; }
+    Ok(())
+    }.await;
+    result.map_err(AppError::from)
+}
+
+#[tauri::command]
+async fn mini_resize(window:tauri::WebviewWindow,state:State<'_,AppState>,width:f64,height:f64)->ApiResult<()> {
+    let _operation=state.player_window_operation.lock().await;
+    let result:Result<()>= (|| {
+        anyhow::ensure!(width.is_finite()&&height.is_finite(),"Player size must be finite.");
+        let mode=state.mini_layout.lock().unwrap_or_else(|e|e.into_inner()).clone();
+        if mode=="normal"||state.mini_menu_size.lock().unwrap_or_else(|e|e.into_inner()).is_some(){return Ok(());}
+        let factor=window.scale_factor()?;
+        let bounds=window.current_monitor()?.map(|m|(m.work_area().size.width as f64/factor,m.work_area().size.height as f64/factor)).unwrap_or((2400.,1400.));
+        
+        let size=tauri::LogicalSize::new(width.clamp(244.,bounds.0.max(334.)),height.clamp(320.,bounds.1.max(320.)));
+        window.set_size(size)?;
+        state.mini_sizes.lock().unwrap_or_else(|e|e.into_inner()).insert("expanded".into(),size.to_physical::<u32>(factor));
+        Ok(())
+    })();result.map_err(AppError::from)
+}
+
+#[tauri::command]
+async fn window_pin(window: tauri::WebviewWindow, state: State<'_, AppState>, enabled: bool) -> ApiResult<()> {
+    let _operation = state.player_window_operation.lock().await;
+    window.set_always_on_top(enabled).map_err(|e| AppError::from(anyhow::Error::from(e)))
+}
+
 fn emit_task(app: &tauri::AppHandle, task: Task) {
     let state = app.state::<AppState>();
     *state.task.lock().unwrap_or_else(|e| e.into_inner()) = task.clone();
@@ -127,12 +287,14 @@ fn emit_task(app: &tauri::AppHandle, task: Task) {
 fn allow_art(app: &tauri::AppHandle, path: &str) {
     if let Ok(path) = Path::new(path).canonicalize() {
         if path.is_file() {
-            let _ = app.asset_protocol_scope().allow_file(&path);
-            app.state::<AppState>()
+            let state = app.state::<AppState>();
+            let mut allowed = state
                 .artwork
                 .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .insert(path);
+                .unwrap_or_else(|e| e.into_inner());
+            if !allowed.contains(&path) && app.asset_protocol_scope().allow_file(&path).is_ok() {
+                allowed.insert(path);
+            }
         }
     }
 }
@@ -202,15 +364,20 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
         .snapshot(&LibraryQuery::default())?;
     // Older imports missed two-digit space-separated filename prefixes. Recover
     // display/play order without changing source tags or explicit user numbers.
-    let numbered=rusqlite::Connection::open(&config.db_path)?.prepare("SELECT track_id FROM track_metadata_overrides WHERE origin='user' AND track_number IS NOT NULL")?.query_map([],|r|r.get::<_,i64>(0))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+    let numbered=musicos_init::database::Connection::open(&config.db_path)?.prepare("SELECT track_id FROM track_metadata_overrides WHERE origin='user' AND track_number IS NOT NULL")?.query_map([],|r|r.get::<_,i64>(0))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
     library::recover_filename_numbers(&mut snapshot.tracks,&numbered);
+    let protected_albums=musicos_init::database::Connection::open(&config.db_path)?.prepare("SELECT track_id FROM track_metadata_overrides WHERE origin='user' AND album IS NOT NULL")?.query_map([],|r|r.get::<_,i64>(0))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+    let protected_artists=musicos_init::database::Connection::open(&config.db_path)?.prepare("SELECT track_id FROM track_metadata_overrides WHERE origin='user' AND artist IS NOT NULL")?.query_map([],|r|r.get::<_,i64>(0))?.collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
     let metadata = crate::desktop_metadata::cached_many(&config.db_path, &snapshot.tracks);
     for track in &mut snapshot.tracks {
         if let Some(m) = metadata.get(&track.id) {
-            crate::desktop_metadata::apply(track, m.clone());
+            if !protected_albums.contains(&track.id)&&m.standalone_title.is_some(){track.album=track.title.clone();}
+            let artist=track.artist.clone();crate::desktop_metadata::apply(track,m.clone());if protected_artists.contains(&track.id){track.artist=artist;}
+            if !protected_albums.contains(&track.id)&&m.standalone_title.is_some()&&track.release_id.is_none(){track.release_id=Some(format!("loose/{}",track.id));}
         }
     }
-    if state
+    {let db=musicos_init::database::Connection::open(&config.db_path)?;let overrides=db.prepare("SELECT track_id,album_artist FROM track_metadata_overrides WHERE album_artist IS NOT NULL")?.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?)))?.collect::<rusqlite::Result<std::collections::HashMap<_,_>>>()?;for track in &mut snapshot.tracks {if let Some(value)=overrides.get(&track.id){track.album_artist=(!value.is_empty()).then(||value.clone());}}}
+    if state.startup_ready.load(Ordering::Relaxed) && state
         .metadata_running
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
         .is_ok()
@@ -219,39 +386,45 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
         let tracks = snapshot
             .tracks
             .iter()
-            .filter(|t| !metadata.contains_key(&t.id))
+            .filter(|t| metadata.get(&t.id).is_none_or(|m|m.needs_refresh))
             .cloned()
             .collect::<Vec<_>>();
         let db = config.db_path.clone();
         std::thread::spawn(move || {
             let state = app.state::<AppState>();
             let mut changed = false;
-            for track in tracks {
+            for (index,track) in tracks.into_iter().enumerate() {
                 if state.stopped.load(Ordering::Relaxed) {
                     break;
                 }
                 if crate::desktop_metadata::cached(&db, &track).is_none() {
                     match crate::desktop_metadata::ensure(&db, &track) {
-                        Ok(_) => changed = true,
+                        Ok(_) => {changed = true;if index%16==15{let _=app.emit("library-changed",json!({"reason":"metadata"}));}},
                         Err(e) => eprintln!("Metadata probe {}: {e:#}", track.id),
                     }
                 }
             }
             state.metadata_running.store(false, Ordering::Relaxed);
             if changed {
-                let _ = app.emit("library-changed", ());
+                let _ = app.emit("library-changed",json!({"reason":"metadata"}));
             }
         });
     }
     let mut result = library::group(snapshot);
+    let managed=config.media_dir.canonicalize().unwrap_or_else(|_|config.media_dir.clone());
+    result.protected_source_ids=result.sources.iter().filter(|source|source.path.canonicalize().unwrap_or_else(|_|source.path.clone())==managed).map(|source|source.id).collect();
     library::canonical_artwork(&config.db_path,&mut result)?;
     for album in &mut result.albums {
         let types=album.track_ids.iter().filter_map(|id|metadata.get(id)?.release_type.clone()).collect::<std::collections::BTreeSet<_>>();
         if types.len()==1 {album.release_type=types.first().cloned();album.release_type_source=Some("file_tag".into());}
     }
-    if let Ok(db)=rusqlite::Connection::open(&config.db_path){for album in &mut result.albums {
+    if let Ok(db)=musicos_init::database::Connection::open(&config.db_path){for album in &mut result.albums {
         if album.release_type.is_none(){if let Ok(kind)=db.query_row("SELECT kind FROM desktop_album_type_v1 WHERE album_id=?",[&album.id],|r|r.get::<_,String>(0)){album.release_type=Some(kind);album.release_type_source=Some("verified_release".into());}}
     }}
+    for album in &mut result.albums {
+        let mut discs=std::collections::BTreeMap::<i32,usize>::new();let mut tagged=false;let mut expected_discs=1;for id in &album.track_ids{if let Some(meta)=metadata.get(id){expected_discs=expected_discs.max(meta.release_disc_total.unwrap_or(1));if let Some(total)=meta.release_track_total{tagged=true;let disc=result.tracks.iter().find(|t|t.id==*id).map(|t|t.disc_number.max(1)).unwrap_or(1);let entry=discs.entry(disc).or_default();*entry=(*entry).max(total as usize);}}}
+        let total=if tagged{discs.values().sum::<usize>().max(album.track_ids.len())}else{album.track_ids.len()};let total=if expected_discs as usize>discs.len().max(1){total.max(7)}else{total};album.release_track_total=tagged.then_some(total);library::infer_release_type(album,total);if tagged&&album.release_type_source.as_deref()==Some("count_fallback"){album.release_type_source=Some("tagged_total_fallback".into());}
+    }
     // Per-song artwork can differ from the album's chosen cover. Register all
     // actual local artwork before the first frontend image request, avoiding a
     // cached asset-denied response followed by repeated extraction retries.
@@ -261,7 +434,7 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
         }
     }
     for a in &mut result.artists {
-        if providers::cached_artist_info(&a.name).is_none_or(|p|p.artist_mbid.is_none()||p.portrait.as_ref().is_none_or(|path|!Path::new(path).is_file())) && providers::artist_due(&a.name) {
+        if state.startup_ready.load(Ordering::Relaxed) && providers::cached_artist_info(&a.name).is_none_or(|p|p.artist_mbid.is_none()||p.portrait.as_ref().is_none_or(|path|!Path::new(path).is_file())) && providers::artist_due(&a.name) {
             queue_artist(app, &a.name);
         }
         a.portrait = providers::cached_artist_info(&a.name).and_then(|info| info.portrait);
@@ -278,6 +451,7 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
         }
     }
     *state.album_artwork.lock().unwrap_or_else(|e|e.into_inner())=result.tracks.iter().map(|t|(t.id,t.cover_art_path.clone())).collect();
+    *state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner())=Some(result.clone());
     Ok(result)
 }
 fn playback_value(state: &AppState) -> Value {
@@ -286,7 +460,7 @@ fn playback_value(state: &AppState) -> Value {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .snapshot();
-    json!({"track":s.track,"queue":s.queue.as_ref(),"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"queue_entry_ids":s.queue_entry_ids,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend})
+    json!({"track":s.track,"queue":s.queue.as_ref(),"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"queue_entry_ids":s.queue_entry_ids,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend})
 }
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T> + Send + 'static,
@@ -298,6 +472,18 @@ async fn blocking<T: Send + 'static>(
             message: e.to_string(),
         })?
         .map_err(Into::into)
+}
+#[tauri::command]
+async fn library_ready(app:tauri::AppHandle)->ApiResult<()> {
+ if app.state::<AppState>().startup_ready.swap(true,Ordering::SeqCst){return Ok(());}
+ app.state::<AppState>().integrations.activate();
+ blocking(move||{load_library(&app)?;Ok(())}).await
+}
+#[tauri::command]
+fn bootstrap_state(state: State<AppState>) -> Value {
+ let preferences=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).clone();
+ let task=state.task.lock().unwrap_or_else(|e|e.into_inner()).clone();
+ json!({"preferences":preferences,"playback":playback_value(&state),"task":task,"preference_error":state.preference_error})
 }
 #[tauri::command]
 async fn bootstrap(app: tauri::AppHandle) -> ApiResult<Value> {
@@ -336,7 +522,7 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
     preferences::save(&normalized).map_err(AppError::from)?;
     *state.preferences.lock().unwrap_or_else(|e| e.into_inner()) = normalized.clone();
     if previous.sparklist_beta && !normalized.sparklist_beta {let _=state.analysis.control("cancel");crate::spark_install::cancel();}
-    if previous.listening != normalized.listening {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
+    if previous.listening != normalized.listening || {let s=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();s.listening!=normalized.listening||!s.listening_applied||(s.applied_reverb-normalized.listening.reverb).abs()>0.001||(s.applied_reverb_depth-normalized.listening.reverb_depth).abs()>0.001} {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
     if previous.dj_config != normalized.dj_config {
         state
             .playback
@@ -625,7 +811,7 @@ async fn audio_analysis(
                 .filter(|t| Path::new(&t.path).is_file())
                 .filter(|t| action=="analyze_seed" || ids.as_ref().is_none_or(|ids| ids.contains(&t.id)))
                 .collect::<Vec<_>>();
-            if action=="rescan" {tracks.retain(|t|crate::analysis::cached(&config.db_path,t.id,&t.path).is_none()||crate::desktop_metadata::cached(&config.db_path,t).is_none_or(|m|m.probe_error.is_some()));}
+            if action=="rescan" {tracks.retain(|t|crate::analysis::cached_current(&config.db_path,t.id,&t.path).is_none()||crate::desktop_metadata::cached(&config.db_path,t).is_none_or(|m|m.probe_error.is_some()));}
             if let Some(ids) = &ids {
                 tracks.sort_by_key(|t| ids.iter().position(|id| *id == t.id).unwrap_or(usize::MAX));
             }
@@ -645,7 +831,7 @@ async fn audio_analysis(
             if action.starts_with("rescan") {
                 state.analysis.rescan(config.db_path.clone(),tracks,model,action=="rescan_all")?;
                 let notify=app.clone();let worker=state.analysis.clone();
-                std::thread::spawn(move||{while worker.progress().running{std::thread::sleep(Duration::from_millis(250));}let _=notify.emit("audio-rescanned",());let _=notify.emit("library-changed",());});
+                std::thread::spawn(move||{while worker.progress().running{std::thread::sleep(Duration::from_millis(250));}let _=notify.emit("audio-rescanned",());let _=notify.emit("library-changed",json!({"reason":"analysis"}));});
             } else {state.analysis.start_with_model(
                 config.db_path.clone(),
                 tracks,
@@ -683,6 +869,7 @@ struct TaskRequest {
     root: Option<PathBuf>,
 }
 fn begin_task(state: &AppState, kind: &str) -> Result<()> {
+    anyhow::ensure!(!crate::file_organization::pending(&state.config().db_path)?,"Finish interrupted file organization before rescanning or importing. Open Smartly organize my files and retry recovery.");
     let mut task = state.task.lock().unwrap_or_else(|e| e.into_inner());
     anyhow::ensure!(
         !task.running,
@@ -873,7 +1060,7 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 ..Default::default()
             },
         );
-        let _ = app.emit("library-changed", ());
+        let _ = app.emit("library-changed",json!({"reason":"metadata"}));
     });
     Ok(())
 }
@@ -886,23 +1073,30 @@ async fn metadata_edit(
     app: tauri::AppHandle,
     ids: Vec<i64>,
     patch: crate::metadata::MetadataPatch,
+    write_files:Option<bool>,
+    revisions:Option<Vec<(i64,i64)>>,
 ) -> ApiResult<usize> {
     blocking(move || {
-        let changed =
-            crate::metadata::edit(&app.state::<AppState>().config().db_path, &ids, patch)?;
-        let _ = app.emit("library-changed", ());
+        let state=app.state::<AppState>();let guard=write_files.unwrap_or(false).then(||state.playback.lock().unwrap_or_else(|e|e.into_inner()));if let Some(service)=&guard{anyhow::ensure!(!service.snapshot().is_playing,"Pause playback before writing music files");anyhow::ensure!(revisions.as_ref().is_some_and(|r|r.len()==ids.len()),"Review these songs before writing files");}
+        let reviews=revisions.unwrap_or_default().into_iter().map(|(id,revision)|(id,revision,String::new())).collect::<Vec<_>>();
+        let changed = crate::metadata::edit_with_files(&state.config().db_path, &ids, patch,write_files.unwrap_or(false),&reviews)?;
+        let _ = app.emit("library-changed",json!({"reason":"metadata","track_ids":ids}));
         Ok(changed)
     })
     .await
 }
 #[tauri::command]
+async fn metadata_files(app:tauri::AppHandle,action:String,ids:Option<Vec<i64>>,id:Option<String>,write_files:Option<bool>)->ApiResult<Value>{blocking(move||{let config=app.state::<AppState>().config();match action.as_str(){"inspect"=>{let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let ids=ids.context("Choose songs")?;let values=ids.iter().map(|id|database.metadata_values(*id)).collect::<Result<Vec<_>>>()?;let files=if write_files.unwrap_or(false){crate::file_tags::preflight(&config.db_path,&ids)?}else{Value::Null};Ok(json!({"values":values,"files":files}))},"status"=>crate::file_tags::status(&config.db_path),"recover"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before retrying file recovery");crate::file_tags::recover(&config.db_path)?;crate::file_organization::recover(&config.db_path)?;crate::source_forget::recover(&config.db_path)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));crate::file_tags::status(&config.db_path)},"remove"=>{crate::file_tags::remove_backup(&config.db_path,&id.context("Choose a backup")?)?;crate::file_tags::status(&config.db_path)},_=>anyhow::bail!("Unknown backup action")}}).await}
+#[tauri::command]
+async fn album_metadata(app:tauri::AppHandle,request:crate::album_metadata::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let config=state.config();let cached=if request.action=="list"{state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner()).clone()}else{None};let library=if let Some(value)=cached{value}else{load_library(&app)?};if request.action=="list"{let result=crate::album_metadata::list(&config.db_path,&library,request.search.as_deref().unwrap_or(""))?;for album in result["albums"].as_array().unwrap(){if let Some(path)=album["cover"].as_str(){allow_art(&app,path);}for row in album["rows"].as_array().unwrap(){if let Some(path)=row["candidate"]["artwork_path"].as_str(){allow_art(&app,path);}}}Ok(result)}else{anyhow::ensure!(request.action=="apply","Unknown album review action");let guard=request.write_files.unwrap_or(false).then(||state.playback.lock().unwrap_or_else(|e|e.into_inner()));if let Some(service)=&guard{anyhow::ensure!(!service.snapshot().is_playing,"Pause playback before writing music files");}let result=crate::album_metadata::apply(&config.db_path,&library,request)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));Ok(result)}}).await}
+#[tauri::command]
 async fn metadata_workspace(app:tauri::AppHandle,request:crate::metadata::WorkspaceRequest)->ApiResult<Value>{
-    blocking(move||{let mutating=matches!(request.action.as_str(),"apply"|"undo");let mut result=crate::metadata::workspace(&app.state::<AppState>().config().db_path,request)?;
+    blocking(move||{let state=app.state::<AppState>();let guard=if request.action=="undo"&&crate::file_tags::restores_files(&state.config().db_path,request.id.context("Choose a change")?)?{let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before restoring music files");Some(guard)}else{None};let _guard=guard;let mutating=matches!(request.action.as_str(),"apply"|"undo");let mut result=crate::metadata::workspace(&app.state::<AppState>().config().db_path,request)?;
     if let Some(items)=result.get_mut("items").and_then(Value::as_array_mut){for item in items {
         if let Some(id)=item["track_id"].as_i64(){if let Some(Some(path))=app.state::<AppState>().album_artwork.lock().unwrap_or_else(|e|e.into_inner()).get(&id){item["current_artwork"]=path.to_string_lossy().into_owned().into();}}
         for path in [item["current_artwork"].as_str(),item["candidate"]["artwork_path"].as_str()].into_iter().flatten(){allow_art(&app,path);}
     }}
-    if mutating{let _=app.emit("library-changed",());}Ok(result)}).await
+    if mutating{let _=app.emit("library-changed",json!({"reason":"metadata"}));}Ok(result)}).await
 }
 #[tauri::command]
 async fn metadata_review(
@@ -969,12 +1163,24 @@ async fn playlist_file(
     .await
 }
 #[tauri::command]
+async fn playlist_suggestions(app:tauri::AppHandle,id:String)->ApiResult<Value>{blocking(move||{
+ let state=app.state::<AppState>();let config=state.config();let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);let item=crate::collections::list(&repo)?.into_iter().find(|c|c.id==id).context("Playlist no longer exists")?;anyhow::ensure!(item.kind=="manual","Suggestions are for manual playlists");
+ let beta=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta;if !beta{return Ok(json!({"ids":[],"state":"setup","message":"Enable Sparklist audio suggestions in Audio settings."}));}
+ let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join("runtime/libonnxruntime.1.31.0.dylib"),beta);
+ let manifest=match crate::spark_engine::read_manifest(&setup.dir,setup.evaluation){Ok(value)=>value,Err(_)=>return Ok(json!({"ids":[],"state":"setup","message":"Set up the Sparklist audio model to get suggestions."}))};
+ let library=repo.snapshot(&LibraryQuery::default())?;let existing_hashes=library.tracks.iter().filter(|t|item.track_ids.contains(&t.id)).filter_map(|t|t.content_hash.clone()).collect::<std::collections::HashSet<_>>();
+ let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let applied=database.metadata_enrichment_statuses("applied",100000)?;let recordings=applied.iter().filter(|r|item.track_ids.contains(&r.track_id)).filter_map(|r|r.recording_mbid.as_ref()).collect::<std::collections::HashSet<_>>();let duplicate_ids=applied.iter().filter(|r|r.recording_mbid.as_ref().is_some_and(|id|recordings.contains(id))).map(|r|r.track_id).collect::<std::collections::HashSet<_>>();
+ let tracks=library.tracks.iter().filter(|t|item.track_ids.contains(&t.id)||(!duplicate_ids.contains(&t.id)&&t.content_hash.as_ref().is_none_or(|hash|!existing_hashes.contains(hash)))).cloned().collect::<Vec<_>>();
+ let candidates=crate::embeddings::candidates(&config.db_path,&tracks,&format!("{}@{}",manifest.id,manifest.revision));
+ let ids=crate::spark_engine::suggest(&candidates,&item.track_ids);Ok(json!({"ids":ids,"state":if item.track_ids.is_empty(){"empty"}else if ids.is_empty(){"analysis"}else{"ready"},"message":if ids.is_empty(){"Analyze songs in Audio settings to find similar vibes."}else{"Suggested from this playlist’s sound."}}))
+}).await}
+#[tauri::command]
 async fn toggle_favorite(app: tauri::AppHandle, track_id: i64) -> ApiResult<bool> {
     blocking(move || {
         let config = app.state::<AppState>().config();
         let db = musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;
         let value = db.toggle_favorite(track_id)?;
-        let _ = app.emit("library-changed", ());
+        let _ = app.emit("library-changed",json!({"reason":"favorites","track_ids":[track_id]}));
         Ok(value)
     })
     .await
@@ -991,9 +1197,9 @@ async fn album_info(app: tauri::AppHandle, album_id: String) -> ApiResult<provid
             .ok_or_else(|| anyhow::anyhow!("Album is no longer in the library"))?;
         let info=providers::album_info(&state.config().db_path, album, &state.stopped)?;
         if let Some(kind)=&info.release_type {
-            let db=rusqlite::Connection::open(&state.config().db_path)?;db.execute_batch("CREATE TABLE IF NOT EXISTS desktop_album_type_v1(album_id TEXT PRIMARY KEY,kind TEXT NOT NULL)")?;
+            let db=musicos_init::database::Connection::open(&state.config().db_path)?;db.execute_batch("CREATE TABLE IF NOT EXISTS desktop_album_type_v1(album_id TEXT PRIMARY KEY,kind TEXT NOT NULL)")?;
             let old=db.query_row("SELECT kind FROM desktop_album_type_v1 WHERE album_id=?",[&album.id],|r|r.get::<_,String>(0)).ok();
-            if old.as_ref()!=Some(kind){db.execute("INSERT INTO desktop_album_type_v1 VALUES(?,?) ON CONFLICT(album_id) DO UPDATE SET kind=excluded.kind",rusqlite::params![album.id,kind])?;let _=app.emit("library-changed",());}
+            if old.as_ref()!=Some(kind){db.execute("INSERT INTO desktop_album_type_v1 VALUES(?,?) ON CONFLICT(album_id) DO UPDATE SET kind=excluded.kind",rusqlite::params![album.id,kind])?;let _=app.emit("library-changed",json!({"reason":"metadata"}));}
         }
         Ok(info)
     })
@@ -1080,10 +1286,26 @@ async fn library_source(app: tauri::AppHandle, id: i64, enabled: bool) -> ApiRes
         );
         LocalLibraryRepository::new(&config.db_path, &config.media_dir)
             .update_source(id, enabled)?;
-        let _ = app.emit("library-changed", ());
+        let _ = app.emit("library-changed",json!({"reason":"sources"}));
         Ok(())
     })
     .await
+}
+#[tauri::command]
+async fn forget_source(app:tauri::AppHandle,id:i64,token:Option<String>)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();anyhow::ensure!(!state.task.lock().unwrap_or_else(|e|e.into_inner()).running,"Wait for the current library task");let config=state.config();if let Some(token)=token{let service=state.playback.lock().unwrap_or_else(|e|e.into_inner());let queued=service.snapshot().queue.iter().map(|t|t.id).collect::<Vec<_>>();let count=crate::source_forget::apply(&config.db_path,id,&config.media_dir,&token,&queued)?;let _=app.emit("library-changed",json!({"reason":"sources"}));Ok(json!({"count":count}))}else{Ok(serde_json::to_value(crate::source_forget::preview(&config.db_path,id,&config.media_dir)?)?)}}).await}
+#[tauri::command]
+async fn relocate_source(app:tauri::AppHandle,id:i64,directory:String)->ApiResult<Value>{
+    blocking(move||{let state=app.state::<AppState>();anyhow::ensure!(!state.task.lock().unwrap_or_else(|e|e.into_inner()).running,"Wait for the current library task to finish");let db=musicos_init::database::Db::open(&state.config().db_path.to_string_lossy())?;let (matched,unmatched)=db.relocate_library_source(id,std::path::Path::new(&directory))?;let _=app.emit("library-changed",json!({"reason":"sources"}));Ok(json!({"matched":matched,"unmatched":unmatched}))}).await
+}
+#[tauri::command]
+async fn organize_files(app:tauri::AppHandle,action:String,token:Option<String>)->ApiResult<Value>{
+ blocking(move||{let state=app.state::<AppState>();let mut task=state.task.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!task.running,"Wait for the current library task to finish");state.cancel.store(false,Ordering::Relaxed);*task=Task{running:true,kind:"organize".into(),message:"Preparing file organization".into(),..Default::default()};drop(task);
+ let result=(||->Result<Value>{let config=state.config();if action=="preview"{return Ok(serde_json::to_value(crate::file_organization::preview_with_progress(&config.db_path,&load_library(&app)?,&state.cancel,|processed,total|{let task=Task{running:true,kind:"organize".into(),processed,total,message:format!("Checking {processed} of {total} files"),..Default::default()};*state.task.lock().unwrap_or_else(|e|e.into_inner())=task.clone();let _=app.emit("task",task);})?)?);}
+ let service=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!service.snapshot().is_playing,"Pause playback before moving music files");
+ let result=match action.as_str(){"apply"=>crate::file_organization::apply_with_progress(&config.db_path,token.as_deref().context("Preview first")?,&state.cancel,|completed,total|{let progress=Task{running:true,kind:"organize".into(),message:format!("Organized {completed} of {total} files"),processed:completed,total,..Default::default()};*state.task.lock().unwrap_or_else(|e|e.into_inner())=progress.clone();let _=app.emit("task",progress);}),"undo"=>crate::file_organization::undo(&config.db_path),"recover"=>crate::file_organization::recover(&config.db_path).map(|_|0),_=>anyhow::bail!("Unknown organization action")};
+ // Even a partial move keeps its durable path and must refresh queued paths.
+ service.send(LocalPlaybackCommand::RefreshPaths)?;let _=app.emit("library-changed",json!({"reason":"sources"}));Ok(json!({"count":result?}))})();let mut task=state.task.lock().unwrap_or_else(|e|e.into_inner());task.running=false;task.cancelled=state.cancel.load(Ordering::Relaxed);task.message=if task.cancelled{"Stopped between files. Completed moves can be undone.".into()}else{"File organization finished".into()};task.error=result.as_ref().err().map(ToString::to_string);let _=app.emit("task",task.clone());result
+ }).await
 }
 #[tauri::command]
 async fn audio_specs(app: tauri::AppHandle, track_id: i64) -> ApiResult<Value> {
@@ -1146,7 +1368,7 @@ async fn library_artwork(app: tauri::AppHandle, track_id: i64, per_track: Option
             if let Some(path)=musicos_desktop::local::artwork::ensure_artwork(config.db_path.clone(),*id)? {
                 let path=path.to_string_lossy().into_owned();allow_art(&app,&path);
                 let _=app.emit("artwork-found",json!({"track_id":track_id,"path":path}));
-                let _=app.emit("library-changed",());return Ok(Some(path));
+                let _=app.emit("library-changed",json!({"reason":"metadata"}));return Ok(Some(path));
             }
         }
         Ok(None)
@@ -1164,6 +1386,8 @@ async fn cache_artwork(app: tauri::AppHandle, url: String) -> ApiResult<String> 
     })
     .await
 }
+#[tauri::command]
+async fn artwork_rendition(app:tauri::AppHandle,path:String,pixels:u32)->ApiResult<String>{blocking(move||{let source=Path::new(&path).canonicalize()?;anyhow::ensure!(app.state::<AppState>().artwork.lock().unwrap_or_else(|e|e.into_inner()).contains(&source),"Artwork is not registered");let original=crate::artwork_renditions::original(&app.state::<AppState>().config().db_path,&source)?;if original!=source{allow_art(&app,&original.to_string_lossy());let _=app.emit("library-changed",json!({"reason":"metadata"}));}let output=crate::artwork_renditions::rendition(&original,pixels)?.to_string_lossy().into_owned();allow_art(&app,&output);Ok(output)}).await}
 #[tauri::command]
 fn dj_diagnostics()->Vec<musicos_desktop::local::dj_diagnostics::Record>{musicos_desktop::local::dj_diagnostics::snapshot()}
 #[tauri::command]
@@ -1238,7 +1462,10 @@ async fn device(
 }
 // Keep the OS controls centered in the actual rendered header at every scale.
 #[tauri::command]
-fn sync_window_chrome(window: tauri::WebviewWindow, center_y: f64) -> ApiResult<()> {
+fn sync_window_chrome(window: tauri::WebviewWindow, state: State<'_, AppState>, center_y: f64) -> ApiResult<()> {
+    if state.mini_player.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+        return Ok(());
+    }
     if !center_y.is_finite() || !(16.0..=150.0).contains(&center_y) {
         return Err(AppError {
             code: "invalid_chrome".into(),
@@ -1264,6 +1491,13 @@ fn sync_window_chrome(window: tauri::WebviewWindow, center_y: f64) -> ApiResult<
             let Some(parent) = (unsafe { close.superview().and_then(|v| v.superview()) }) else {
                 return;
             };
+            // AppKit can hide the titlebar container when its three standard
+            // buttons are hidden. Restore the complete hierarchy after Mini Player.
+            parent.setHidden(false);
+            if let Some(group) = unsafe { close.superview() } { group.setHidden(false); }
+            close.setHidden(false);
+            mini.setHidden(false);
+            zoom.setHidden(false);
             let rect = close.frame();
             let height = center_y + rect.origin.y + rect.size.height / 2.0;
             let mut container = parent.frame();
@@ -1335,9 +1569,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             audio_analysis, playlist_file, sparklist,
-            bootstrap, refresh_library, save_preferences, playback, library_task,
-            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, collections, toggle_favorite, album_info, artist_info, metadata_status, library_source, audio_specs, discover, cancel_search,
-            artwork_palette, cache_artwork, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome
+            bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
+            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
+            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin
         ])
         .setup(|app| {
             #[cfg(target_os="macos")]
@@ -1359,6 +1593,7 @@ pub fn run() {
                 let mut last_queue_revision = u64::MAX;
                 let mut last_value = Value::Null;
                 let mut planned=None;
+                let mut planned_at=std::time::Instant::now();
                 let mut arranged=None;
                 let mut analysis_requested=std::collections::BTreeMap::<i64,std::time::Instant>::new();
                 let mut background_scan=std::time::Instant::now();
@@ -1377,15 +1612,15 @@ pub fn run() {
                     let mut config=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone();config.enabled=s.dj_mode;
                     if s.dj_mode {if let Some(current)=s.queue_index {
                      let db=state.config().db_path;let upcoming=s.queue.iter().skip(current).take(5).collect::<Vec<_>>();state.analysis.prioritize(upcoming.iter().map(|t|t.id).collect());
-                     if state.analysis.auto_allowed()&&!analysis_progress.running {analysis_requested.retain(|_,time|time.elapsed()<Duration::from_secs(60));let missing=upcoming.iter().filter(|t|!analysis_requested.contains_key(&t.id)&&crate::analysis::cached(&db,t.id,&t.path).is_none()).map(|t|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();if !missing.is_empty(){analysis_requested.extend(missing.iter().map(|t|(t.0,std::time::Instant::now())));let _=state.analysis.start(db.clone(),missing);}else if background_scan.elapsed()>=Duration::from_secs(30){
+                     if state.analysis.auto_allowed()&&!analysis_progress.running {analysis_requested.retain(|_,time|time.elapsed()<Duration::from_secs(60));let missing=upcoming.iter().filter(|t|!analysis_requested.contains_key(&t.id)&&crate::analysis::cached_current(&db,t.id,&t.path).is_none()).map(|t|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();if !missing.is_empty(){analysis_requested.extend(missing.iter().map(|t|(t.0,std::time::Instant::now())));let _=state.analysis.start(db.clone(),missing);}else if background_scan.elapsed()>=Duration::from_secs(30){
                         background_scan=std::time::Instant::now();let cfg=state.config();if let Ok(library)=LocalLibraryRepository::new(&cfg.db_path,&cfg.media_dir).snapshot(&LibraryQuery::default()){
-                            let cached=crate::analysis::cached_many(&db,&library.tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());
+                            let cached=crate::analysis::cached_many_current(&db,&library.tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());
                             let stale=library.tracks.iter().zip(cached).filter(|(t,c)|c.is_none()&&t.available&&!analysis_requested.contains_key(&t.id)).take(8).map(|(t,_)|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();
                             if !stale.is_empty(){analysis_requested.extend(stale.iter().map(|t|(t.0,std::time::Instant::now())));let _=state.analysis.start(db.clone(),stale);}
                         }
                      }}
                      let queued_ids=s.queue.iter().skip(current).map(|t|t.id).collect::<Vec<_>>();
-                     let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));if config.preserve_energy&&!s.dj_transition.as_ref().is_some_and(|t|t.active)&&arranged!=Some(stamp) {arranged=Some(stamp);
+                     let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));if config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {arranged=Some(stamp);
                       let features=crate::analysis::cached_many(&db,&s.queue.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());let pins=s.queue_entry_ids.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(i,_)|i).collect();
                       let order=crate::dj_plan::order_upcoming(s.queue.as_ref(),current+1,&pins,|previous,index|{let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};crate::analysis::compatibility(a,b)+energy+if previous.is_some_and(|p|s.queue[p].artist==s.queue[index].artist){0.3}else{0.}});
                       let ids=order.iter().map(|i|s.queue_entry_ids[*i]).collect::<Vec<_>>();if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
@@ -1393,18 +1628,18 @@ pub fn run() {
                     }}
                     let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
                     let stamp=(s.queue_revision,s.plan_revision,s.queue_index,serde_json::to_string(&config).unwrap_or_default(),state.analysis.pair_revision(&relevant_ids));
-                    if !s.dj_transition.as_ref().is_some_and(|t|t.active)&&planned.as_ref()!=Some(&stamp) {planned=Some(stamp);if let Some(index)=s.queue_index {if index+1<s.queue.len()&&s.repeat!="one" {
-                     let outgoing=&s.queue[index];let incoming=&s.queue[index+1];let db=state.config().db_path;
+                    if s.dj_transition.is_none()&&(planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3)) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
+                     let outgoing=&s.queue[index];let incoming=&s.queue[next];let db=state.config().db_path;
                      let features=crate::analysis::cached_many(&db,&[(outgoing.id,outgoing.path.as_str()),(incoming.id,incoming.path.as_str())]);
                      let (a,b)=(features[0].as_ref(),features[1].as_ref());
                      // Album adjacency is not evidence of a continuous passage. Until verified
                      // continuity metadata exists, use the normal confidence-aware blend.
                      let contiguous=false;
-                     let plan=crate::dj_plan::plan(crate::dj_plan::Track{key_index:a.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:a.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(outgoing.duration as f32),bpm:a.and_then(|f|f.bpm),structure:a.and_then(|f|f.structure.as_ref())},crate::dj_plan::Track{key_index:b.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:b.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(incoming.duration as f32),bpm:b.and_then(|f|f.bpm),structure:b.and_then(|f|f.structure.as_ref())},&config,contiguous);
-                     if let Some(plan)=plan{musicos_desktop::local::dj_diagnostics::record("candidate",Some(s.queue_entry_ids[index]),Some(s.queue_entry_ids[index+1]),format!("{}; confidence {:.2}, cue {:.3}s overlap {:.3}s",plan.reason,plan.confidence,plan.outgoing_cue,plan.duration));if let Err(error)=client.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{outgoing:s.queue_entry_ids[index],incoming:s.queue_entry_ids[index+1],outgoing_cue:plan.outgoing_cue,incoming_cue:plan.incoming_cue,duration:plan.duration,tempo:plan.incoming_tempo,effect:serde_json::to_value(plan.effect).ok().and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default()})){planned=None;musicos_desktop::local::dj_diagnostics::record("delivery_failed",None,None,error.to_string());}}
+                     let plan=crate::dj_plan::plan_after(crate::dj_plan::Track{key_index:a.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:a.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(outgoing.duration as f32),bpm:a.and_then(|f|f.bpm),structure:a.and_then(|f|f.structure.as_ref())},crate::dj_plan::Track{key_index:b.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:b.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(incoming.duration as f32),bpm:b.and_then(|f|f.bpm),structure:b.and_then(|f|f.structure.as_ref())},&config,contiguous,s.position+2.*s.listening.speed);
+                     if let Some(plan)=plan{musicos_desktop::local::dj_diagnostics::record("candidate",Some(s.queue_entry_ids[index]),Some(s.queue_entry_ids[next]),format!("{}; confidence {:.2}, cue {:.3}s overlap {:.3}s",plan.reason,plan.confidence,plan.outgoing_cue,plan.duration));if let Err(error)=client.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{request_id:musicos_desktop::local::deck_playback::next_request_id(),outgoing:s.queue_entry_ids[index],incoming:s.queue_entry_ids[next],outgoing_cue:plan.outgoing_cue,incoming_cue:plan.incoming_cue,duration:plan.duration,tempo:plan.incoming_tempo,effect:serde_json::to_value(plan.effect).ok().and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default()})){planned=None;musicos_desktop::local::dj_diagnostics::record("delivery_failed",None,None,error.to_string());}}
                     }}}
 
-                    let mut value = json!({"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
+                    let mut value = json!({"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
                     if value != last_value || s.queue_revision != last_queue_revision {
                         last_value=value.clone();
                         // Send the potentially large queue only when membership/order changes.

@@ -3489,7 +3489,7 @@ impl ControlCenter {
                             .on_click(cx.listener(|_, _, _, cx| cx.quit()))
                             .child(
                                 svg()
-                                    .path("icons/sketch/tinyX.svg")
+                                    .path("icons/ui/tinyX.svg")
                                     .size(px(8.0))
                             )
                     )
@@ -3512,7 +3512,7 @@ impl ControlCenter {
                             }))
                             .child(
                                 svg()
-                                    .path("icons/sketch/tinyMinimize.svg")
+                                    .path("icons/ui/tinyMinimize.svg")
                                     .size(px(8.0))
                             )
                     )
@@ -3531,7 +3531,7 @@ impl ControlCenter {
                             .cursor_pointer()
                             .child(
                                 svg()
-                                    .path("icons/sketch/tinyMaximize.svg")
+                                    .path("icons/ui/tinyMaximize.svg")
                                     .size(px(8.0))
                             )
                     )
@@ -3560,7 +3560,7 @@ impl ControlCenter {
                             .pl(px(8.0))
                             .child(
                                 svg()
-                                    .path("icons/sketch/3dots_(nocircle).svg")
+                                    .path("icons/ui/3dots_(nocircle).svg")
                                     .size(px(32.0))
                             )
                     )
@@ -3578,7 +3578,7 @@ impl ControlCenter {
                             .pr(px(12.0))
                             .child(
                                 svg()
-                                    .path("icons/sketch/tinyMinimize.svg")
+                                    .path("icons/ui/tinyMinimize.svg")
                                     .size(px(16.0))
                             )
                     )
@@ -3668,7 +3668,7 @@ impl ControlCenter {
                             .left(px(201.0))
                             .top(px(8.0))
                             .size(px(16.0))
-                            .child(svg().path("icons/sketch/queue.svg").size_full())
+                            .child(svg().path("icons/ui/queue.svg").size_full())
                     )
                     // Lossless badge: x: 217, y: 8, 16x16
                     .child(
@@ -3677,7 +3677,7 @@ impl ControlCenter {
                             .left(px(217.0))
                             .top(px(8.0))
                             .size(px(16.0))
-                            .child(svg().path("icons/sketch/Lossless.svg").size_full())
+                            .child(svg().path("icons/ui/Lossless.svg").size_full())
                     )
                     // Repeat badge: x: 201, y: 24, 16x16
                     .child(
@@ -3687,7 +3687,7 @@ impl ControlCenter {
                             .left(px(201.0))
                             .top(px(24.0))
                             .size(px(16.0))
-                            .child(svg().path("icons/sketch/RepeatOFF.svg").size_full())
+                            .child(svg().path("icons/ui/RepeatOFF.svg").size_full())
                     )
                     // Shuffle badge: x: 217, y: 24, 16x16
                     .child(
@@ -3697,7 +3697,7 @@ impl ControlCenter {
                             .left(px(217.0))
                             .top(px(24.0))
                             .size(px(16.0))
-                            .child(svg().path("icons/sketch/ShuffleON.svg").size_full())
+                            .child(svg().path("icons/ui/ShuffleON.svg").size_full())
                     )
                     // Transport Prev: x: 233, y: 8, 32x32
                     .child(
@@ -3708,7 +3708,7 @@ impl ControlCenter {
                             .top(px(8.0))
                             .size(px(32.0))
                             .cursor_pointer()
-                            .child(svg().path("icons/sketch/prev.svg").size_full())
+                            .child(svg().path("icons/ui/prev.svg").size_full())
                     )
                     // Transport Play/Pause: x: 265, y: 8, 32x32
                     .child(
@@ -3719,7 +3719,7 @@ impl ControlCenter {
                             .top(px(8.0))
                             .size(px(32.0))
                             .cursor_pointer()
-                            .child(svg().path("icons/sketch/pause.svg").size_full())
+                            .child(svg().path("icons/ui/pause.svg").size_full())
                     )
                     // Transport Next: x: 297, y: 8, 32x32
                     .child(
@@ -3730,7 +3730,7 @@ impl ControlCenter {
                             .top(px(8.0))
                             .size(px(32.0))
                             .cursor_pointer()
-                            .child(svg().path("icons/sketch/next.svg").size_full())
+                            .child(svg().path("icons/ui/next.svg").size_full())
                     )
             )
     }
@@ -3772,7 +3772,7 @@ impl ControlCenter {
                         .gap(px(8.0))
                         .child(
                             svg()
-                                .path("icons/sketch/device.svg")
+                                .path("icons/ui/device.svg")
                                 .size(px(32.0))
                         )
                         .child(
@@ -3796,7 +3796,7 @@ impl ControlCenter {
                         )
                         .child(
                             svg()
-                                .path("icons/sketch/3dots(incircle).svg")
+                                .path("icons/ui/3dots(incircle).svg")
                                 .size(px(16.0))
                         )
                 )
@@ -4054,7 +4054,7 @@ impl ControlCenter {
                                         .left_0()
                                         .top_0()
                                         .size(px(32.0))
-                                        .child(svg().path("icons/sketch/Album.svg").size_full())
+                                        .child(svg().path("icons/ui/Album.svg").size_full())
                                 )
                                 .child(
                                     div()
@@ -4074,7 +4074,7 @@ impl ControlCenter {
                                         .right_0()
                                         .top_0()
                                         .size(px(32.0))
-                                        .child(svg().path("icons/sketch/3dots_(nocircle).svg").size_full())
+                                        .child(svg().path("icons/ui/3dots_(nocircle).svg").size_full())
                                 )
                         )
                 )
@@ -4102,7 +4102,7 @@ impl ControlCenter {
                                         .left_0()
                                         .top_0()
                                         .size(px(32.0))
-                                        .child(svg().path("icons/sketch/Artist.svg").size_full())
+                                        .child(svg().path("icons/ui/Artist.svg").size_full())
                                 )
                                 .child(
                                     div()
@@ -4142,7 +4142,7 @@ impl ControlCenter {
                                         .left_0()
                                         .top_0()
                                         .size(px(32.0))
-                                        .child(svg().path("icons/sketch/Genre.svg").size_full())
+                                        .child(svg().path("icons/ui/Genre.svg").size_full())
                                 )
                                 .child(
                                     div()
@@ -4182,7 +4182,7 @@ impl ControlCenter {
                                         .left_0()
                                         .top_0()
                                         .size(px(32.0))
-                                        .child(svg().path("icons/sketch/Song.svg").size_full())
+                                        .child(svg().path("icons/ui/Song.svg").size_full())
                                 )
                                 .child(
                                     div()
@@ -4237,7 +4237,7 @@ impl ControlCenter {
                                         .justify_center()
                                         .gap(px(4.0))
                                         .cursor_pointer()
-                                        .child(svg().path("icons/sketch/Playlist.svg").size(px(20.0)))
+                                        .child(svg().path("icons/ui/Playlist.svg").size(px(20.0)))
                                         .child(
                                             div()
                                                 .text_size(px(10.5))
@@ -4264,7 +4264,7 @@ impl ControlCenter {
                                             this.sparklist_modal_open = true;
                                             cx.notify();
                                         }))
-                                        .child(svg().path("icons/sketch/Sparklist.svg").size(px(20.0)))
+                                        .child(svg().path("icons/ui/Sparklist.svg").size(px(20.0)))
                                         .child(
                                             div()
                                                 .text_size(px(10.5))
@@ -4435,7 +4435,7 @@ impl ControlCenter {
                         .left(px(97.0))
                         .top(px(4.0))
                         .size(px(16.0))
-                        .child(svg().path("icons/sketch/Sparklist.svg").size_full())
+                        .child(svg().path("icons/ui/Sparklist.svg").size_full())
                 )
             })
             // ShufflePlay button on right
@@ -4445,7 +4445,7 @@ impl ControlCenter {
                     .left(px(140.0))
                     .top(px(5.0))
                     .size(px(32.0))
-                    .child(svg().path("icons/sketch/ShufflePlay.svg").size_full())
+                    .child(svg().path("icons/ui/ShufflePlay.svg").size_full())
             )
     }
 
@@ -4473,7 +4473,7 @@ impl ControlCenter {
                         )
                         .child(
                             svg()
-                                .path("icons/sketch/tinyMinimize.svg")
+                                .path("icons/ui/tinyMinimize.svg")
                                 .size(px(16.0))
                         )
                 )
@@ -4550,7 +4550,7 @@ impl ControlCenter {
                         )
                         .child(
                             svg()
-                                .path("icons/sketch/tinyMinimize.svg")
+                                .path("icons/ui/tinyMinimize.svg")
                                 .size(px(16.0))
                         )
                 )
@@ -4603,7 +4603,7 @@ impl ControlCenter {
                     .child(
                         div()
                             .size(px(48.0))
-                            .child(svg().path("icons/sketch/Sparklist.svg").size_full())
+                            .child(svg().path("icons/ui/Sparklist.svg").size_full())
                     )
                     .child(
                         div()

@@ -778,6 +778,7 @@ pub struct LibrarySource {
     pub available: bool,
     pub last_scan_at: Option<i64>,
     pub last_error: Option<String>,
+    #[serde(default)] pub song_count:usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

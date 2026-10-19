@@ -1,11 +1,8 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, useId, type ReactNode } from "react";
 import { Cover, collectionDuration } from "./components";
 import {openArtwork} from './ArtworkViewer';
-import {useDepthArtwork} from "./depthArtwork";
-import {useArtistPointer} from "./portraitMotion";
 import type { Album, Artist, ArtistInfo, Track } from "./types";
-export default function ArtistOverview({artist,albums,tracks,info,fallback,actions,onProvider,scrollRef,depth}:{scrollRef:RefObject<HTMLElement|null>;depth:boolean;artist:Artist;albums:Album[];tracks:Track[];info:ArtistInfo|null;fallback?:Album;actions:ReactNode;onProvider:(url:string)=>void}) {
-  const stage=useRef<HTMLDivElement>(null);useArtistPointer(stage);useDepthArtwork(stage,scrollRef,depth);
+export default function ArtistOverview({artist,albums,tracks,info,fallback,actions,onProvider}:{artist:Artist;albums:Album[];tracks:Track[];info:ArtistInfo|null;fallback?:Album;actions:ReactNode;onProvider:(url:string)=>void}) {
   const suppressRestoredFocus=useRef(false);
   const [hovered,setHovered]=useState(false);
   const [focused,setFocused]=useState(false);
@@ -16,16 +13,24 @@ export default function ArtistOverview({artist,albums,tracks,info,fallback,actio
   const genres=[...new Set(tracks.map(t=>t.genre).filter(g=>g&&g!=="Unknown genre"))].slice(0,2);
   const years=albums.map(a=>a.year).filter(Boolean).sort((a,b)=>a-b);
   const biography=info?.biography;
-  const excerpt=biography && !expanded && biography.length>220 ? `${biography.slice(0,220).replace(/\s+\S*$/,"")}…` : biography;
+  const biographyRef=useRef<HTMLParagraphElement>(null),biographyId=useId();
+  const [overflowing,setOverflowing]=useState(false);
+  useLayoutEffect(()=>{
+    if(expanded)return;
+    const paragraph=biographyRef.current;if(!paragraph)return;
+    const measure=()=>setOverflowing(paragraph.scrollHeight>paragraph.clientHeight+1);
+    const observer=new ResizeObserver(measure);observer.observe(paragraph);measure();
+    return()=>observer.disconnect();
+  },[biography,expanded]);
   const facts=[...genres,`${albums.length} ${albums.length===1?"album":"albums"}`,`${artist.track_ids.length} ${artist.track_ids.length===1?"song":"songs"}`,...(years.length?[years[0]===years.at(-1)?String(years[0]):`${years[0]}–${years.at(-1)}`]:[])];
   return <header className={`artist-hero ${artist.name.length<12?"short-artist-name":""}`}>
-    <h1>{artist.name}</h1>
+    <h1>{artist.name.split(/(\s+)/).map((part,index)=>/^\s+$/.test(part)?part:<span className="artist-name-part" key={index}>{part}</span>)}</h1>
     <section data-expanded={expanded || undefined} className="artist-about" aria-label={`About ${artist.name}`}>
-      <h2>About</h2><div className="artist-biography"><p>{excerpt ?? (info?.lookup_status==='loading'?"Finding artist information…":"Biography unavailable.")}</p>
-      {biography && biography.length>220 && <button className="text-link" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{expanded?"Read less":"Read more"}</button>}
+      <h2>About</h2><div className="artist-biography"><p ref={biographyRef} id={biographyId}>{biography ?? (info?.lookup_status==='loading'?"Finding artist information…":"Biography unavailable.")}</p></div>
+      <div className="artist-biography-actions">{biography && (overflowing||expanded) && <button className="text-link" aria-controls={biographyId} aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}>{expanded?"Read less":"Read more"}</button>}
       {info?.source_url && <button className="text-link" onClick={()=>onProvider(info.source_url!)}>Wikipedia ↗</button>}</div>
     </section>
-    <div ref={stage} className="artist-portrait-stage" data-revealed={revealed || undefined} data-dismissed={dismissed || undefined} onMouseEnter={()=>{setHovered(true);setDismissed(false);}} onMouseLeave={()=>{setHovered(false);setDismissed(false);}} onFocus={e=>{if(suppressRestoredFocus.current){suppressRestoredFocus.current=false;setFocused(false);return;}if(e.target.matches(":focus-visible")){setFocused(true);setDismissed(false);}}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setFocused(false);}}>
+    <div className="artist-portrait-stage" data-revealed={revealed || undefined} data-dismissed={dismissed || undefined} onMouseEnter={()=>{setHovered(true);setDismissed(false);}} onMouseLeave={()=>{setHovered(false);setDismissed(false);}} onFocus={e=>{if(suppressRestoredFocus.current){suppressRestoredFocus.current=false;setFocused(false);return;}if(e.target.matches(":focus-visible")){setFocused(true);setDismissed(false);}}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setFocused(false);}}>
       <button className="artist-portrait-button" onClick={e=>{suppressRestoredFocus.current=true;setFocused(false);setDismissed(true);openArtwork(e.currentTarget,artist.name);}} aria-label={`Expand ${artist.name} portrait`} aria-expanded={revealed} aria-controls="artist-portrait-notes" onKeyDown={e=>{if(e.key==="Escape"){setDismissed(true);}}}>
         <Cover src={info?.portrait??artist.portrait} title={artist.name} portrait />
       </button>

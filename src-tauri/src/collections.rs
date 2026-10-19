@@ -5,12 +5,12 @@ use std::path::Path;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Spark { pub id: String, pub definition: SmartPlaylistDef }
 #[derive(Serialize)]
-pub struct Collection { pub updated_at:i64, pub id: String, pub name: String, pub track_ids: Vec<i64>, pub spark: Option<SmartPlaylistDef>, pub kind: String, pub description: String, pub artwork: Option<String>, pub artwork_choice: Option<String> }
+pub struct Collection { pub updated_at:i64, pub id: String, pub name: String, pub track_ids: Vec<i64>, pub spark: Option<SmartPlaylistDef>, pub kind: String, pub description: String, pub artwork: Option<String>, pub artwork_choice: Option<String>, pub target_count: Option<usize> }
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Request { pub action: String, pub id: Option<String>, pub name: Option<String>, pub track_ids: Option<Vec<i64>>, pub definition: Option<SmartPlaylistDef>, pub description: Option<String>, pub artwork_choice: Option<String> }
-fn presentation(repo:&LocalLibraryRepository)->Result<rusqlite::Connection>{
-    let connection=rusqlite::Connection::open(repo.db_path())?;
+pub struct Request { pub action: String, pub id: Option<String>, pub name: Option<String>, pub track_ids: Option<Vec<i64>>, pub definition: Option<SmartPlaylistDef>, pub description: Option<String>, pub artwork_choice: Option<String>, pub target_count: Option<usize> }
+fn presentation(repo:&LocalLibraryRepository)->Result<musicos_init::database::Connection>{
+    let connection=musicos_init::database::Connection::open(repo.db_path())?;
     connection.busy_timeout(std::time::Duration::from_secs(5))?;
     connection.execute_batch("PRAGMA foreign_keys=ON; CREATE TABLE IF NOT EXISTS desktop_playlist_details_v1 (playlist_id INTEGER PRIMARY KEY REFERENCES playlists(id) ON DELETE CASCADE, description TEXT NOT NULL DEFAULT '', artwork TEXT);")?;
     connection.execute_batch("CREATE TABLE IF NOT EXISTS desktop_collection_art_v1(collection_id TEXT PRIMARY KEY, choice TEXT NOT NULL)")?;
@@ -42,11 +42,11 @@ pub fn list(repo: &LocalLibraryRepository) -> Result<Vec<Collection>> {
     for p in repo.playlists()? {
         use rusqlite::OptionalExtension;
         let (description,artwork)=connection.query_row("SELECT description,artwork FROM desktop_playlist_details_v1 WHERE playlist_id=?1",[p.id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?))).optional()?.unwrap_or_default();
-        items.push(Collection {updated_at:0,id:format!("playlist/{}",p.id),name:p.name,track_ids:db.get_playlist_tracks(p.id)?.iter().map(|t|t.id).collect(),spark:None,kind:"manual".into(),description,artwork,artwork_choice:cover_choice(repo,&format!("playlist/{}",p.id))?});
+        items.push(Collection {updated_at:0,id:format!("playlist/{}",p.id),name:p.name,track_ids:db.get_playlist_tracks(p.id)?.iter().map(|t|t.id).collect(),spark:None,kind:"manual".into(),description,artwork,target_count:None,artwork_choice:cover_choice(repo,&format!("playlist/{}",p.id))?});
     }
     let tracks=repo.snapshot(&Default::default())?.tracks;
-    for s in read_sparks(repo.db_path())? { items.push(Collection { updated_at:0,id:s.id.clone(), name:s.definition.name.clone(), track_ids:s.definition.evaluate(&tracks).iter().map(|t|t.id).collect(), spark:Some(s.definition),kind:"rule".into(),description:String::new(),artwork:None,artwork_choice:cover_choice(repo,&s.id)? }); }
-    for item in crate::audio_collections::list(repo.db_path())? {items.push(Collection{updated_at:item.updated_at,id:item.id,name:item.name,track_ids:item.track_ids,spark:None,kind:"audio".into(),description:item.description,artwork:None,artwork_choice:Some(item.artwork_choice)});}
+    for s in read_sparks(repo.db_path())? { items.push(Collection { updated_at:0,id:s.id.clone(), name:s.definition.name.clone(), track_ids:s.definition.evaluate(&tracks).iter().map(|t|t.id).collect(), spark:Some(s.definition),kind:"rule".into(),description:String::new(),artwork:None,target_count:None,artwork_choice:cover_choice(repo,&s.id)? }); }
+    for item in crate::audio_collections::list(repo.db_path())? {items.push(Collection{updated_at:item.updated_at,id:item.id,name:item.name,track_ids:item.track_ids,spark:None,kind:"audio".into(),description:item.description,artwork:None,target_count:Some(item.generation.target_count),artwork_choice:Some(item.artwork_choice)});}
     for item in &mut items {
         use rusqlite::OptionalExtension;
         let saved=connection.query_row("SELECT updated_at FROM desktop_collection_modified_v1 WHERE id=?",[&item.id],|r|r.get::<_,i64>(0)).optional()?;
@@ -88,8 +88,8 @@ pub fn file_action(repo:&LocalLibraryRepository,action:&str,id:Option<&str>,path
 pub fn change(repo: &LocalLibraryRepository, request: Request) -> Result<Vec<Collection>> {
     let current=list(repo)?;
     if request.id.as_deref().is_some_and(|id|id.starts_with("audio/")) {
-        ensure!(matches!(request.action.as_str(),"rename"|"describe"|"cover"|"delete"),"Refresh this audio Sparklist rather than editing its generated membership");
-        crate::audio_collections::edit(repo.db_path(),request.id.as_deref().unwrap(),request.name.as_deref(),request.description.as_deref(),request.artwork_choice.as_deref(),request.action=="delete")?;
+        ensure!(matches!(request.action.as_str(),"rename"|"describe"|"cover"|"delete"|"length"),"Refresh this audio Sparklist rather than editing its generated membership");
+        if request.action=="length" {crate::audio_collections::set_length(repo.db_path(),request.id.as_deref().unwrap(),request.target_count.context("Choose a length")?)?;} else {crate::audio_collections::edit(repo.db_path(),request.id.as_deref().unwrap(),request.name.as_deref(),request.description.as_deref(),request.artwork_choice.as_deref(),request.action=="delete")?;}
     } else if request.action=="cover" {
         let id=request.id.as_deref().unwrap_or("");ensure!(current.iter().any(|c|c.id==id),"Collection no longer exists");
         save_cover(repo,id,request.artwork_choice.as_deref().context("Choose a cover")?)?;
@@ -116,7 +116,11 @@ pub fn change(repo: &LocalLibraryRepository, request: Request) -> Result<Vec<Col
         atomic_write_json(&spark_path(repo.db_path()),&sparks)?;
     } else if request.action=="create" {
         if let Some(choice)=&request.artwork_choice {validate_cover(choice)?;}
+        let ids=request.track_ids.unwrap_or_default();
+        let known=repo.snapshot(&Default::default())?.tracks.into_iter().map(|t|t.id).collect::<std::collections::HashSet<_>>();
+        ensure!(ids.iter().all(|id|known.contains(id)),"Some selected songs no longer exist");
         let playlist=repo.create_playlist(valid_name(request.name.as_deref().unwrap_or(""))?)?;
+        if let Err(error)=repo.add_tracks(playlist.id,&ids){repo.delete_playlist(playlist.id)?;return Err(error);}
         let choice=request.artwork_choice.unwrap_or_else(||format!("playlist/{}",COVERS[(playlist.id as usize)%COVERS.len()]));
         if let Err(error)=save_cover(repo,&format!("playlist/{}",playlist.id),&choice) {repo.delete_playlist(playlist.id)?;return Err(error);}
     } else {
@@ -164,10 +168,10 @@ pub fn change(repo: &LocalLibraryRepository, request: Request) -> Result<Vec<Col
         change(&repo,Request{action:"create_spark".into(),id:None,name:None,track_ids:None,definition:Some(definition),..Default::default()}).unwrap();
         let items=list(&repo).unwrap(); assert_eq!(items.len(),2); assert_eq!(items[0].name,"Test"); assert!(items[1].spark.is_some());
         let db=musicos_init::database::Db::open(repo.db_path().to_str().unwrap()).unwrap();
-        let a_path=repo.media_dir().join("a.flac"); let b_path=repo.media_dir().join("b.flac"); std::fs::write(&a_path,b"fixture").unwrap(); std::fs::write(&b_path,b"fixture").unwrap();
+        let archive=dir.path().join("archive");std::fs::create_dir_all(&archive).unwrap();let a_path=archive.join("a.flac"); let b_path=archive.join("b.flac"); std::fs::write(&a_path,b"fixture").unwrap(); std::fs::write(&b_path,b"fixture").unwrap();
         let a=db.insert_track(a_path.to_str().unwrap(),"One","Artist","Album",1,1,20).unwrap();
         let b=db.insert_track(b_path.to_str().unwrap(),"Two","Artist","Album",2,1,30).unwrap();
-        let source=db.library_sources().unwrap().into_iter().find(|s|s.kind=="managed").unwrap();db.assign_track_source(a,source.id).unwrap();db.assign_track_source(b,source.id).unwrap();
+        let source=db.add_library_source("reference",archive.to_str().unwrap(),"Archive").unwrap();db.assign_track_source(a,source.id).unwrap();db.assign_track_source(b,source.id).unwrap();
         let id=items[0].id.clone();
         let request=|action:&str,ids:Vec<i64>|Request{action:action.into(),id:Some(id.clone()),name:None,track_ids:Some(ids),definition:None,..Default::default()};
         change(&repo,request("add",vec![a,b,a])).unwrap();

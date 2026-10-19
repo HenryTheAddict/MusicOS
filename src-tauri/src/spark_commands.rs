@@ -67,9 +67,10 @@ pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Resul
 }
 
 fn preserve_preview(preview:Option<Preview>,generation:&Generation,candidates:&[spark_engine::Candidate],available:usize,moods:&BTreeMap<String,Vec<f32>>)->Result<Preview>{
+ spark_engine::validate_target_count(generation.target_count)?;
  let Some(preview)=preview else{return spark_engine::generate(candidates,available,generation.clone(),moods);};
  ensure!(preview.configuration==*generation&&preview.generation_version==spark_engine::GENERATION_VERSION,"Preview settings changed. Generate a new preview before saving.");
- ensure!(!preview.track_ids.is_empty()&&preview.track_ids.len()<=25,"Generate a preview before saving.");
+ ensure!(!preview.track_ids.is_empty()&&preview.track_ids.len()<=generation.target_count,"Generate a preview before saving.");
  let ids=preview.track_ids.iter().collect::<std::collections::BTreeSet<_>>();
  ensure!(ids.len()==preview.track_ids.len()&&ids.iter().all(|id|candidates.iter().any(|c|c.id==**id)),"A preview song is no longer available or analyzed. Generate a new preview.");
  Ok(preview)

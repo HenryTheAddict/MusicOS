@@ -9,16 +9,18 @@ pub struct MetadataPatch {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub album_artist:Option<String>,
     pub genre: Option<String>,
     pub year: Option<i32>,
     pub track_number: Option<i32>,
     pub disc_number: Option<i32>,
 }
-pub fn edit(path: &Path, ids: &[i64], patch: MetadataPatch) -> Result<usize> {
+pub fn edit(path:&Path,ids:&[i64],patch:MetadataPatch)->Result<usize>{edit_with_files(path,ids,patch,false,&[])}
+pub fn edit_with_files(path: &Path, ids: &[i64], patch: MetadataPatch,write:bool,reviews:&[(i64,i64,String)]) -> Result<usize> {
     ensure!(!ids.is_empty() && ids.len() <= 10000, "Select between 1 and 10,000 songs.");
     let unique: HashSet<_> = ids.iter().copied().collect();
     ensure!(unique.len() == ids.len(), "A song was selected more than once.");
-    for value in [&patch.title, &patch.artist, &patch.album, &patch.genre].into_iter().flatten() {
+    for value in [&patch.title, &patch.artist, &patch.album, &patch.genre, &patch.album_artist].into_iter().flatten() {
         ensure!(value.trim().chars().count() <= 512 && !value.contains(['\n','\r','\0']), "Use metadata of up to 512 characters on one line.");
     }
     for value in [&patch.title, &patch.artist, &patch.album].into_iter().flatten() {
@@ -27,20 +29,22 @@ pub fn edit(path: &Path, ids: &[i64], patch: MetadataPatch) -> Result<usize> {
     ensure!(patch.title.is_none() || ids.len() == 1, "Edit titles one song at a time.");
     ensure!(patch.year.is_none_or(|n| (0..=9999).contains(&n)), "Year must be between 0 and 9999.");
     ensure!([patch.track_number,patch.disc_number].into_iter().flatten().all(|n| (0..=9999).contains(&n)), "Track and disc numbers must be between 0 and 9999.");
-    ensure!(patch.title.is_some() || patch.artist.is_some() || patch.album.is_some() || patch.genre.is_some() || patch.year.is_some() || patch.track_number.is_some() || patch.disc_number.is_some(), "Choose a field to change.");
+    ensure!(patch.title.is_some() || patch.artist.is_some() || patch.album.is_some() || patch.genre.is_some() || patch.year.is_some() || patch.album_artist.is_some() || patch.track_number.is_some() || patch.disc_number.is_some(), "Choose a field to change.");
     let db = Db::open(path.to_str().ok_or_else(|| anyhow::anyhow!("Invalid library path."))?)?;
     for id in ids { ensure!(db.get_track_by_id(*id)?.is_some(), "A selected song no longer exists. Refresh your library."); }
-    // Existing override transactions preserve source tags and protect manual edits
-    // from enrichment and rescans, for referenced and managed tracks alike.
-    db.update_track_metadata_override(ids, &MetadataUpdate {
-        title:patch.title, artist:patch.artist, album:patch.album, genre:patch.genre,
-        year:patch.year, track_number:patch.track_number, disc_number:patch.disc_number,
-        artwork_path:None,
-    })
+    let changes=ids.iter().map(|id|(*id,MetadataUpdate{title:patch.title.clone(), artist:patch.artist.clone(), album:patch.album.clone(), genre:patch.genre.clone(),year:patch.year,track_number:patch.track_number,disc_number:patch.disc_number,artwork_path:None,album_artist:patch.album_artist.clone()})).collect::<Vec<_>>();
+    Ok(crate::file_tags::apply(path,&changes,reviews,write)?.0)
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ignored_candidates_persist_and_restore_without_applying_fields(){
+        let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("library.sqlite3");let db=Db::open(path.to_str().unwrap()).unwrap();let id=db.insert_track("/one.flac","Original","Artist","Album",60,1,1).unwrap();
+        let candidate=musicos_desktop::local::MetadataCandidate{title:"Suggested".into(),artist:"Artist".into(),album:"Album".into(),year:None,artwork_path:None,recording_mbid:"recording".into(),release_mbid:Some("release".into()),release_group_mbid:None,confidence:0.8,album_artist:None,track_number:None,disc_number:None};let token=serde_json::to_string(&candidate).unwrap();let c=musicos_init::database::Connection::open(&path).unwrap();let revision:i64=c.query_row("SELECT revision FROM tracks WHERE id=?",[id],|r|r.get(0)).unwrap();c.execute("INSERT INTO metadata_enrichment_status(track_id,state,candidate_json,checked_at) VALUES(?,'review',?,1)",rusqlite::params![id,token]).unwrap();
+        let request=||WorkspaceRequest{action:"ignore".into(),track_id:Some(id),revision:Some(revision),token:Some(token.clone()),..Default::default()};workspace(&path,request()).unwrap();assert!(workspace(&path,request()).is_err());let identity=musicos_desktop::local::candidate_fingerprint(&candidate);assert!(Db::open(path.to_str().unwrap()).unwrap().metadata_candidate_ignored(id,&identity).unwrap());let list=workspace(&path,WorkspaceRequest{action:"ignored".into(),..Default::default()}).unwrap();assert_eq!(list["total"],1);assert_eq!(db.get_track_by_id(id).unwrap().unwrap().title,"Original");workspace(&path,WorkspaceRequest{action:"restore".into(),track_id:Some(id),fingerprint:Some(identity.clone()),..Default::default()}).unwrap();assert!(!db.metadata_candidate_ignored(id,&identity).unwrap());assert_eq!(c.query_row("SELECT state FROM metadata_enrichment_status WHERE track_id=?",[id],|r|r.get::<_,String>(0)).unwrap(),"review");
+    }
     #[test]
     fn batch_overrides_preserve_unselected_fields_and_reject_partial_invalid_batches() {
         let tmp=tempfile::tempdir().unwrap(); let path=tmp.path().join("library.sqlite3");
@@ -63,14 +67,28 @@ mod tests {
 #[serde(rename_all="camelCase",deny_unknown_fields)]
 pub struct WorkspaceRequest {
     pub action:String,pub search:Option<String>,pub offset:Option<usize>,pub id:Option<i64>,
-    pub track_id:Option<i64>,pub revision:Option<i64>,pub token:Option<String>,pub fields:Option<Vec<String>>,
+    pub track_id:Option<i64>,pub revision:Option<i64>,pub token:Option<String>,pub fingerprint:Option<String>,pub fields:Option<Vec<String>>,
 }
 pub fn workspace(path:&Path,request:WorkspaceRequest)->Result<serde_json::Value>{
     use anyhow::Context;
     use rusqlite::OptionalExtension;
     let db=Db::open(path.to_str().context("Invalid library path")?)?;
     if request.action=="history" {return Ok(serde_json::json!({"history":db.metadata_history()?}));}
-    if request.action=="undo" {db.undo_metadata_change(request.id.context("Choose a change to undo")?)?;return Ok(serde_json::json!({"history":db.metadata_history()?}));}
+    if request.action=="undo" {crate::file_tags::undo(path,request.id.context("Choose a change to undo")?)?;return Ok(serde_json::json!({"history":db.metadata_history()?}));}
+    if request.action=="ignored" {
+        let c=musicos_init::database::Connection::open(path)?;let search=format!("%{}%",request.search.as_deref().unwrap_or(""));let offset=request.offset.unwrap_or(0).min(100000);
+        let total:i64=c.query_row("SELECT count(*) FROM metadata_ignored_candidates i JOIN tracks t ON t.id=i.track_id WHERE t.title||' '||t.artist LIKE ?",[&search],|r|r.get(0))?;
+        let mut q=c.prepare("SELECT i.track_id,i.fingerprint,i.candidate_json,t.title,t.artist FROM metadata_ignored_candidates i JOIN tracks t ON t.id=i.track_id WHERE t.title||' '||t.artist LIKE ? ORDER BY ignored_at DESC LIMIT 50 OFFSET ?")?;
+        let items=q.query_map(rusqlite::params![search,offset],|r|Ok(serde_json::json!({"track_id":r.get::<_,i64>(0)?,"candidate_identity":r.get::<_,String>(1)?,"candidate_token":r.get::<_,String>(2)?,"current_title":r.get::<_,String>(3)?,"current_artist":r.get::<_,String>(4)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;return Ok(serde_json::json!({"items":items,"total":total,"offset":offset}));
+    }
+    if request.action=="restore" {
+        let id=request.track_id.context("Choose an ignored suggestion")?;let fingerprint=request.fingerprint.context("Choose an ignored match")?;
+        let c=musicos_init::database::Connection::open(path)?;let tx=c.unchecked_transaction()?;
+        ensure!(tx.execute("DELETE FROM metadata_ignored_candidates WHERE track_id=? AND fingerprint=?",rusqlite::params![id,fingerprint])?>0,"This ignored match changed");
+        let token:Option<String>=tx.query_row("SELECT candidate_json FROM metadata_enrichment_status WHERE track_id=? AND state='ignored'",[id],|r|r.get(0)).optional()?;
+        if let Some(token)=token {let candidate=serde_json::from_str::<musicos_desktop::local::MetadataCandidate>(&token)?;if musicos_desktop::local::candidate_fingerprint(&candidate)==fingerprint{tx.execute("UPDATE metadata_enrichment_status SET state='review' WHERE track_id=?",[id])?;}}
+        tx.commit()?;return Ok(serde_json::json!({}));
+    }
     if request.action=="apply" {
         let id=request.track_id.context("Choose a suggestion")?;
         let token=request.token.as_deref().context("Refresh this suggestion")?;
@@ -86,14 +104,15 @@ pub fn workspace(path:&Path,request:WorkspaceRequest)->Result<serde_json::Value>
             _=>anyhow::bail!("Choose an available field"),
         }}
         db.update_metadata_review(id,&update,request.revision.context("Refresh this comparison")?,token)?;
-    } else if request.action=="dismiss" {
+    } else if matches!(request.action.as_str(),"dismiss"|"ignore") {
         let id=request.track_id.context("Choose a suggestion")?;
-        let c=rusqlite::Connection::open(path)?;let tx=c.unchecked_transaction()?;
+        let c=musicos_init::database::Connection::open(path)?;let tx=c.unchecked_transaction()?;
         let current:Option<(String,i64)>=tx.query_row("SELECT s.candidate_json,t.revision FROM metadata_enrichment_status s JOIN tracks t ON t.id=s.track_id WHERE s.track_id=? AND s.state='review'",[id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         ensure!(current==request.token.as_ref().zip(request.revision).map(|(t,r)|(t.clone(),r)),"This suggestion changed. Refresh before keeping current values.");
-        tx.execute("UPDATE metadata_enrichment_status SET state='kept' WHERE track_id=?",[id])?;tx.commit()?;
+        if request.action=="ignore" {let candidate=serde_json::from_str::<musicos_desktop::local::MetadataCandidate>(request.token.as_deref().unwrap())?;let fingerprint=musicos_desktop::local::candidate_fingerprint(&candidate);tx.execute("INSERT OR REPLACE INTO metadata_ignored_candidates VALUES(?,?,?,strftime('%s','now'))",rusqlite::params![id,fingerprint,request.token])?;}
+        tx.execute("UPDATE metadata_enrichment_status SET state=? WHERE track_id=?",rusqlite::params![if request.action=="ignore"{"ignored"}else{"kept"},id])?;tx.commit()?;
     } else {ensure!(request.action=="list","Unknown metadata action");}
-    let c=rusqlite::Connection::open(path)?;
+    let c=musicos_init::database::Connection::open(path)?;
     let search=format!("%{}%",request.search.as_deref().unwrap_or("").trim().replace('%',"\\%").replace('_',"\\_"));
     let condition="FROM metadata_enrichment_status s JOIN tracks t ON t.id=s.track_id LEFT JOIN track_metadata_overrides o ON o.track_id=t.id WHERE s.state='review' AND (coalesce(o.title,t.title)||' '||coalesce(o.artist,t.artist)||' '||coalesce(o.album,t.album)) LIKE ? ESCAPE '\\'";
     let total:i64=c.query_row(&format!("SELECT count(*) {condition}"),[&search],|r|r.get(0))?;
@@ -138,7 +157,7 @@ pub fn workspace(path:&Path,request:WorkspaceRequest)->Result<serde_json::Value>
  }
  #[test] fn undo_artwork_restores_canonical_cache_without_rewriting_images(){
   let d=tempfile::tempdir().unwrap();let path=d.path().join("db");let db=Db::open(path.to_str().unwrap()).unwrap();let id=db.insert_track("/a.flac","A","Artist","Album",1,1,1).unwrap();
-  let c=rusqlite::Connection::open(&path).unwrap();c.execute_batch("CREATE TABLE desktop_album_artwork_v1(album_id TEXT PRIMARY KEY,path TEXT);INSERT INTO desktop_album_artwork_v1 VALUES('album','old.png')").unwrap();
+  let c=musicos_init::database::Connection::open(&path).unwrap();c.execute_batch("CREATE TABLE desktop_album_artwork_v1(album_id TEXT PRIMARY KEY,path TEXT);INSERT INTO desktop_album_artwork_v1 VALUES('album','old.png')").unwrap();
   db.update_track_metadata_override(&[id],&MetadataUpdate{artwork_path:Some("new.png".into()),..Default::default()}).unwrap();let batch=db.metadata_history().unwrap()[0]["id"].as_i64().unwrap();c.execute("UPDATE desktop_album_artwork_v1 SET path='new.png'",[]).unwrap();db.undo_metadata_change(batch).unwrap();assert_eq!(c.query_row("SELECT path FROM desktop_album_artwork_v1",[],|r|r.get::<_,String>(0)).unwrap(),"old.png");
  }
 }

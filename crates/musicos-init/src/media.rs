@@ -19,9 +19,11 @@ use lofty::picture::{Picture, PictureType};
 use lofty::tag::{Accessor, Tag as LoftyTag};
 use sha2::{Digest, Sha256};
 
-static COVER_ART_CACHE: OnceLock<Mutex<HashMap<String, Option<CoverArt>>>> = OnceLock::new();
+struct CoverEntry{art:Option<CoverArt>,identity:Option<(u64,std::time::SystemTime)>,used:std::time::Instant,bytes:usize}
+#[derive(Default)]struct CoverCache{entries:HashMap<String,CoverEntry>,bytes:usize}
+static COVER_ART_CACHE: OnceLock<Mutex<CoverCache>> = OnceLock::new();
 static LAST_SCAN_ROOTS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
-const COVER_ART_CACHE_VERSION_DIR: &str = "v2";
+const COVER_ART_CACHE_VERSION_DIR: &str = "v3-originals";
 
 pub fn write_metadata_batch(paths: &[String], update: &MetadataUpdate) -> Result<()> {
     write_metadata_batch_with(paths, update, || Ok(()))
@@ -158,7 +160,7 @@ where
     F: FnMut(ScanProgress),
 {
     std::fs::create_dir_all(&request.managed_root)?;
-    let db = Db::open(
+    let db = Db::open_background(
         db_path
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("library database path is not valid UTF-8"))?,
@@ -251,24 +253,10 @@ where
 }
 
 pub fn cached_cover_art(track_path: &str) -> Option<CoverArt> {
-    let cache = COVER_ART_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Ok(cache) = cache.lock() {
-        if let Some(art) = cache.get(track_path) {
-            return art.clone();
-        }
-    }
-
-    let art = extract_cover_art(track_path);
-    if let Ok(mut cache) = cache.lock() {
-        if cache.len() >= 128 {
-            // Drop a portion of the cache entries (e.g., half) to avoid full clears and thrashing
-            let keys_to_remove: Vec<String> = cache.keys().take(64).cloned().collect();
-            for key in keys_to_remove {
-                cache.remove(&key);
-            }
-        }
-        cache.insert(track_path.to_string(), art.clone());
-    }
+    let cache=COVER_ART_CACHE.get_or_init(Default::default);let identity=std::fs::metadata(track_path).ok().and_then(|m|Some((m.len(),m.modified().ok()?)));
+    if let Ok(mut cache)=cache.lock(){if let Some(entry)=cache.entries.get_mut(track_path){if entry.identity==identity{entry.used=std::time::Instant::now();return entry.art.clone();}}}
+    let art=extract_cover_art(track_path);let bytes=art.as_ref().map_or(0,|a|a.pixels.len()*std::mem::size_of::<Color>())+256+track_path.len();const BUDGET:usize=64*1024*1024;
+    if bytes<=BUDGET{if let Ok(mut cache)=cache.lock(){if let Some(old)=cache.entries.remove(track_path){cache.bytes-=old.bytes;}while cache.bytes+bytes>BUDGET{let Some(key)=cache.entries.iter().min_by_key(|(_,entry)|entry.used).map(|(key,_)|key.clone())else{break};if let Some(old)=cache.entries.remove(&key){cache.bytes-=old.bytes;}}cache.entries.insert(track_path.into(),CoverEntry{art:art.clone(),identity,used:std::time::Instant::now(),bytes});cache.bytes+=bytes;}}
     art
 }
 
@@ -301,14 +289,14 @@ pub fn cached_cover_art_for_track(db: &Db, track: &Track) -> Option<CoverArt> {
 pub fn cover_art_memory_cache_len() -> usize {
     COVER_ART_CACHE
         .get()
-        .and_then(|cache| cache.lock().ok().map(|cache| cache.len()))
+        .and_then(|cache| cache.lock().ok().map(|cache| cache.entries.len()))
         .unwrap_or(0)
 }
 
 pub fn clear_cover_art_memory_cache() {
     if let Some(cache) = COVER_ART_CACHE.get() {
         if let Ok(mut cache) = cache.lock() {
-            cache.clear();
+            cache.entries.clear();cache.bytes=0;
         }
     }
 }
@@ -412,7 +400,6 @@ pub fn load_cover_art_file(path: &Path) -> Option<CoverArt> {
 }
 
 fn cover_art_from_image(img: image::DynamicImage) -> CoverArt {
-    let img = img.resize_to_fill(600, 600, image::imageops::FilterType::Triangle);
     let (w, h) = img.dimensions();
     let pixels = img.to_rgba8().into_raw();
     let mut colors = Vec::with_capacity((w * h) as usize);
@@ -1008,6 +995,9 @@ fn file_stats(path: &Path) -> Result<FileStats> {
     })
 }
 
+/// Read-only destination hints for managed copies; files need no existing hierarchy.
+pub fn organization_tags(path:&Path)->(Option<String>,Option<String>){let Ok(file)=lofty::read_from_path(path)else{return(None,None)};let Some(tag)=file.primary_tag().or_else(||file.first_tag())else{return(None,None)};let artist=clean_tag(tag.get_string(&lofty::tag::ItemKey::AlbumArtist)).or_else(||clean_tag(tag.artist().as_deref()));(artist,clean_tag(tag.album().as_deref()))}
+
 fn scrape_embedded_metadata(path: &Path) -> Option<EmbeddedMetadata> {
     let tagged_file = lofty::read_from_path(path).ok()?;
     let tag = tagged_file
@@ -1394,8 +1384,8 @@ mod tests {
         image.save(&image_path).unwrap();
 
         let art = extract_cover_art(root.join("01 - Demo.mp3").to_str().unwrap()).unwrap();
-        assert_eq!(art.width, 600);
-        assert_eq!(art.height, 600);
+        assert_eq!(art.width, 2);
+        assert_eq!(art.height, 2);
         assert_eq!(art.pixels[0], Color::rgba(20, 40, 60, 255));
 
         let _ = std::fs::remove_dir_all(root);
@@ -1459,7 +1449,7 @@ mod tests {
             .unwrap();
         let track = db.get_track_by_id(track_id).unwrap().unwrap();
         let art = cached_cover_art_for_track(&db, &track).unwrap();
-        assert_eq!(art.width, 600);
+        assert_eq!(art.width, 2);
         assert_eq!(art.pixels[0], Color::rgba(80, 20, 120, 255));
 
         let refreshed = db.get_track_by_id(track_id).unwrap().unwrap();
@@ -1506,3 +1496,11 @@ mod tests {
 }
 
 #[cfg(test)] mod filename_order_tests {use super::*;#[test]fn padded_track_prefix_can_use_whitespace(){assert_eq!(track_number_from_stem("12 ARE WE STILL FRIENDS-"),Some(12));assert_eq!(track_number_from_stem("01. IGOR'S THEME"),Some(1));assert_eq!(track_number_from_stem("2019 - IGOR"),None);assert_eq!(track_number_from_stem("7 rings"),None);assert_eq!(track_number_from_stem("12"),None);}}
+
+#[cfg(test)]mod organization_tag_tests{
+ use super::*;
+ #[test]fn managed_copy_hints_use_album_artist_and_album_without_existing_folders(){
+  use lofty::tag::{TagExt,ItemKey};
+  let dir=std::env::temp_dir().join(format!("musicos-copy-tags-{}",std::process::id()));std::fs::create_dir_all(&dir).unwrap();let path=dir.join("loose.wav");let data=[0_u8;400];let mut wav=Vec::new();wav.extend(b"RIFF");wav.extend((36_u32+data.len()as u32).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16_u32.to_le_bytes());wav.extend(1_u16.to_le_bytes());wav.extend(1_u16.to_le_bytes());wav.extend(48000_u32.to_le_bytes());wav.extend(96000_u32.to_le_bytes());wav.extend(2_u16.to_le_bytes());wav.extend(16_u16.to_le_bytes());wav.extend(b"data");wav.extend((data.len()as u32).to_le_bytes());wav.extend(data);std::fs::write(&path,wav).unwrap();let mut tag=LoftyTag::new(lofty::tag::TagType::Id3v2);tag.set_artist("Artist A + Guest".into());tag.insert_text(ItemKey::AlbumArtist,"Artist A".into());tag.set_album("Tagged album".into());tag.save_to_path(&path,WriteOptions::default()).unwrap();let before=std::fs::read(&path).unwrap();assert_eq!(organization_tags(&path),(Some("Artist A".into()),Some("Tagged album".into())));assert_eq!(std::fs::read(&path).unwrap(),before);std::fs::remove_dir_all(&dir).unwrap();
+ }
+}

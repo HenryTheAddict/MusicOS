@@ -155,9 +155,7 @@ let integrationStatus = {
   discord: "Off", lastfm: "Off", queued: 0,
 };
 let player: Playback = { ...emptyPlayback };
-let preferences: Preferences =
-  JSON.parse(localStorage.getItem("musicos-fixture-preferences") ?? "null") ??
-  defaultPreferences;
+let preferences:Preferences={...defaultPreferences,...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
 let savedCollections: import("./types").SavedCollection[]=JSON.parse(localStorage.getItem("musicos-fixture-collections")??"[]");
 let metadataSuggestions=tracks.slice(0,3).map(t=>({track_id:t.id,current_title:t.title,current_artist:t.artist,current_album:t.album,current_year:t.year,current_artwork:t.cover_art_path,revision:1,candidate_token:String(t.id),candidate:{title:t.title,artist:t.artist,album:`${t.album} (Deluxe)`,year:2012,confidence:.82,recording_mbid:'example-recording',release_mbid:'example-release',artwork_path:t.cover_art_path}}));
 let metadataHistory:import('./types').MetadataHistory[]=[];
@@ -166,6 +164,8 @@ export async function fixtureCall(
   args: unknown,
 ): Promise<unknown> {
   const a = (args ?? {}) as Record<string, any>;
+  const diagnostics=window as typeof window & {__musicosCalls?:{command:string;at:number;args:unknown}[]};
+  (diagnostics.__musicosCalls??=[]).push({command,at:performance.now(),args});
   switch (command) {
     case 'metadata_status': return {cached:8,checking:a.retry?2:0,unavailable:2,retryable:a.retry?0:2};
     case 'sparklist': {
@@ -175,22 +175,23 @@ export async function fixtureCall(
       const base={ready:true,beta:true,reason:null,download_bytes:277183168,analyzed:ids.length,available:ids.length,analyzed_ids:ids,preview:null,items:savedCollections,chosen_id:null};
       const art='vibe/'+btoa(JSON.stringify({version:2,hue:245,energy:.4,shape:1,seed:123,variant:0,tempo:100})).replaceAll('+','-').replaceAll('/','_').replaceAll('=','');
       if(r.action==='choose')return {...base,chosen_id:ids[0]};
-      if(r.action==='preview')return {...base,generated_artwork:art,preview:{track_ids:[r.generation.seed??ids[0],...ids.filter(id=>id!==r.generation.seed)].slice(0,6),configuration:r.generation,analyzed:ids.length,available:ids.length,generation_version:'fixture-only'}};
-      if(r.action==='save'){savedCollections.push({id:`audio/${Date.now()}`,name:r.name,kind:'audio',spark:null,track_ids:r.preview.track_ids,artwork_choice:r.artwork_choice});localStorage.setItem('musicos-fixture-collections',JSON.stringify(savedCollections));return {...base,items:savedCollections};}
+      if(r.action==='preview')return {...base,generated_artwork:art,preview:{track_ids:[r.generation.seed??ids[0],...ids.filter(id=>id!==r.generation.seed)].filter(id=>!r.generation.less_like.includes(id)).slice(0,r.generation.target_count??25),configuration:r.generation,analyzed:ids.length,available:ids.length,generation_version:'fixture-only'}};
+      if(r.action==='save'){savedCollections.push({id:`audio/${Date.now()}`,name:r.name,kind:'audio',spark:null,track_ids:r.preview.track_ids,artwork_choice:r.artwork_choice,target_count:r.generation.target_count??25});localStorage.setItem('musicos-fixture-collections',JSON.stringify(savedCollections));return {...base,items:savedCollections};}
       return base;
     }
     case 'depth_setup': return {supported:true,ready:true,running:false,downloaded:99188950,total:99188950,error:null,revision:'fixture',attribution:'Depth renderer fixture'};
     case 'depth_artwork': return {fresh:new URLSearchParams(location.search).has('freshDepth'),photo:a.path,map:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><defs><radialGradient id="g"><stop stop-color="white"/><stop offset="1" stop-color="black"/></radialGradient></defs><rect width="256" height="256" fill="url(#g)"/></svg>')};
     case 'artwork_performance': return;
-    case 'audio_analysis': return {running:false,paused:false,processed:0,total:0,features:[],errors:[]};
+    case 'audio_analysis': return {running:false,paused:false,processed:0,total:0,features:JSON.parse(localStorage.getItem('musicos-fixture-analysis')??'[]'),errors:[]};
     case 'audio_specs': return {format:'FLAC',sample_rate:44100,bit_depth:16,bitrate:900,channels:2,lossless:true};
+    case 'organize_files': {if(a.action==='preview')return {token:'fixture-preview',moves:library.tracks.slice(0,3).map(t=>({id:t.id,from:t.path,to:`/fixture/${t.artist}/${t.album}/${t.path.split('/').pop()}`})),skipped:0,undo_available:0};return {count:3};}
     case 'library_source': {const source=library.sources.find(s=>s.id===a.id);if(!source)throw new Error('Folder no longer exists');source.enabled=a.enabled;return;}
     case "toggle_favorite": {const track=tracks.find(t=>t.id===a.trackId);if(!track)throw new Error('Song no longer exists');track.favorited=!track.favorited;return track.favorited;}
     case "collections": {
       const r=a.request;
       if(r){
-        if(r.action==='create'||r.action==='create_spark')savedCollections.push({id:`${r.action==='create'?'playlist':'spark'}/${Date.now()}`,name:(r.name??r.definition.name).trim(),track_ids:[],spark:r.definition??null,kind:r.action==='create'?'manual':'rule',description:'',artwork:null,artwork_choice:r.artwork_choice??'playlist/tritower'});
-        else {const item=savedCollections.find(c=>c.id===r.id);if(!item)throw new Error('Collection no longer exists');if(r.action==='delete')savedCollections=savedCollections.filter(c=>c.id!==r.id);if(r.action==='rename')item.name=r.name.trim();if(r.action==='describe')item.description=r.description;if(r.action==='cover')item.artwork_choice=r.artwork_choice;if(r.action==='update_spark'){item.spark=r.definition;item.name=r.definition.name;}if(r.action==='add')item.track_ids=[...new Set([...item.track_ids,...r.track_ids])];if(r.action==='remove')item.track_ids=item.track_ids.filter(id=>!r.track_ids.includes(id));if(r.action==='reorder')item.track_ids=r.track_ids;}
+        if(r.action==='create'||r.action==='create_spark')savedCollections.push({id:`${r.action==='create'?'playlist':'spark'}/${Date.now()}`,name:(r.name??r.definition.name).trim(),track_ids:r.track_ids??[],spark:r.definition??null,kind:r.action==='create'?'manual':'rule',description:'',artwork:null,artwork_choice:r.artwork_choice??'playlist/tritower'});
+        else {const item=savedCollections.find(c=>c.id===r.id);if(!item)throw new Error('Collection no longer exists');if(r.action==='delete')savedCollections=savedCollections.filter(c=>c.id!==r.id);if(r.action==='rename')item.name=r.name.trim();if(r.action==='describe')item.description=r.description;if(r.action==='length')item.target_count=r.target_count;if(r.action==='cover')item.artwork_choice=r.artwork_choice;if(r.action==='update_spark'){item.spark=r.definition;item.name=r.definition.name;}if(r.action==='add')item.track_ids=[...new Set([...item.track_ids,...r.track_ids])];if(r.action==='remove')item.track_ids=item.track_ids.filter(id=>!r.track_ids.includes(id));if(r.action==='reorder')item.track_ids=r.track_ids;}
         localStorage.setItem('musicos-fixture-collections',JSON.stringify(savedCollections));
       }
       return savedCollections.map(c=>c.spark?{...c,track_ids:tracks.filter(t=>c.spark!.rules.every(rule=>rule.field==='favorited'?t.favorited:String(t[rule.field as keyof Track]).toLowerCase().includes(rule.value.toLowerCase()))).map(t=>t.id)}:{...c});
@@ -203,6 +204,10 @@ export async function fixtureCall(
       if (a.request.lastfm_enabled) throw new Error("Connect Last.fm before enabling scrobbling.");
       integrationStatus = { ...integrationStatus, config: { ...integrationStatus.config, ...a.request }, discord: a.request.discord_enabled ? "Browser preview · open MusicOS desktop to connect" : "Off" };
       return { status: integrationStatus, auth_url: null };
+    case 'mini_resize':localStorage.setItem('musicos-fixture-window-size',JSON.stringify(a));return undefined;
+    case "bootstrap_state":
+      return {preferences,playback:player,task:emptyTask};
+    case "library_ready":return undefined;
     case "bootstrap":
       return { library, preferences, playback: player, task: emptyTask };
     case "refresh_library":
@@ -214,6 +219,7 @@ export async function fixtureCall(
         JSON.stringify(preferences),
       );
       return preferences;
+    case 'mini_player': case 'window_pin': return;
     case "album_info":return new URLSearchParams(location.search).has('contributors')?{description:'A collection of songs featuring musicians from across the world. '.repeat(20),source_url:'https://en.wikipedia.org/wiki/Junk_(M83_album)'}:{description:null,source_url:null};
     case "artist_info":
       return {
@@ -294,6 +300,9 @@ export async function fixtureCall(
       if(action.type==='dj_mode')player={...player,dj_mode:action.enabled,shuffle:action.enabled?false:player.shuffle};
       return player;
     }
+    case 'playlist_suggestions': {const item=savedCollections.find(c=>c.id===a.id);return {ids:item?.track_ids.length?tracks.filter(t=>!item.track_ids.includes(t.id)).slice(0,10).map(t=>t.id):[],state:item?.track_ids.length?'ready':'empty',message:item?.track_ids.length?'Suggested from this playlist’s sound.':'Choose a starting song.'};}
+    case 'metadata_files': return a.action==='inspect'?{values:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({...t,revision:1})),files:a.writeFiles?{backup_bytes:120000,files:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({path:t.path,format:'FLAC'})),supported_fields:['Title','Artist','Album','Album artist','Genre','Year','Track and disc numbers']}:null}:{jobs:[]};
+    case 'album_metadata': {const r=a.request;const ignored=JSON.parse(localStorage.getItem('musicos-fixture-ignored')??'[]') as typeof metadataSuggestions;const visible=metadataSuggestions.filter(s=>!ignored.some(i=>i.track_id===s.track_id&&i.candidate_token===s.candidate_token));const albums=library.albums.filter(album=>visible.some(s=>album.track_ids.includes(s.track_id))&&`${album.title} ${album.artist}`.toLowerCase().includes((r.search??'').toLowerCase())).map(album=>{const rows=album.track_ids.map(id=>{const t=tracks.find(t=>t.id===id)!;const candidate=visible.find(s=>s.track_id===id);return {track_id:id,current:{...t,revision:1},candidate:candidate?.candidate??null,candidate_token:candidate?.candidate_token};});return {album_id:album.id,title:album.title,artist:album.artist,cover:album.cover,rows,token:JSON.stringify(rows)};});if(r.action==='list')return {albums};const album=albums.find(album=>album.album_id===r.album_id);if(!album||album.token!==r.token)throw new Error('This album changed. Refresh the comparison.');let count=0;for(const choice of r.rows){const suggestion=visible.find(s=>s.track_id===choice.track_id);if(!suggestion)continue;const t=tracks.find(t=>t.id===choice.track_id)!;const before={...t};for(const field of choice.fields)Object.assign(t,{[field==='artwork'?'cover_art_path':field]:(suggestion.candidate as any)[field==='artwork'?'artwork_path':field]});metadataHistory.unshift({id:Date.now(),created_at:Date.now()/1000,undone:false,conflict:false,changes:[{track_id:t.id,before,after:{...t},current:null,conflict:false}]});metadataSuggestions=metadataSuggestions.filter(s=>s.track_id!==t.id);count++;}return {count,history_id:Date.now()};}
     case "metadata_edit": {
       const changes=library.tracks.filter(t=>a.ids.includes(t.id)).map(t=>({track_id:t.id,before:{...t},after:{...t,...a.patch},current:null,conflict:false}));
       for(const track of library.tracks)if(a.ids.includes(track.id))Object.assign(track,a.patch);
@@ -301,13 +310,17 @@ export async function fixtureCall(
     }
     case 'metadata_workspace':{
       const r=a.request;
+      const ignored=JSON.parse(localStorage.getItem('musicos-fixture-ignored')??'[]') as typeof metadataSuggestions;
+      if(r.action==='ignored'){const rows=ignored.filter(s=>`${s.current_title} ${s.current_artist}`.toLowerCase().includes((r.search??'').toLowerCase()));return {items:rows.slice(r.offset??0,(r.offset??0)+50),total:rows.length,offset:r.offset??0};}
+      if(r.action==='restore'){localStorage.setItem('musicos-fixture-ignored',JSON.stringify(ignored.filter(s=>s.track_id!==r.trackId||s.candidate_token!==r.fingerprint)));return {};}
+      if(r.action==='ignore'){const s=metadataSuggestions.find(s=>s.track_id===r.trackId);if(!s||s.candidate_token!==r.token||s.revision!==r.revision)throw new Error('This suggestion changed. Refresh the comparison.');localStorage.setItem('musicos-fixture-ignored',JSON.stringify([...ignored.filter(i=>i.track_id!==s.track_id),{...s,candidate_identity:s.candidate_token}]));return {};}
       if(r.action==='history')return {history:metadataHistory};
       if(r.action==='undo'){const h=metadataHistory.find(h=>h.id===r.id);if(h){for(const c of h.changes){const t=tracks.find(t=>t.id===c.track_id);if(t)Object.assign(t,c.before);}h.undone=true;}return {history:metadataHistory};}
       if(r.action==='apply'||r.action==='dismiss'){const s=metadataSuggestions.find(s=>s.track_id===r.trackId);if(!s||s.candidate_token!==r.token||s.revision!==r.revision)throw new Error('This suggestion changed. Refresh the comparison.');
        if(r.action==='apply'){const t=tracks.find(t=>t.id===s.track_id)!;const before={...t};for(const field of r.fields??[])Object.assign(t,{[field==='artwork'?'cover_art_path':field]:s.candidate[field==='artwork'?'artwork_path':field as keyof typeof s.candidate]});metadataHistory.unshift({id:Date.now(),created_at:Date.now()/1000,undone:false,conflict:false,changes:[{track_id:t.id,before,after:{...t},current:null,conflict:false}]});}
        metadataSuggestions=metadataSuggestions.filter(s=>s.track_id!==r.trackId);
       }
-      const filtered=metadataSuggestions.filter(s=>`${s.current_title} ${s.current_artist} ${s.current_album}`.toLowerCase().includes((r.search??'').toLowerCase()));return {items:filtered.slice(r.offset??0,(r.offset??0)+50),total:filtered.length,offset:r.offset??0};
+      const filtered=metadataSuggestions.filter(s=>!ignored.some(i=>i.track_id===s.track_id&&i.candidate_token===s.candidate_token)).filter(s=>`${s.current_title} ${s.current_artist} ${s.current_album}`.toLowerCase().includes((r.search??'').toLowerCase()));return {items:filtered.slice(r.offset??0,(r.offset??0)+50),total:filtered.length,offset:r.offset??0};
     }
     case "metadata_review":
       return [];

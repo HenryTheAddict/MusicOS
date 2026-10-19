@@ -19,7 +19,7 @@ export default function PlaybackProgress({trackId,position,duration,seek,showTim
     finally {if(revision===operation.current){setPending(false);setDraft(null);}}
   }
   return <div className="playback-progress" data-seeking={pending || dragging.current || undefined}>
-    <div className="playback-rail-slot"><div className="progress-rail" aria-hidden="true"><span style={{transform:`scaleX(${percent/100})`}}/></div>
+    <div className="playback-rail-slot"><div className="progress-rail" aria-hidden="true"><span style={{width:`${percent}%`}}/></div>
     <input ref={input} className="seek" type="range" aria-label="Playback position"
       aria-valuetext={`${formatTime(value)} of ${formatTime(maximum)}`}
       min={0} max={Math.max(1,maximum)} step={.1} value={value}

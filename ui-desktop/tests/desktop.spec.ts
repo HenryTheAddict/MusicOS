@@ -458,9 +458,9 @@ test("wide windows retain Sketch album sizes and sort menu works", async ({page}
     title: getComputedStyle(document.querySelector(".album-copy h1")!).fontSize,
     row: document.querySelector(".album-detail .track-row")!.getBoundingClientRect().top,
     player: document.querySelector(".now-playing")!.getBoundingClientRect().left,
-    selectorRight: document.querySelector(".app-header > .menu-trigger")!.getBoundingClientRect().right,
+    selectorRight: document.querySelector(".section-control > .menu-trigger:first-child")!.getBoundingClientRect().right,
     brandRight: document.querySelector(".header-brand")!.getBoundingClientRect().right,
-    selectorLeft: document.querySelector(".app-header > .menu-trigger")!.getBoundingClientRect().left,
+    selectorLeft: document.querySelector(".section-control > .menu-trigger:first-child")!.getBoundingClientRect().left,
   }));
   expect(geometry.cover).toBe(128);
   expect(geometry.title).toBe("32px");
@@ -593,10 +593,10 @@ test("selected Sketch vectors morph on playback and settle exactly after rapid c
   expect(samples.every(d => !d.includes("NaN") && !d.includes("Infinity"))).toBe(true);
   await pause.evaluate(node => (node as HTMLElement & { stopObserving?: () => void }).stopObserving?.());
   // Local SVG ids cannot resolve to another icon's clipping/gradient definition.
-  const ids = await page.locator(".sketch-icon [id]").evaluateAll(nodes => nodes.map(n => n.id));
+  const ids = await page.locator(".asset-icon [id]").evaluateAll(nodes => nodes.map(n => n.id));
   expect(new Set(ids).size).toBe(ids.length);
   expect(await glyph.count()).toBe(3);
-  await page.screenshot({ path: "out/rebuild-qa/sketch-icons-playback.png" });
+  await page.screenshot({ path: "out/rebuild-qa/asset-icons-playback.png" });
 });
 
 test("SVG playback morph respects reduced motion", async ({ page }) => {
@@ -657,20 +657,20 @@ test("grid resize animations finish and reduced motion disables reflow", async (
 test("Sketch smooth corners resize correctly and playback progress fills to seek position", async ({page}) => {
   await page.setViewportSize({width:720,height:480});
   await start(page);
-  await expect(page.locator(".page-frame")).toHaveAttribute("data-corner-smoothing","0.6");
+  await expect(page.locator(".page-frame")).toHaveCSS("clip-path","none");
   await expect(page.locator(".card-open .cover").first()).toHaveAttribute("data-corner-smoothing","1");
-  const before=await page.locator(".page-frame").evaluate(e=>getComputedStyle(e).clipPath);
+  const before=await page.locator(".card-open .cover").first().evaluate(e=>getComputedStyle(e).clipPath);
   await page.setViewportSize({width:1280,height:800});
-  await expect.poll(()=>page.locator(".page-frame").evaluate(e=>getComputedStyle(e).clipPath)).not.toBe(before);
+  await expect.poll(()=>page.locator(".card-open .cover").first().evaluate(e=>getComputedStyle(e).clipPath)).not.toBe(before);
   await page.getByRole("button",{name:"Open Plastic Beach",exact:true}).click();
   await page.getByRole("button",{name:"Play collection",exact:true}).click();
   const slider=page.getByRole("slider",{name:"Playback position",exact:true});
   await expect(slider).toBeEnabled();
   await slider.focus();await slider.press("End");
   await expect.poll(()=>slider.inputValue()).toBe(await slider.getAttribute("max"));
-  await expect(page.locator(".progress-rail > span")).toHaveCSS("transform","matrix(1, 0, 0, 1, 0, 0)");
+  await expect.poll(()=>page.locator(".progress-rail > span").evaluate(el=>Math.abs(el.getBoundingClientRect().width-el.parentElement!.getBoundingClientRect().width))).toBeLessThan(1);
   await slider.press("Home");await expect.poll(()=>slider.inputValue()).toBe("0");
-  await expect(page.locator(".progress-rail > span")).toHaveCSS("transform","matrix(0, 0, 0, 1, 0, 0)");
+  await expect.poll(()=>page.locator(".progress-rail > span").evaluate(el=>el.getBoundingClientRect().width)).toBe(0);
   await page.screenshot({path:"out/rebuild-qa/figtree-smooth-album-1280.png"});
 });
 
@@ -747,7 +747,7 @@ test("playlists persist and rule playlists follow favorite changes",async({page}
  await page.getByRole('button',{name:'Favorite Opening',exact:true}).click();
  await expect(page.getByRole('button',{name:'Unfavorite Opening',exact:true})).toHaveAttribute('aria-pressed','true');
  await page.getByRole('button',{name:'Manage collections',exact:true}).click();await page.getByRole('tab',{name:/Smart playlists/}).click();await page.getByRole('button',{name:'Create Smart playlist',exact:true}).click();
- await page.getByRole('textbox',{name:'Name',exact:true}).fill('My hearts');await page.getByRole('combobox',{name:'Rule 1 field',exact:true}).selectOption('favorited');await page.getByRole('button',{name:'Save Smart playlist'}).click();
+ await page.getByRole('textbox',{name:'Name',exact:true}).fill('My hearts');await page.getByRole('button',{name:'Rule 1 field',exact:true}).click();await page.getByRole('menuitemradio',{name:'favorited',exact:true}).click();await page.getByRole('button',{name:'Save Smart playlist'}).click();
  const spark=page.locator('.hub-collection-open').filter({hasText:'My hearts'});await spark.click();
  await expect(page.getByRole('heading',{name:'My hearts',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Unfavorite Opening',exact:true}).click();

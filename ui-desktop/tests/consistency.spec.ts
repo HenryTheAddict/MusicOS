@@ -45,9 +45,9 @@ test('metadata status offers bounded recovery without exposing provider errors',
  const status=page.getByRole('region',{name:'Artist metadata status'});await expect(status).toContainText('8 cached · 0 checking · 2 unavailable');await status.getByRole('button',{name:'Retry available lookups'}).click();await expect(status).toContainText('8 cached · 2 checking · 2 unavailable');await expect(status.getByRole('button',{name:'Waiting before retry'})).toBeDisabled();
 });
 
-test('collection shuffle retains supplied soft gradient with no particle effects',async({page})=>{
+test('collection shuffle retains supplied geometry with a solid surface and no particles',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'playlist/qa',name:'Soft controls',track_ids:[1,2],spark:null,kind:'manual'}])));
- await page.goto('/?fixture=1');const shuffle=page.getByRole('button',{name:'Shuffle Soft controls',exact:true});await expect(shuffle.locator('svg use')).toHaveCount(1);await shuffle.hover();await expect(shuffle).toHaveCSS('animation-name','none');await expect(page.locator('.collection-particles')).toHaveCount(0);
+ await page.goto('/?fixture=1');const shuffle=page.getByRole('button',{name:'Shuffle Soft controls',exact:true});await expect(shuffle.locator('svg use')).toHaveCount(1);await expect(shuffle.locator('linearGradient,radialGradient')).toHaveCount(0);await shuffle.hover();await expect(shuffle).toHaveCSS('animation-name','none');await expect(page.locator('.collection-particles')).toHaveCount(0);
 });
 
 test('wide grid captions do not collide and parallax can be disabled persistently',async({page})=>{

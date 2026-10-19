@@ -1,0 +1,58 @@
+/* A cached image connects the grid and detail view without moving layout. */
+.album-cover-transfer{position:fixed;z-index:18;display:block;pointer-events:none;user-select:none;object-fit:cover;transform-origin:0 0;background:transparent;box-shadow:none;will-change:transform;}
+.library-toolbar-exit{position:fixed;z-index:17;margin:0;pointer-events:none;user-select:none;}
+.artist-name-part{display:inline-block;}
+
+/* Navigation surfaces belong to the displayed palette, not its brightest accent. */
+.app-shell[data-adaptive=true] .section-control>.menu-trigger:first-child{background:var(--control-surface);color:var(--ink);}
+body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--control-surface);color:var(--ink);}
+.app-shell[data-adaptive=true] .section-control>.menu-trigger:last-child{color:var(--ink);}
+.app-shell[data-adaptive=true] .settings .settings-tabs{background:color-mix(in srgb,var(--ink) 5%,var(--surface-color));}
+.app-shell[data-adaptive=true] .page-frame{border-color:var(--control-border);}
+
+/* The artist portrait is a still photograph, with quiet contextual details. */
+.artist-portrait-stage .artist-portrait-button,.artist-portrait-stage .artist-portrait-button>.cover,.artist-portrait-stage[data-revealed=true] .artist-portrait-button>.cover{transform:none;translate:none;scale:none;transition:none;}
+.artist-portrait-stage .portrait-fact{transform:translateY(4px);box-shadow:none;transition:opacity 140ms ease-out,transform 180ms ease-out;}
+.artist-portrait-stage[data-revealed=true] .portrait-fact{transform:none;}
+.artist-portrait-stage .portrait-credit-link{box-shadow:none;}
+
+/* Artwork sets the accent; playing and reading controls keep consistent ink. */
+.app-shell .collection-actions{color:var(--ink);}
+.app-shell .collection-actions>.play-button{background:transparent;color:var(--ink);}
+.app-shell .collection-actions>.play-button .asset-icon,.app-shell .collection-actions>.menu-trigger .asset-icon{--icon-fill:var(--ink);--icon-stroke:var(--secondary-ink,var(--ink));}
+.app-shell .collection-actions>.shuffle-button{background:transparent!important;color:var(--ink);}
+.app-shell .personal-collection .collection-shuffle .asset-icon,.app-shell .collection-actions>.shuffle-button .asset-icon{--icon-fill:var(--shuffle-ink,var(--ink));--icon-stroke:var(--shuffle-ink,var(--ink));--shuffle-face:var(--control-surface);}
+.personal-collection,.playlist-hero{--shuffle-ink:var(--collection-tone,var(--ink));}
+.app-shell[data-theme-mode=dark] :is(.personal-collection,.playlist-hero){--shuffle-ink:var(--ink);}
+.app-shell[data-adaptive] .collection-actions>.menu-trigger,.app-shell .collection-actions>.menu-trigger{background:var(--control-surface);color:var(--ink);}
+.app-shell .collection-actions>button{transition:background-color 140ms ease-out,opacity 140ms ease-out,transform 140ms ease-out;}
+.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:scale(.96);}
+.app-shell .album-artist-credits,.app-shell .artist-credit-name{color:var(--ink);}
+
+@media(prefers-reduced-motion:reduce){.album-cover-transfer{display:none;}.artist-portrait-stage .portrait-fact{transition:none;transform:none;}.app-shell .collection-actions>button{transition:none;}.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:none;}}
+/* Column labels and navigation are reading controls, including in Dark mode. */
+.app-shell :is(.track-head,.track-heading){color:var(--secondary-ink,var(--ink));opacity:1;}
+.app-shell[data-theme-mode=dark] .sidebar-back{background:var(--control-surface);color:var(--ink);}
+
+/* The preview fits beside the portrait; full reading gets its own wide row. */
+.artist-about .artist-biography{max-height:none;overflow:visible;padding:.5rem .625rem;text-align:left;line-height:1.5;}
+.artist-biography>p{margin:0;white-space:pre-line;overflow-wrap:anywhere;}
+.artist-about:not([data-expanded=true]) .artist-biography>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:8;overflow:hidden;}
+.artist-biography-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:.25rem .625rem;padding:0 .625rem .5rem;}
+.artist-about .artist-biography-actions .text-link{font-size:.75rem;line-height:1.4;padding:.125rem 0;}
+.artist-about[data-expanded=true]{grid-column:1/-1;grid-row:3;margin-top:.875rem;padding:.75rem .875rem;text-align:left;}
+.artist-about[data-expanded=true] h2{background:transparent;text-align:left;}
+.artist-about[data-expanded=true] .artist-biography{max-width:65ch;padding:.5rem 0;font-size:.8125rem;line-height:1.6;}
+.artist-about[data-expanded=true] .artist-biography-actions{padding:0;}
+
+/* Icon hosts align to button centers instead of an inline text baseline. */
+.mini-player :is(.mini-player-tools,.mini-player-transport)>:is(.icon-button,.menu-trigger){display:grid;place-items:center;padding:0;line-height:0;}
+.mini-player :is(.mini-player-tools,.mini-player-transport) .icon{display:block;margin:0;}
+
+/* One shared vertical frame: title at the cover top, rail near its bottom. */
+.now-playing .now-playing-cover{width:2.125rem;height:2.125rem;}
+.now-playing .now-playing-cover>.cover{display:block;width:100%;height:100%;}
+.now-playing .now-playing-info{display:grid;grid-template-columns:minmax(0,1fr);justify-content:stretch;justify-items:stretch;grid-template-rows:.8125rem .6875rem .625rem;align-content:start;gap:0;height:2.125rem;align-self:center;}
+.now-playing .now-playing-info>strong{line-height:.8125rem;}
+.now-playing .now-playing-info>.now-playing-credits{line-height:.6875rem;}
+.now-playing .now-playing-info>.playback-progress{height:.625rem;}

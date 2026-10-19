@@ -261,7 +261,7 @@ impl LocalLibraryRepository {
         let sources = db
             .library_sources()?
             .into_iter()
-            .map(source_from_init)
+            .map(|source|{let count=db.library_source_track_count(source.id).unwrap_or(0);let mut result=source_from_init(source);result.song_count=count;result})
             .collect();
         let album_count = tracks
             .iter()
@@ -509,6 +509,7 @@ fn source_from_init(value: musicos_init::database::LibrarySource) -> LibrarySour
         path: PathBuf::from(value.path),
         display_name: value.display_name,
         enabled: value.enabled,
+        song_count:0,
         available: value.available,
         last_scan_at: value.last_scan_at,
         last_error: value.last_error,

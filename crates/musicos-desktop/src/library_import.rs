@@ -153,19 +153,20 @@ fn copy_verified(source: &Path, destination: &Path, expected_hash: &str) -> Resu
 }
 
 pub fn destination_for(source: &Path, media_dir: &Path) -> PathBuf {
-    let album = source
+    let (tag_artist,tag_album)=musicos_init::media::organization_tags(source);
+    let album = tag_album.map(|value|sanitize_segment(&value,"Unknown Album")).unwrap_or_else(||source
         .parent()
         .and_then(Path::file_name)
         .and_then(|value| value.to_str())
         .map(|value| sanitize_segment(value, "Unknown Album"))
-        .unwrap_or_else(|| "Unknown Album".to_string());
-    let artist = source
+        .unwrap_or_else(|| "Unknown Album".to_string()));
+    let artist = tag_artist.map(|value|sanitize_segment(&value,"Unknown Artist")).unwrap_or_else(||source
         .parent()
         .and_then(Path::parent)
         .and_then(Path::file_name)
         .and_then(|value| value.to_str())
         .map(|value| sanitize_segment(value, "Unknown Artist"))
-        .unwrap_or_else(|| "Unknown Artist".to_string());
+        .unwrap_or_else(|| "Unknown Artist".to_string()));
     let title = source
         .file_stem()
         .and_then(|value| value.to_str())

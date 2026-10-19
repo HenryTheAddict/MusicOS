@@ -157,10 +157,13 @@ struct Worker {
     last_retry: Instant,
     discord_key: String,
     discord_retry: Instant,
-    covers: BTreeMap<String, Option<String>>,
+    covers: BTreeMap<String, CoverLookup>,
     cover_sender: std::sync::mpsc::Sender<(String, Option<String>)>,
     cover_receiver: std::sync::mpsc::Receiver<(String, Option<String>)>,
 }
+struct CoverLookup{url:Option<String>,attempts:u32,checked:Instant,pending:bool}
+impl CoverLookup{fn due(&self)->bool{let delay=if self.pending{Duration::from_secs(45)}else if self.url.is_some(){Duration::from_secs(6*3600)}else{Duration::from_secs((30_u64*2_u64.pow(self.attempts.min(5))).min(15*60))};self.checked.elapsed()>=delay}}
+fn discord_artist(track:&musicos_desktop::models::Track)->String{track.album_artist.as_deref().filter(|s|!s.trim().is_empty()).map(str::to_owned).unwrap_or_else(||crate::library::split_artist_credits(&track.artist)[0].to_owned())}
 impl Worker {
     fn entry(&self) -> Result<keyring::Entry> {
         let profile = format!(
@@ -376,22 +379,20 @@ impl Worker {
         self.last_tick = Instant::now();
         if self.config.discord_enabled {
             for (key, url) in self.cover_receiver.try_iter() {
-                self.covers.insert(key, url);
+                if let Some(lookup)=self.covers.get_mut(&key){lookup.url=url;lookup.pending=false;lookup.checked=Instant::now();}
             }
             let album_key = s
                 .track
                 .as_ref()
-                .map(|t| format!("{}\0{}", t.artist, t.album));
+                .map(|t| format!("{}\0{}", discord_artist(t), t.album));
             if s.is_playing {
                 if let (Some(track), Some(key)) = (s.track.as_ref(), album_key.as_ref()) {
-                    if !self.covers.contains_key(key) {
-                        if self.covers.len() > 256 {
-                            self.covers.clear();
-                        }
-                        self.covers.insert(key.clone(), None);
+                    if self.covers.get(key).is_none_or(CoverLookup::due) {
+                        if self.covers.len()>=256&&!self.covers.contains_key(key){if let Some(oldest)=self.covers.iter().min_by_key(|(_,entry)|entry.checked).map(|(key,_)|key.clone()){self.covers.remove(&oldest);}}
+                        let attempts=self.covers.get(key).map_or(1,|entry|entry.attempts+1);let url=self.covers.get(key).and_then(|entry|entry.url.clone());self.covers.insert(key.clone(),CoverLookup{url,attempts,checked:Instant::now(),pending:true});
                         let sender = self.cover_sender.clone();
                         let key = key.clone();
-                        let artist = track.artist.clone();
+                        let artist = discord_artist(track);
                         let album = track.album.clone();
                         std::thread::spawn(move || {
                             let url = crate::providers::discord_album_cover(&artist, &album)
@@ -405,7 +406,7 @@ impl Worker {
             let cover = album_key
                 .as_ref()
                 .and_then(|key| self.covers.get(key))
-                .and_then(|url| url.as_deref());
+                .and_then(|lookup| lookup.url.as_deref());
             let key = format!(
                 "{:?}:{}:{:?}:{}",
                 s.track.as_ref().map(|t| t.id),
@@ -533,6 +534,7 @@ impl Worker {
 }
 #[derive(Clone)]
 pub struct IntegrationService {
+    active: Arc<AtomicBool>,
     worker: Arc<Mutex<Worker>>,
     stopped: Arc<AtomicBool>,
 }
@@ -586,10 +588,13 @@ impl IntegrationService {
             cover_receiver,
         }));
         let stopped = Arc::new(AtomicBool::new(false));
+        let active=Arc::new(AtomicBool::new(false));
+        let enabled=active.clone();
         let w = worker.clone();
         let stop = stopped.clone();
         std::thread::spawn(move || {
             while !stop.load(Ordering::Relaxed) {
+                if !enabled.load(Ordering::Relaxed){std::thread::sleep(Duration::from_millis(100));continue;}
                 w.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .tick(client.snapshot());
@@ -597,8 +602,9 @@ impl IntegrationService {
             }
             w.lock().unwrap_or_else(|e| e.into_inner()).discord.clear();
         });
-        Ok(Self { worker, stopped })
+        Ok(Self { worker, stopped, active })
     }
+    pub fn activate(&self){self.active.store(true,Ordering::Relaxed);}
     pub fn status(&self) -> Status {
         let mut w = self.worker.lock().unwrap_or_else(|e| e.into_inner());
         w.response(None).status
@@ -719,6 +725,7 @@ fn discord_activity(s: &LocalPlaybackSnapshot, cover: Option<&str>) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]fn covers_use_album_artist_and_failed_lookups_expire(){let track=musicos_desktop::models::Track{artist:"Main; Guest".into(),..Default::default()};assert_eq!(discord_artist(&track),"Main");assert_eq!(discord_artist(&musicos_desktop::models::Track{album_artist:Some("Album artist".into()),..track}),"Album artist");assert!(!CoverLookup{url:None,attempts:1,checked:Instant::now(),pending:false}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(61),pending:false}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(46),pending:true}.due());}
     #[test]
     fn discord_artwork_is_included_and_pause_clears_activity() {
         use musicos_desktop::models::Track;

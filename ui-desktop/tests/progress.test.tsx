@@ -6,10 +6,10 @@ afterEach(cleanup);
 test("progress fill follows real time, clamps, and resets for a new track", () => {
   const seek=vi.fn().mockResolvedValue(undefined);
   const {container,rerender}=render(<PlaybackProgress trackId={1} position={50} duration={200} seek={seek}/>);
-  expect(container.querySelector(".progress-rail > span")).toHaveStyle({transform:"scaleX(0.25)"});
+  expect(container.querySelector(".progress-rail > span")).toHaveStyle({width:"25%"});
   expect(screen.getByRole("slider")).toHaveAttribute("aria-valuetext","0:50 of 3:20");
   rerender(<PlaybackProgress trackId={2} position={300} duration={100} seek={seek}/>);
-  expect(container.querySelector(".progress-rail > span")).toHaveStyle({transform:"scaleX(1)"});
+  expect(container.querySelector(".progress-rail > span")).toHaveStyle({width:"100%"});
 });
 test("scrubbing stays steady during playback events and commits once on release", async () => {
   const seek=vi.fn().mockResolvedValue(undefined);

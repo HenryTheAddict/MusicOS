@@ -7,7 +7,7 @@ test('quality opens independent audio controls, EQ layout persists, and queue st
   await controls.getByRole('switch',{name:'Link pitch & speed'}).uncheck();await controls.getByRole('slider',{name:'Playback speed'}).focus();await page.keyboard.press('Home');expect(Number(await controls.getByRole('slider',{name:'Playback pitch'}).inputValue())).toBeCloseTo(12,1);
   await page.keyboard.press('Escape');await expect(controls).not.toBeVisible();await page.getByRole('button',{name:'Open Up next',exact:true}).click();const queue=page.getByRole('complementary',{name:'Up next',exact:true});await expect(queue).toBeVisible();await expect(queue.getByRole('slider')).toHaveCount(0);await expect(queue.getByRole('switch',{name:'DJmode'})).toBeVisible();await expect(controls.getByRole('switch',{name:'DJmode'})).toHaveCount(0);await page.keyboard.press('Escape');
   await page.getByRole('button',{name:'Choose section'}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Audio',exact:true}).click();await page.getByRole('button',{name:'Playback',exact:true}).click();await page.getByRole('button',{name:'8 bands',exact:true}).click();await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening?.bands)).toBe(8);await page.reload();
-  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(controls.getByRole('slider')).toHaveCount(12);const bounds=(await controls.boundingBox())!;expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.y+bounds.height).toBeLessThanOrEqual(size.height);await page.screenshot({path:`out/rebuild-qa/quick-audio-${size.width}.png`,animations:'disabled'});
+  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(controls.getByRole('slider')).toHaveCount(13);const bounds=(await controls.boundingBox())!;expect(bounds.x).toBeGreaterThanOrEqual(0);expect(bounds.y+bounds.height).toBeLessThanOrEqual(size.height);await page.screenshot({path:`out/rebuild-qa/quick-audio-${size.width}.png`,animations:'disabled'});
  }
 });
 test('expanded artwork uses a readable blurred backdrop',async({page})=>{await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Expand Discovery artwork'}).click();const dialog=page.getByRole('dialog');await expect(dialog.locator('.viewer-backdrop')).toHaveCSS('filter','blur(32px) brightness(0.4)');await expect(dialog.locator('figcaption')).toHaveText('Discovery');await expect(dialog).toHaveCSS('opacity','1');await page.screenshot({path:'out/rebuild-qa/blurred-artwork-viewer.png'});await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();});
@@ -33,4 +33,16 @@ test('compact Audio fits scales and readable theme surfaces',async({page})=>{
   const box=(await panel.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.y).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(size.width);expect(box.y+box.height).toBeLessThanOrEqual(size.height);expect(await panel.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
   if(scale===100&&size.width===1280)await panel.screenshot({path:`out/rebuild-qa/audio-panel-${name}.png`,animations:'disabled'});
  }
+});
+
+test('reverb pad drags both axes, supports keyboard, and keeps a fixed square',async({page})=>{
+ await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'}),pad=panel.locator('.reverb-pad');const box=(await pad.boundingBox())!;expect(Math.abs(box.width-box.height)).toBeLessThan(1);
+ await panel.getByRole('switch',{name:'Reverb',exact:true}).check();await pad.focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Shift+ArrowRight');
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening);
+ await expect.poll(saved).toMatchObject({reverb:.55,reverb_depth:.51});
+ await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width+30,box.y-30,{steps:8});await page.mouse.up();await expect.poll(saved).toMatchObject({reverb:1,reverb_depth:1});
+ const after=(await pad.boundingBox())!;expect(after.width).toBe(box.width);expect(after.height).toBe(box.height);
+ await pad.focus();await page.keyboard.press('ArrowDown');await expect.poll(saved).toMatchObject({reverb_depth:.99});
+ await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(pad).toHaveAccessibleName('Reverb pad, 100% room, 99% depth');
+ await panel.getByRole('switch',{name:'Reverb',exact:true}).uncheck();await expect.poll(saved).toMatchObject({reverb:0,reverb_depth:.99});await panel.screenshot({path:'out/rebuild-qa/reverb-pad.png',animations:'disabled'});
 });

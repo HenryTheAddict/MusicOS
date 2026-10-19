@@ -1,0 +1,6 @@
+import {test,expect,vi,afterEach} from 'vitest';
+const mock=vi.hoisted(()=>({call:vi.fn()}));vi.mock('../src/bridge',()=>({call:mock.call}));
+import {displayData,invalidateDisplay} from '../src/displayData';
+afterEach(()=>{mock.call.mockReset();invalidateDisplay();});
+test('display requests deduplicate and reuse cached values until invalidated',async()=>{let resolve!:(value:unknown)=>void;mock.call.mockReturnValue(new Promise(r=>resolve=r));const a=displayData('metadata_status'),b=displayData('metadata_status');expect(mock.call).toHaveBeenCalledTimes(1);resolve({cached:3});expect(await a).toEqual(await b);expect(await displayData('metadata_status')).toEqual({cached:3});expect(mock.call).toHaveBeenCalledTimes(1);invalidateDisplay('metadata_status');mock.call.mockResolvedValue({cached:4});expect(await displayData('metadata_status')).toEqual({cached:4});expect(mock.call).toHaveBeenCalledTimes(2);});
+test('an invalidation during a request cannot publish a stale snapshot as clean',async()=>{let resolve!:(value:unknown)=>void;mock.call.mockReturnValueOnce(new Promise(r=>resolve=r)).mockResolvedValue({cached:5});const work=displayData('metadata_status');invalidateDisplay('metadata_status');resolve({cached:1});expect(await work).toEqual({cached:5});});

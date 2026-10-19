@@ -12,7 +12,9 @@ export function collectionPalette(pixels:ArrayLike<number>):Palette {
   const key=rgb.reduce((n,v)=>n*8+Math.floor(v/32),0),weight=1+(hi-lo)/64;
   const old=buckets.get(key);if(old){old.rgb=old.rgb.map((v,j)=>v+rgb[j]*weight);old.weight+=weight;}else buckets.set(key,{rgb:rgb.map(v=>v*weight),weight});
  }
- const candidates=[...buckets.values()].sort((a,b)=>b.weight-a.weight).map(b=>b.rgb.map(v=>v/b.weight));
+ const ranked=[...buckets.values()].sort((a,b)=>b.weight-a.weight);
+ const chromatic=ranked.filter(b=>{const rgb=b.rgb.map(v=>v/b.weight);return Math.max(...rgb)-Math.min(...rgb)>=35&&b.weight>=(ranked[0]?.weight??0)*.15;});
+ const candidates=[...chromatic,...ranked.filter(b=>!chromatic.includes(b))].map(b=>b.rgb.map(v=>v/b.weight));
  const selected:number[][]=[];
  for(const rgb of candidates){if(!selected.length||selected.every(other=>Math.hypot(...rgb.map((v,i)=>v-other[i]))>65))selected.push(rgb);if(selected.length===3)break;}
  if(!selected.length)selected.push([40,65,70]);
@@ -26,7 +28,14 @@ export function useCollectionTone(spark:boolean){
   const root=ref.current,host=root?.closest<HTMLElement>('.personal-collection,.playlist-hero,.playlist-card,.hub-collection-open');if(!root||!host)return;
   host.dataset.spark=String(spark);
   let alive=true;
-  const apply=(palette:Palette)=>{host.style.setProperty('--collection-tone',palette.tone);palette.stops.forEach((stop,i)=>{host.style.setProperty(`--collection-color-${i+1}`,stop);host.style.setProperty(`--collection-surface-${i+1}`,`color-mix(in srgb,${palette.surfaces[spark?i:0]} ${spark?35:30}%,white)`);});};
+  const apply=(palette:Palette)=>{
+   host.style.setProperty('--collection-tone',palette.tone);
+   palette.stops.forEach((stop,i)=>{
+    host.style.setProperty(`--collection-color-${i+1}`,spark?stop:palette.tone);
+    const color=spark?palette.surfaces[i]:palette.surfaces[0];
+    host.style.setProperty(`--collection-surface-${i+1}`,`color-mix(in srgb,${color} ${spark?12:18}%,white)`);
+   });
+  };
   const update=()=>{
    const images=[...root.querySelectorAll('img')];if(!images.length||images.some(img=>!img.complete||!img.naturalWidth))return;
    const key=images.map(img=>img.currentSrc).join('|');let palette=colors.get(key);

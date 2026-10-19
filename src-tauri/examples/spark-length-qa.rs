@@ -1,0 +1,15 @@
+//! Offline ranking of real cached embeddings; writes saved mixes only to a temp directory.
+use anyhow::{Result,Context,ensure};
+use musicos_tauri::{spark_engine::{self,Candidate,Generation},audio_collections};
+use std::path::Path;
+fn main()->Result<()> {
+ let args=std::env::args().collect::<Vec<_>>();let source=args.get(1).context("Pass library database and installed model directory")?;let model=Path::new(args.get(2).context("Pass model directory")?);
+ let manifest=spark_engine::read_manifest(model,true)?;let model_id=format!("{}@{}",manifest.id,manifest.revision);
+ let moods:std::collections::BTreeMap<String,Vec<f32>>=serde_json::from_slice(&std::fs::read(model.join("moods.json"))?)?;
+ let conn=rusqlite::Connection::open_with_flags(source,rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+ let rows=conn.prepare("SELECT t.id,t.artist,t.album,e.vector,t.path,e.identity FROM tracks t JOIN desktop_audio_embeddings_v1 e ON t.id=e.track_id WHERE t.deleted_at IS NULL AND e.model=? AND e.preprocessing=? ORDER BY t.id")?.query_map(rusqlite::params![model_id,musicos_tauri::spark_audio::VERSION],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+ let mut candidates=Vec::new();for (id,artist,album,vector,path,identity) in rows{let Ok(meta)=std::fs::metadata(&path)else{continue};let signature=format!("{}:{}:{}",path,meta.len(),meta.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_nanos());if signature==identity{candidates.push(Candidate{id,artist,album,embedding:serde_json::from_str(&vector)?,favorite:false});}}
+ ensure!(candidates.len()>=100,"Need 100 real cached embeddings");let temp=tempfile::tempdir()?;let db=temp.path().join("saved.sqlite");let mut results=Vec::new();
+ for count in [10,25,100]{let generation=Generation{seed:Some(candidates[0].id),mood:Some("Dreamy".into()),target_count:count,..Default::default()};let before=std::time::Instant::now();let preview=spark_engine::generate(&candidates,candidates.len(),generation.clone(),&moods)?;ensure!(preview.track_ids.len()==count,"Wrong length");ensure!(preview==spark_engine::generate(&candidates,candidates.len(),generation,&moods)?,"Nondeterministic generation");let saved=audio_collections::save(&db,None,&format!("{count} songs"),"auto/1",preview.clone())?;ensure!(audio_collections::list(&db)?.iter().find(|s|s.id==saved.id).unwrap().track_ids==preview.track_ids,"Restart sequence changed");audio_collections::set_length(&db,&saved.id,10)?;ensure!(audio_collections::list(&db)?.iter().find(|s|s.id==saved.id).unwrap().track_ids==preview.track_ids,"Length edit changed songs");results.push(serde_json::json!({"target":count,"actual":preview.track_ids.len(),"milliseconds":before.elapsed().as_millis(),"restart_preserved":true,"edit_preserved_sequence":true}));}
+ println!("{}",serde_json::to_string_pretty(&serde_json::json!({"cached_real_embeddings":candidates.len(),"offline":true,"user_collections_modified":false,"results":results,"listening_acceptance":false}))?);Ok(())
+}

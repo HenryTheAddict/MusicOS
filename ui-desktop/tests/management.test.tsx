@@ -20,10 +20,15 @@ test('editing a Smart playlist name preserves every rule, match mode and limit',
 test('setup reports actionable states separately from recommendation quality',()=>{
  expect(sparkSetupStatus(false,null,'')).toBe('Beta off');expect(sparkSetupStatus(true,{ready:false} as SparkState,'')).toBe('Setup needed');expect(sparkSetupStatus(true,{ready:true,analyzed:1} as SparkState,'')).toBe('Preparing songs');expect(sparkSetupStatus(true,{ready:true,analyzed:10} as SparkState,'')).toBe('Ready');expect(sparkSetupStatus(true,null,'checksum')).toBe('Needs attention');
 });
-test('metadata comparison applies only chosen fields with the reviewed revision and token',async()=>{
- const suggestion={track_id:1,current_title:'Song',current_artist:'Artist',current_album:'Studio',current_year:2020,revision:7,candidate_token:'version-1',candidate:{title:'Song',artist:'Artist',album:'Live',year:2020,confidence:.8}};
- bridge.call.mockResolvedValue({items:[suggestion],total:1});const refresh=vi.fn().mockResolvedValue(undefined);render(<MetadataWorkspace library={{tracks:[],sources:[]} as unknown as Library} busy={false} onTask={()=>{}} onRefresh={refresh}/>);
- fireEvent.click(await screen.findByRole('button',{name:/Review Song by Artist/}));expect(screen.getByRole('checkbox',{name:'Apply album'})).toBeChecked();expect(screen.getByRole('checkbox',{name:'Apply title'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Apply selected changes'}));
- await waitFor(()=>expect(bridge.call).toHaveBeenCalledWith('metadata_workspace',{request:{action:'apply',trackId:1,revision:7,token:'version-1',fields:['album'],search:'',offset:0}}));expect(refresh).toHaveBeenCalled();
+test('album comparison applies only changed fields with the reviewed album token',async()=>{
+ const album={album_id:'album-1',title:'Studio',artist:'Artist',token:'version-1',rows:[{track_id:1,current:{title:'Song',artist:'Artist',album:'Studio',year:2020,revision:7},candidate_token:'candidate-1',candidate:{title:'Song',artist:'Artist',album:'Live',year:2020,confidence:.8}}]};
+ bridge.call.mockResolvedValue({albums:[album],items:[],total:0});const refresh=vi.fn().mockResolvedValue(undefined);render(<MetadataWorkspace library={{tracks:[],albums:[],sources:[]} as unknown as Library} busy={false} onTask={()=>{}} onRefresh={refresh}/>);
+ fireEvent.click(await screen.findByRole('button',{name:/Studio/}));expect(screen.getByRole('checkbox',{name:'Apply album'})).toBeChecked();expect(screen.queryByRole('checkbox',{name:'Apply title for Song'})).toBeNull();fireEvent.click(screen.getByRole('checkbox',{name:'Show unchanged track fields'}));expect(screen.getByRole('checkbox',{name:'Apply title for Song'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Review changes'}));fireEvent.click(screen.getByRole('button',{name:'Apply reviewed changes'}));
+ await waitFor(()=>expect(bridge.call).toHaveBeenCalledWith('album_metadata',{request:{action:'apply',album_id:'album-1',token:'version-1',rows:[{track_id:1,fields:['album']}],write_files:false}}));expect(refresh).toHaveBeenCalled();
+});
+
+test('configured managed storage has no Forget action while empty legacy storage can be cleaned up',async()=>{
+ const {default:LibraryTools}=await import('../src/LibraryTools');const library={tracks:[],albums:[],artists:[],genres:[],protected_source_ids:[1],sources:[{id:1,path:'/managed',display_name:'Current MusicOS',kind:'managed',song_count:0,enabled:true,available:true,last_error:null},{id:2,path:'/legacy',display_name:'Legacy MusicOS',kind:'managed',song_count:0,enabled:true,available:false,last_error:null}]} as Library;
+ render(<LibraryTools view="sources" onError={()=>{}} library={library} busy={false} onAdd={()=>{}} onTask={()=>{}} onRefresh={async()=>{}}/>);expect(screen.getAllByRole('button',{name:'Forget…'})).toHaveLength(1);expect(screen.getByRole('heading',{name:'Current MusicOS'}).closest('article')?.querySelector('button')).toBeNull();
 });

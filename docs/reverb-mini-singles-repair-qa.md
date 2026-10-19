@@ -1,0 +1,47 @@
+# Reverb, mini-player resizing, artwork edges and singles — 2026-10-17
+
+## Changes
+
+The native mini-player previously called `set_resizable(false)` and forced 334×48 or 244×320 on every action. Slim mode now resizes horizontally; artwork and queue modes resize in both directions. Actual dimensions are retained across layout/menu changes. Menu expansion freezes the visible player footprint, reserves a separate action area, clamps to the monitor, and restores size/position before an action runs. Returning to the main window clears mini constraints and restores its saved bounds. Rapid menu reopening retains the last requested footprint; a closing main Up next panel no longer steals focus from a newly opened section chooser. macOS/Tao does not implement programmatic native resize-dragging for borderless windows; merely changing the style mask failed the first native edge test. Invisible east/south/corner pointer targets and keyboard sizing now call a bounded, serialized mini-only size command. Coalesced requests preserve the pointer capture and avoid a resize backlog. Native window changes retain the serialized operation and complete AppKit style-mask update; no extra grab handle was added.
+
+Exported the supplied open/close Mini Player, Light, Dark, System, Pin and Unpin vectors from `musicosdesk.sketch`, retaining geometry and removing only white export canvases. Updated source identities, Rust asset mapping, and shared frontend uses. Mini transport uses readable theme ink rather than a highly saturated accent. Theme color inputs are flat and rounded. Actual cover images use transparent backing and one parent clipping curve, removing the pale backing exposed by nested corner clipping. Placeholder artwork retains its themed surface.
+
+Albums/Artists navigation gets a brief caption fade. Artwork stays stationary, and analysis updates, resizing and ordinary scrolling do not replay it. Reduced Motion disables it. Metadata album selection now adds/removes the album within the existing selection and preserves configured field edits.
+
+MusicBrainz lookup keeps the strict recording/artist/release search and allows one bounded recording/primary-credit fallback if that search is weak. Display-only Single/EP suffixes are omitted from search, while edition labels remain intact. Unknown release names do not penalize exact recordings. Duration mismatches are rejected before ranking. Explicit tagged release identities remain authoritative; untagged loose releases have per-track cache keys. Unmatched/failed lookups can retry, while reviewed/kept/ignored/applied records stay protected during routine lookup. Suggestions remain review-only; no user metadata or artwork was automatically applied during QA.
+
+## Reverb output evidence
+
+Production path: LocalPlaybackService → DeckPlayback → `dj_audio` output mixer. Reverb is in-process; the embedded sidecar is not the authoritative renderer. Requested and applied controls are acknowledged separately; Audio → Playback details now exposes revisions, applied wet/depth and processed reverb frames.
+
+The delay network used linear DC-gain compensation even though wet excitation is high-passed. At maximum depth this greatly attenuated excitation. Energy-based compensation restores the wet tail without changing the midpoint room, dry arrival, feedback ceiling, smoothing, allocations or wet-only stereo spread. Feedback remains bounded below unity. No source music was edited.
+
+Read-only production captures use the same eight seconds of Human After All plus two seconds of tail, 48 kHz stereo, 45% wet:
+
+| Depth | Wet-minus-dry RMS before | After | Tail energy before | After |
+|---|---:|---:|---:|---:|
+| 50% | 0.0196876 | 0.0196876 | 8.97992 | 8.97992 |
+| 100% | 0.00656188 | 0.0165301 | 2.12988 | 14.75459 |
+
+At maximum depth the wet difference rises about 8 dB and captured tail energy about 6.9×. Source-window total RMS is 0.362258 dry, 0.363389 at 45% wet and 0.365732 at maximum wet: this capture does not become quieter. These are output measurements, not subjective listening acceptance. Maximum-wet pre-limiter peak is 1.10351 for this near-full-scale source (input peak 0.94409); 1,737 of 960,000 channel samples exceed full scale before the existing safety limiter. Rendered output is finite and bounded. This is ordinary peak headroom usage, not evidence of runaway; sustained/rapid-parameter stability tests also run before limiting. The dry production capture includes the existing limiter and therefore is not bit-exact above its safety threshold; the processor's off bypass is exact.
+
+Captures and JSON reports: `out/reverb-{depth,default}-{before,after}`. Impulse, dry arrival, tail decay, mono/stereo, pause freeze, EQ independence, seek clearing, parameter revisions and rapid changes are covered by native processor/mixer tests. Human listening for decay quality, clicks, pumping and perceived strength remains required.
+
+## Automated checks
+
+- UI TypeScript/production build passed; 90 unit tests passed, including resized menu footprint restoration and rapid menu reopening.
+- Desktop core: 82/82 passed with serial native audio tests. An earlier parallel run timed out two native stream tests and exposed a new broadband threshold that was adjusted to the measured damped-network range; the complete serial rerun passed. No production code was changed to bypass native failures.
+- Tauri library: 132/132 passed. After adding strict duration exclusion and the exported asset mapping, all seven metadata lookup tests passed again.
+- Browser: the existing 22 checks passed; the added resize/layout, transparent dark artwork, additive album editing and navigation motion checks pass. Screenshots inspected separately from geometry assertions include `mini-resized-queue.png` and `dark-artwork-repair.png`, plus the previous four compact-scale metadata captures. An initial test incorrectly counted checkboxes in album mode; it now checks the selected-song total. Final combined browser run: 25/25 passed, including no replay on scroll/resize and Reduced Motion. All 12 additional depth checks passed: gentle motion, no completion flash, native scroll geometry, wide/deep resizing, cache budgets and GPU loss recovery. The original suite contained obsolete idle-ready/reveal expectations; these were corrected to active hover and zero reveal flashes. The Audio suite then exposed a real delayed queue focus-restoration bug; that code was repaired and a direct rapid-navigation regression was added. All six Audio checks and four new UI regressions passed in the final 10/10 run, including compact Audio across 40 size/scale/palette combinations, persisted controls and XY-pad input.
+
+## Delivery and remaining gates
+
+Build/signature, runtime hashes and native verification are recorded after packaging below. Windows/Linux, actual display frame intervals and human listening are unverified. Automated tests use disposable fixtures; no production file moves, tag writing, metadata application, favorites or collection edits were performed.
+
+Final edge verification: 90/90 UI unit tests, 132/132 Tauri library tests, and 12/12 mini/layout/theme browser checks passed after adding pointer/keyboard size requests. The original 82/82 serial core run covers the unchanged DSP; seven lookup tests were repeated after duration filtering. Live intermediate-package diagnostics on Do It, Try It showed Controls 1 / Applied 1, Room 100% / Depth 100%, and 3,358,998 reverb frames while playing. These establish delivery/processing, not subjective audibility.
+
+Native edge testing on the first edge-enabled package confirmed mouse width resizing (334→378 logical points) and keyboard width resizing (378→388), plus queue height resizing by keyboard (320→360), with additional queue rows visible. The initial narrow bottom target overlapped AppKit's frame hit zone; its invisible hit area was enlarged inward, along with the corner. All six focused browser regressions passed again, including bottom pointer and keyboard requests. Final mouse-height delivery results follow below. The native mini menu retained its content footprint, showed the supplied Return/Unpin glyphs, scrolled within bounds, and closed with Escape without changing playback.
+
+Final native mouse-height test passed after widening the interior hit area: queue window grew from 244×320 to 244×327 logical points (488×640 to 488×654 capture pixels) from a short bottom drag. Queue hide/reopen retained that size and the same upcoming entry. Return to MusicOS restored the main window successfully. The user changed songs/theme during work; final verification preserved the latest Glimmer / The Slow Rush queue and artwork theme, with playback paused at 23.7 seconds, 507 songs and 17 favorites. No older playback snapshot or theme was restored over the user's newer state.
+
+Final ad-hoc signed executable SHA-256: `ad019c47129d5251cea1e819529d25f4b318b87c339fe9c02b5e08243ec2ef9a`. Deep strict signature verification passed. Embedded playback runtime SHA-256 remains `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`; ONNX runtime remains `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`. Loaded from `target/release/bundle/macos/MusicOS.app`. Final six focused browser tests passed after the hit-area adjustment. Human listening acceptance, physical touchscreen operation, native 120 Hz frame timing, and Windows/Linux remain unverified.

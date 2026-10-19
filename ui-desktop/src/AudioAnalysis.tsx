@@ -1,13 +1,15 @@
+import {useViewActive} from './ViewScope';
 import {useEffect,useState} from 'react';
 import {Icon} from './components';
 import ThemedSwitch from './ThemedSwitch';
 import {call,errorText,native} from './bridge';
 import type {AnalysisStatus,Library} from './types';
 export default function AudioAnalysis({library}:{library:Library}){
+ const active=useViewActive();
  const [full,setFull]=useState(false);
  const [status,setStatus]=useState<AnalysisStatus>({running:false,paused:false,processed:0,total:0,features:[],errors:[]}),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- useEffect(()=>{let alive=true;let pending=false;async function update(){if(pending)return;pending=true;try{const next=await call('audio_analysis',{action:'status'});if(alive)setStatus(next);}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}void update();const timer=setInterval(()=>void update(),1500);return()=>{alive=false;clearInterval(timer);};},[]);
- async function control(action:'start'|'rescan'|'rescan_all'|'pause'|'resume'|'cancel'){setBusy(true);setError('');try{setStatus(await call('audio_analysis',{action}));if(action.startsWith('rescan'))window.dispatchEvent(new Event('musicos-audio-rescanned'));}catch(e){setError(errorText(e));}finally{setBusy(false);}}
+ useEffect(()=>{if(!active)return;let alive=true;let pending=false;async function update(){if(pending)return;pending=true;try{const next=await call('audio_analysis',{action:'status'});if(alive)setStatus(next);}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}void update();const timer=setInterval(()=>void update(),1500);return()=>{alive=false;clearInterval(timer);};},[active]);
+ async function control(action:'start'|'rescan'|'rescan_all'|'pause'|'resume'|'cancel'){setBusy(true);setError('');try{setStatus(await call('audio_analysis',{action}));window.dispatchEvent(new Event('musicos-audio-analysis-changed'));if(action.startsWith('rescan'))window.dispatchEvent(new Event('musicos-audio-rescanned'));}catch(e){setError(errorText(e));}finally{setBusy(false);}}
  const reliable=status.features.filter(f=>(f.structure?.beat_confidence??0)>=.5).length;
  const count=status.features.length,total=library.tracks.filter(t=>t.available).length;
  return <section className="audio-analysis" aria-label="BPM and key analysis">

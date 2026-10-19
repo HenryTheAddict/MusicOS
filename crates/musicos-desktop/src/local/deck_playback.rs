@@ -13,6 +13,7 @@ use std::{
 };
 #[derive(Clone, Debug)]
 pub struct Transition {
+    pub request_id:u64,
     pub outgoing: u64,
     pub incoming: u64,
     pub outgoing_cue: f32,
@@ -21,6 +22,8 @@ pub struct Transition {
     pub tempo: f32,
     pub effect: String,
 }
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct TransitionOutcome {pub request_id:u64,pub outgoing_entry:u64,pub incoming_entry:u64,pub status:String,pub reason:String}
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct TransitionStatus {
     pub outgoing_entry: u64,
@@ -35,6 +38,7 @@ pub struct TransitionStatus {
     pub tempo: f32,
 }
 struct Load {
+    entry_key:u64,
     path: String,
     start: f32,
     transpose: f32,
@@ -81,6 +85,11 @@ pub struct DesktopPlayer {
     schedule_id:u64,
     scheduled_reported:bool,
     retry_after:std::time::Instant,
+    preparing_since:std::time::Instant,
+    pub transition_outcome:Option<TransitionOutcome>,
+    pub failed_entries:std::collections::BTreeSet<u64>,
+    prepare_attempts:std::collections::BTreeMap<u64,u8>,
+    rate_revision:u64,
     paused: bool,
     was_mixing: bool,
     volume: f32,
@@ -114,6 +123,7 @@ impl DesktopPlayer {
                 .name(format!("musicos-deck-{index}"))
                 .spawn(move || {
                     while let Ok(load) = rx.recv() {
+                        if token.load(Ordering::Acquire)!=load.generation {continue;}
                         let result = (|| -> Result<()> {
                             let mut decoder =
                                 super::decoded_audio::open(std::path::Path::new(&load.path))?;
@@ -215,8 +225,10 @@ impl DesktopPlayer {
                             Ok(())
                         })();
                         if let Err(error) = result {
-                            *errors.lock().unwrap_or_else(|e| e.into_inner()) =
-                                Some(format!("Cannot play this file: {error:#}"));
+                            if token.load(Ordering::Acquire)!=load.generation {continue;}
+                            clock.failed[index].store(load.generation,Ordering::Release);
+                            super::dj_diagnostics::record("decoder_failed",None,Some(load.entry_key),format!("generation {}: {error:#}",load.generation));
+                            *errors.lock().unwrap_or_else(|e| e.into_inner()) =Some("Could not decode an audio file. Playback will try the next available song.".into());
                             clock.finished[index].store(load.generation, Ordering::Release);
                         }
                     }
@@ -264,6 +276,8 @@ impl DesktopPlayer {
             schedule_id:0,
             scheduled_reported:false,
             retry_after:std::time::Instant::now(),
+            preparing_since:std::time::Instant::now(),
+            transition_outcome:None,failed_entries:Default::default(),prepare_attempts:Default::default(),rate_revision:0,
             paused: true,
             was_mixing: false,
             volume: 1.,
@@ -317,24 +331,25 @@ impl DesktopPlayer {
             .copied()
             .unwrap_or(0.)
     }
-    fn load(&mut self, deck: usize, track: Track, start: f32, tempo: f32, key: u64) {
+    fn load(&mut self, deck: usize, track: Track, start: f32, tempo: f32, key: u64)->Result<()> {
+        anyhow::ensure!(self.control.commands.slots()>=2,"Audio controls are busy; retry preparation");
         self.account();
-        self.loaded[deck] = Some(key);
+        let generation=self.decks[deck].generation.fetch_add(1,Ordering::AcqRel)+1;
+        self.control.commands.push(Command::Reset{deck,generation,source_frame:start as f64*RATE as f64}).map_err(|_|anyhow::anyhow!("Audio reset could not be delivered"))?;
+        self.loaded[deck]=Some(key);
         self.control.clock.ready[deck].store(false,Ordering::Release);
-        let generation = self.decks[deck].generation.fetch_add(1, Ordering::AcqRel) + 1;
-        self.command(Command::Reset {
-            deck,
-            generation,
-            source_frame: start as f64 * RATE as f64,
-        });
-        *self.decks[deck].parameters.lock().unwrap_or_else(|e|e.into_inner())=(tempo*self.listening.speed,self.listening.transpose(),self.listening_revision);
-        let _ = self.decks[deck].load.send(Load {
-            path: track.path,
-            start,
-            transpose:self.listening.transpose(),
-            generation,
-        });
+        *self.decks[deck].parameters.lock().unwrap_or_else(|e|e.into_inner())=(tempo*self.listening.speed,self.listening.transpose(),self.rate_revision);
+        self.decks[deck].load.send(Load{entry_key:key,path:track.path,start,transpose:self.listening.transpose(),generation}).context("Audio decoder stopped")?;
+        Ok(())
     }
+    fn outcome(&mut self,status:&str,reason:impl Into<String>){
+        if let Some(plan)=&self.transition {let reason=reason.into();super::dj_diagnostics::record(status,Some(plan.outgoing),Some(plan.incoming),format!("request {}: {reason}",plan.request_id));self.transition_outcome=Some(TransitionOutcome{request_id:plan.request_id,outgoing_entry:plan.outgoing,incoming_entry:plan.incoming,status:status.into(),reason});}
+    }
+    pub fn next_playable(&self)->Option<usize>{self.current.and_then(|i|(i+1..self.queue.len()).find(|&n|!self.failed_entries.contains(&self.queue[n].key)))}
+    pub fn reverb_processed_frames(&self)->u64{self.control.clock.reverb_processed_frames.load(Ordering::Relaxed)}
+    pub fn applied_reverb_depth(&self)->f32{f32::from_bits(self.control.clock.applied_reverb_depth.load(Ordering::Acquire))}
+    pub fn applied_reverb(&self)->f32{f32::from_bits(self.control.clock.applied_reverb.load(Ordering::Acquire))}
+    pub fn applied_listening_revision(&self)->u64{self.control.clock.listening_revision.load(Ordering::Acquire)}
     fn entry(&mut self, track: Track) -> Entry {
         let key = self.next_key;
         self.next_key = self.next_key.wrapping_add(1);
@@ -344,28 +359,35 @@ impl DesktopPlayer {
         if index >= self.queue.len() {
             return;
         }
-        self.cancel();
+        if self.control.commands.slots()<4 {*self.errors.lock().unwrap_or_else(|e|e.into_inner())=Some("Audio controls are busy; try again.".into());return;}
+        self.cancel_reason("seek or manual navigation");
         self.current = Some(index);
         self.active = 0;
         self.activation_pending = Some(0);
         *self.errors.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        self.load(
+        self.failed_entries.remove(&self.queue[index].key);
+        self.prepare_attempts.remove(&self.queue[index].key);
+        if let Err(error)=self.load(
             0,
             self.queue[index].track.clone(),
             position,
             1.,
             self.queue[index].key,
-        );
+        ){*self.errors.lock().unwrap_or_else(|e|e.into_inner())=Some(error.to_string());self.paused=true;return;}
         self.command(Command::Activate(0));
         self.paused = paused;
         self.command(Command::Pause(paused));
         self.plan_revision = self.plan_revision.wrapping_add(1);
     }
-    pub fn cancel(&mut self) {
+    pub fn cancel(&mut self) {self.cancel_reason("queue or playback configuration changed");}
+    fn cancel_reason(&mut self,reason:&str) {
+        self.outcome("canceled",reason);
+        self.retry_after=std::time::Instant::now()+Duration::from_millis(500);
         if let Some(plan)=&self.transition {eprintln!("DJmode: cancelling/replanning {} → {}",plan.outgoing,plan.incoming);}
         self.was_mixing=false;
         super::dj_diagnostics::record("canceled",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),"navigation, queue edit, or replan");
         self.account();
+        self.control.clock.cancel_revision.fetch_add(1,Ordering::AcqRel);
         self.command(Command::Cancel);
         self.prepared = None;
         self.transition = None;
@@ -374,6 +396,16 @@ impl DesktopPlayer {
         self.plan_revision = self.plan_revision.wrapping_add(1);
     }
     pub fn prepare(&mut self, mut plan: Transition) -> Result<()> {
+        if plan.request_id==0 {static IDS:AtomicU64=AtomicU64::new(1);plan.request_id=IDS.fetch_add(1,Ordering::Relaxed);}
+        let request=plan.clone();
+        let result=self.prepare_inner(plan);
+        if let Err(error)=&result {self.transition_outcome=Some(TransitionOutcome{request_id:request.request_id,outgoing_entry:request.outgoing,incoming_entry:request.incoming,status:"rejected".into(),reason:error.to_string()});super::dj_diagnostics::record("rejected",Some(request.outgoing),Some(request.incoming),format!("request {}: {error}",request.request_id));}
+        result
+    }
+    fn transition_is_accepted(&self)->bool {self.transition.is_some()&&(self.scheduled_reported||self.control.clock.mixing.load(Ordering::Acquire)||(self.control.clock.schedule_id.load(Ordering::Acquire)==self.schedule_id&&self.prepared.is_some_and(|(_,deck)|self.control.clock.ready[deck].load(Ordering::Acquire))))}
+    fn prepare_inner(&mut self, mut plan:Transition)->Result<()> {
+        super::dj_diagnostics::record("requested",Some(plan.outgoing),Some(plan.incoming),format!("request {}",plan.request_id));
+        anyhow::ensure!(!self.transition_is_accepted(),"An accepted transition is already protected");
         let Some(current) = self.current else {
             return Ok(());
         };
@@ -386,7 +418,7 @@ impl DesktopPlayer {
             .iter()
             .position(|e| e.key == plan.incoming)
             .context("Incoming queue entry changed")?;
-        anyhow::ensure!(next == current + 1, "Transition is no longer next");
+        anyhow::ensure!(Some(next)==self.next_playable(), "Transition is no longer next playable entry");
         anyhow::ensure!(
             plan.outgoing_cue.is_finite() && plan.outgoing_cue>=0. && plan.incoming_cue.is_finite() && plan.incoming_cue>=0. && plan.duration.is_finite()
                 && (0. ..=16.).contains(&plan.duration)
@@ -421,16 +453,16 @@ impl DesktopPlayer {
             plan.incoming_cue,
             plan.tempo,
             self.queue[next].key,
-        );
+        )?;
         let tail = match plan.effect.as_str() {
             "echo_tail" => Tail::Echo,
             "reverb_tail" => Tail::Reverb,
             "echo_bounce" => Tail::Bounce,
             _ => Tail::Clean,
         };
-        static NEXT_PLAN:AtomicU64=AtomicU64::new(1);
-        self.schedule_id=NEXT_PLAN.fetch_add(1,Ordering::Relaxed);self.scheduled_reported=false;
+        self.schedule_id=plan.request_id;self.scheduled_reported=false;
         if self.control.commands.push(Command::Plan(Schedule {
+            cancel_revision:self.control.clock.cancel_revision.load(Ordering::Acquire),
             id:self.schedule_id,
             cue: plan.outgoing_cue as f64 * RATE as f64,
             frames: ((plan.duration/self.listening.speed).min(16.) * RATE as f32) as u64,
@@ -441,6 +473,8 @@ impl DesktopPlayer {
         super::dj_diagnostics::record("preparing",Some(plan.outgoing),Some(plan.incoming),format!("plan {} cue {:.3}s overlap {:.3}s",self.schedule_id,plan.outgoing_cue,plan.duration));
         self.prepared = Some((plan.incoming, deck));
         self.transition = Some(plan);
+        self.preparing_since=std::time::Instant::now();
+        self.outcome("preparing","decoder requested; awaiting mixer acknowledgement and ready audio");
         Ok(())
     }
     pub fn tick(&mut self) {
@@ -449,7 +483,24 @@ impl DesktopPlayer {
         if !self.scheduled_reported && self.control.clock.schedule_id.load(Ordering::Acquire)==self.schedule_id && self.prepared.is_some_and(|(_,d)|self.control.clock.ready[d].load(Ordering::Acquire)) {self.scheduled_reported=true;super::dj_diagnostics::record("accepted",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),format!("mixer acknowledged plan {}, deck ready",self.schedule_id));}
         self.was_mixing=mixing;
         self.account();
+        if self.scheduled_reported&&self.transition_outcome.as_ref().is_none_or(|o|o.status=="preparing") {self.outcome("accepted","mixer schedule acknowledged and incoming audio ready");}
+        if mixing&&self.transition_outcome.as_ref().is_some_and(|o|o.status=="accepted"){self.outcome("active","audible overlap started");}
+        if self.paused {self.preparing_since=std::time::Instant::now();}
+        if let Some((key,deck))=self.prepared {
+            let generation=self.decks[deck].generation.load(Ordering::Acquire);
+            let failed=self.control.clock.failed[deck].load(Ordering::Acquire)==generation;
+            let expired=!self.paused&&!self.control.clock.ready[deck].load(Ordering::Acquire)&&self.preparing_since.elapsed()>Duration::from_secs(5);
+            if failed||expired {
+                self.outcome("failed",if failed {"incoming decoder failed"}else{"incoming readiness deadline expired"});
+                let terminal=self.transition_outcome.clone();
+                let attempts=self.prepare_attempts.entry(key).or_default();*attempts+=1;
+                if failed||*attempts>=2 {self.failed_entries.insert(key);}
+                self.cancel();self.transition_outcome=terminal;self.scheduled_reported=false;
+            }
+        }
         if self.control.clock.plan_failed.swap(false, Ordering::AcqRel) {
+            self.outcome("failed","missed activation or incoming starvation; future ending blend required");
+            if let Some((key,_))=self.prepared {let attempts=self.prepare_attempts.entry(key).or_default();*attempts+=1;if *attempts>=2{self.failed_entries.insert(key);}}
             super::dj_diagnostics::record("fallback",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),"preparation deadline missed; revalidate against audible source clock");
             self.retry_after=std::time::Instant::now()+Duration::from_millis(500);
             self.prepared = None;
@@ -465,7 +516,11 @@ impl DesktopPlayer {
         }
         if active != self.active {
             super::dj_diagnostics::record("promoted",None,self.prepared.map(|p|p.0),format!("source {:.3}s",self.get_position()));
+            self.outcome("promoted","incoming deck became authoritative");
             self.active = active;
+            *self.decks[active].parameters.lock().unwrap_or_else(|e|e.into_inner())=(self.listening.speed,self.listening.transpose(),self.rate_revision);
+            self.scheduled_reported=false;
+            self.retry_after=std::time::Instant::now()+Duration::from_millis(500);
             if let Some((key, deck)) = self.prepared.take() {
                 if deck == active {
                     self.current = self.queue.iter().position(|e| e.key == key);
@@ -474,15 +529,17 @@ impl DesktopPlayer {
                 }
             }
         }
+        if let Some(index)=self.current {let generation=self.decks[self.active].generation.load(Ordering::Acquire);if generation>0&&self.control.clock.failed[self.active].load(Ordering::Acquire)==generation {self.failed_entries.insert(self.queue[index].key);if self.repeat==LoopMode::One{self.pause();}}}
         if self.paused {
             return;
         }
         if self.prepared.is_none() && std::time::Instant::now()>=self.retry_after {
             if let Some(index) = self.current {
-                if index + 1 < self.queue.len() && self.repeat != LoopMode::One {
+                if let Some(next)=self.next_playable().filter(|_|self.repeat!=LoopMode::One) {
                     let _ = self.prepare(Transition {
+                        request_id:0,
                         outgoing: self.queue[index].key,
-                        incoming: self.queue[index + 1].key,
+                        incoming: self.queue[next].key,
                         outgoing_cue: (self.queue[index].track.duration as f32-if self.dj_mode{2_f32.min(self.queue[index].track.duration as f32/3.)}else{0.}).max(0.),
                         incoming_cue: 0.,
                         duration: if self.dj_mode{2_f32.min(self.queue[index].track.duration as f32/3.)}else{0.},
@@ -493,8 +550,8 @@ impl DesktopPlayer {
                     if self.repeat == LoopMode::One {
                         self.start(index, 0., false);
                     } else if self.repeat == LoopMode::All && !self.queue.is_empty() {
-                        self.start(0, 0., false);
-                    } else {
+                        if let Some(first)=(0..self.queue.len()).find(|&i|!self.failed_entries.contains(&self.queue[i].key)){self.start(first,0.,false);}else{self.pause();}
+                    } else if !self.control.clock.room_active.load(Ordering::Relaxed) {
                         self.pause();
                     }
                 }
@@ -503,6 +560,7 @@ impl DesktopPlayer {
     }
     pub fn set_queue(&mut self, tracks: Vec<Track>, index: usize) {
         self.queue = tracks.into_iter().map(|t| self.entry(t)).collect();
+        self.failed_entries.clear();self.prepare_attempts.clear();
         self.pins.clear();
         self.arranged.clear();
         self.listens.clear();
@@ -518,6 +576,7 @@ impl DesktopPlayer {
             self.start(index.min(self.queue.len() - 1), position, true);
         }
     }
+    pub fn refresh_paths(&mut self, tracks:&[Track]) {self.cancel_reason("music files organized");for entry in &mut self.queue{if let Some(track)=tracks.iter().find(|t|t.id==entry.track.id){entry.track.path=track.path.clone();self.failed_entries.remove(&entry.key);self.prepare_attempts.remove(&entry.key);}}}
     pub fn queue_tracks(&self) -> Vec<Track> {
         self.queue.iter().map(|e| e.track.clone()).collect()
     }
@@ -581,18 +640,18 @@ impl DesktopPlayer {
             self.start(i.saturating_sub(1), 0., false);
         }
     }
-    pub fn set_dj_mode(&mut self,enabled:bool){self.dj_mode=enabled;self.cancel();}
+    pub fn set_dj_mode(&mut self,enabled:bool){self.dj_mode=enabled;self.cancel_reason("DJmode changed");}
     pub fn set_listening(&mut self,value:super::listening::Listening)->Result<()> {
         let value=value.normalize();let revision=self.listening_revision.wrapping_add(1);
         self.control.commands.push(Command::Equalizer(value.coefficients(),revision)).map_err(|_|anyhow::anyhow!("Audio controls are busy; retry"))?;
         let changed=value.speed!=self.listening.speed||value.pitch!=self.listening.pitch;
         self.listening=value;self.listening_revision=revision;
-        if changed {self.cancel();}
-        for deck in &self.decks {let mut p=deck.parameters.lock().unwrap_or_else(|e|e.into_inner());*p=(if changed {self.listening.speed}else{p.0},self.listening.transpose(),revision);}
+        if changed {self.rate_revision=revision;self.cancel_reason("listening speed or pitch changed");}
+        for deck in &self.decks {let mut p=deck.parameters.lock().unwrap_or_else(|e|e.into_inner());*p=(if changed {self.listening.speed}else{p.0},self.listening.transpose(),self.rate_revision);}
 
         Ok(())
     }
-    pub fn listening_applied(&self)->bool{self.control.clock.listening_revision.load(Ordering::Acquire)==self.listening_revision&&self.activation_pending.is_none()&&(self.paused||self.current.is_none()||self.control.clock.parameter_revision[self.active].load(Ordering::Acquire)==self.listening_revision)}
+    pub fn listening_applied(&self)->bool{self.control.clock.listening_revision.load(Ordering::Acquire)==self.listening_revision&&self.activation_pending.is_none()&&(self.paused||self.current.is_none()||self.control.clock.parameter_revision[self.active].load(Ordering::Acquire)==self.rate_revision)}
     pub fn set_volume(&mut self, value: f32) {
         if value.is_finite() {
             self.volume = value.clamp(0., 1.);
@@ -781,3 +840,17 @@ impl Drop for DesktopPlayer {
 // Approximately 45 ms of parameter smoothing, snapped exactly to the baseline.
 fn smooth_parameter(current:f32,target:f32)->f32 {if (target-current).abs()<0.0001 {target} else {current+(target-current)*0.25}}
 #[cfg(test)]mod parameter_tests {use super::*;#[test]fn reversals_remain_bounded_and_settle(){let mut value=1.;for _ in 0..60{value=smooth_parameter(value,2.);assert!((1. ..=2.).contains(&value));}assert_eq!(value,2.);for _ in 0..60{value=smooth_parameter(value,0.5);}assert_eq!(value,0.5);}}
+
+pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS.fetch_add(1,Ordering::Relaxed)}
+#[cfg(test)]mod transition_repair_tests {
+ use super::*;
+ fn pending()->DesktopPlayer {
+  let track=Track{id:1,path:String::new(),title:String::new(),artist:String::new(),album:String::new(),track_number:1,duration:100,file_size:0,modified_at:0,indexed_at:0,cover_art_path:None,cover_art_updated_at:None,cover_art_source_modified_at:None,favorited:false,play_count:0,last_played:None,rating:0};let mut p=DesktopPlayer::new();p.queue=vec![Entry{key:1,track:track.clone()},Entry{key:2,track}];p.current=Some(0);p.paused=false;p.prepared=Some((2,1));p.transition=Some(Transition{request_id:42,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.schedule_id=42;p.decks[1].generation.store(1,Ordering::Release);p
+ }
+ #[test]fn organized_paths_preserve_duplicate_entries_pins_and_position(){let mut p=pending();p.paused=true;p.pins.insert(2);let ids=p.entry_ids();let position=p.get_position();let mut track=p.queue[0].track.clone();track.path="/new/Artist/Album/song.flac".into();p.refresh_paths(&[track]);assert_eq!(p.entry_ids(),ids);assert!(p.pins.contains(&2));assert_eq!(p.current,Some(0));assert_eq!(p.get_position(),position);assert!(p.queue.iter().all(|e|e.track.path=="/new/Artist/Album/song.flac"));assert!(p.transition.is_none());}
+ #[test]fn accepted_plan_cannot_be_replaced_by_routine_preparation(){let mut p=pending();p.scheduled_reported=true;let before=p.decks[1].generation.load(Ordering::Acquire);let mut next=p.transition.clone().unwrap();next.request_id=43;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);assert_eq!(p.decks[1].generation.load(Ordering::Acquire),before);assert_eq!(p.transition_outcome.as_ref().unwrap().status,"rejected");}
+ #[test]fn saturated_commands_do_not_publish_a_false_navigation(){let mut p=pending();let (commands,_held_consumer)=rtrb::RingBuffer::new(64);p.control.commands=commands;let held=p.control.commands.slots();for _ in 0..held {let _=p.control.commands.push(Command::Pause(true));}p.start(1,0.,false);assert_eq!(p.current,Some(0));}
+ #[test]fn acknowledged_schedule_is_protected_before_controller_poll(){let mut p=pending();p.control.clock.schedule_id.store(42,Ordering::Release);p.control.clock.ready[1].store(true,Ordering::Release);let mut next=p.transition.clone().unwrap();next.request_id=99;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);}
+ #[test]fn paused_preparation_keeps_its_deadline_frozen(){let mut p=pending();p.paused=true;p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_some());assert!(p.failed_entries.is_empty());}
+ #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
+}

@@ -11,7 +11,7 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-const VERSION: &str = "dsp-4-dp-onsets-11025-4096-512";
+const VERSION: &str = "dsp-5-measured-phrases-11025-4096-512";
 const RATE: usize = 11025;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Features {
@@ -55,25 +55,30 @@ fn identity(path: &Path) -> Result<String> {
             .as_nanos()
     ))
 }
-fn cache(db: &Path) -> Result<rusqlite::Connection> {
-    let c = rusqlite::Connection::open(db)?;
+fn cache(db: &Path) -> Result<musicos_init::database::Connection> {
+    let c = musicos_init::database::Connection::open_background(db)?;
     c.busy_timeout(Duration::from_secs(5))?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS desktop_dsp_v1(track_id INTEGER PRIMARY KEY,identity TEXT NOT NULL,version TEXT NOT NULL,result TEXT NOT NULL)")?;
+    musicos_init::database_access::initialize_schema(db,"audio-analysis-v1",||{c.execute_batch("CREATE TABLE IF NOT EXISTS desktop_dsp_v1(track_id INTEGER PRIMARY KEY,identity TEXT NOT NULL,version TEXT NOT NULL,result TEXT NOT NULL)")?;Ok(())})?;
     Ok(c)
 }
-pub fn cached(db: &Path, id: i64, path: &str) -> Option<Features> {
+pub fn cached(db:&Path,id:i64,path:&str)->Option<Features>{cached_mode(db,id,path,false)}
+/// Old valid results remain usable while the worker replaces them incrementally.
+pub fn cached_current(db:&Path,id:i64,path:&str)->Option<Features>{cached_mode(db,id,path,true)}
+fn cached_mode(db: &Path, id: i64, path: &str,current:bool) -> Option<Features> {
     let signature = identity(Path::new(path)).ok()?;
     cache(db)
         .ok()?
         .query_row(
-            "SELECT result FROM desktop_dsp_v1 WHERE track_id=? AND identity=? AND version=?",
-            rusqlite::params![id, signature, VERSION],
+            "SELECT result FROM desktop_dsp_v1 WHERE track_id=? AND identity=? AND (?=0 OR version=?)",
+            rusqlite::params![id, signature, current, VERSION],
             |r| r.get::<_, String>(0),
         )
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
 }
-pub fn cached_many(db: &Path, tracks: &[(i64, &str)]) -> Vec<Option<Features>> {
+pub fn cached_many(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,false)}
+pub fn cached_many_current(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,true)}
+fn cached_many_mode(db: &Path, tracks: &[(i64, &str)],current:bool) -> Vec<Option<Features>> {
     let read = (|| -> Result<std::collections::HashMap<i64, (String, String, Features)>> {
         let conn = cache(db)?;
         let mut statement =
@@ -102,7 +107,7 @@ pub fn cached_many(db: &Path, tracks: &[(i64, &str)]) -> Vec<Option<Features>> {
             values
                 .get(id)
                 .filter(|(signature, version, _)| {
-                    version == VERSION
+                    (!current || version == VERSION)
                         && identity(Path::new(path)).is_ok_and(|current| current == *signature)
                 })
                 .map(|(_, _, f)| f.clone())
@@ -194,7 +199,7 @@ impl Analysis {
       let metadata=crate::desktop_metadata::refresh(&db,&musicos_desktop::local::library::track_from_init(track))?;if let Some(seconds)=metadata.duration{duration=seconds as i64;}Ok(())})();
      if let Err(error)=probe {let mut status=worker.status.lock().unwrap_or_else(|e|e.into_inner());if status.errors.len()<20{status.errors.push(format!("Specifications {}: {error:#}",Path::new(&path).file_name().unwrap_or_default().to_string_lossy()));}}
     }
-    let mut refreshed=false;let result=(||->Result<Features>{if !force {if let Some(f)=cached(&db,id,&path){return Ok(f)}}refreshed=true;let signature=identity(Path::new(&path))?;let mut excerpts=Vec::new();let length=duration.max(0) as f32;let window=18_f32.min(length.max(1.));let starts=if length>window*2. {vec![0.,(length-window)*0.5,(length-window)*0.85]}else{vec![0.]};
+    let mut refreshed=false;let result=(||->Result<Features>{if !force {if let Some(f)=cached_current(&db,id,&path){return Ok(f)}}refreshed=true;let signature=identity(Path::new(&path))?;let mut excerpts=Vec::new();let length=duration.max(0) as f32;let window=18_f32.min(length.max(1.));let starts=if length>window*2. {vec![0.,(length-window)*0.5,(length-window)*0.85]}else{vec![0.]};
      for start in starts {ensure!(worker.checkpoint(),"Analysis cancelled");let mut decoder=musicos_desktop::local::decoded_audio::open(Path::new(&path))?;if start>0. {decoder.try_seek(Duration::from_secs_f32(start)).map_err(|e|anyhow::anyhow!("This decoder cannot seek to representative excerpts: {e}"))?;}let source_rate=decoder.sample_rate() as usize;let channels=decoder.channels() as usize;ensure!(source_rate>0&&channels>0,"Invalid audio format");let uniform=rodio::source::UniformSourceIterator::<_,f32>::new(decoder,1,RATE as u32);let mut mono=Vec::with_capacity(RATE*18);for (i,sample) in uniform.take((window*RATE as f32) as usize).enumerate(){if i%RATE==0 {ensure!(worker.checkpoint(),"Analysis cancelled");}mono.push(sample);}excerpts.push(mono);}
      ensure!(identity(Path::new(&path))?==signature,"File changed during analysis; run analysis again");let mut f=extract(id,&excerpts);let structure=crate::structure::scan(Path::new(&path),f.bpm,f.bpm_confidence,||worker.checkpoint())?;if structure.beat_confidence>=0.5 {f.bpm=structure.tempo;f.bpm_confidence=structure.beat_confidence;}f.structure=Some(structure);ensure!(identity(Path::new(&path))?==signature,"File changed during analysis; run analysis again");cache(&db)?.execute("INSERT INTO desktop_dsp_v1 VALUES(?,?,?,?) ON CONFLICT(track_id) DO UPDATE SET identity=excluded.identity,version=excluded.version,result=excluded.result",rusqlite::params![id,signature,VERSION,serde_json::to_string(&f)?])?;Ok(f)})();
     if worker.cancel.load(Ordering::Relaxed){break;}
@@ -444,6 +449,15 @@ mod tests {
         }
         assert!(!worker.snapshot().running);
         assert!(worker.snapshot().features.is_empty());
+    }
+    #[test]fn old_valid_cache_survives_failed_refresh_but_is_not_current(){
+        let dir=tempfile::tempdir().unwrap();let db=dir.path().join("cache.db");let file=dir.path().join("corrupt.wav");std::fs::write(&file,b"not audio").unwrap();let f=extract(7,&[]);
+        cache(&db).unwrap().execute("INSERT INTO desktop_dsp_v1 VALUES(?,?,?,?)",rusqlite::params![7,identity(&file).unwrap(),"previous-version",serde_json::to_string(&f).unwrap()]).unwrap();
+        assert!(cached(&db,7,file.to_str().unwrap()).is_some());assert!(cached_current(&db,7,file.to_str().unwrap()).is_none());
+        let inputs=[(7,file.to_str().unwrap())];assert!(cached_many(&db,&inputs)[0].is_some());assert!(cached_many_current(&db,&inputs)[0].is_none());
+        let worker=Analysis::default();worker.start(db.clone(),vec![(7,file.to_string_lossy().into_owned(),30)]).unwrap();
+        let end=std::time::Instant::now()+Duration::from_secs(3);while worker.snapshot().running{assert!(std::time::Instant::now()<end);std::thread::sleep(Duration::from_millis(10));}
+        assert!(!worker.snapshot().errors.is_empty());assert!(cached(&db,7,file.to_str().unwrap()).is_some());assert!(cached_current(&db,7,file.to_str().unwrap()).is_none());
     }
     #[test]
     fn changed_file_invalidates_cache() {

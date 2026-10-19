@@ -1,0 +1,308 @@
+{
+  "document": "C8FFC865-CF40-43FB-AA71-0B45DBA1EF0C",
+  "exported": "2026-10-17",
+  "note": "Exact selected vectors; white canvas backgrounds omitted for transparent app icons. Duplicate RepeatON masters are identical. Frame is the search icon.",
+  "icons": [
+    {
+      "layer": "094CD583-E850-4A6F-AF33-18E67E4986A9",
+      "name": "tinyPlay",
+      "file": "tinyPlay.svg"
+    },
+    {
+      "layer": "09E06B76-6FDD-448B-A7D0-5B18C83EABA7",
+      "name": "RepeatOFF",
+      "file": "RepeatOFF.svg"
+    },
+    {
+      "layer": "0CDFFEED-1F7D-4DA0-A20B-5DF122B8588E",
+      "name": "File",
+      "file": "File.svg"
+    },
+    {
+      "layer": "0DAD3F26-044F-4D01-B041-A147873EE115",
+      "name": "pause",
+      "file": "pause.svg"
+    },
+    {
+      "layer": "1064F50F-4C6D-403C-A1BB-36DAD701E562",
+      "name": "RepeatONE",
+      "file": "RepeatONE.svg"
+    },
+    {
+      "layer": "113BAD19-2B6D-465E-960D-7DFB8BD7516B",
+      "name": "play",
+      "file": "play.svg"
+    },
+    {
+      "layer": "18818C22-B9F3-40A1-9CF0-6F251778DF9B",
+      "name": "Album",
+      "file": "Album.svg"
+    },
+    {
+      "layer": "2576034D-D69E-48FD-BE93-D0DABF6359EB",
+      "name": "Storage",
+      "file": "Storage.svg"
+    },
+    {
+      "layer": "2B06EC3C-B6F3-4F50-A2A1-57182D06BC3D",
+      "name": "ShuffleON",
+      "file": "ShuffleON.svg"
+    },
+    {
+      "layer": "355EEF46-D20A-43F3-835F-FC17446491C4",
+      "name": "noCOVER",
+      "file": "noCOVER.svg"
+    },
+    {
+      "layer": "38F8D628-684B-4412-BB76-F72D63F89879",
+      "name": "tinyPrev",
+      "file": "tinyPrev.svg"
+    },
+    {
+      "layer": "3AD4CDD1-A4AD-49DA-A185-FEB16967E948",
+      "name": "queue",
+      "file": "queue.svg"
+    },
+    {
+      "layer": "41EF710F-2872-4566-A108-72B5A38737F9",
+      "name": "search",
+      "file": "search.svg"
+    },
+    {
+      "layer": "57F76F0B-BC33-4B8C-90A1-F1051224B8B6",
+      "name": "that_one_i_in_a_circle_icon",
+      "file": "that_one_i_in_a_circle_icon.svg"
+    },
+    {
+      "layer": "5805E7FA-991A-48B2-A090-857499735204",
+      "name": "RepeatON",
+      "file": "RepeatON.svg"
+    },
+    {
+      "layer": "5E3A8274-CDB5-440A-813D-F104E2F2DB44",
+      "name": "Song",
+      "file": "Song.svg"
+    },
+    {
+      "layer": "60167733-AFC5-451F-B855-152EC721B35D",
+      "name": "ShuffleOFF",
+      "file": "ShuffleOFF.svg"
+    },
+    {
+      "layer": "648C8B0A-C460-4B7F-992D-BE40A007D6E5",
+      "name": "tinyNext",
+      "file": "tinyNext.svg"
+    },
+    {
+      "layer": "6928FB71-75D7-44F5-930E-46A41D99C425",
+      "name": "Net404",
+      "file": "Net404.svg"
+    },
+    {
+      "layer": "6A418AC7-181E-427B-8BCF-2B2602EE78B8",
+      "name": "Artist",
+      "file": "Artist.svg"
+    },
+    {
+      "layer": "812D99CD-03C2-4BF2-B914-FEAB5B9FE96B",
+      "name": "RepeatON",
+      "file": "RepeatON.svg"
+    },
+    {
+      "layer": "833DD92A-9EC3-447D-B566-0402F40460C6",
+      "name": "autostart",
+      "file": "autostart.svg"
+    },
+    {
+      "layer": "89EBD48D-546A-4FAC-9757-007FF246268E",
+      "name": "Sparklist",
+      "file": "Sparklist.svg"
+    },
+    {
+      "layer": "8B72C22E-F415-4CE2-97D7-10655869F9FA",
+      "name": "hearted",
+      "file": "hearted.svg"
+    },
+    {
+      "layer": "8B94DB2C-5D19-4E67-BBCE-9DF03D4A1EE0",
+      "name": "tinyMinimize",
+      "file": "tinyMinimize.svg"
+    },
+    {
+      "layer": "8BF69762-D37D-43EE-A0AC-ED48A84F0872",
+      "name": "noheart",
+      "file": "noheart.svg"
+    },
+    {
+      "layer": "8FD0BE37-080B-4178-B7A2-BFBE59E6E46C",
+      "name": "prev",
+      "file": "prev.svg"
+    },
+    {
+      "layer": "91F91CA3-D368-472D-B852-642327AC86FF",
+      "name": "ShufflePlay",
+      "file": "ShufflePlay.svg"
+    },
+    {
+      "layer": "9276F1B7-BB23-43A9-A59F-0769CA403A54",
+      "name": "Genre",
+      "file": "Genre.svg"
+    },
+    {
+      "layer": "9944F1F5-2758-4225-ACBA-5923FFCBBDFD",
+      "name": "next",
+      "file": "next.svg"
+    },
+    {
+      "layer": "AE74D1E4-F51F-4AC9-A269-37A7BD56EFD2",
+      "name": "Lossy",
+      "file": "Lossy.svg"
+    },
+    {
+      "layer": "B18B4298-B4E4-49E8-97BC-F137A9F58D28",
+      "name": "Back",
+      "file": "Back.svg"
+    },
+    {
+      "layer": "B42A2BE6-3468-456D-953D-D7E4C45B90FE",
+      "name": "3dots(incircle)",
+      "file": "3dots(incircle).svg"
+    },
+    {
+      "layer": "C86EB348-5282-4627-B9CF-383468AA216E",
+      "name": "3dots_(nocircle)",
+      "file": "3dots_(nocircle).svg"
+    },
+    {
+      "layer": "D1659373-9FC5-494A-89C8-2585B63E4BCC",
+      "name": "Playlist",
+      "file": "Playlist.svg"
+    },
+    {
+      "layer": "D54B7D59-B50D-46B2-9FE9-F09D75244E90",
+      "name": "sync",
+      "file": "sync.svg"
+    },
+    {
+      "layer": "D8672F9F-6D5A-4C03-B083-5ED18EBC6177",
+      "name": "tinyX",
+      "file": "tinyX.svg"
+    },
+    {
+      "layer": "E14A582F-DE90-4363-BDE8-0657B6A4BE22",
+      "name": "Lossless",
+      "file": "Lossless.svg"
+    },
+    {
+      "layer": "E9E3BAF2-0800-4FD5-B319-7300D1F21893",
+      "name": "Delete",
+      "file": "Delete.svg"
+    },
+    {
+      "layer": "F3E641F8-065E-4FBE-96D6-E9E3EE37A772",
+      "name": "device",
+      "file": "device.svg"
+    },
+    {
+      "layer": "F4E03FFC-454F-46EF-8D3D-5183AA0C0E17",
+      "name": "tinyMaximize",
+      "file": "tinyMaximize.svg"
+    },
+    {
+      "layer": "F537E008-84AB-4A52-9DEA-5EFFF2016D40",
+      "name": "AutoStore",
+      "file": "AutoStore.svg"
+    },
+    {
+      "layer": "F554B191-DD62-47DB-BA88-5F5DEB71A57D",
+      "name": "notFOUND",
+      "file": "notFOUND.svg"
+    },
+    {
+      "layer": "F6313413-4BBE-416D-9D83-EE20CEEBD127",
+      "name": "noARTIST",
+      "file": "noARTIST.svg"
+    },
+    {
+      "layer": "F88CE1E6-3093-48FA-A377-150450718BD3",
+      "name": "NetSearch",
+      "file": "NetSearch.svg"
+    },
+    {
+      "layer": "6364C93E-0776-4B31-B7FD-F010B3BA7120",
+      "name": "AudioBot",
+      "file": "AudioBot.svg"
+    },
+    {
+      "layer": "4C64C275-BE84-4925-825E-06EB1EFFE18A",
+      "name": "CollectionShuffle",
+      "file": "CollectionShuffle.svg",
+      "note": "Exact collection-row button, including white-to-green smoothed background; exported 2026-10-10."
+    },
+    {
+      "layer": "F3077D8B-2CD7-462F-BA0B-3846143468A3",
+      "name": "Discord",
+      "file": "Discord.svg"
+    },
+    {
+      "layer": "06FD80D0-D611-461C-A0DB-CE2B428A9B23",
+      "name": "LastFM",
+      "file": "LastFM.svg"
+    },
+    {
+      "layer": "AE12EA91-1E86-4CFA-9C52-6EBD4847EE0E",
+      "name": "Play Next",
+      "file": "Play Next.svg"
+    },
+    {
+      "layer": "D7D6ABA3-3F42-4F0D-A1C7-25C5CA31864D",
+      "name": "Add to queue",
+      "file": "Add to queue.svg"
+    },
+    {
+      "layer": "824CE03C-B3C0-4D53-9900-865FCAA4F109",
+      "name": "depth",
+      "file": "depth.svg"
+    },
+    {
+      "layer": "08B27673-4268-4F3E-8061-3267A4559072",
+      "name": "DJmode",
+      "file": "DJmode.svg"
+    },
+    {
+      "name": "openMiniplayer",
+      "layer": "9C5AEE7B-CDCB-40F5-90CB-1E71F140070B",
+      "file": "openMiniplayer.svg"
+    },
+    {
+      "name": "CloseMiniplayer",
+      "layer": "1E1C1642-0433-4F9D-B05C-14DF26E95D09",
+      "file": "CloseMiniplayer.svg"
+    },
+    {
+      "name": "Light mode",
+      "layer": "7C653DDA-9314-4973-B263-04C54C4EBC33",
+      "file": "Light mode.svg"
+    },
+    {
+      "name": "Dark Mode",
+      "layer": "069E211A-AFAF-4CD9-AE1F-19B78282C965",
+      "file": "Dark Mode.svg"
+    },
+    {
+      "name": "System",
+      "layer": "5F8D0989-4C89-4F36-8264-4BCEF9F95661",
+      "file": "System.svg"
+    },
+    {
+      "name": "unPin",
+      "layer": "12410ED3-ED47-4577-8409-5CF2699A06EB",
+      "file": "unPin.svg"
+    },
+    {
+      "name": "Pin",
+      "layer": "67796EA7-CF22-4970-8CC3-AC15F64B7B66",
+      "file": "Pin.svg"
+    }
+  ]
+}

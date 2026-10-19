@@ -15,7 +15,7 @@ pub mod source_audit;
 
 pub use enrichment::{
     accept_metadata_review, dismiss_metadata_review, enrich_library, load_metadata_review_items,
-    EnrichmentProgress, EnrichmentRunReport, MetadataCandidate, MetadataReviewItem,
+    candidate_fingerprint, EnrichmentProgress, EnrichmentRunReport, MetadataCandidate, MetadataReviewItem,
 };
 pub use library::{
     LibraryQuery, LibraryRepository, LocalLibraryRepository, RemoteLibraryRepository,

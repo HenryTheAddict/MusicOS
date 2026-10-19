@@ -6,13 +6,21 @@ use std::path::Path;
 #[serde(default)]
 pub struct LibraryFilters {pub sort:String,pub genre:String,pub quality:String,pub favorites:bool,pub availability:String,pub separate_singles:bool}
 impl Default for LibraryFilters {fn default()->Self{Self{sort:"recent".into(),genre:String::new(),quality:"all".into(),favorites:false,availability:"all".into(),separate_singles:false}}}
+#[derive(Debug,Clone,Serialize,Deserialize,PartialEq)]
+#[serde(default)]
+pub struct Appearance {pub mode:String,pub source:String,pub accent:String,pub saturation:u16,pub tint:u16}
+impl Default for Appearance{fn default()->Self{Self{mode:"system".into(),source:"blue".into(),accent:"#0064df".into(),saturation:100,tint:15}}}
+impl Appearance{fn normalize(mut self)->Self{if !["system","light","dark"].contains(&self.mode.as_str()){self.mode="system".into();}if !["artwork","blue","custom"].contains(&self.source.as_str()){self.source="blue".into();}if self.accent.len()!=7||!self.accent.starts_with('#')||!self.accent[1..].bytes().all(|c|c.is_ascii_hexdigit()){self.accent="#0064df".into();}self.saturation=self.saturation.min(150);self.tint=self.tint.min(40);self}}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Preferences {
     pub version: u32,
+    pub mini_player_view: String,
     pub display_name: String,
     pub interface_percent: u16,
     pub coverflow_colors: bool,
+    pub appearance:Appearance,
+    pub artists_album_only:bool,
     pub audio_presentation: String,
     pub artwork_parallax:bool,
     pub artwork_depth:bool,
@@ -27,9 +35,12 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             version: 1,
+            mini_player_view: "artwork".into(),
             display_name: "Henry".into(),
             interface_percent: 100,
             coverflow_colors: false,
+            appearance:Default::default(),
+            artists_album_only:false,
             audio_presentation: "sidebar".into(),
             artwork_parallax:true,
             artwork_depth:false,
@@ -45,7 +56,10 @@ impl Default for Preferences {
 impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
+        if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         self.listening=self.listening.normalize();
+        self.appearance=self.appearance.normalize();
+        self.coverflow_colors=self.appearance.source=="artwork";
         if !["recent","title"].contains(&self.library_filters.sort.as_str()){self.library_filters.sort="recent".into();}
         if !["all","lossless","lossy","mixed"].contains(&self.library_filters.quality.as_str()){self.library_filters.quality="all".into();}
         if !["all","available","unavailable"].contains(&self.library_filters.availability.as_str()){self.library_filters.availability="all".into();}
@@ -86,6 +100,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         // Parse fields independently: one invalid field must not discard valid siblings.
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
+            if let Some(s)=v["mini_player_view"].as_str(){p.mini_player_view=s.into();}
             if let Some(s) = v["display_name"].as_str() {
                 p.display_name = s.into()
             }
@@ -113,6 +128,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
                     p.dj_config = config;
                 }
             }
+            p.appearance=v.get("appearance").and_then(|value|serde_json::from_value(value.clone()).ok()).unwrap_or_else(||Appearance{mode:"light".into(),source:if p.coverflow_colors{"artwork"}else{"blue"}.into(),..Default::default()});
             return p.normalize();
         }
         return Preferences::default();
@@ -134,6 +150,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
             }
         }
     }
+    if legacy.is_some_and(|p|p.exists()){p.appearance.mode="light".into();p.appearance.source=if p.coverflow_colors{"artwork"}else{"blue"}.into();}
     p.normalize()
 }
 pub fn path() -> std::path::PathBuf {
@@ -208,6 +225,7 @@ mod tests {
         std::fs::write(&path,r#"{"show_song_durations":"bad","sparklist_beta":"true"}"#).unwrap();
         let loaded=load_from(&path,None);assert!(loaded.show_song_durations&&!loaded.sparklist_beta);
     }
+    #[test]fn theme_migration_preserves_light_artwork_and_new_defaults_follow_system(){let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("prefs.json");assert_eq!(load_from(&path,None).appearance.mode,"system");std::fs::write(&path,r#"{"coverflow_colors":true}"#).unwrap();let migrated=load_from(&path,None);assert_eq!(migrated.appearance.mode,"light");assert_eq!(migrated.appearance.source,"artwork");let custom=Preferences{appearance:Appearance{mode:"dark".into(),source:"custom".into(),accent:"#ff6688".into(),saturation:125,tint:8},..migrated};atomic_write_json(&path,&custom).unwrap();assert_eq!(load_from(&path,None).appearance,custom.appearance);}
     #[test]
     fn migration_and_blank_validation() {
         let t = tempfile::tempdir().unwrap();
@@ -224,4 +242,12 @@ mod tests {
         .validate()
         .is_err());
     }
+    #[test]fn mini_view_defaults_migrates_and_survives_restart(){
+      let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");
+      assert_eq!(load_from(&path,None).mini_player_view,"artwork");
+      std::fs::write(&path,r#"{"mini_player_view":"slim","display_name":"Listener"}"#).unwrap();
+      let mut value=load_from(&path,None);assert_eq!(value.mini_player_view,"artwork");assert_eq!(value.display_name,"Listener");
+      value.mini_player_view="queue".into();atomic_write_json(&path,&value).unwrap();assert_eq!(load_from(&path,None).mini_player_view,"queue");
+    }
+
 }

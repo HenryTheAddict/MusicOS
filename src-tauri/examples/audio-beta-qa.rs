@@ -45,7 +45,7 @@ fn main()->Result<()>{
  let snapshot=service.snapshot();ensure!(snapshot.backend=="MusicOS two-deck","Native audio output unavailable");
  let config=dj_plan::Config{enabled:true,..Default::default()};let plan=dj_plan::plan(dj_plan::Track{key_index:None,duration:pair[0].duration,bpm:None,structure:None},dj_plan::Track{key_index:None,duration:pair[1].duration,bpm:None,structure:None},&config,false).unwrap();
  ensure!(plan.duration>0.,"Same-album transition was disabled");
- service.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{outgoing:snapshot.queue_entry_ids[0],incoming:snapshot.queue_entry_ids[1],outgoing_cue:plan.outgoing_cue,incoming_cue:0.,duration:plan.duration,tempo:1.,effect:"clean_blend".into()}))?;
+ service.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{request_id:0,outgoing:snapshot.queue_entry_ids[0],incoming:snapshot.queue_entry_ids[1],outgoing_cue:plan.outgoing_cue,incoming_cue:0.,duration:plan.duration,tempo:1.,effect:"clean_blend".into()}))?;
  let deadline=Instant::now()+Duration::from_secs(10);let mut saw_active=false;let mut saw_scheduled=false;
  while service.snapshot().queue_index!=Some(1){let s=service.snapshot();if let Some(t)=s.dj_transition{saw_active|=t.active;saw_scheduled|=t.status=="scheduled";}ensure!(Instant::now()<deadline,"Automatic transition timed out: {:?}",s.error);std::thread::sleep(Duration::from_millis(20));}
  ensure!(saw_active&&saw_scheduled,"Transition did not pass readiness and activation");

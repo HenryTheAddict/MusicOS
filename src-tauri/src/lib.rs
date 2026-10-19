@@ -38,3 +38,14 @@ pub mod depth;
 pub mod spark_artwork;
 
 mod onsets;
+
+pub mod file_organization;
+
+pub mod source_forget;
+
+pub mod album_metadata;
+pub mod file_tags;
+
+pub mod artwork_renditions;
+
+#[cfg(test)]mod reliability_tests;

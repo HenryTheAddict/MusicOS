@@ -1,3 +1,5 @@
+> Retired on 2026-10-16: src-desktop and its SDL/C++ launcher were removed. This document is historical.
+
 > Legacy C++ verification record. This is not acceptance evidence for the React/Tauri rebuild. See [current rebuild verification](docs/react-desktop-qa.md).
 
 # Settings and library detail QA

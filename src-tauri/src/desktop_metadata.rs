@@ -9,12 +9,16 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Metadata {
+    #[serde(skip)] pub needs_refresh:bool,
     #[serde(default)]
     pub probe_error: Option<String>,
     #[serde(default)] pub duration:Option<i32>,
     pub album_artist: Option<String>,
     #[serde(default)]
     pub release_type: Option<String>,
+    #[serde(default)] pub standalone_title:Option<String>,
+    #[serde(default)] pub release_track_total:Option<u32>,
+    #[serde(default)] pub release_disc_total:Option<u32>,
     #[serde(default)]
     pub artist_credits: Vec<String>,
     pub release_id: Option<String>,
@@ -24,7 +28,7 @@ pub struct Metadata {
 fn identity(path: &Path) -> Result<String> {
     let m = std::fs::metadata(path)?;
     Ok(format!(
-        "v4-native-m4a:{}:{}:{}",
+        "v7-release-totals:{}:{}:{}",
         path.display(),
         m.len(),
         m.modified()?
@@ -32,10 +36,10 @@ fn identity(path: &Path) -> Result<String> {
             .as_nanos()
     ))
 }
-fn db(path: &Path) -> Result<rusqlite::Connection> {
-    let c = rusqlite::Connection::open(path)?;
+fn db(path: &Path) -> Result<musicos_init::database::Connection> {
+    let c = musicos_init::database::Connection::open_background(path)?;
     c.busy_timeout(std::time::Duration::from_secs(5))?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS desktop_file_metadata_v1(track_id INTEGER PRIMARY KEY,identity TEXT NOT NULL,value TEXT NOT NULL)")?;
+    musicos_init::database_access::initialize_schema(path,"file-metadata-v1",||{c.execute_batch("CREATE TABLE IF NOT EXISTS desktop_file_metadata_v1(track_id INTEGER PRIMARY KEY,identity TEXT NOT NULL,value TEXT NOT NULL)")?;Ok(())})?;
     Ok(c)
 }
 /// Older recording lookups could replace a tagged studio album with a live release.
@@ -91,8 +95,9 @@ pub fn cached_many(path: &Path, tracks: &[Track]) -> std::collections::HashMap<i
         if let Ok((signature, value)) = query.query_row([track.id], |r| {
             Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
         }) {
-            if signature == id {
+            if signature == id || ["v4-native-m4a:","v5-release-tags:","v6-release-totals:"].iter().any(|prefix|signature.strip_prefix(prefix).is_some_and(|old|id.strip_prefix("v7-release-totals:")==Some(old))) {
                 if let Ok(mut value) = serde_json::from_str::<Metadata>(&value) {
+                    value.needs_refresh=signature!=id;
                     if protected.contains(&track.id) { value.artist_credits.clear(); }
                     values.insert(track.id, value);
                 }
@@ -139,10 +144,14 @@ fn probe_tags(path: &Path) -> Result<Metadata> {
         lossless = *mp4.properties().codec() == lofty::mp4::Mp4Codec::ALAC;
     }
     Ok(Metadata {
+        needs_refresh:false,
         probe_error: None,
         duration:Some(properties.duration().as_secs().min(i32::MAX as u64) as i32),
         album_artist: get(ItemKey::AlbumArtist),
-        release_type: ["RELEASETYPE","MusicBrainz Album Type","MUSICBRAINZ_ALBUMTYPE"].iter().find_map(|key|get(ItemKey::Unknown((*key).into()))).and_then(|s|s.split([';','/']).find_map(|v|match v.trim().to_ascii_lowercase().as_str(){"single"=>Some("single".into()),"ep"=>Some("ep".into()),"album"=>Some("album".into()),_=>None})),
+        release_type: tag.and_then(tag_release_kind).or_else(||get(ItemKey::AlbumTitle).and_then(|title|explicit_title_kind(&title))),
+        standalone_title: if get(ItemKey::AlbumTitle).is_none() {get(ItemKey::TrackTitle).or_else(||path.file_stem().map(|s|s.to_string_lossy().into_owned()))}else{None},
+        release_track_total:tag.and_then(|tag|lofty::tag::Accessor::track_total(tag)),
+        release_disc_total:tag.and_then(|tag|lofty::tag::Accessor::disk_total(tag)),
         artist_credits: tag.map(|tag| {
             let mut credits = Vec::new();
             for value in tag.get_strings(&ItemKey::TrackArtist) {
@@ -164,6 +173,12 @@ fn probe_tags(path: &Path) -> Result<Metadata> {
         }),
     })
 }
+fn tag_release_kind(tag:&lofty::tag::Tag)->Option<String>{tag.items().find_map(|item|{let ItemKey::Unknown(key)=item.key()else{return None};let key=key.to_ascii_lowercase().replace([' ', '_','-'], "");let key=key.rsplit(':').next().unwrap_or(&key);if ["releasetype","albumtype","musicbrainzalbumtype","musicbrainzreleasetype"].contains(&key){item.value().text().and_then(release_kind)}else{None}})}
+fn release_kind(value:&str)->Option<String>{
+    // Secondary release flags (for example Single;Live) do not hide the primary type.
+    value.split([';', '/', ',', '\\']).find_map(|part|match part.trim().to_ascii_lowercase().as_str(){"single"=>Some("single".into()),"ep"=>Some("ep".into()),"album"=>Some("album".into()),_=>None})
+}
+fn explicit_title_kind(title:&str)->Option<String>{let lower=title.trim().to_ascii_lowercase();["single","ep"].into_iter().find(|kind|[format!(" - {kind}"),format!(" ({kind})"),format!(" [{kind}]")].iter().any(|suffix|lower.ends_with(suffix))).map(str::to_owned)}
 pub fn ensure(path: &Path, track: &Track) -> Result<Metadata> {
     if let Some(m) = cached(path, track) {
         return Ok(m);
@@ -198,6 +213,20 @@ pub fn apply(track: &mut Track, value: Metadata) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]fn loose_single_tags_and_mp4_keys_are_recognized(){
+        use lofty::tag::{Tag,TagType,TagItem,ItemValue};
+        for key in ["RELEASETYPE","MusicBrainz Album Type","MUSICBRAINZ_ALBUMTYPE","musicbrainz_releasetype","----:com.apple.iTunes:MusicBrainz Album Type"] {
+            let mut tag=Tag::new(TagType::Id3v2);tag.insert_unchecked(TagItem::new(ItemKey::Unknown(key.into()),ItemValue::Text("Single;Live".into())));assert_eq!(tag_release_kind(&tag),Some("single".into()),"{key}");
+        }
+    }
+    #[test]fn loose_tagged_single_without_album_has_its_own_release_title(){
+        use lofty::tag::{Tag,TagType,TagItem,ItemValue,TagExt};
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("loose.wav");let data=[0_u8;400];let mut wav=Vec::new();wav.extend(b"RIFF");wav.extend((36_u32+data.len()as u32).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16_u32.to_le_bytes());wav.extend(1_u16.to_le_bytes());wav.extend(1_u16.to_le_bytes());wav.extend(48000_u32.to_le_bytes());wav.extend(96000_u32.to_le_bytes());wav.extend(2_u16.to_le_bytes());wav.extend(16_u16.to_le_bytes());wav.extend(b"data");wav.extend((data.len()as u32).to_le_bytes());wav.extend(data);std::fs::write(&path,wav).unwrap();
+        let mut tag=Tag::new(TagType::Id3v2);tag.insert_text(ItemKey::TrackTitle,"Loose song".into());tag.insert_unchecked(TagItem::new(ItemKey::Unknown("MusicBrainz Album Type".into()),ItemValue::Text("single".into())));tag.save_to_path(&path,lofty::config::WriteOptions::default()).unwrap();let metadata=probe(&path).unwrap();assert_eq!(metadata.release_type.as_deref(),Some("single"));assert_eq!(metadata.standalone_title.as_deref(),Some("Loose song"));
+        let database=dir.path().join("cache.db");musicos_init::database::Db::open(database.to_str().unwrap()).unwrap();let track=Track{id:1,path:path.to_string_lossy().into_owned(),..Default::default()};let mut old=metadata;old.album_artist=Some("Cached album artist".into());let signature=identity(&path).unwrap().replace("v7-release-totals:","v4-native-m4a:");db(&database).unwrap().execute("INSERT INTO desktop_file_metadata_v1 VALUES(1,?,?)",rusqlite::params![signature,serde_json::to_string(&old).unwrap()]).unwrap();assert!(cached(&database,&track).is_none());let values=cached_many(&database,&[track.clone()]);assert!(values[&1].needs_refresh);assert_eq!(values[&1].album_artist.as_deref(),Some("Cached album artist"));std::fs::write(&path,b"file changed").unwrap();assert!(cached_many(&database,&[track]).is_empty());
+
+    }
+    #[test]fn explicit_release_types_do_not_depend_on_folders(){assert_eq!(release_kind("Single;Live"),Some("single".into()));assert_eq!(explicit_title_kind("Song - Single"),Some("single".into()));assert_eq!(explicit_title_kind("EPIC"),None);assert_eq!(explicit_title_kind("One song"),None);assert_eq!(release_kind("compilation"),None);}
     #[test]
     fn automatic_album_repair_keeps_manual_editions_and_guest_credits() {
         let dir = tempfile::tempdir().unwrap();

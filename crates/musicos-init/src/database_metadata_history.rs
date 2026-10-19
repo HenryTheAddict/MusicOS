@@ -1,19 +1,22 @@
 // These methods share Db's connection so edits and their undo records commit together.
 impl Db {
     fn ensure_metadata_history(&self)->Result<()> {
+        crate::database_access::initialize_schema(&self.path,"metadata-history-v3",||{
         self.conn.execute_batch("CREATE TABLE IF NOT EXISTS desktop_metadata_changes_v1(id INTEGER PRIMARY KEY,created_at INTEGER NOT NULL,undone INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS desktop_metadata_change_entries_v1(change_id INTEGER NOT NULL,track_id INTEGER NOT NULL,before_json TEXT NOT NULL,after_json TEXT NOT NULL,PRIMARY KEY(change_id,track_id));")?;
         self.ensure_column("desktop_metadata_changes_v1","canonical_json","TEXT")?;
+        self.ensure_column("desktop_metadata_changes_v1","file_job","TEXT")?;
         Ok(())
+        })
     }
     pub fn metadata_values(&self,id:i64)->Result<serde_json::Value>{
         let track=self.get_track_by_id(id)?.ok_or_else(||anyhow::anyhow!("A selected song no longer exists."))?;
         let mut value=serde_json::to_value(track)?;
         let extra:(String,i32,i32,i64)=self.conn.query_row("SELECT coalesce(o.genre,t.genre,''),coalesce(o.year,t.year,0),coalesce(o.disc_number,t.disc_number,0),t.revision FROM tracks t LEFT JOIN track_metadata_overrides o ON o.track_id=t.id WHERE t.id=?",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
-        value["genre"]=extra.0.into();value["year"]=extra.1.into();value["disc_number"]=extra.2.into();value["revision"]=extra.3.into();Ok(value)
+        value["album_artist"]=self.conn.query_row("SELECT album_artist FROM track_metadata_overrides WHERE track_id=?",[id],|r|r.get::<_,Option<String>>(0)).optional()?.flatten().into();value["genre"]=extra.0.into();value["year"]=extra.1.into();value["disc_number"]=extra.2.into();value["revision"]=extra.3.into();Ok(value)
     }
     fn metadata_history_snapshot(&self,id:i64)->Result<String> {
         let track=self.metadata_values(id)?;
-        let overrides:Option<String>=self.conn.query_row("SELECT json_object('title',title,'artist',artist,'album',album,'track_number',track_number,'disc_number',disc_number,'genre',genre,'year',year,'artwork_path',artwork_path,'updated_at',updated_at,'origin',origin,'provider',provider,'confidence',confidence) FROM track_metadata_overrides WHERE track_id=?",[id],|r|r.get(0)).optional()?;
+        let overrides:Option<String>=self.conn.query_row("SELECT json_object('title',title,'artist',artist,'album',album,'track_number',track_number,'disc_number',disc_number,'genre',genre,'year',year,'artwork_path',artwork_path,'album_artist',album_artist,'updated_at',updated_at,'origin',origin,'provider',provider,'confidence',confidence) FROM track_metadata_overrides WHERE track_id=?",[id],|r|r.get(0)).optional()?;
         Ok(serde_json::to_string(&serde_json::json!({"track":track,"override":overrides.map(|s|serde_json::from_str::<serde_json::Value>(&s)).transpose()?}))?)
     }
     fn canonical_history_snapshot(&self)->Result<String>{
@@ -43,6 +46,9 @@ impl Db {
         }
         Ok(serde_json::json!(result))
     }
+    pub fn check_metadata_undo(&self,id:i64)->Result<()> {let history=self.metadata_history()?;let batch=history.as_array().unwrap().iter().find(|b|b["id"]==id).ok_or_else(||anyhow::anyhow!("This change is no longer available."))?;anyhow::ensure!(batch["undone"]==false && batch["conflict"]==false,"Later edits conflict with this change. Compare the current values before Undo.");Ok(())}
+    pub fn file_job_history(&self,job:&str)->Result<Option<i64>>{self.ensure_metadata_history()?;Ok(self.conn.query_row("SELECT id FROM desktop_metadata_changes_v1 WHERE file_job=?",[job],|r|r.get(0)).optional()?)}
+    pub fn record_tag_identity(&self,history:i64,id:i64,size:i64,modified:i64,hash:&str)->Result<()> {self.begin_transaction()?;let result=(||{self.conn.execute("UPDATE tracks SET file_size=?,modified_at=?,content_hash=? WHERE id=?",params![size,modified,hash,id])?;self.conn.execute("UPDATE desktop_metadata_change_entries_v1 SET after_json=? WHERE change_id=? AND track_id=?",params![self.metadata_history_snapshot(id)?,history,id])?;Ok(())})();match result{Ok(())=>self.commit_transaction(),Err(e)=>{let _=self.rollback_transaction();Err(e)}}}
     pub fn undo_metadata_change(&self,id:i64)->Result<()> {
         self.ensure_metadata_history()?;self.begin_transaction()?;
         let result=(||{
@@ -59,7 +65,7 @@ impl Db {
             for (track_id,before) in rows {
                 let before:serde_json::Value=serde_json::from_str(&before)?;let old=&before["override"];
                 self.conn.execute("DELETE FROM track_metadata_overrides WHERE track_id=?",[track_id])?;
-                if !old.is_null(){self.conn.execute("INSERT INTO track_metadata_overrides(track_id,title,artist,album,track_number,disc_number,genre,year,artwork_path,updated_at,origin,provider,confidence) SELECT ?,json_extract(?2,'$.title'),json_extract(?2,'$.artist'),json_extract(?2,'$.album'),json_extract(?2,'$.track_number'),json_extract(?2,'$.disc_number'),json_extract(?2,'$.genre'),json_extract(?2,'$.year'),json_extract(?2,'$.artwork_path'),json_extract(?2,'$.updated_at'),json_extract(?2,'$.origin'),json_extract(?2,'$.provider'),json_extract(?2,'$.confidence')",params![track_id,serde_json::to_string(old)?])?;}
+                if !old.is_null(){self.conn.execute("INSERT INTO track_metadata_overrides(track_id,title,artist,album,track_number,disc_number,genre,year,artwork_path,updated_at,origin,provider,confidence,album_artist) SELECT ?,json_extract(?2,'$.title'),json_extract(?2,'$.artist'),json_extract(?2,'$.album'),json_extract(?2,'$.track_number'),json_extract(?2,'$.disc_number'),json_extract(?2,'$.genre'),json_extract(?2,'$.year'),json_extract(?2,'$.artwork_path'),json_extract(?2,'$.updated_at'),json_extract(?2,'$.origin'),json_extract(?2,'$.provider'),json_extract(?2,'$.confidence'),json_extract(?2,'$.album_artist')",params![track_id,serde_json::to_string(old)?])?;}
                 self.conn.execute("UPDATE tracks SET revision=revision+1 WHERE id=?",[track_id])?;
                 self.conn.execute("UPDATE metadata_enrichment_status SET state='kept' WHERE track_id=?",[track_id])?;
             }

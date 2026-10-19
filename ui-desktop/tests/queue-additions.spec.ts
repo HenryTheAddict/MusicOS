@@ -3,7 +3,7 @@ test('song menus enqueue repeated entries, queue context menu removes only one',
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Songs',exact:true}).click();
  const song=page.locator('.track-row').first();await song.click({button:'right'});
  await page.getByRole('menuitem',{name:'Play next',exact:true}).click();
- await song.click({button:'right'});await page.getByRole('menuitem',{name:'Add to Up next',exact:true}).click();
+ await song.click({button:'right'});await page.getByRole('menuitem',{name:'Add to queue',exact:true}).click();
  await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const rows=page.locator('.queue-row');await expect(rows).toHaveCount(2);
  await rows.first().click({button:'right'});await page.getByRole('menuitem',{name:'Remove from Up next',exact:true}).click();await expect(rows).toHaveCount(1);
@@ -24,7 +24,7 @@ test('floating Audio stays open while a song is dragged in and still closes on o
 test('dropping a library song before a queue row honors the insertion marker',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Songs',exact:true}).click();
  const songs=page.locator('.track-row');
- for(const index of [0,1]){await songs.nth(index).click({button:'right'});await page.getByRole('menuitem',{name:'Add to Up next',exact:true}).click();}
+ for(const index of [0,1]){await songs.nth(index).click({button:'right'});await page.getByRole('menuitem',{name:'Add to queue',exact:true}).click();}
  const expected=await songs.nth(2).locator('.track-label > span').textContent();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const rows=page.locator('.queue-row');await expect(rows).toHaveCount(2);const first=await rows.first().locator('strong').textContent();
  const source=await songs.nth(2).locator('.track-label').boundingBox(),target=await rows.first().boundingBox();

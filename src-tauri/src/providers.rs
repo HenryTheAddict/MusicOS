@@ -32,8 +32,8 @@ fn cached_json(url: &str, params: &[(&str, &str)], provider: &str) -> Result<Val
         if !REVALIDATE.with(|v| v.get())
             && meta.modified()?.elapsed().unwrap_or_default() < Duration::from_secs(86400)
         {
-            if let Ok(v) = serde_json::from_slice(&std::fs::read(&path)?) {
-                return Ok(v);
+            if let Ok(v) = serde_json::from_slice::<Value>(&std::fs::read(&path)?) {
+                if !v.get("results").and_then(Value::as_array).is_some_and(Vec::is_empty)||meta.modified()?.elapsed().unwrap_or_default()<Duration::from_secs(60){return Ok(v);}
             }
         }
     }
@@ -586,7 +586,7 @@ pub fn album_info(
     album: &crate::library::Album,
     cancel: &AtomicBool,
 ) -> Result<AlbumInfo> {
-    let c = rusqlite::Connection::open(db)?;
+    let c = musicos_init::database::Connection::open(db)?;
     let placeholders = std::iter::repeat_n("?", album.track_ids.len())
         .collect::<Vec<_>>()
         .join(",");
@@ -722,21 +722,23 @@ pub fn discord_album_cover(artist: &str, album: &str) -> Result<Option<String>> 
     )?;
     Ok(exact_album_cover(&value, artist, album))
 }
+fn cover_identity(value:&str)->String{use unicode_normalization::UnicodeNormalization;let cleaned=value.nfkc().collect::<String>().to_lowercase().replace(['’','‘'],"'").replace(['–','—'],"-");let trimmed=cleaned.trim();let trimmed=trimmed.strip_suffix(" - single").or_else(||trimmed.strip_suffix(" - ep")).unwrap_or(trimmed);trimmed.split_whitespace().collect::<Vec<_>>().join(" ")}
 fn exact_album_cover(value: &Value, artist: &str, album: &str) -> Option<String> {
     let item = value["results"].as_array()?.iter().find(|item| {
         item["artistName"]
             .as_str()
-            .is_some_and(|name| name.trim().eq_ignore_ascii_case(artist.trim()))
+            .is_some_and(|name| cover_identity(name)==cover_identity(artist))
             && item["collectionName"]
                 .as_str()
-                .is_some_and(|name| name.trim().eq_ignore_ascii_case(album.trim()))
+                .is_some_and(|name| cover_identity(name)==cover_identity(album))
     })?;
     let url = item["artworkUrl100"].as_str()?;
-    let parsed = url::Url::parse(url).ok()?;
+    let mut parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme()=="http"&&parsed.host_str()?.ends_with(".mzstatic.com"){parsed.set_scheme("https").ok()?;}
     if parsed.scheme() != "https" || !parsed.host_str()?.ends_with(".mzstatic.com") {
         return None;
     }
-    Some(url.replace("100x100bb", "600x600bb"))
+    Some(parsed.to_string().replace("100x100bb", "600x600bb"))
 }
 fn plain_credit(html: &str) -> String {
     let mut in_tag = false;
@@ -768,18 +770,22 @@ pub struct Palette {
 }
 pub fn palette(path: &Path) -> Result<Palette> {
     let metadata = std::fs::metadata(path)?;
-    anyhow::ensure!(metadata.len() <= 20 * 1024 * 1024, "Artwork is too large.");
+    anyhow::ensure!(metadata.len() <= 128 * 1024 * 1024, "Artwork exceeds the file size limit.");
     let stamp = metadata
         .modified()?
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_nanos();
-    let cache = cache_path(&format!("palette-v4:{}:{stamp}", path.display()));
+    let cache = cache_path(&format!("palette-v6:{}:{stamp}", path.display()));
     if let Ok(bytes) = std::fs::read(&cache) {
         if let Ok(p) = serde_json::from_slice(&bytes) {
             return Ok(p);
         }
     }
-    let image = image::io::Reader::open(path)?
+    // Embedded/manual originals can legitimately exceed 20 MB. Use the same
+    // pixel-bounded rendition cache as the UI rather than silently losing their
+    // theme, or decoding a full-resolution image on every navigation.
+    let sample=crate::artwork_renditions::rendition(path,128)?;
+    let image = image::io::Reader::open(sample)?
         .with_guessed_format()?
         .decode()?
         .thumbnail(32, 32)
@@ -814,12 +820,20 @@ pub fn palette(path: &Path) -> Result<Palette> {
         .map(|(_, bin)| bin.1.map(|n| (n / bin.0) as u8))
         .unwrap_or(rgb);
     let hex = |c: [u8; 3]| format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]);
+    // Saturate colored surfaces, stopping before readable text contrast is lost.
+    let luminance=|rgb:[u8;3]|->f64{let c=rgb.map(|v|{let x=f64::from(v)/255.;if x<=0.04045{x/12.92}else{((x+0.055)/1.055).powf(2.4)}});c[0]*0.2126+c[1]*0.7152+c[2]*0.0722};
+    let mut strength=70_u16;
+    let blob=loop{let rgb=vivid.map(|v|((u16::from(v)*strength+255*(100-strength))/100)as u8);if (luminance(rgb)+0.05)/(luminance([18,32,42])+0.05)>=4.5||strength==0{break rgb;}strength-=1;};
     let p = Palette {
         background: hex(std::array::from_fn(|i| {
-            ((u16::from(rgb[i]) * 6 + u16::from(vivid[i]) * 16 + 255 * 78) / 100) as u8
+            if vivid.iter().max().unwrap()-vivid.iter().min().unwrap()<20 {
+                ((u16::from(rgb[i])*25+255*75)/100) as u8
+            } else {
+                ((u16::from(rgb[i])*6+u16::from(vivid[i])*32+255*62)/100) as u8
+            }
         })),
         accent: hex(vivid.map(|v| ((u16::from(v) * 40) / 100) as u8)),
-        blob: hex(vivid.map(|v| ((u16::from(v) * 45 + 255 * 55) / 100) as u8)),
+        blob: hex(blob),
         text: "#12202a".into(),
     };
     atomic_write_json(&cache, &p)?;
@@ -840,6 +854,7 @@ mod tests {
         let local = serde_json::json!({"results":[{"artistName":"M83","collectionName":"Fantasy","artworkUrl100":"file:///private/artwork.png"}]});
         assert!(exact_album_cover(&local, "M83", "Fantasy").is_none());
     }
+    #[test]fn discord_matches_punctuation_and_single_labels_without_swapping_editions(){let response=serde_json::json!({"results":[{"artistName":"Artist","collectionName":"We're Here - Single","artworkUrl100":"http://is1-ssl.mzstatic.com/image/100x100bb.jpg"}]});assert!(exact_album_cover(&response,"Artist","We’re Here").unwrap().starts_with("https://"));assert!(exact_album_cover(&response,"Artist","We're Here (Deluxe)").is_none());}
     #[test]
     fn catalog_never_claims_local_playback() {
         let data = serde_json::json!({"results":[{"wrapperType":"track","kind":"song","trackId":7,"artistId":9,"collectionId":3,"trackName":"Say \"Hello\"","artistName":"A","trackTimeMillis":203000}]});
@@ -928,6 +943,20 @@ mod tests {
         assert!(palette(&invalid).is_err());
     }
     #[test]
+    fn large_original_artwork_uses_bounded_cached_color_sampling() {
+        use std::io::Write;
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().join("large-original.png");
+        image::RgbImage::from_pixel(512,512,image::Rgb([180,35,45])).save(&path).unwrap();
+        // Valid PNG with trailing bytes reproduces the old encoded-size gate
+        // without a large decoded allocation in this regression fixture.
+        let mut file=std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let padding=[0u8;1024*1024];for _ in 0..21 {file.write_all(&padding).unwrap();}drop(file);
+        let first=palette(&path).unwrap();let second=palette(&path).unwrap();
+        assert_eq!(first.background,second.background);assert_eq!(first.accent,second.accent);
+        let red=u8::from_str_radix(&first.accent[1..3],16).unwrap();let blue=u8::from_str_radix(&first.accent[5..7],16).unwrap();assert!(red>blue*2);
+        let sample=crate::artwork_renditions::rendition(&path,128).unwrap();assert_ne!(sample,path);assert_eq!(image::image_dimensions(&sample).unwrap(),(128,128));
+    }
+    #[test]
     fn palette_prefers_color_area_over_one_bright_pixel() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("dominant.png");
@@ -947,14 +976,29 @@ mod tests {
             .save(&path)
             .unwrap();
         let p = palette(&path).unwrap();
-        assert_eq!(p.background, "#c6c6c6");
+        assert_eq!(p.background, "#bfbfbf");
         assert_eq!(p.text, "#12202a");
+    }
+    #[test]
+    fn richer_artwork_colors_keep_text_readable() {
+        let temp=tempfile::tempdir().unwrap();
+        let parse=|hex:&str|[1,3,5].map(|i|u8::from_str_radix(&hex[i..i+2],16).unwrap());
+        let luminance=|rgb:[u8;3]|{let c=rgb.map(|v|{let x=f64::from(v)/255.;if x<=0.04045{x/12.92}else{((x+0.055)/1.055).powf(2.4)}});c[0]*0.2126+c[1]*0.7152+c[2]*0.0722};
+        for (index,color) in [[40,160,80],[0,0,255],[255,0,0],[255,210,0],[120,20,180],[20,20,20],[240,240,240]].into_iter().enumerate(){
+            let path=temp.path().join(format!("{index}.png"));image::RgbImage::from_pixel(8,8,image::Rgb(color)).save(&path).unwrap();
+            let result=palette(&path).unwrap();let text=luminance(parse(&result.text));
+            for surface in [&result.background,&result.blob]{assert!((luminance(parse(surface))+0.05)/(text+0.05)>=4.5,"{color:?}: {surface}");}
+            if index==0 {let rgb=parse(&result.blob);assert!(rgb[1]-rgb[0]>70);let rgb=parse(&result.background);assert!(rgb[1]-rgb[0]>40);}
+            assert_eq!(serde_json::to_value(&result).unwrap(),serde_json::to_value(palette(&path).unwrap()).unwrap());
+        }
     }
 }
 
 /// Only catalog artwork hosts are accepted; never fetch arbitrary URLs from the webview.
 pub fn cache_artwork(url: &str) -> Result<PathBuf> {
-    cache_image(url, false)
+    // A size variant keeps the exact catalog asset path; never search for alternate art.
+    let mut rendition=url::Url::parse(url)?;let path=rendition.path().to_owned();if let Some((prefix,last))=path.rsplit_once('/') {if let Some((size,suffix))=last.split_once("bb."){if size.split_once('x').is_some_and(|(w,h)|w.parse::<u32>().is_ok()&&h.parse::<u32>().is_ok()){rendition.set_path(&format!("{prefix}/3000x3000bb.{suffix}"));}}}
+    cache_image(rendition.as_str(),false).or_else(|_|cache_image(url,false))
 }
 fn cache_image(url: &str, wikimedia: bool) -> Result<PathBuf> {
     use std::io::Read;
@@ -1012,7 +1056,7 @@ mod album_description_tests {
     fn descriptions_require_one_applied_release_identity() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("library.db");
-        let c = rusqlite::Connection::open(&path).unwrap();
+        let c = musicos_init::database::Connection::open(&path).unwrap();
         c.execute_batch("CREATE TABLE metadata_enrichment_status(track_id INTEGER,state TEXT,release_group_mbid TEXT); INSERT INTO metadata_enrichment_status VALUES(1,'review','aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa')").unwrap();
         let album = crate::library::group(musicos_desktop::models::LibrarySnapshot {
             tracks: vec![

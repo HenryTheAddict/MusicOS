@@ -8,6 +8,7 @@ MusicOS plays and organizes local music. This guide describes the desktop beta; 
 - [Audio, quality, and DJmode](audio.md)
 - [Audio Sparklist beta](sparklists.md)
 - [Artwork, portraits, and depth](artwork.md)
+- [Optional integrations](integrations.md)
 - [Troubleshooting](troubleshooting.md)
 - [Architecture and verification](../desktop-architecture.md)
 

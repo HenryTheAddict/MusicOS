@@ -24,6 +24,7 @@ pub enum Tail {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Schedule {
+    pub cancel_revision:u64,
     pub id:u64,
     pub cue: f64,
     pub frames: u64,
@@ -47,6 +48,11 @@ pub enum Command {
 #[derive(Default)]
 pub struct Clock {
     pub listening_revision: AtomicU64,
+    pub applied_reverb:AtomicU32,
+    pub applied_reverb_depth:AtomicU32,
+    pub room_active:AtomicBool,
+    pub reverb_processed_frames:AtomicU64,
+    pub failed:[AtomicU64;2],
     pub parameter_revision:[AtomicU64;2],
     pub levels: [AtomicU32; 3],
     pub audible_frames: [AtomicU64; 2],
@@ -54,6 +60,7 @@ pub struct Clock {
     pub drained: [AtomicBool; 2],
     pub plan_failed: AtomicBool,
     pub schedule_id:AtomicU64,
+    pub cancel_revision:AtomicU64,
     pub source_frames: [AtomicU64; 2],
     pub rendered_frames: AtomicU64,
     pub active: AtomicU64,
@@ -246,7 +253,7 @@ impl Mixer {
                 }
                 Command::Cancel => self.cancel(),
                 Command::Pause(paused) => self.paused = paused,
-                Command::Equalizer(coeff,revision)=>{self.eq.set(coeff);self.room.set(coeff.reverb);self.clock.listening_revision.store(revision,Ordering::Release);}
+                Command::Equalizer(coeff,revision)=>{self.eq.set(coeff);self.room.set(coeff.reverb);self.room.set_depth(coeff.reverb_depth);self.clock.applied_reverb_depth.store(coeff.reverb_depth.to_bits(),Ordering::Release);self.clock.applied_reverb.store(coeff.reverb.to_bits(),Ordering::Release);self.clock.listening_revision.store(revision,Ordering::Release);}
                 Command::Volume(volume) => {
                     if volume.is_finite() {
                         self.volume = volume.clamp(0., 1.);
@@ -254,6 +261,9 @@ impl Mixer {
                 }
             }
         }
+        // Cancellation cannot be dropped by a saturated command ring. Old queued
+        // plans are invalidated too, while a new plan in the current epoch survives.
+        if self.plan.is_some_and(|p|p.cancel_revision!=self.clock.cancel_revision.load(Ordering::Acquire)){self.cancel();}
     }
     fn read(&mut self, deck: usize) -> Option<Frame> {
         if let Some(frame) = self.pending[deck].take() {
@@ -301,7 +311,7 @@ impl Mixer {
                     }
                 }
                 self.clock.underruns.fetch_add(1, Ordering::Relaxed);
-                return [0.; 2];
+                return self.process_output([0.;2]);
             }
         };
         self.clock.parameter_revision[self.active].store(outgoing.listening_revision,Ordering::Release);
@@ -361,8 +371,14 @@ impl Mixer {
             }
         }
         self.clock.rendered_frames.fetch_add(1, Ordering::Relaxed);
+        self.process_output(output)
+    }
+    fn process_output(&mut self,output:[f32;2])->[f32;2]{
         let equalized=self.eq.process(output);
-        let output = self.room.process(equalized).map(|v| limit(v * self.volume));
+        let processed=self.room.process(equalized);
+        if processed.iter().zip(equalized).any(|(a,b)|(a-b).abs()>0.000001){self.clock.reverb_processed_frames.fetch_add(1,Ordering::Relaxed);}
+        let output = processed.map(|v| limit(v * self.volume));
+        self.clock.room_active.store(self.room.active(),Ordering::Relaxed);
         output
     }
 }
@@ -468,6 +484,7 @@ mod tests {
         push(&mut c, 1, 100, 1000, 0.9);
         c.commands
             .push(Command::Plan(Schedule {
+                cancel_revision:0,
                 id:1,
                 cue: 10.,
                 frames: 20,
@@ -488,6 +505,7 @@ mod tests {
         push(&mut c, 1, 100, 0, 0.4);
         c.commands
             .push(Command::Plan(Schedule {
+                cancel_revision:0,
                 id:1,
                 cue: 0.,
                 frames: 80,
@@ -528,4 +546,40 @@ mod tests {
         }
         assert!(stretch_stereo(&input, 1.07).is_err());
     }
+}
+
+/// Deterministic capture of the production mixer, for output-level regression QA.
+/// Feed source frames off-thread; this uses the same processing as the device sink.
+pub fn capture(input:&[[f32;2]],listening:super::listening::Listening,tail_frames:usize)->Vec<[f32;2]>{
+ let(mut control,mut mixer)=create(4096);
+ control.commands.push(Command::Equalizer(listening.normalize().coefficients(),1)).unwrap();
+ control.commands.push(Command::Pause(false)).unwrap();
+ let mut output=Vec::with_capacity(input.len()+tail_frames);
+ for (i,samples) in input.iter().enumerate(){control.decks[0].push(Frame{samples:*samples,source_frame:i as f64,generation:0,listening_revision:0}).unwrap();output.push([mixer.next().unwrap(),mixer.next().unwrap()]);}
+ // No invented decoder frames: this also verifies that EOF renders room tails.
+ for _ in 0..tail_frames {output.push([mixer.next().unwrap(),mixer.next().unwrap()]);}
+ output
+}
+#[cfg(test)]mod output_tests {
+ use super::*;
+ #[test]fn actual_output_has_reverb_tail_and_dry_bypass(){
+  let mut input=vec![[0.;2];4800];input[2400]=[0.5,0.25];
+  let dry=capture(&input,Default::default(),48000);
+  assert_eq!(&dry[..input.len()],input.as_slice());assert!(dry[input.len()..].iter().all(|x|*x==[0.;2]));
+  let wet=capture(&input,super::super::listening::Listening{reverb:0.45,..Default::default()},48000);
+  let energy: f32=wet[input.len()..].iter().flatten().map(|v|v*v).sum();assert!(energy>0.00001,"No wet tail in actual output: {energy}");assert_ne!(dry,wet);assert!(wet.iter().flatten().all(|v|v.is_finite()&&v.abs()<=1.));
+ }
+ #[test]fn pause_freezes_room_and_effect_changes_are_acknowledged(){
+  let(mut c,mut m)=create(4096);c.commands.push(Command::Pause(false)).unwrap();c.commands.push(Command::Equalizer(super::super::listening::Listening{reverb:0.8,..Default::default()}.coefficients(),7)).unwrap();
+  for i in 0..3000 {c.decks[0].push(Frame{samples:if i==2000{[0.5;2]}else{[0.;2]},..Default::default()}).unwrap();m.next();m.next();}
+  assert_eq!(c.clock.listening_revision.load(Ordering::Acquire),7);assert_eq!(f32::from_bits(c.clock.applied_reverb.load(Ordering::Acquire)),0.8);
+  c.commands.push(Command::Pause(true)).unwrap();for _ in 0..10000{assert_eq!(m.next(),Some(0.));}
+  c.commands.push(Command::Pause(false)).unwrap();let energy:f32=(0..10000).map(|_|m.next().unwrap().powi(2)).sum();assert!(energy>0.00001);
+  c.commands.push(Command::Equalizer(Default::default(),8)).unwrap();m.next();m.next();assert_eq!(c.clock.listening_revision.load(Ordering::Acquire),8);
+ }
+}
+#[cfg(test)]mod cancellation_tests {
+ use super::*;
+ #[test]fn cancellation_epoch_invalidates_a_queued_plan_without_a_command_slot(){let(mut c,mut m)=create(4);c.commands.push(Command::Plan(Schedule{cancel_revision:0,id:9,cue:100.,frames:96000,incoming:1,tail:Tail::Clean})).unwrap();while c.commands.slots()>0 {c.commands.push(Command::Volume(1.)).unwrap();}c.clock.cancel_revision.fetch_add(1,Ordering::AcqRel);m.next();assert_eq!(c.clock.schedule_id.load(Ordering::Acquire),0);assert!(!c.clock.mixing.load(Ordering::Relaxed));}
+ #[test]fn new_plan_in_current_epoch_survives_cancellation_of_old_work(){let(mut c,mut m)=create(4);c.clock.cancel_revision.store(2,Ordering::Release);c.commands.push(Command::Plan(Schedule{cancel_revision:2,id:10,cue:100.,frames:96000,incoming:1,tail:Tail::Clean})).unwrap();m.next();assert_eq!(c.clock.schedule_id.load(Ordering::Acquire),10);}
 }

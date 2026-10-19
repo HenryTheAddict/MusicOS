@@ -1,3 +1,4 @@
+import {useViewActive} from './ViewScope';
 import ThemedSwitch from './ThemedSwitch';
 import {Icon} from './components';
 import {useEffect,useState} from 'react';
@@ -6,8 +7,9 @@ import {call,errorText,native} from './bridge';
 import type {SparkRequest,SparkState} from './types';
 export function sparkSetupStatus(enabled:boolean,state:SparkState|null,error:string){return !enabled?'Beta off':error||state?.installation?.error?'Needs attention':state?.installation?.running?'Installing':!state?'Checking setup':!state.ready?'Setup needed':state.analyzed<2||state.analysis?.running?'Preparing songs':'Ready';}
 export default function SparkSetup({enabled,onChange}:{enabled:boolean;onChange:(enabled:boolean)=>void}){
+ const active=useViewActive();
  const [state,setState]=useState<SparkState|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- useEffect(()=>{let alive=true,pending=false;async function refresh(){if(pending)return;pending=true;try{const next=await call('sparklist',{request:{action:'status'}});if(alive)setState(next);}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>{alive=false;clearInterval(timer);};},[enabled]);
+ useEffect(()=>{if(!active)return;let alive=true,pending=false;async function refresh(){if(pending)return;pending=true;try{const next=await call('sparklist',{request:{action:'status'}});if(alive)setState(next);}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>{alive=false;clearInterval(timer);};},[enabled,active]);
  async function run(request:SparkRequest){setBusy(true);setError('');try{setState(await call('sparklist',{request}));}catch(e){setError(errorText(e));}finally{setBusy(false);}}
  async function install(){if(state?.staged_available){await run({action:'install_staged'});return;}try{const directory=await open({directory:true,multiple:false,title:'Choose the verified Sparklist model folder'});if(typeof directory==='string')await run({action:'install',directory});}catch(e){setError(errorText(e));}}
  const installing=!!state?.installation?.running,status=sparkSetupStatus(enabled,state,error);

@@ -71,3 +71,6 @@ device-audio = ["dep:rodio", "dep:alsa"]
 desktop-app = ["dep:minifb"]
 mac-app = ["desktop-app"]
 pid1 = []
+
+[dev-dependencies]
+tempfile = "3"

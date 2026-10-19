@@ -80,93 +80,100 @@ impl AssetSource for DesktopAssets {
             }
 
             // Sketch design icons
-            "icons/sketch/3dots(incircle).svg" => {
-                include_bytes!("../../../assets/icons/sketch/3dots(incircle).svg")
+            "icons/ui/3dots(incircle).svg" => {
+                include_bytes!("../../../assets/icons/ui/3dots(incircle).svg")
             }
-            "icons/sketch/3dots_(nocircle).svg" => {
-                include_bytes!("../../../assets/icons/sketch/3dots_(nocircle).svg")
+            "icons/ui/3dots_(nocircle).svg" => {
+                include_bytes!("../../../assets/icons/ui/3dots_(nocircle).svg")
             }
-            "icons/sketch/Album.svg" => include_bytes!("../../../assets/icons/sketch/Album.svg"),
-            "icons/sketch/Artist.svg" => include_bytes!("../../../assets/icons/sketch/Artist.svg"),
-            "icons/sketch/Delete.svg" => include_bytes!("../../../assets/icons/sketch/Delete.svg"),
-            "icons/sketch/File.svg" => include_bytes!("../../../assets/icons/sketch/File.svg"),
-            "icons/sketch/Genre.svg" => include_bytes!("../../../assets/icons/sketch/Genre.svg"),
-            "icons/sketch/Lossless.svg" => {
-                include_bytes!("../../../assets/icons/sketch/Lossless.svg")
+            "icons/ui/Album.svg" => include_bytes!("../../../assets/icons/ui/Album.svg"),
+            "icons/ui/Artist.svg" => include_bytes!("../../../assets/icons/ui/Artist.svg"),
+            "icons/ui/Delete.svg" => include_bytes!("../../../assets/icons/ui/Delete.svg"),
+            "icons/ui/File.svg" => include_bytes!("../../../assets/icons/ui/File.svg"),
+            "icons/ui/Genre.svg" => include_bytes!("../../../assets/icons/ui/Genre.svg"),
+            "icons/ui/Lossless.svg" => {
+                include_bytes!("../../../assets/icons/ui/Lossless.svg")
             }
-            "icons/sketch/Lossy.svg" => include_bytes!("../../../assets/icons/sketch/Lossy.svg"),
-            "icons/sketch/NetSearch.svg" => {
-                include_bytes!("../../../assets/icons/sketch/NetSearch.svg")
+            "icons/ui/Lossy.svg" => include_bytes!("../../../assets/icons/ui/Lossy.svg"),
+            "icons/ui/NetSearch.svg" => {
+                include_bytes!("../../../assets/icons/ui/NetSearch.svg")
             }
-            "icons/sketch/Playlist.svg" => {
-                include_bytes!("../../../assets/icons/sketch/Playlist.svg")
+            "icons/ui/Playlist.svg" => {
+                include_bytes!("../../../assets/icons/ui/Playlist.svg")
             }
-            "icons/sketch/RepeatOFF.svg" => {
-                include_bytes!("../../../assets/icons/sketch/RepeatOFF.svg")
+            "icons/ui/RepeatOFF.svg" => {
+                include_bytes!("../../../assets/icons/ui/RepeatOFF.svg")
             }
-            "icons/sketch/RepeatON.svg" => {
-                include_bytes!("../../../assets/icons/sketch/RepeatON.svg")
+            "icons/ui/RepeatON.svg" => {
+                include_bytes!("../../../assets/icons/ui/RepeatON.svg")
             }
-            "icons/sketch/RepeatONE.svg" => {
-                include_bytes!("../../../assets/icons/sketch/RepeatONE.svg")
+            "icons/ui/RepeatONE.svg" => {
+                include_bytes!("../../../assets/icons/ui/RepeatONE.svg")
             }
-            "icons/sketch/ShuffleOFF.svg" => {
-                include_bytes!("../../../assets/icons/sketch/ShuffleOFF.svg")
+            "icons/ui/ShuffleOFF.svg" => {
+                include_bytes!("../../../assets/icons/ui/ShuffleOFF.svg")
             }
-            "icons/sketch/ShuffleON.svg" => {
-                include_bytes!("../../../assets/icons/sketch/ShuffleON.svg")
+            "icons/ui/ShuffleON.svg" => {
+                include_bytes!("../../../assets/icons/ui/ShuffleON.svg")
             }
-            "icons/sketch/ShufflePlay.svg" => {
-                include_bytes!("../../../assets/icons/sketch/ShufflePlay.svg")
+            "icons/ui/ShufflePlay.svg" => {
+                include_bytes!("../../../assets/icons/ui/ShufflePlay.svg")
             }
-            "icons/sketch/Song.svg" => include_bytes!("../../../assets/icons/sketch/Song.svg"),
-            "icons/sketch/Sparklist.svg" => {
-                include_bytes!("../../../assets/icons/sketch/Sparklist.svg")
+            "icons/ui/Song.svg" => include_bytes!("../../../assets/icons/ui/Song.svg"),
+            "icons/ui/Sparklist.svg" => {
+                include_bytes!("../../../assets/icons/ui/Sparklist.svg")
             }
-            "icons/sketch/autostart.svg" => {
-                include_bytes!("../../../assets/icons/sketch/autostart.svg")
+            "icons/ui/autostart.svg" => {
+                include_bytes!("../../../assets/icons/ui/autostart.svg")
             }
-            "icons/sketch/device.svg" => include_bytes!("../../../assets/icons/sketch/device.svg"),
-            "icons/sketch/hearted.svg" => include_bytes!("../../../assets/icons/sketch/hearted.svg"),
-            "icons/sketch/next.svg" => include_bytes!("../../../assets/icons/sketch/next.svg"),
-            "icons/sketch/noARTIST.svg" => {
-                include_bytes!("../../../assets/icons/sketch/noARTIST.svg")
+            "icons/ui/device.svg" => include_bytes!("../../../assets/icons/ui/device.svg"),
+            "icons/ui/hearted.svg" => include_bytes!("../../../assets/icons/ui/hearted.svg"),
+            "icons/ui/next.svg" => include_bytes!("../../../assets/icons/ui/next.svg"),
+            "icons/ui/noARTIST.svg" => {
+                include_bytes!("../../../assets/icons/ui/noARTIST.svg")
             }
-            "icons/sketch/noCOVER.svg" => include_bytes!("../../../assets/icons/sketch/noCOVER.svg"),
-            "icons/sketch/noheart.svg" => include_bytes!("../../../assets/icons/sketch/noheart.svg"),
-            "icons/sketch/notFOUND.svg" => {
-                include_bytes!("../../../assets/icons/sketch/notFOUND.svg")
+            "icons/ui/noCOVER.svg" => include_bytes!("../../../assets/icons/ui/noCOVER.svg"),
+            "icons/ui/noheart.svg" => include_bytes!("../../../assets/icons/ui/noheart.svg"),
+            "icons/ui/notFOUND.svg" => {
+                include_bytes!("../../../assets/icons/ui/notFOUND.svg")
             }
-            "icons/sketch/pause.svg" => include_bytes!("../../../assets/icons/sketch/pause.svg"),
-            "icons/sketch/play.svg" => include_bytes!("../../../assets/icons/sketch/play.svg"),
-            "icons/sketch/prev.svg" => include_bytes!("../../../assets/icons/sketch/prev.svg"),
-            "icons/sketch/queue.svg" => include_bytes!("../../../assets/icons/sketch/queue.svg"),
-            "icons/sketch/sync.svg" => include_bytes!("../../../assets/icons/sketch/sync.svg"),
-            "icons/sketch/that_one_i_in_a_circle_icon.svg" => {
-                include_bytes!("../../../assets/icons/sketch/that_one_i_in_a_circle_icon.svg")
+            "icons/ui/pause.svg" => include_bytes!("../../../assets/icons/ui/pause.svg"),
+            "icons/ui/play.svg" => include_bytes!("../../../assets/icons/ui/play.svg"),
+            "icons/ui/prev.svg" => include_bytes!("../../../assets/icons/ui/prev.svg"),
+            "icons/ui/openMiniplayer.svg" => include_bytes!("../../../assets/icons/ui/openMiniplayer.svg"),
+            "icons/ui/CloseMiniplayer.svg" => include_bytes!("../../../assets/icons/ui/CloseMiniplayer.svg"),
+            "icons/ui/Light mode.svg" => include_bytes!("../../../assets/icons/ui/Light mode.svg"),
+            "icons/ui/Dark Mode.svg" => include_bytes!("../../../assets/icons/ui/Dark Mode.svg"),
+            "icons/ui/System.svg" => include_bytes!("../../../assets/icons/ui/System.svg"),
+            "icons/ui/Pin.svg" => include_bytes!("../../../assets/icons/ui/Pin.svg"),
+            "icons/ui/unPin.svg" => include_bytes!("../../../assets/icons/ui/unPin.svg"),
+            "icons/ui/queue.svg" => include_bytes!("../../../assets/icons/ui/queue.svg"),
+            "icons/ui/sync.svg" => include_bytes!("../../../assets/icons/ui/sync.svg"),
+            "icons/ui/that_one_i_in_a_circle_icon.svg" => {
+                include_bytes!("../../../assets/icons/ui/that_one_i_in_a_circle_icon.svg")
             }
-            "icons/sketch/tinyMaximize.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyMaximize.svg")
+            "icons/ui/tinyMaximize.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyMaximize.svg")
             }
-            "icons/sketch/tinyMinimize.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyMinimize.svg")
+            "icons/ui/tinyMinimize.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyMinimize.svg")
             }
-            "icons/sketch/tinyNext.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyNext.svg")
+            "icons/ui/tinyNext.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyNext.svg")
             }
-            "icons/sketch/tinyPause.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyPause.svg")
+            "icons/ui/tinyPause.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyPause.svg")
             }
-            "icons/sketch/tinyPlay.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyPlay.svg")
+            "icons/ui/tinyPlay.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyPlay.svg")
             }
-            "icons/sketch/tinyPrev.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinyPrev.svg")
+            "icons/ui/tinyPrev.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinyPrev.svg")
             }
-            "icons/sketch/tinySync.svg" => {
-                include_bytes!("../../../assets/icons/sketch/tinySync.svg")
+            "icons/ui/tinySync.svg" => {
+                include_bytes!("../../../assets/icons/ui/tinySync.svg")
             }
-            "icons/sketch/tinyX.svg" => include_bytes!("../../../assets/icons/sketch/tinyX.svg"),
+            "icons/ui/tinyX.svg" => include_bytes!("../../../assets/icons/ui/tinyX.svg"),
 
             // Mockup covers
             "covers/sky.png" => include_bytes!("../../../assets/covers/sky.png"),
@@ -213,7 +220,7 @@ impl AssetSource for DesktopAssets {
             .into_iter()
             .map(SharedString::from)
             .collect())
-        } else if path == "icons/sketch" {
+        } else if path == "icons/ui" {
             Ok([
                 "3dots(incircle).svg",
                 "3dots_(nocircle).svg",

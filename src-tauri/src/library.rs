@@ -29,6 +29,7 @@ pub struct Album {
     pub release_type: Option<String>,
     #[serde(default)]
     pub release_type_source: Option<String>,
+    #[serde(default)]pub release_track_total:Option<usize>,
     pub title: String,
     pub artist: String,
     pub genre: String,
@@ -63,6 +64,7 @@ pub struct Library {
     pub artists: Vec<Artist>,
     pub genres: Vec<Genre>,
     pub sources: Vec<musicos_desktop::models::LibrarySource>,
+    pub protected_source_ids: Vec<i64>,
 }
 pub fn stable_id(kind: &str, fields: &[&str]) -> String {
     let mut h = Sha256::new();
@@ -74,7 +76,7 @@ pub fn stable_id(kind: &str, fields: &[&str]) -> String {
 }
 pub fn split_artist_credits(value: &str) -> Vec<&str> {
     let mut names = Vec::new();
-    for credit in value.split([';', '&']) {
+    for credit in value.split([';', '&']).flat_map(|value|value.split(" + ")) {
         let mut rest = credit;
         loop {
             let lower = rest.to_ascii_lowercase();
@@ -101,7 +103,8 @@ pub fn split_artist_credits(value: &str) -> Vec<&str> {
     }
     names
 }
-pub fn group(snapshot: LibrarySnapshot) -> Library {
+pub fn group(mut snapshot: LibrarySnapshot) -> Library {
+    for track in &mut snapshot.tracks{if track.album.trim().is_empty()||track.album.eq_ignore_ascii_case("unknown album"){track.album=track.title.clone();if track.release_id.is_none(){track.release_id=Some(format!("loose/{}",track.id));}}}
     let mut albums = BTreeMap::<String, Album>::new();
     let mut artists = BTreeMap::<String, Artist>::new();
     let mut genres = BTreeMap::<String, Genre>::new();
@@ -135,10 +138,8 @@ pub fn group(snapshot: LibrarySnapshot) -> Library {
             .filter(|s| !s.trim().is_empty())
             .map(str::trim)
             .unwrap_or(credits[0]);
-        if !credits.contains(&primary) {
-            credits.insert(0, primary);
-        }
-        let artist_id = stable_id("artist", &[primary]);
+        for name in split_artist_credits(primary).into_iter().rev(){if !credits.contains(&name){credits.insert(0,name);}}
+        let artist_id = stable_id("artist", &[split_artist_credits(primary)[0]]);
         let album_key = album_canonical(album_title);
         let primary_key = canonical(primary);
         let editions = releases.get(&(primary_key.clone(), album_key.clone()));
@@ -158,7 +159,7 @@ pub fn group(snapshot: LibrarySnapshot) -> Library {
             artist_id: artist_id.clone(),
             legacy_ids: vec![],
             release_type: None,
-            release_type_source: None,
+            release_type_source: None,release_track_total:None,
             title: album_title.into(),
             artist: primary.into(),
             genre: t.genre.clone(),
@@ -260,11 +261,13 @@ pub fn group(snapshot: LibrarySnapshot) -> Library {
         artists,
         genres,
         sources: snapshot.sources,
+        protected_source_ids: Vec::new(),
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]fn plus_credits_are_separate_artists_without_splitting_literal_plus_names(){assert_eq!(split_artist_credits("PinkPantheress + Anitta"),vec!["PinkPantheress","Anitta"]);assert_eq!(split_artist_credits("C++"),vec!["C++"]);let library=group(LibrarySnapshot{tracks:vec![Track{id:1,artist:"PinkPantheress + Anitta".into(),album_artist:Some("PinkPantheress".into()),album:"Remixes".into(),..Default::default()}],..Default::default()});assert_eq!(library.artists.len(),2);assert!(library.artists.iter().all(|a|!a.name.contains(" + ")));assert_eq!(library.albums.len(),1);}
     #[test]fn equivalent_artist_spellings_preserve_tracks_and_routes(){
         let library=group(LibrarySnapshot{tracks:vec![Track{id:1,artist:"Eazy-E".into(),album:"Album".into(),..Default::default()},Track{id:2,artist:" eazy‐e ".into(),album:"Album".into(),..Default::default()}],..Default::default()});
         assert_eq!(library.artists.len(),1);let artist=&library.artists[0];assert_eq!(artist.track_ids.len(),2);assert_eq!(library.tracks.len(),2);assert!(artist.legacy_ids.contains(&stable_id("artist",&["eazy‐e"])));assert!(library.albums.iter().all(|a|a.artist_id==artist.id));
@@ -491,7 +494,7 @@ mod tests {
 
 // Decode only when file identity changes. Repeated library refreshes must not
 // re-decode every cover; the bounded cache never changes a user's source images.
-fn valid_cover(path: &std::path::Path) -> bool {
+fn valid_cover(db:&musicos_init::database::Connection,path: &std::path::Path) -> bool {
     use std::sync::{Mutex, OnceLock};
     type Identity = (u64, Option<std::time::SystemTime>);
     static CACHE: OnceLock<Mutex<BTreeMap<std::path::PathBuf, (Identity, bool)>>> = OnceLock::new();
@@ -502,6 +505,18 @@ fn valid_cover(path: &std::path::Path) -> bool {
     if let Some((previous, valid)) = cache.lock().unwrap().get(path) {
         if *previous == identity { return *valid; }
     }
+    let valid = validated_cover(db, path, identity);
+    let mut cache = cache.lock().unwrap();
+    if cache.len() >= 4096 { cache.clear(); }
+    cache.insert(path.to_owned(), (identity, valid));
+    valid
+}
+
+// The durable cache contains validation results only, never source image bytes.
+// Nanosecond mtime, size, and decoder version invalidate changed artwork.
+fn validated_cover(db: &musicos_init::database::Connection, path: &std::path::Path, identity: (u64, Option<std::time::SystemTime>)) -> bool {
+    let signature=identity.1.and_then(|time|time.duration_since(std::time::UNIX_EPOCH).ok()).map(|time|time.as_nanos().to_string());
+    if let Some(signature)=&signature {if let Ok(valid)=db.query_row("SELECT valid FROM desktop_artwork_validation_v1 WHERE path=? AND bytes=? AND modified=? AND version=1",rusqlite::params![path.to_string_lossy(),identity.0,signature],|row|row.get::<_,bool>(0)){return valid;}}
     let valid = (|| {
         let mut reader = image::io::Reader::open(path)?.with_guessed_format()?;
         let mut limits = image::io::Limits::default();
@@ -511,38 +526,52 @@ fn valid_cover(path: &std::path::Path) -> bool {
         reader.limits(limits);
         Ok::<_, anyhow::Error>(reader.decode().is_ok())
     })().unwrap_or(false);
-    let mut cache = cache.lock().unwrap();
-    if cache.len() >= 4096 { cache.clear(); }
-    cache.insert(path.to_owned(), (identity, valid));
+    if let Some(signature)=signature {let _=db.execute("INSERT INTO desktop_artwork_validation_v1(path,bytes,modified,version,valid) VALUES(?,?,?,1,?) ON CONFLICT(path) DO UPDATE SET bytes=excluded.bytes,modified=excluded.modified,version=1,valid=excluded.valid",rusqlite::params![path.to_string_lossy(),identity.0,signature,valid]);}
     valid
 }
 
 pub fn canonical_artwork(database: &std::path::Path, library: &mut Library) -> anyhow::Result<()> {
-    let db = rusqlite::Connection::open(database)?;
+    let db = musicos_init::database::Connection::open(database)?;
     db.busy_timeout(std::time::Duration::from_secs(5))?;
-    db.execute_batch("CREATE TABLE IF NOT EXISTS desktop_album_artwork_v1(album_id TEXT PRIMARY KEY,path TEXT NOT NULL)")?;
+    musicos_init::database_access::initialize_schema(database,"canonical-artwork-v1",||{db.execute_batch("CREATE TABLE IF NOT EXISTS desktop_album_artwork_v1(album_id TEXT PRIMARY KEY,path TEXT NOT NULL); CREATE TABLE IF NOT EXISTS desktop_artwork_validation_v1(path TEXT PRIMARY KEY,bytes INTEGER NOT NULL,modified TEXT NOT NULL,version INTEGER NOT NULL,valid INTEGER NOT NULL)")?;Ok(())})?;
+    let mut artwork_updates=Vec::new();
+    let index:std::collections::HashMap<i64,usize>=library.tracks.iter().enumerate().map(|(i,t)|(t.id,i)).collect();
     for album in &mut library.albums {
         // Honor a valid explicit replacement first. A failed replacement retains
         // the saved image. Alias lookup preserves artwork across grouping fixes.
-        let custom: Option<String> = db.query_row("SELECT artwork_path FROM track_metadata_overrides WHERE origin='user' AND artwork_path IS NOT NULL AND track_id IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC LIMIT 1", [serde_json::to_string(&album.track_ids)?], |r| r.get(0)).ok().filter(|p: &String| valid_cover(p.as_ref()));
+        let custom: Option<String> = db.query_row("SELECT artwork_path FROM track_metadata_overrides WHERE origin='user' AND artwork_path IS NOT NULL AND track_id IN (SELECT value FROM json_each(?)) ORDER BY updated_at DESC LIMIT 1", [serde_json::to_string(&album.track_ids)?], |r| r.get(0)).ok().filter(|p: &String| valid_cover(&db,p.as_ref()));
         let saved = std::iter::once(&album.id).chain(album.legacy_ids.iter()).find_map(|id| {
-            db.query_row("SELECT path FROM desktop_album_artwork_v1 WHERE album_id=?", [id], |r| r.get::<_, String>(0)).ok().filter(|p| valid_cover(p.as_ref()))
+            db.query_row("SELECT path FROM desktop_album_artwork_v1 WHERE album_id=?", [id], |r| r.get::<_, String>(0)).ok().filter(|p| valid_cover(&db,p.as_ref()))
         });
         album.cover = custom.or(saved).or_else(|| album.track_ids.iter()
-            .filter_map(|id| library.tracks.iter().find(|t| t.id == *id)?.cover_art_path.as_ref())
-            .find(|p| valid_cover(p)).map(|p| p.to_string_lossy().into_owned()));
+            .filter_map(|id| library.tracks.get(*index.get(id)?)?.cover_art_path.as_ref())
+            .find(|p| valid_cover(&db,p)).map(|p| p.to_string_lossy().into_owned()));
         if let Some(path) = &album.cover {
-            db.execute("INSERT INTO desktop_album_artwork_v1(album_id,path) VALUES(?,?) ON CONFLICT(album_id) DO UPDATE SET path=excluded.path", rusqlite::params![album.id, path])?;
+            artwork_updates.push((album.id.clone(),path.clone()));
         }
-        for track in library.tracks.iter_mut().filter(|t| album.track_ids.contains(&t.id)) {
-            track.cover_art_path = album.cover.as_ref().map(std::path::PathBuf::from);
-        }
+        for id in &album.track_ids {if let Some(track)=index.get(id).and_then(|i|library.tracks.get_mut(*i)){track.cover_art_path = album.cover.as_ref().map(std::path::PathBuf::from);}}
     }
+    let transaction=db.unchecked_transaction()?;
+    for (id,path) in artwork_updates {transaction.execute("INSERT INTO desktop_album_artwork_v1(album_id,path) VALUES(?,?) ON CONFLICT(album_id) DO UPDATE SET path=excluded.path WHERE desktop_album_artwork_v1.path<>excluded.path",rusqlite::params![id,path])?;}
+    transaction.execute("DELETE FROM desktop_artwork_validation_v1 WHERE rowid IN (SELECT rowid FROM desktop_artwork_validation_v1 ORDER BY rowid DESC LIMIT -1 OFFSET 16384)", [])?;
+    transaction.commit()?;
     Ok(())
 }
 
 #[cfg(test)] mod artwork_consistency_tests {
  use super::*;
+ #[test] fn validation_survives_connection_restart_and_invalidates_replacements(){
+  let dir=tempfile::tempdir().unwrap();let path=dir.path().join("cover.png");let database=dir.path().join("validation.db");
+  image::RgbImage::new(2,2).save(&path).unwrap();
+  let db=musicos_init::database::Connection::open(&database).unwrap();db.execute_batch("CREATE TABLE desktop_artwork_validation_v1(path TEXT PRIMARY KEY,bytes INTEGER NOT NULL,modified TEXT NOT NULL,version INTEGER NOT NULL,valid INTEGER NOT NULL)").unwrap();
+  let identity=||{let metadata=path.metadata().unwrap();(metadata.len(),metadata.modified().ok())};
+  assert!(validated_cover(&db,&path,identity()));drop(db);
+  let db=musicos_init::database::Connection::open(&database).unwrap();assert!(validated_cover(&db,&path,identity()));
+  assert_eq!(db.query_row("SELECT count(*) FROM desktop_artwork_validation_v1",[],|row|row.get::<_,i64>(0)).unwrap(),1);
+  std::fs::write(&path,b"corrupt replacement").unwrap();assert!(!validated_cover(&db,&path,identity()));
+  image::RgbImage::new(3,3).save(&path).unwrap();assert!(validated_cover(&db,&path,identity()));
+  db.execute("UPDATE desktop_artwork_validation_v1 SET version=0,valid=0",[]).unwrap();assert!(validated_cover(&db,&path,identity()));
+ }
  #[test] fn canonical_artwork_survives_reordering_and_missing_song_images(){
   let dir=tempfile::tempdir().unwrap();let first=dir.path().join("first.png");let other=dir.path().join("other.png");image::RgbImage::new(2,2).save(&first).unwrap();image::RgbImage::new(3,3).save(&other).unwrap();
   let db=dir.path().join("library.sqlite");
@@ -566,9 +595,9 @@ pub fn canonical_artwork(database: &std::path::Path, library: &mut Library) -> a
  }
  #[test] fn corrupt_replacement_retains_saved_art_and_changed_files_are_revalidated() {
   let dir=tempfile::tempdir().unwrap();let good=dir.path().join("good.png");let bad=dir.path().join("bad.png");image::RgbImage::new(2,2).save(&good).unwrap();std::fs::write(&bad,b"broken").unwrap();
-  assert!(!valid_cover(&bad));image::RgbImage::new(3,3).save(&bad).unwrap();assert!(valid_cover(&bad));std::fs::write(&bad,b"broken again").unwrap();assert!(!valid_cover(&bad));
+  let validation=musicos_init::database::Connection::open_in_memory().unwrap();assert!(!valid_cover(&validation,&bad));image::RgbImage::new(3,3).save(&bad).unwrap();assert!(valid_cover(&validation,&bad));std::fs::write(&bad,b"broken again").unwrap();assert!(!valid_cover(&validation,&bad));
   let path=dir.path().join("db.sqlite");let mut library=group(LibrarySnapshot{tracks:vec![Track{id:1,artist:"Artist".into(),album:"Album".into(),cover_art_path:Some(good.clone()),..Default::default()}],..Default::default()});canonical_artwork(&path,&mut library).unwrap();
-  let db=rusqlite::Connection::open(&path).unwrap();db.execute_batch("CREATE TABLE track_metadata_overrides(track_id INTEGER, origin TEXT, artwork_path TEXT, updated_at INTEGER)").unwrap();db.execute("INSERT INTO track_metadata_overrides VALUES(1,'user',?,1)",[bad.to_string_lossy().as_ref()]).unwrap();canonical_artwork(&path,&mut library).unwrap();assert_eq!(library.albums[0].cover,Some(good.to_string_lossy().into_owned()));
+  let db=musicos_init::database::Connection::open(&path).unwrap();db.execute_batch("CREATE TABLE track_metadata_overrides(track_id INTEGER, origin TEXT, artwork_path TEXT, updated_at INTEGER)").unwrap();db.execute("INSERT INTO track_metadata_overrides VALUES(1,'user',?,1)",[bad.to_string_lossy().as_ref()]).unwrap();canonical_artwork(&path,&mut library).unwrap();assert_eq!(library.albums[0].cover,Some(good.to_string_lossy().into_owned()));
  }
 }
 
@@ -582,4 +611,14 @@ pub fn recover_filename_numbers(tracks:&mut [Track],protected:&std::collections:
   let library=group(LibrarySnapshot{tracks:tracks.clone(),..Default::default()});assert_eq!(library.albums[0].track_ids,vec![1,12,99]);assert_eq!(library.tracks.len(),3);
   tracks[1].track_number=0;recover_filename_numbers(&mut tracks,&[12].into_iter().collect());assert_eq!(tracks[1].track_number,0);
  }
+}
+
+/// Explicit or verified types win; tagged totals protect incomplete albums.
+pub fn infer_release_type(album:&mut Album,total:usize){
+ if album.release_type.is_some(){return;}
+ album.release_type=if (1..=3).contains(&total){Some("single".into())}else if (4..=6).contains(&total)&&album.duration<1800{Some("ep".into())}else{Some("album".into())};
+ album.release_type_source=Some("count_fallback".into());
+}
+#[cfg(test)]mod release_count_tests{use super::*;
+ #[test]fn totals_and_explicit_types_protect_incomplete_albums(){let mut album=group(LibrarySnapshot{tracks:vec![Track{id:1,artist:"A".into(),album:"B".into(),duration:180,..Default::default()}],..Default::default()}).albums.remove(0);infer_release_type(&mut album,12);assert_eq!(album.release_type.as_deref(),Some("album"));album.release_type=None;infer_release_type(&mut album,1);assert_eq!(album.release_type.as_deref(),Some("single"));album.release_type=None;infer_release_type(&mut album,5);assert_eq!(album.release_type.as_deref(),Some("ep"));album.release_type=Some("album".into());infer_release_type(&mut album,1);assert_eq!(album.release_type.as_deref(),Some("album"));}
 }

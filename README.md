@@ -93,7 +93,6 @@ npm run test:e2e
 Both previous implementations remain available explicitly:
 
 ```sh
-scripts/run-desktop-cpp.sh   # SDL/C++ Sketch implementation
 scripts/run-desktop-gpui.sh  # GPUI Control Center
 npm run desktop:legacy      # GPUI directly
 npm run package:legacy      # legacy cargo-packager workflow

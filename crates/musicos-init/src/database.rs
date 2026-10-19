@@ -1,5 +1,6 @@
+pub use crate::database_access::Connection;
 use anyhow::Result;
-use rusqlite::{params, params_from_iter, Connection, OptionalExtension, Row};
+use rusqlite::{params, params_from_iter, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -123,6 +124,7 @@ pub struct MetadataUpdate {
     pub genre: Option<String>,
     pub year: Option<i32>,
     pub artwork_path: Option<String>,
+    pub album_artist: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -183,19 +185,20 @@ pub struct Db {
 }
 
 impl Db {
-    pub fn open(path: &str) -> Result<Self> {
+    pub fn open(path:&str)->Result<Self>{Self::open_priority(path,false)}
+    pub fn open_background(path:&str)->Result<Self>{Self::open_priority(path,true)}
+    fn open_priority(path: &str,background:bool) -> Result<Self> {
         let path_buf = PathBuf::from(path);
         if let Some(parent) = path_buf.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&path_buf)?;
+        let conn = if background{Connection::open_background(&path_buf)?}else{Connection::open(&path_buf)?};
         Self::backup_before_v2_migration(&conn, &path_buf)?;
         let db = Self {
             conn,
             path: path_buf,
         };
-        db.apply_pragmas()?;
-        db.init_schema()?;
+        crate::database_access::initialize_schema(&db.path,"core-v3",||{db.apply_pragmas()?;db.init_schema()})?;
         Ok(db)
     }
 
@@ -232,7 +235,7 @@ impl Db {
     }
 
     fn apply_pragmas(&self) -> Result<()> {
-        self.conn.busy_timeout(Duration::from_secs(15))?;
+        self.conn.busy_timeout(Duration::from_secs(5))?;
         self.conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
@@ -325,6 +328,11 @@ impl Db {
                 source_modified_at INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (track_id) REFERENCES tracks (id) ON DELETE CASCADE
             );
+            CREATE TABLE IF NOT EXISTS metadata_ignored_candidates (
+                track_id INTEGER NOT NULL,fingerprint TEXT NOT NULL,candidate_json TEXT NOT NULL,
+                ignored_at INTEGER NOT NULL,PRIMARY KEY(track_id,fingerprint),
+                FOREIGN KEY(track_id) REFERENCES tracks(id) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS metadata_provider_cache (
                 cache_key TEXT PRIMARY KEY,
                 provider TEXT NOT NULL,
@@ -354,6 +362,7 @@ impl Db {
             "TEXT NOT NULL DEFAULT 'user'",
         )?;
         self.ensure_column("track_metadata_overrides", "provider", "TEXT")?;
+        self.ensure_column("track_metadata_overrides", "album_artist", "TEXT")?;
         self.ensure_column("track_metadata_overrides", "confidence", "REAL")?;
         self.ensure_column("playlists", "stable_id", "TEXT")?;
         self.ensure_column("playlists", "revision", "INTEGER NOT NULL DEFAULT 1")?;
@@ -630,6 +639,7 @@ impl Db {
         display_name: Option<&str>,
         enabled: Option<bool>,
     ) -> Result<Option<LibrarySource>> {
+        if enabled==Some(false){anyhow::ensure!(self.library_source(id)?.is_none_or(|s|s.kind!="managed"),"The managed MusicOS library cannot be disabled");}
         if let Some(name) = display_name
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -666,25 +676,34 @@ impl Db {
             source.kind != "managed",
             "the managed MusicOS library cannot be removed"
         );
-        self.begin_transaction()?;
-        let result = (|| {
-            self.conn
-                .execute("DELETE FROM tracks WHERE source_id = ?1", params![id])?;
-            Ok(self
-                .conn
-                .execute("DELETE FROM library_sources WHERE id = ?1", params![id])?
-                > 0)
-        })();
-        match result {
-            Ok(removed) => {
-                self.commit_transaction()?;
-                Ok(removed)
-            }
-            Err(err) => {
-                let _ = self.rollback_transaction();
-                Err(err)
-            }
+        self.update_library_source(id,None,Some(false))?;
+        Ok(true)
+    }
+
+    /// Relocation verifies bytes off the playback thread and preserves track identities.
+    pub fn library_source_track_count(&self,id:i64)->Result<usize>{Ok(self.conn.query_row("SELECT count(*) FROM tracks WHERE source_id=? AND deleted_at IS NULL",[id],|r|r.get::<_,i64>(0))? as usize)}
+    pub fn relocate_library_source(&self,id:i64,target:&Path)->Result<(usize,usize)>{
+        use std::io::Read;
+        let source=self.library_source(id)?.ok_or_else(||anyhow::anyhow!("Folder no longer exists"))?;
+        anyhow::ensure!(source.kind!="managed","The managed MusicOS library cannot be relocated");
+        let root=std::fs::canonicalize(target)?;anyhow::ensure!(root.is_dir(),"Choose a music folder");
+        let hash=|path:&Path|->Result<String>{let mut file=std::fs::File::open(path)?;let mut digest=Sha256::new();let mut buffer=[0_u8;65536];loop{let n=file.read(&mut buffer)?;if n==0{break;}digest.update(&buffer[..n]);}Ok(format!("{:x}",digest.finalize()))};
+        let mut q=self.conn.prepare("SELECT id,path,content_hash,file_size FROM tracks WHERE source_id=?")?;
+        let records=q.query_map([id],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,i64>(3)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;drop(q);
+        let mut matches=Vec::new();for (track,old,stored,size) in &records{
+            let Ok(relative)=Path::new(old).strip_prefix(&source.path) else {continue};let path=root.join(relative);
+            if relative.components().any(|part|matches!(part,std::path::Component::ParentDir)) {continue;}
+            let Ok(path)=std::fs::canonicalize(path)else{continue};if !path.starts_with(&root){continue;}
+            let Ok(meta)=std::fs::metadata(&path)else{continue};if !meta.is_file()||meta.len()as i64!=*size {continue;}
+            let Some(expected)=stored.clone().or_else(||hash(Path::new(old)).ok())else{continue};
+            if hash(&path)?!=expected {continue;}
+            let collision:bool=self.conn.query_row("SELECT EXISTS(SELECT 1 FROM tracks WHERE path=? AND id!=?)",params![path.to_string_lossy(),track],|r|r.get(0))?;if collision{continue;}
+            matches.push((*track,path.to_string_lossy().into_owned(),meta.modified()?.duration_since(UNIX_EPOCH)?.as_secs()as i64));
         }
+        anyhow::ensure!(records.is_empty()||!matches.is_empty(),"No matching files were verified. Your folder and songs are unchanged.");
+        let tx=self.conn.unchecked_transaction()?;for (track,path,modified) in &matches{tx.execute("UPDATE tracks SET path=?,modified_at=?,revision=revision+1 WHERE id=?",params![path,modified,track])?;}
+        tx.execute("UPDATE library_sources SET path=?,available=1,last_error=NULL WHERE id=?",params![root.to_string_lossy(),id])?;tx.commit()?;
+        Ok((matches.len(),records.len()-matches.len()))
     }
 
     pub fn assign_track_source(&self, track_id: i64, source_id: i64) -> Result<()> {
@@ -814,25 +833,35 @@ impl Db {
         self.update_metadata_recorded(&[id], update, Some((revision,candidate)))
     }
 
-    fn update_metadata_recorded(&self, ids:&[i64], update:&MetadataUpdate, review:Option<(i64,&str)>) -> Result<usize> {
-        anyhow::ensure!(!ids.is_empty(), "at least one track is required");
+    fn update_metadata_recorded(&self,ids:&[i64],update:&MetadataUpdate,review:Option<(i64,&str)>)->Result<usize>{
+        let changes=ids.iter().map(|id|(*id,update.clone())).collect::<Vec<_>>();let reviews=review.map(|(revision,candidate)|vec![(ids[0],revision,candidate.to_owned())]).unwrap_or_default();
+        self.update_metadata_batch(&changes,&reviews).map(|(count,_)|count)
+    }
+    pub fn reserve_writer(&self)->rusqlite::Result<crate::database_access::Permit>{self.conn.reserve_writer()}
+    pub fn update_metadata_batch(&self,changes:&[(i64,MetadataUpdate)],reviews:&[(i64,i64,String)])->Result<(usize,i64)>{
+        self.update_metadata_batch_with_file_job(changes,reviews,None)
+    }
+    pub fn update_metadata_batch_with_file_job(&self,changes:&[(i64,MetadataUpdate)],reviews:&[(i64,i64,String)],file_job:Option<&str>)->Result<(usize,i64)>{
+        anyhow::ensure!(!changes.is_empty(), "at least one track is required");
         let now = unix_seconds_i64();
+        self.ensure_metadata_history()?;
         self.begin_transaction()?;
         let result = (|| {
-            self.ensure_metadata_history()?;
-            if let Some((revision,candidate))=review {
-                let actual:(i64,String,String)=self.conn.query_row("SELECT t.revision,s.candidate_json,s.state FROM tracks t JOIN metadata_enrichment_status s ON s.track_id=t.id WHERE t.id=?",[ids[0]],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-                anyhow::ensure!(actual==(revision,candidate.to_owned(),"review".into()),"This suggestion changed. Refresh the comparison before applying it.");
+            for (id,revision,candidate) in reviews {
+                if candidate.is_empty(){let actual:i64=self.conn.query_row("SELECT revision FROM tracks WHERE id=?",[id],|r|r.get(0))?;anyhow::ensure!(actual==*revision,"A selected song changed. Review again.");continue;}
+                let actual:(i64,String,String)=self.conn.query_row("SELECT t.revision,s.candidate_json,s.state FROM tracks t JOIN metadata_enrichment_status s ON s.track_id=t.id WHERE t.id=?",[id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                anyhow::ensure!(actual==(*revision,candidate.to_owned(),"review".into()),"This suggestion changed. Refresh the comparison before applying it.");
             }
             self.conn.execute("INSERT INTO desktop_metadata_changes_v1(created_at,undone,canonical_json) VALUES (?,0,?)",params![now,self.canonical_history_snapshot()?])?;
             let batch=self.conn.last_insert_rowid();
+            if let Some(job)=file_job{self.conn.execute("UPDATE desktop_metadata_changes_v1 SET file_job=? WHERE id=?",params![job,batch])?;}
             let mut changed = 0;
-            for id in ids {
+            for (id,update) in changes {
                 let before=self.metadata_history_snapshot(*id)?;
                 changed += self.conn.execute(
                     "INSERT INTO track_metadata_overrides (
-                        track_id, title, artist, album, track_number, disc_number, genre, year, artwork_path, updated_at, origin
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'user')
+                        track_id, title, artist, album, track_number, disc_number, genre, year, artwork_path, updated_at, origin, album_artist
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'user', ?11)
                      ON CONFLICT(track_id) DO UPDATE SET
                         title = COALESCE(excluded.title, title),
                         artist = COALESCE(excluded.artist, artist),
@@ -842,6 +871,7 @@ impl Db {
                         genre = COALESCE(excluded.genre, genre),
                         year = COALESCE(excluded.year, year),
                         artwork_path = COALESCE(excluded.artwork_path, artwork_path),
+                        album_artist = COALESCE(excluded.album_artist, album_artist),
                         updated_at = excluded.updated_at,
                         origin = 'user',
                         provider = NULL,
@@ -856,7 +886,8 @@ impl Db {
                         update.genre.as_deref().map(str::trim),
                         update.year.map(|value| value.clamp(0, 9999)),
                         clean_text(update.artwork_path.as_deref()),
-                        now
+                        now,
+                        update.album_artist.as_deref().map(str::trim)
                     ],
                 )?;
                 self.conn.execute(
@@ -866,13 +897,13 @@ impl Db {
                 let after=self.metadata_history_snapshot(*id)?;
                 self.conn.execute("INSERT INTO desktop_metadata_change_entries_v1(change_id,track_id,before_json,after_json) VALUES (?,?,?,?)",params![batch,id,before,after])?;
             }
-            if review.is_some(){self.conn.execute("UPDATE metadata_enrichment_status SET state='applied' WHERE track_id=?",[ids[0]])?;}
-            Ok(changed)
+            for (id,_,candidate) in reviews {if candidate.is_empty(){continue;}self.conn.execute("UPDATE metadata_enrichment_status SET state='applied' WHERE track_id=?",[id])?;}
+            Ok((changed,batch))
         })();
         match result {
-            Ok(changed) => {
+            Ok((changed,batch)) => {
                 self.commit_transaction()?;
-                Ok(changed)
+                Ok((changed,batch))
             }
             Err(err) => {
                 let _ = self.rollback_transaction();
@@ -947,6 +978,9 @@ impl Db {
         Ok(changed > 0)
     }
 
+    pub fn metadata_candidate_ignored(&self,track_id:i64,fingerprint:&str)->Result<bool>{
+        Ok(self.conn.query_row("SELECT EXISTS(SELECT 1 FROM metadata_ignored_candidates WHERE track_id=? AND fingerprint=?)",params![track_id,fingerprint],|r|r.get(0))?)
+    }
     pub fn record_metadata_enrichment_status(
         &self,
         status: &MetadataEnrichmentStatus,
@@ -2713,7 +2747,8 @@ mod tests {
         assert!(!db.library_source(source.id).unwrap().unwrap().available);
         assert!(db.remove_library_source(source.id).unwrap());
         assert!(original.is_file());
-        assert!(db.get_track_by_id(track).unwrap().is_none());
+        assert!(db.get_track_by_id(track).unwrap().is_some());
+        assert!(!db.library_source(source.id).unwrap().unwrap().enabled);
         let managed = db
             .library_sources()
             .unwrap()
@@ -2722,6 +2757,15 @@ mod tests {
             .unwrap();
         assert!(db.remove_library_source(managed.id).is_err());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn relocation_verifies_bytes_and_preserves_disabled_records() {
+        let db=temp_db("relocate");let root=std::env::temp_dir().join(format!("musicos-relocate-{}",std::process::id()));let _=std::fs::remove_dir_all(&root);let old=root.join("old");let new=root.join("new");std::fs::create_dir_all(&old).unwrap();std::fs::create_dir_all(&new).unwrap();let old=std::fs::canonicalize(old).unwrap();let new=std::fs::canonicalize(new).unwrap();
+        std::fs::write(old.join("one.wav"),b"same").unwrap();std::fs::write(new.join("one.wav"),b"same").unwrap();std::fs::write(old.join("two.wav"),b"old!").unwrap();std::fs::write(new.join("two.wav"),b"bad!").unwrap();
+        let source=db.add_library_source("reference",old.to_str().unwrap(),"Archive").unwrap();let mut ids=Vec::new();for name in ["one.wav","two.wav"]{let id=db.insert_track(old.join(name).to_str().unwrap(),name,"Artist","Album",60,4,1).unwrap();db.assign_track_source(id,source.id).unwrap();ids.push(id);}
+        let playlist=db.create_playlist("Keep membership").unwrap();db.add_tracks_to_playlist(playlist,&ids).unwrap();db.toggle_favorite(ids[0]).unwrap();db.update_track_metadata_override(&ids,&MetadataUpdate{title:Some("Keep override".into()),..Default::default()}).unwrap();db.remove_library_source(source.id).unwrap();assert_eq!(db.library_source_track_count(source.id).unwrap(),2);assert_eq!(db.relocate_library_source(source.id,&new).unwrap(),(1,1));
+        assert!(!db.library_source(source.id).unwrap().unwrap().enabled);assert_eq!(db.playlist_track_count(playlist).unwrap(),2);db.update_library_source(source.id,None,Some(true)).unwrap();let first=db.get_track_by_id(ids[0]).unwrap().unwrap();assert!(first.favorited);assert_eq!(first.title,"Keep override");assert_eq!(first.path,new.join("one.wav").to_string_lossy());assert_eq!(db.get_track_by_id(ids[1]).unwrap().unwrap().path,old.join("two.wav").to_string_lossy());assert_eq!(std::fs::read(old.join("one.wav")).unwrap(),b"same");let _=std::fs::remove_dir_all(root);
     }
 
     #[test]

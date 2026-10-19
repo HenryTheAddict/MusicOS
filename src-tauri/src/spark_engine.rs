@@ -88,12 +88,16 @@ fn normalize(mut v:Vec<f32>)->Vec<f32>{let norm=v.iter().map(|v|v*v).sum::<f32>(
 fn cosine(a:&[f32],b:&[f32])->f32{a.iter().zip(b).map(|(a,b)|a*b).sum::<f32>().clamp(-1.,1.)}
 #[derive(Clone,Debug)]
 pub struct Candidate {pub id:i64,pub artist:String,pub album:String,pub favorite:bool,pub embedding:Vec<f32>}
-#[derive(Clone,Debug,Default,Deserialize,Serialize,PartialEq)]
-pub struct Generation {pub seed:Option<i64>,pub mood:Option<String>,pub less_like:Vec<i64>,pub variant:u32}
+pub fn default_target_count()->usize{25}
+#[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
+pub struct Generation {pub seed:Option<i64>,pub mood:Option<String>,pub less_like:Vec<i64>,pub variant:u32,#[serde(default="default_target_count")]pub target_count:usize}
+impl Default for Generation {fn default()->Self{Self{seed:None,mood:None,less_like:Vec::new(),variant:0,target_count:25}}}
+pub fn validate_target_count(count:usize)->Result<()>{ensure!((10..=100).contains(&count),"Choose between 10 and 100 songs");Ok(())}
 #[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 pub struct Preview {pub track_ids:Vec<i64>,pub analyzed:usize,pub available:usize,pub generation_version:String,pub configuration:Generation}
 /// Explicit feedback only. Ordinary skips and unliking never enter this score.
 pub fn generate(candidates:&[Candidate],available:usize,request:Generation,moods:&BTreeMap<String,Vec<f32>>)->Result<Preview> {
+ validate_target_count(request.target_count)?;
  ensure!(request.seed.is_some()||request.mood.is_some(),"Choose a starting song or mood");
  ensure!(request.less_like.len()<=1000,"Too many feedback entries");
  ensure!(candidates.iter().all(|c|valid_embedding(&c.embedding)),"Audio analysis contains invalid embeddings. Analyze changed songs again.");
@@ -104,7 +108,7 @@ pub fn generate(candidates:&[Candidate],available:usize,request:Generation,moods
  let mut remaining=candidates.iter().filter(|c|!excluded.contains(&c.id)).collect::<Vec<_>>();remaining.sort_by_key(|c|c.id);
  let mut selected:Vec<&Candidate>=Vec::new();let mut artists:BTreeMap<&str,usize>=BTreeMap::new();let mut albums:BTreeMap<(&str,&str),usize>=BTreeMap::new();
  if let Some(seed)=seed.filter(|s|!excluded.contains(&s.id)){selected.push(seed);remaining.retain(|c|c.id!=seed.id);*artists.entry(&seed.artist).or_default()+=1;*albums.entry((&seed.artist,&seed.album)).or_default()+=1;}
- while selected.len()<25&&!remaining.is_empty() {
+ while selected.len()<request.target_count&&!remaining.is_empty() {
   let score=|c:&Candidate| {
    let similarity=seed.map(|s|cosine(&s.embedding,&c.embedding));let mood_score=mood.map(|m|cosine(m,&c.embedding));
    let base=match (similarity,mood_score){(Some(a),Some(b))=>a*0.65+b*0.35,(Some(a),None)|(None,Some(a))=>a,_=>0.};
@@ -123,9 +127,26 @@ pub fn generate(candidates:&[Candidate],available:usize,request:Generation,moods
  ensure!(!selected.is_empty(),"No analyzed songs match this request. Analyze more local songs or clear feedback.");
  Ok(Preview{track_ids:selected.iter().map(|c|c.id).collect(),analyzed:candidates.len(),available,generation_version:GENERATION_VERSION.into(),configuration:request})
 }
+/// Playlist suggestions use cached audio only; they never generate a saved sequence.
+pub fn suggest(candidates:&[Candidate],members:&[i64])->Vec<i64>{
+ let existing=members.iter().copied().collect::<BTreeSet<_>>();let seeds=candidates.iter().filter(|c|existing.contains(&c.id)&&valid_embedding(&c.embedding)).collect::<Vec<_>>();if seeds.is_empty(){return vec![];}
+ let mut mean=vec![0_f32;512];for c in &seeds{for (out,value) in mean.iter_mut().zip(&c.embedding){*out+=value;}}
+ if !valid_embedding(&mean){mean=seeds.iter().max_by(|a,b|{let score=|c:&&Candidate|seeds.iter().map(|s|cosine(&c.embedding,&s.embedding)).sum::<f32>();score(a).total_cmp(&score(b)).then_with(||b.id.cmp(&a.id))}).unwrap().embedding.clone();}let mean=normalize(mean);
+ let mut remaining=candidates.iter().filter(|c|!existing.contains(&c.id)&&valid_embedding(&c.embedding)).collect::<Vec<_>>();remaining.sort_by_key(|c|c.id);let mut selected=Vec::new();let mut artists=BTreeMap::<&str,usize>::new();let mut albums=BTreeMap::<(&str,&str),usize>::new();
+ while selected.len()<10&&!remaining.is_empty(){let score=|c:&Candidate|cosine(&mean,&c.embedding)-(artists.get(c.artist.as_str()).copied().unwrap_or(0)as f32*0.04).min(0.12)-(albums.get(&(c.artist.as_str(),c.album.as_str())).copied().unwrap_or(0)as f32*0.025).min(0.075);let best=(0..remaining.len()).max_by(|a,b|score(remaining[*a]).total_cmp(&score(remaining[*b])).then_with(||remaining[*b].id.cmp(&remaining[*a].id))).unwrap();let c=remaining.remove(best);selected.push(c.id);*artists.entry(&c.artist).or_default()+=1;*albums.entry((&c.artist,&c.album)).or_default()+=1;}selected
+}
+
 #[cfg(test)]mod tests {
  use super::*;
  fn candidate(id:i64,axis:usize,artist:&str)->Candidate{let mut embedding=vec![0.;512];embedding[axis]=1.;Candidate{id,artist:artist.into(),album:"Album".into(),favorite:false,embedding}}
+ #[test]fn playlist_suggestions_are_cached_audio_ranked_unique_and_deterministic(){let mut candidates=(1..=14).map(|id|candidate(id,0,&format!("Artist {id}"))).collect::<Vec<_>>();candidates.push(candidate(20,1,"Unrelated"));let result=suggest(&candidates,&[1,2]);assert_eq!(result.len(),10);assert!(!result.contains(&1)&&!result.contains(&2)&&!result.contains(&20));assert_eq!(result,suggest(&candidates,&[2,1]));assert!(suggest(&candidates,&[999]).is_empty());assert_eq!(suggest(&candidates[..3],&[1,2]),vec![3]);}
+ #[test]fn length_is_bounded_deterministic_and_unique(){
+  let candidates=(1..=110).map(|i|candidate(i,0,&format!("Artist {i}"))).collect::<Vec<_>>();
+  for count in [10,25,100]{let request=Generation{seed:Some(1),target_count:count,..Default::default()};let a=generate(&candidates,110,request.clone(),&BTreeMap::new()).unwrap();let b=generate(&candidates,110,request,&BTreeMap::new()).unwrap();assert_eq!(a,b);assert_eq!(a.track_ids.len(),count);assert_eq!(a.track_ids.iter().collect::<BTreeSet<_>>().len(),count);}
+  for count in [0,9,101,usize::MAX]{assert!(generate(&candidates,110,Generation{seed:Some(1),target_count:count,..Default::default()},&BTreeMap::new()).is_err());}
+  let partial=generate(&candidates[..3],110,Generation{seed:Some(1),target_count:100,less_like:vec![2],..Default::default()},&BTreeMap::new()).unwrap();assert_eq!(partial.track_ids,vec![1,3]);
+ }
+ #[test]fn legacy_generation_defaults_to_twenty_five(){let request:Generation=serde_json::from_str(r#"{"seed":1,"mood":null,"less_like":[],"variant":0}"#).unwrap();assert_eq!(request.target_count,25);assert_eq!(Generation::default().target_count,25);}
  #[test]fn deterministic_ranking_is_audio_driven_and_respects_feedback(){let candidates=vec![candidate(1,0,"A"),candidate(2,1,"B"),candidate(3,0,"C")];let request=Generation{seed:Some(1),..Default::default()};let a=generate(&candidates,7,request.clone(),&BTreeMap::new()).unwrap();let b=generate(&candidates,7,request,&BTreeMap::new()).unwrap();assert_eq!(a.track_ids,vec![1,3,2]);assert_eq!(a.track_ids,b.track_ids);assert_eq!(a.available,7);let request=Generation{seed:Some(1),less_like:vec![3],..Default::default()};assert_eq!(generate(&candidates,7,request,&BTreeMap::new()).unwrap().track_ids,vec![1,2]);}
  #[test]fn diversity_cannot_force_unrelated_audio_ahead_of_relevant_songs(){
   let mut candidates=(1..=24).map(|id|candidate(id,0,"Same artist")).collect::<Vec<_>>();

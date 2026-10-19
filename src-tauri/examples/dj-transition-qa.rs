@@ -110,6 +110,7 @@ fn main() -> Result<()> {
         std::thread::sleep(Duration::from_millis(100));
         let s = service.snapshot();
         service.send(LocalPlaybackCommand::PlanTransition(Transition {
+                request_id:0,
             outgoing: s.queue_entry_ids[0],
             incoming: s.queue_entry_ids[1],
             outgoing_cue: plan.outgoing_cue,

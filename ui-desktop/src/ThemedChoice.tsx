@@ -1,0 +1,8 @@
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
+import {useRef,useState,useLayoutEffect} from 'react';
+import {AssetIcon} from './AssetIcon';
+export default function ThemedChoice({label,value,options,onChange,disabled=false}:{label:string;value:string;options:{value:string;label:string;icon?:string}[];onChange:(value:string)=>void;disabled?:boolean}){
+ const trigger=useRef<HTMLButtonElement>(null),[container,setContainer]=useState<HTMLElement|undefined>();useLayoutEffect(()=>setContainer(trigger.current?.closest('dialog')??undefined),[]);
+ const selected=options.find(option=>option.value===value);
+ return <Dropdown.Root modal={false}><Dropdown.Trigger ref={trigger} className="themed-choice" aria-label={label} disabled={disabled}>{selected?.icon&&<AssetIcon name={selected.icon}/>}<span>{selected?.label??value}</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></Dropdown.Trigger><Dropdown.Portal container={container}><Dropdown.Content className="themed-choice-menu" sideOffset={5} collisionPadding={8} align="start" aria-label={`${label} options`} onEscapeKeyDown={e=>e.stopPropagation()}><Dropdown.RadioGroup value={value} onValueChange={onChange}>{options.map(option=><Dropdown.RadioItem key={option.value} value={option.value} className="themed-choice-option">{option.icon&&<AssetIcon name={option.icon}/>}<span>{option.label}</span><span className="choice-check" aria-hidden="true">✓</span></Dropdown.RadioItem>)}</Dropdown.RadioGroup></Dropdown.Content></Dropdown.Portal></Dropdown.Root>;
+}

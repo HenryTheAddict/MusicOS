@@ -43,3 +43,8 @@ test('transport uses rounded finite contours and settles after rapid reversals',
  await expect(glyph).not.toHaveAttribute('data-morphing','true');expect(await glyph.locator('path').last().getAttribute('d')).toContain('M21.2,4');
  await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Pause',exact:true}).click();await expect(page.locator('.transport [data-morphing=true]')).toHaveCount(0);
 });
+
+test('native resize fallback updates grid columns when its ResizeObserver does not deliver',async({page})=>{
+ await page.addInitScript(()=>{const Original=ResizeObserver;window.ResizeObserver=class extends Original{observe(target:Element,options?:ResizeObserverOptions){if(!target.matches('.collection-grid-container'))super.observe(target,options);}};});
+ await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');const grid=page.locator('.collection-grid');const columns=()=>grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);const small=await columns();await page.setViewportSize({width:1800,height:1000});await expect.poll(columns).toBeGreaterThan(small);await page.setViewportSize({width:720,height:480});await expect.poll(columns).toBe(small);
+});

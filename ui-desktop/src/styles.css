@@ -192,7 +192,7 @@ strong {
   flex: 1;
   min-width: 0;
 }
-.app-header > .menu-trigger {
+.section-control > .menu-trigger:first-child {
   height: 3rem;
   flex: 0 1 13.875rem;
   min-width: 7rem;
@@ -380,7 +380,7 @@ strong {
   overflow: auto;
   min-height: 0;
   flex: 1;
-  background: linear-gradient(#a2eaff, #72ceff);
+  background:var(--surface-color,#cbf1ff);
 }
 .personal-library h2 {
   text-align: center;
@@ -1026,7 +1026,7 @@ strong {
   box-shadow: 0 0.5rem 1.5rem #247da91f;
 }
 .theme-preview.enabled {
-  background: linear-gradient(135deg, #dfb8a6, #94bbb6);
+  background:var(--surface-color,#cbf1ff);
 }
 .theme-preview > .cover {
   width: 4.5rem;
@@ -1666,7 +1666,7 @@ strong {
   }
 }
 @container (max-width:52rem) {
-  .app-header > .menu-trigger {
+  .section-control > .menu-trigger:first-child {
     flex-basis: 13.875rem;
     gap: 1.25rem;
   }
@@ -1690,7 +1690,7 @@ strong {
   .now-playing {
     flex: 1;
   }
-  .app-header > .menu-trigger {
+  .section-control > .menu-trigger:first-child {
     flex: 0 1 13.875rem;
   }
   .window-drag-region {
@@ -1837,12 +1837,12 @@ strong {
 }
 
 /* The compact Sketch composition is the baseline; larger windows add space. */
-.app-header > .menu-trigger { position: relative; }
-.app-header > .menu-trigger::before {
+.section-control > .menu-trigger:first-child { position: relative; }
+.section-control > .menu-trigger:first-child::before {
   content: "⋮"; position: absolute; left: .75rem; color: #111820; font-size: 1.5rem;
 }
-.app-header > .menu-trigger .chevron { margin-left: auto; font-size: 1.25rem; }
-.app-header > .menu-trigger .section-name { margin-inline: auto; }
+.section-control > .menu-trigger:first-child .chevron { margin-left: auto; font-size: 1.25rem; }
+.section-control > .menu-trigger:first-child .section-name { margin-inline: auto; }
 .library-sidebar nav { gap: .125rem; }
 .library-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: .125rem; padding: 1.5rem .125rem .625rem; position: relative; }
 .library-shortcuts::before { content: "Library tools"; position: absolute; top: .125rem; width: 100%; text-align: center; font-size: .875rem; }
@@ -1877,7 +1877,7 @@ strong {
 .album-strip > button { flex: 0 0 7rem; }
 .album-strip span { margin: .375rem 0 .25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @container (max-width:26rem) {
-  .app-header > .menu-trigger::before { display: none; }
+  .section-control > .menu-trigger:first-child::before { display: none; }
   .artist-detail { margin-top: 0; }
   .artist-hero > h1 { margin-bottom: 0; }
   .artist-about { max-height: none; }
@@ -1894,10 +1894,10 @@ strong {
 
 .app-header { gap: 1rem; }
 .window-drag-region { flex-basis: 114px; }
-.app-header > .menu-trigger { display: grid; grid-template-columns: 1rem minmax(0,1fr) 1rem; gap: .5rem; padding-inline: .75rem; }
-.app-header > .menu-trigger::before { position: static; grid-column: 1; grid-row: 1; }
-.app-header > .menu-trigger .section-name { grid-column: 2; grid-row: 1; margin: 0; text-align: center; }
-.app-header > .menu-trigger .chevron { grid-column: 3; grid-row: 1; margin: 0; }
+.section-control > .menu-trigger:first-child { display: grid; grid-template-columns: 1rem minmax(0,1fr) 1rem; gap: .5rem; padding-inline: .75rem; }
+.section-control > .menu-trigger:first-child::before { position: static; grid-column: 1; grid-row: 1; }
+.section-control > .menu-trigger:first-child .section-name { grid-column: 2; grid-row: 1; margin: 0; text-align: center; }
+.section-control > .menu-trigger:first-child .chevron { grid-column: 3; grid-row: 1; margin: 0; }
 .page-scroll { outline: 1px solid #0045ff; outline-offset: -1px; }
 .library-shortcuts > .menu-trigger > span { white-space: nowrap; }
 .library-shortcuts > .menu-trigger > span:last-child { display: none; }
@@ -1980,6 +1980,6 @@ button, input { line-height: 1.2; }
     height: auto; padding: .4375rem .75rem;
   }
   .app-shell:is([data-size="125"], [data-size="150"]) .window-drag-region { width: 100%; min-height: 3rem; }
-  .app-shell:is([data-size="125"], [data-size="150"]) .app-header > .menu-trigger { justify-self: end; width: min(100%, 13.875rem); }
+  .app-shell:is([data-size="125"], [data-size="150"]) .section-control > .menu-trigger:first-child { justify-self: end; width: min(100%, 13.875rem); }
   .app-shell:is([data-size="125"], [data-size="150"]) .now-playing { grid-column: 1/-1; width: 100%; min-width: 0; }
 }

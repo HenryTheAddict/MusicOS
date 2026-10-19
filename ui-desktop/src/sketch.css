@@ -5,7 +5,7 @@
 .app-header { gap: 1rem; height: 3.875rem; min-height: 3.875rem; padding: .4375rem 1.125rem .4375rem 0; }
 .window-drag-region { flex: 0 0 114px; }
 .header-drag-spacer { display: none; }
-.app-header > .menu-trigger { flex: 0 0 13.875rem; height: 3rem; border-radius: 1.125rem; gap: .5rem; grid-template-columns: 1rem minmax(0,1fr) 1.5rem; }
+.section-control > .menu-trigger:first-child { flex: 0 0 13.875rem; height: 3rem; border-radius: 1.125rem; gap: .5rem; grid-template-columns: 1rem minmax(0,1fr) 1.5rem; }
 .section-name { font-size: 1.5rem; font-weight: 300; }
 .chevron svg { display: block; width: 1.5rem; height: .75rem; fill: none; stroke: currentColor; stroke-width: 1; }
 .now-playing { flex: 1; width: auto; min-width: 0; height: 3rem; padding: .375rem .4375rem; gap: .25rem; }
@@ -28,8 +28,8 @@
 .library-sidebar nav button .icon:last-child:not(:first-child) { width: 2rem; }
 .library-shortcuts { padding-top: 1.5rem; padding-bottom: .5rem; gap: .125rem; border-radius: 1.125rem; background: #5bd0ff; margin-top: .125rem; }
 .library-shortcuts > button, .library-shortcuts > .menu-trigger { font-size: .75rem; background: #00dcff; border-radius: .875rem; }
-.personal-library { margin-top: .25rem; border-color: #0045ff; background: linear-gradient(#87d9ff, #72ceff); }
-.personal-library h2 { background: linear-gradient(#a8e7ff, #00baff); font-size: .75rem; font-weight: 700; }
+.personal-library { margin-top: .25rem; border-color: #0045ff; background:var(--blob-color,#72ceff); }
+.personal-library h2 { background:var(--blob-color,#72ceff); font-size: .75rem; font-weight: 700; }
 .personal-library > button { background: #d5f2ff90; min-height: 2.625rem; border-radius: .5rem; gap: .125rem; }
 .personal-library > button .icon { width: 2rem; height: 2rem; }
 .personal-library strong { font-size: .75rem; border-bottom: 1px solid #0064df; line-height: 1.25; }
@@ -105,7 +105,7 @@
 .album-detail .collection-actions .shuffle-button { background: #00deff !important; }
 
 /* Colors sampled from the actual Sketch layers, rather than nearby blues. */
-.app-header > .menu-trigger, .now-playing { border-radius: 1rem; box-shadow: none; }
+.section-control > .menu-trigger:first-child, .now-playing { border-radius: 1rem; box-shadow: none; }
 .library-sidebar { background: #cbf1ff; border-radius: 1rem; }
 .sidebar-label { background: transparent; }
 .library-sidebar nav button { background: #aae4ff; border-radius: .5rem; }
@@ -153,10 +153,10 @@
 .collection-actions > button, .transport .icon-button { transition: transform 140ms ease-out, background-color 140ms; }
 .collection-actions > button:active:not(:disabled), .transport .icon-button:active:not(:disabled) { transform: scale(.88); }
 .now-playing-info strong { animation: playing-title-in 180ms ease-out; }
-.sketch-icon { display: inline-flex; flex-shrink: 0; }
-.sketch-icon > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.app-header > .menu-trigger .chevron { transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
-.app-header > .menu-trigger[data-state="open"] .chevron { transform: rotate(180deg); }
+.asset-icon { display: inline-flex; flex-shrink: 0; }
+.asset-icon > svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.section-control > .menu-trigger:first-child .chevron { transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
+.section-control > .menu-trigger:first-child[data-state="open"] .chevron { transform: rotate(180deg); }
 .dropdown[data-state="open"] { animation: pop-menu-in 160ms cubic-bezier(.2,.7,.2,1) both; }
 .dropdown[data-state="closed"] { animation: pop-menu-out 120ms ease-in both; pointer-events: none; }
 @keyframes playing-title-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

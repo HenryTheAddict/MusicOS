@@ -38,6 +38,7 @@ pub enum LocalPlaybackCommand {
     InsertQueue {id:i64,index:usize},
     ClearUpcoming,
     ClearQueue,
+    RefreshPaths,
     Shutdown,
 }
 
@@ -54,6 +55,7 @@ impl LocalPlaybackCommand {
                 | Self::InsertQueue {..}
                 | Self::ClearUpcoming
                 | Self::ClearQueue
+                | Self::RefreshPaths
         )
     }
 }
@@ -71,6 +73,13 @@ pub struct LocalPlaybackSnapshot {
     pub listened: Option<f32>,
     pub listening: super::listening::Listening,
     pub listening_applied: bool,
+    pub applied_listening_revision:u64,
+    pub requested_listening_revision:u64,
+    pub applied_reverb:f32,
+    pub applied_reverb_depth:f32,
+    pub reverb_processed_frames:u64,
+    pub transition_outcome:Option<super::deck_playback::TransitionOutcome>,
+    pub failed_entries:Vec<u64>,
     pub audio_levels: [f32; 3],
     pub dj_transition: Option<super::deck_playback::TransitionStatus>,
     pub queue_index: Option<usize>,
@@ -98,7 +107,7 @@ impl Default for LocalPlaybackSnapshot {
             listened: None,
             audio_levels: [0.; 3],
             listening:Default::default(),
-            listening_applied:true,
+            listening_applied:true,applied_listening_revision:0,requested_listening_revision:0,applied_reverb:0.,applied_reverb_depth:0.5,reverb_processed_frames:0,transition_outcome:None,failed_entries:vec![],
             dj_transition: None,
             queue_index: None,
             is_playing: false,
@@ -419,6 +428,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
         }
         LocalPlaybackCommand::ClearUpcoming => player.queue_clear_upcoming(),
         LocalPlaybackCommand::ClearQueue => player.queue_clear(),
+        LocalPlaybackCommand::RefreshPaths => {let tracks=player.queue_tracks().into_iter().filter_map(|t|db.get_track_by_id(t.id).ok().flatten()).collect::<Vec<_>>();player.refresh_paths(&tracks);}
         LocalPlaybackCommand::Shutdown => {}
     }
     Ok(())
@@ -453,6 +463,7 @@ fn publish(
                 audio_levels: player.audio_levels(),
             listening:player.listening.clone(),
             listening_applied:player.listening_applied(),
+            applied_listening_revision:player.applied_listening_revision(),requested_listening_revision:player.listening_revision,applied_reverb:player.applied_reverb(),applied_reverb_depth:player.applied_reverb_depth(),reverb_processed_frames:player.reverb_processed_frames(),transition_outcome:player.transition_outcome.clone(),failed_entries:player.failed_entries.iter().copied().collect(),
             dj_transition: player.transition_status(),
             queue_index: status.queue_index,
             is_playing: status.is_playing,
@@ -576,6 +587,7 @@ mod tests {
         let entries = service.snapshot().queue_entry_ids;
         service
             .send(LocalPlaybackCommand::PlanTransition(Transition {
+                request_id:0,
                 outgoing: entries[0],
                 incoming: entries[1],
                 outgoing_cue: 12.0,
@@ -801,4 +813,23 @@ mod tests {
         }
         assert_eq!(snapshot.queue_index, Some(2));
     }
+}
+
+#[cfg(test)]mod repair_tests {
+ use super::*;
+ fn wave(path:&PathBuf,seconds:u32){let rate=8000u32;let length=rate*seconds*2;let mut w=Vec::new();w.extend(b"RIFF");w.extend((36+length).to_le_bytes());w.extend(b"WAVEfmt ");w.extend(16u32.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(rate.to_le_bytes());w.extend((rate*2).to_le_bytes());w.extend(2u16.to_le_bytes());w.extend(16u16.to_le_bytes());w.extend(b"data");w.extend(length.to_le_bytes());w.resize(44+length as usize,0);std::fs::write(path,w).unwrap();}
+ #[test]fn automatic_promotions_skip_corrupt_incoming_without_mutating_queue(){
+  let temp=tempfile::tempdir().unwrap();let path=temp.path().join("test.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let mut ids=Vec::new();
+  for i in 0..4 {let audio=temp.path().join(format!("{i}.wav"));if i==1 {std::fs::write(&audio,b"corrupt audio").unwrap();}else{wave(&audio,3);}ids.push(db.insert_track(audio.to_str().unwrap(),"Automatic test","Artist","Same album",3,100,i).unwrap());}drop(db);
+  let service=LocalPlaybackService::start_with_preferences(path,PlaybackPreferences{volume:0.,..Default::default()}).unwrap();service.send(LocalPlaybackCommand::SetDjMode(true)).unwrap();service.send(LocalPlaybackCommand::PlayTracks{ids:ids.clone(),start_index:0}).unwrap();
+  let end=std::time::Instant::now()+Duration::from_secs(15);let mut active=false;let mut promoted=false;let mut entries=vec![];
+  while std::time::Instant::now()<end {let s=service.snapshot();if entries.is_empty()&&!s.queue_entry_ids.is_empty(){entries=s.queue_entry_ids.clone();}active|=s.dj_transition.as_ref().is_some_and(|p|p.active);promoted|=s.queue_index==Some(2);if s.queue_index==Some(3){assert!(active&&promoted,"Missing automatic overlap or intermediate promotion");assert_eq!(s.queue_entry_ids,entries);assert_eq!(s.queue.iter().map(|t|t.id).collect::<Vec<_>>(),ids);assert!(s.failed_entries.contains(&entries[1]));service.send(LocalPlaybackCommand::Pause).unwrap();return;}std::thread::sleep(Duration::from_millis(20));}
+  panic!("Automatic playback stuck: {:?}",service.snapshot());
+ }
+ #[test]fn reverb_changes_are_applied_without_a_decoder_revision(){
+  let temp=tempfile::tempdir().unwrap();let path=temp.path().join("test.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let audio=temp.path().join("song.wav");wave(&audio,4);let id=db.insert_track(audio.to_str().unwrap(),"Reverb","Artist","Album",4,64000,0).unwrap();drop(db);
+  let service=LocalPlaybackService::start_with_preferences(path,PlaybackPreferences{volume:0.,..Default::default()}).unwrap();service.send(LocalPlaybackCommand::PlayTracks{ids:vec![id],start_index:0}).unwrap();
+  for amount in [0.45,1.,0.2,0.] {let settings=super::super::listening::Listening{reverb:amount,reverb_depth:amount,..Default::default()};service.send(LocalPlaybackCommand::SetListening(settings)).unwrap();let end=std::time::Instant::now()+Duration::from_secs(3);loop {let s=service.snapshot();if s.listening_applied&&s.applied_reverb==amount&&s.applied_reverb_depth==amount&&s.requested_listening_revision==s.applied_listening_revision{break;}assert!(std::time::Instant::now()<end,"Mixer did not apply reverb: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
+  service.send(LocalPlaybackCommand::Pause).unwrap();
+ }
 }

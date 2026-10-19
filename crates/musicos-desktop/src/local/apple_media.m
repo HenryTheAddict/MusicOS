@@ -92,6 +92,11 @@ int mos_oriented_png(const char *source, const char *destination) {
     @autoreleasepool { CGImageRef image=oriented_image(source,8192);if(!image)return -1;
         BOOL ok=write_png(image,destination);CGImageRelease(image);return ok?0:-1; }
 }
+// Bounded display preparation also applies EXIF orientation before caching.
+int mos_artwork_png(const char *source, const char *destination, unsigned int maximum) {
+    @autoreleasepool { CGImageRef image=oriented_image(source,maximum);if(!image)return -1;
+        BOOL ok=write_png(image,destination);CGImageRelease(image);return ok?0:-1; }
+}
 // Called on the serialized depth worker only. Core ML never runs on an audio or UI thread.
 int mos_depth(const char *package, const char *source, const char *destination, char *error, size_t size) {
     @autoreleasepool {
