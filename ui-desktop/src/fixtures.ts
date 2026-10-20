@@ -182,6 +182,7 @@ export async function fixtureCall(
     case 'depth_setup': return {supported:true,ready:true,running:false,downloaded:99188950,total:99188950,error:null,revision:'fixture',attribution:'Depth renderer fixture'};
     case 'depth_artwork': return {fresh:new URLSearchParams(location.search).has('freshDepth'),photo:a.path,map:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256"><defs><radialGradient id="g"><stop stop-color="white"/><stop offset="1" stop-color="black"/></radialGradient></defs><rect width="256" height="256" fill="url(#g)"/></svg>')};
     case 'artwork_performance': return;
+    case 'audio_tempos': return {running:false,tempos:JSON.parse(localStorage.getItem('musicos-fixture-analysis')??'[]')};
     case 'audio_analysis': return {running:false,paused:false,processed:0,total:0,features:JSON.parse(localStorage.getItem('musicos-fixture-analysis')??'[]'),errors:[]};
     case 'audio_specs': return {format:'FLAC',sample_rate:44100,bit_depth:16,bitrate:900,channels:2,lossless:true};
     case 'organize_files': {if(a.action==='preview')return {token:'fixture-preview',moves:library.tracks.slice(0,3).map(t=>({id:t.id,from:t.path,to:`/fixture/${t.artist}/${t.album}/${t.path.split('/').pop()}`})),skipped:0,undo_available:0};return {count:3};}

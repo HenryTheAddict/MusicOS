@@ -77,6 +77,21 @@ fn cached_mode(db: &Path, id: i64, path: &str,current:bool) -> Option<Features> 
         .and_then(|s| serde_json::from_str(&s).ok())
 }
 pub fn cached_many(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,false)}
+/// Heart motion needs tempo, not each song's full beat/structure payload.
+pub fn cached_tempos(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32)>> {
+    let connection=cache(db)?;
+    let mut statement=connection.prepare("SELECT track_id,identity,json_extract(result,'$.bpm') FROM desktop_dsp_v1 WHERE json_valid(result)")?;
+    let rows=statement.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<f32>>(2)?)))?;
+    let paths=tracks.iter().copied().collect::<std::collections::HashMap<_,_>>();
+    let mut tempos=Vec::new();
+    for row in rows {
+        let (id,signature,bpm)=row?;
+        if let Some(bpm)=bpm.filter(|b|b.is_finite()&&(20.0..=400.0).contains(b)) {
+            if paths.get(&id).is_some_and(|path|identity(Path::new(path)).is_ok_and(|current|current==signature)) {tempos.push((id,bpm));}
+        }
+    }
+    Ok(tempos)
+}
 pub fn cached_many_current(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,true)}
 fn cached_many_mode(db: &Path, tracks: &[(i64, &str)],current:bool) -> Vec<Option<Features>> {
     let read = (|| -> Result<std::collections::HashMap<i64, (String, String, Features)>> {
@@ -510,4 +525,13 @@ fn full_rescan_replaces_dsp_only_after_success_without_rewriting_audio(){
  worker.rescan(database.clone(),tracks.clone(),None,false).unwrap();wait();assert_eq!(worker.pair_revision(&[id]),0);assert_eq!(cached(&database,id,file.to_str().unwrap()).unwrap().bpm,Some(123.));
  worker.rescan(database.clone(),tracks,None,true).unwrap();wait();assert_eq!(worker.pair_revision(&[id]),1);assert_ne!(cached(&database,id,file.to_str().unwrap()).unwrap().bpm,Some(123.));
  assert_eq!(std::fs::read(file).unwrap(),bytes);assert_eq!(musicos_init::database::Db::open(database.to_str().unwrap()).unwrap().get_track_by_id(id).unwrap().unwrap().title,"Preserved title");
+}
+
+#[cfg(test)]mod tempo_display_tests {
+ use super::*;
+ #[test]fn cached_tempos_require_valid_file_identity_and_bounded_bpm(){
+  let root=tempfile::tempdir().unwrap();let db=root.path().join("library.sqlite3");let file=root.path().join("song.wav");std::fs::write(&file,b"fixture").unwrap();let signature=identity(&file).unwrap();let conn=cache(&db).unwrap();
+  for (id,bpm,signature) in [(1,123.4,signature.as_str()),(2,0.,signature.as_str()),(3,999.,signature.as_str()),(4,120.,"stale")] {conn.execute("INSERT INTO desktop_dsp_v1 VALUES(?,?,?,?)",rusqlite::params![id,signature,"previous-valid-model",serde_json::json!({"bpm":bpm,"structure":{"beats":[0.1,0.6,1.1]}}).to_string()]).unwrap();}
+  let path=file.to_str().unwrap();let tempos=cached_tempos(&db,&[(1,path),(2,path),(3,path),(4,path)]).unwrap();assert_eq!(tempos,vec![(1,123.4)]);
+ }
 }

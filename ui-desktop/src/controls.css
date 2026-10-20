@@ -839,3 +839,9 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 
 .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-transport{height:40px;align-self:stretch;}
 .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-transport .icon-button{height:40px;width:40px;}
+
+/* Keep the playing song's heart present while browsing albums or artists. */
+.now-playing-info{position:relative;}
+.now-playing-info>strong{padding-inline-end:1.875rem;}
+.now-playing-info>.now-playing-heart{position:absolute;inset-inline-end:0;top:0;width:1.5rem;height:1.5rem;padding:0;display:grid;place-items:center;border:0;background:transparent;color:var(--ink);overflow:visible;}
+.now-playing-heart:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:.375rem;}
