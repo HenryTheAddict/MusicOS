@@ -17,7 +17,7 @@ import LibraryFilter,{defaultFilters,filterAlbums} from './LibraryFilter';
 import {registerAlbumArtwork} from './albumArtwork';
 import QuickAudio from "./QuickAudio";
 import AudioPanel from "./AudioPanel";
-import ArtworkViewer from "./ArtworkViewer";
+import ArtworkViewer,{openArtwork} from "./ArtworkViewer";
 import AlbumArtwork from './AlbumCoverMotion';
 import AlbumArtists from "./AlbumArtists";
 import CollectionCreate from "./CollectionDesign";
@@ -921,9 +921,10 @@ export default function App() {
       : route.view
   ) as Scope;
   return (<>
-    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={playingStyle} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
     <KeepView className="main-view" active={miniMode==='normal'}><div
       className="app-shell"
+      style={{'--playing-favorite-tone':playingPalette?.accent??'var(--accent)'} as CSSProperties}
       data-size={preferences.interface_percent}
       data-adaptive={!!palette}
       data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}
@@ -955,8 +956,10 @@ export default function App() {
           <Overflow theme={playingStyle} contextOnly items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:windowPinned?'Unpin window':'Pin window',icon:windowPinned?'unPin':'Pin',onSelect:()=>void toggleWindowPin()},...nowActions]}/>
           <button
             className="now-playing-cover"
-            aria-label="Show playing album"
-            onClick={() => {
+            aria-label={preferences.now_playing_artwork_action==='artwork'?"Show playing artwork":preferences.now_playing_artwork_action==='mini_player'?"Open Mini Player":"Show playing album"}
+            onClick={event => {
+              if(preferences.now_playing_artwork_action==='artwork'){openArtwork(event.currentTarget,player.track?.album??'Artwork');return;}
+              if(preferences.now_playing_artwork_action==='mini_player'){void changeMini(preferences.mini_player_view==='queue'?'queue':'tall');return;}
               if (player.track) {
                 setSection("Library");
                 albumFor(player.track);
@@ -1032,8 +1035,8 @@ export default function App() {
           <aside className="library-sidebar">
             <span className="sidebar-label">Library</span>
             <div className="sidebar-search-slot">
-              {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<label className="search sidebar-search"><Icon name="search"/><input aria-label="Search" placeholder="Search" value={route.search} onChange={e=>{dispatch({type:'patch',patch:{search:e.target.value,scroll:0}});if(scrollRef.current)scrollRef.current.scrollTop=0;}}/></label>}
-              <button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><span aria-hidden="true" className="command-symbol">⌘</span></button>
+              {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
+              {navigation.history.length>0&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><span aria-hidden="true" className="command-symbol">⌘</span></button>}
             </div>
             <nav aria-label="Library">
               {(["albums", "artists", "genres", "songs"] as Scope[]).map(

@@ -5,7 +5,7 @@ const mix=(a:string,b:string,t:number)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a
 /** Retain the design's hue in both tones while bounding their surface contrast. */
 export function transportTones(palette:Palette|null){
  const surface=palette?.background??'#f7fbff',accent=palette?.accent??'#0064df',ink=palette?.text??'#12202a';
- let fill=mix(ink,accent,.28),stroke=mix(surface,accent,.70);
+ let fill=mix(ink,accent,.34),stroke=mix(surface,accent,.48);
  for(let i=0;i<40&&contrast(fill,surface)<4.5;i++)fill=mix(fill,ink,.12);
  for(let i=0;i<40&&contrast(stroke,surface)<3;i++)stroke=mix(stroke,ink,.08);
  // Avoid two nearly identical colors when an extreme custom accent is used.
@@ -21,6 +21,7 @@ export function playerTheme(palette:Palette|null):CSSProperties{
   '--accent':accent,'--accent-ink':readableInk(accent),'--ink':ink,
   '--playback-tone':accent,'--icon-fill':ink,'--icon-stroke':ink,
   '--transport-fill':tones.fill,'--transport-stroke':tones.stroke,
+  '--transport-top':mix(tones.fill,ink,.08),'--transport-bottom':tones.fill,
   '--control-surface':'color-mix(in srgb,var(--surface-color) 78%,var(--blob-color))',
   '--control-border':'color-mix(in srgb,var(--ink) 18%,transparent)',
   '--secondary-ink':'color-mix(in srgb,var(--ink) 82%,var(--surface-color))',

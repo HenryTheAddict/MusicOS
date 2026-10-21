@@ -33,6 +33,7 @@ export function useCollectionTone(spark:boolean){
    palette.stops.forEach((stop,i)=>{
     host.style.setProperty(`--collection-color-${i+1}`,spark?stop:palette.tone);
     const color=spark?palette.surfaces[i]:palette.surfaces[0];
+    host.style.setProperty(`--collection-hue-${i+1}`,color);
     host.style.setProperty(`--collection-surface-${i+1}`,`color-mix(in srgb,${color} ${spark?12:18}%,white)`);
    });
   };

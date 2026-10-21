@@ -47,7 +47,7 @@ test('metadata status offers bounded recovery without exposing provider errors',
 
 test('collection shuffle retains supplied geometry with a solid surface and no particles',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'playlist/qa',name:'Soft controls',track_ids:[1,2],spark:null,kind:'manual'}])));
- await page.goto('/?fixture=1');const shuffle=page.getByRole('button',{name:'Shuffle Soft controls',exact:true});await expect(shuffle.locator('svg use')).toHaveCount(1);await expect(shuffle.locator('linearGradient,radialGradient')).toHaveCount(0);await shuffle.hover();await expect(shuffle).toHaveCSS('animation-name','none');await expect(page.locator('.collection-particles')).toHaveCount(0);
+ await page.goto('/?fixture=1');const shuffle=page.getByRole('button',{name:'Shuffle Soft controls',exact:true});await expect(shuffle.locator('svg use')).toHaveCount(1);await expect(shuffle.locator('linearGradient')).toHaveCount(1);await shuffle.hover();await expect(shuffle).toHaveCSS('animation-name','none');await expect(page.locator('.collection-particles')).toHaveCount(0);
 });
 
 test('wide grid captions do not collide and parallax can be disabled persistently',async({page})=>{

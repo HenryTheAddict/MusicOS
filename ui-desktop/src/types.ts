@@ -70,6 +70,7 @@ export interface Listening {bands:3|8;gains3:number[];gains8:number[];speed:numb
 export interface Appearance {mode:"system"|"light"|"dark";source:"artwork"|"blue"|"custom";accent:string;saturation:number;tint:number}
 export interface Preferences {
   mini_player_view?:"artwork"|"queue";
+  now_playing_artwork_action?:"album"|"mini_player"|"artwork";
   appearance?:Appearance;
   artists_album_only?:boolean;
   listening?:Listening;

@@ -208,7 +208,7 @@ export function Menu({
 }) {
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
   const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null);
-  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom+4}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(point.y,innerHeight-menu.offsetHeight-8))}px`;};
+  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(point.y,innerHeight-menu.offsetHeight-8))}px`;};
   useLayoutEffect(()=>{if(open&&content.current)position(content.current);},[open,point]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current)position(content.current);};window.addEventListener('resize',update);return()=>window.removeEventListener('resize',update);},[open,point]);
   useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);

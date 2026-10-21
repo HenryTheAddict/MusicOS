@@ -8,5 +8,5 @@ export default function OverflowLabel({text}:{text:string}){
   const observer=new ResizeObserver(measure);if(host.current)observer.observe(host.current);if(content.current)observer.observe(content.current);measure();
   return()=>observer.disconnect();
  },[text]);
- return <span ref={host} className="overflow-label" data-overflow={overflow>1} style={{'--label-offset':`${-overflow}px`,'--label-duration':`${Math.max(900,Math.min(12000,overflow/35*1000))}ms`} as CSSProperties}><span ref={content}>{text}</span></span>;
+ return <span ref={host} className="overflow-label" tabIndex={overflow>1&&!host.current?.closest('button')?0:undefined} data-overflow={overflow>1} style={{'--label-offset':`${-overflow}px`,'--label-duration':`${Math.max(900,Math.min(12000,overflow/35*1000))}ms`} as CSSProperties}><span ref={content}>{text}</span></span>;
 }

@@ -1,7 +1,7 @@
 import {afterEach,expect,test,vi} from 'vitest';
 import {playPauseMorph} from '../src/playPauseMorph';
 afterEach(()=>vi.restoreAllMocks());
-test('liquid reveal preserves supplied geometry, reverses from the visible state, and leaves no animation work',()=>{
+test('shape morph stays continuous, reverses from the visible state, and leaves no animation work',()=>{
  let now=0,next=0;const frames=new Map<number,FrameRequestCallback>();
  vi.spyOn(performance,'now').mockImplementation(()=>now);
  vi.spyOn(window,'requestAnimationFrame').mockImplementation(callback=>{frames.set(++next,callback);return next;});
@@ -13,13 +13,13 @@ test('liquid reveal preserves supplied geometry, reverses from the visible state
  const cancel=playPauseMorph(host,true,pause);step(120);
  const progress=host.dataset.transportMorphProgress;
  expect(Number(progress)).toBeGreaterThan(0);expect(Number(progress)).toBeLessThan(1);
- expect(host.querySelector('[data-glyph=play]')?.getAttribute('d')).toBe('M4 5 L27 16 L4 27 Z');
- expect(host.querySelector('[data-glyph=pause]')?.getAttribute('d')).toBe('M6 4 H14 V28 H6 Z M18 4 H26 V28 H18 Z');
- const clips=[...host.querySelectorAll('clipPath path')].map(p=>p.getAttribute('d'));
+ expect(host.querySelector('[data-transport-morph]')).not.toBeNull();
+ expect(host.querySelectorAll('path')).toHaveLength(4);
+ const clips=[...host.querySelectorAll('path')].map(p=>p.getAttribute('d'));
  clips.forEach(d=>expect(d).not.toMatch(/NaN|Infinity/));
  cancel();expect(frames.size).toBe(0);
  playPauseMorph(host,false,play);expect(host.dataset.transportMorphProgress).toBe(progress);
- expect([...host.querySelectorAll('clipPath path')].map(p=>p.getAttribute('d'))).toEqual(clips);
- step(360);expect(host.innerHTML).toBe(canonical);expect(host.dataset.transportMorphProgress).toBe('0');expect(host.dataset.morphing).toBeUndefined();expect(frames.size).toBe(0);
+ expect([...host.querySelectorAll('path')].map(p=>p.getAttribute('d'))).toEqual(clips);
+ step(480);expect(host.innerHTML).toBe(canonical);expect(host.dataset.transportMorphProgress).toBe('0');expect(host.dataset.morphing).toBeUndefined();expect(frames.size).toBe(0);
  host.remove();
 });

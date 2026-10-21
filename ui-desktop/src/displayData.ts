@@ -13,3 +13,6 @@ export async function displayData<K extends Parameters<typeof call>[0]>(command:
 }
 export function invalidateDisplay(command?:string){for(const [key,entry] of entries)if(!command||key.startsWith(command+':')){entry.dirty=true;entry.generation++;}window.dispatchEvent(new CustomEvent('musicos-display-invalidated',{detail:command}));}
 export type LibraryChanged={reason?:'metadata'|'artwork'|'sources'|'analysis'|'favorites';track_ids?:number[]};
+
+/** Read the last display value synchronously while a visible page revalidates it. */
+export function peekDisplayData<K extends Parameters<typeof call>[0]>(command:K,args?:Parameters<typeof call<K>>[1]):Awaited<ReturnType<typeof call<K>>>|undefined{return entries.get(displayKey(command,args))?.value as Awaited<ReturnType<typeof call<K>>>|undefined;}

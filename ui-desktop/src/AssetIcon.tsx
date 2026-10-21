@@ -8,11 +8,20 @@ const icons = Object.fromEntries(Object.entries(exports).map(([path, svg]) => [p
 icons.rowLevels = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g fill="var(--icon-fill,currentColor)" stroke="var(--icon-stroke,currentColor)" stroke-width="1.5"><rect x="5" y="6" width="5" height="20" rx="2"/><rect x="13.5" y="6" width="5" height="20" rx="2"/><rect x="22" y="6" width="5" height="20" rx="2"/></g></svg>';
 const groups = [["play", "rowLevels"], ["play", "pause"], ["tinyPlay", "tinyPause"], ["hearted", "noheart"], ["RepeatOFF", "RepeatON", "RepeatONE"]];
 
-// Keep Sketch geometry, with solid UI fills rather than exported shading.
+// Only playback/collection controls retain shading; other UI assets stay solid.
 export function solidIcon(svg:string, name:string) {
+  const shaded=name==='CollectionShuffle';
   const gradients=new Set<string>();
-  const flat=svg.replace(/<(?:linearGradient|radialGradient)\b[^>]*id="([^"]+)"[^>]*>[\s\S]*?<\/(?:linearGradient|radialGradient)>/g,(_,id:string)=>{gradients.add(id);return '';});
-  return flat.replace(/url\(#([^)]+)\)/g,(reference,id:string)=>gradients.has(id)?name==='CollectionShuffle'?'var(--shuffle-face,var(--control-surface,#edf4f0))':'currentColor':reference);
+  const flat=svg.replace(/<(?:linearGradient|radialGradient)\b[^>]*id="([^"]+)"[^>]*>[\s\S]*?<\/(?:linearGradient|radialGradient)>/g,(markup,id:string)=>{
+    if(shaded){let stop=0;return markup.replace(/stop-color="[^"]+"/g,()=>`stop-color="var(--shuffle-${stop++===0?'top':'bottom'},var(--control-surface))"`);}
+    gradients.add(id);return '';
+  });
+  let result=flat.replace(/url\(#([^)]+)\)/g,(reference,id:string)=>gradients.has(id)?'currentColor':reference);
+  if(['play','pause','prev','next'].includes(name)){
+    result=result.replace(/(<path\b[^>]*?)fill="#000000"/g,'$1fill="url(#transport-shade)"');
+    result=result.replace(/(<svg\b[^>]*>)/,'$1<defs><linearGradient id="transport-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--transport-top,var(--icon-fill,currentColor))"/><stop offset="1" stop-color="var(--transport-bottom,var(--icon-fill,currentColor))"/></linearGradient></defs>');
+  }
+  return result;
 }
 
 export function AssetIcon({ name, className = "" }: { name: string; className?: string }) {
@@ -21,7 +30,7 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
   const prefix = useId().replace(/[^a-zA-Z0-9]/g, "");
   useLayoutEffect(() => {
     const host = element.current!;
-    const source = icons[name]&&solidIcon(icons[name],name).replace(/(fill|stroke|stop-color)="(#(?:000000|000|3[Bb]3[Bb]3[Bb]|111820))"/g,(_,attribute:string)=>`${attribute}="${attribute==='fill'?'var(--icon-fill,currentColor)':'var(--icon-stroke,currentColor)'}"`);
+    const source = icons[name]&&solidIcon(icons[name],name).replace(/<title\b[^>]*>[\s\S]*?<\/title>/g,'').replace(/(fill|stroke|stop-color)="(#(?:000000|000|3[Bb]3[Bb]3[Bb]|111820))"/g,(_,attribute:string)=>`${attribute}="${attribute==='fill'?'var(--icon-fill,currentColor)':'var(--icon-stroke,currentColor)'}"`);
     if (!source) { host.replaceChildren(); previous.current = name; return; }
     // Sketch exports reuse identifiers such as path-1; scope every reference.
     const counts = new Map<string, number>();

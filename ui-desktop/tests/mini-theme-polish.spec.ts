@@ -33,7 +33,7 @@ test('main queue has a closing phase and survives a quick reopen',async({page})=
 function ratio(a:string,b:string){const lum=(s:string)=>{const c=s.match(/[\d.]+/g)!.slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);}
 test('section header stays rounded and stationary; portal choices have readable light/dark selected states',async({page})=>{
  await page.goto('/?fixture=1');const chooser=page.getByRole('button',{name:'Choose section',exact:true});
- const original=await chooser.boundingBox();await chooser.click();await expect(chooser).toHaveCSS('border-bottom-left-radius','16px');
+ const original=await chooser.boundingBox();await chooser.click();await expect(chooser).toHaveCSS('border-bottom-left-radius','0px');
  expect(await chooser.boundingBox()).toEqual(original);await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  for(const mode of ['Dark','Light']){
   await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:mode,exact:true}).click();

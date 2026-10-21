@@ -16,6 +16,7 @@ impl Appearance{fn normalize(mut self)->Self{if !["system","light","dark"].conta
 pub struct Preferences {
     pub version: u32,
     pub mini_player_view: String,
+    pub now_playing_artwork_action: String,
     pub display_name: String,
     pub interface_percent: u16,
     pub coverflow_colors: bool,
@@ -36,6 +37,7 @@ impl Default for Preferences {
         Self {
             version: 1,
             mini_player_view: "artwork".into(),
+            now_playing_artwork_action: "album".into(),
             display_name: "Henry".into(),
             interface_percent: 100,
             coverflow_colors: false,
@@ -57,6 +59,7 @@ impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
+        if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
         self.listening=self.listening.normalize();
         self.appearance=self.appearance.normalize();
         self.coverflow_colors=self.appearance.source=="artwork";
@@ -101,6 +104,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
             if let Some(s)=v["mini_player_view"].as_str(){p.mini_player_view=s.into();}
+            if let Some(s)=v["now_playing_artwork_action"].as_str(){p.now_playing_artwork_action=s.into();}
             if let Some(s) = v["display_name"].as_str() {
                 p.display_name = s.into()
             }
@@ -185,6 +189,13 @@ pub fn save(p: &Preferences) -> anyhow::Result<Preferences> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn artwork_action_defaults_and_round_trips(){
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");
+        std::fs::write(&path,r#"{"display_name":"Listener","mini_player_view":"queue"}"#).unwrap();
+        let mut value=load_from(&path,None);assert_eq!(value.now_playing_artwork_action,"album");
+        for action in ["album","mini_player","artwork"]{value.now_playing_artwork_action=action.into();atomic_write_json(&path,&value).unwrap();assert_eq!(load_from(&path,None).now_playing_artwork_action,action);}
+        value.now_playing_artwork_action="unknown".into();atomic_write_json(&path,&value).unwrap();let loaded=load_from(&path,None);assert_eq!(loaded.now_playing_artwork_action,"album");assert_eq!(loaded.display_name,"Listener");assert_eq!(loaded.mini_player_view,"queue");
+    }
     #[test] fn library_filters_persist_and_invalid_enums_fall_back(){
         let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");
         let mut p=Preferences::default();p.library_filters.sort="title".into();p.library_filters.separate_singles=true;p.library_filters.genre="Electronic".into();p.library_filters.favorites=true;

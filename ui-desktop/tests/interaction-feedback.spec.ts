@@ -18,19 +18,19 @@ test('collaboration credits wrap separately at compact widths and large interfac
   await page.screenshot({animations:'disabled',path:`out/rebuild-qa/artist-credits-fixed-${percent}.png`});
  }
 });
-test('normal Settings entry starts at Appearance, Audio shortcut still opens Audio',async({page})=>{
+test('normal Settings entry retains the last category',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Up next',exact:true}).click();await page.keyboard.press('Escape');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Audio',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Audio',exact:true})).toHaveAttribute('aria-selected','true');
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Library',exact:true}).click();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
- await expect(page.getByRole('tab',{name:'Appearance',exact:true})).toHaveAttribute('aria-selected','true');
+ await expect(page.getByRole('tab',{name:'Audio',exact:true})).toHaveAttribute('aria-selected','true');
 });
 test('only the playing album has a playback indicator, and browsing leaves no selected card panel',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
  await expect(page.locator('.collection-card.selected')).toHaveCount(0);await expect(page.locator('.card-playing')).toHaveCount(0);
  await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
  await expect(page.locator('.collection-card.currently-playing')).toHaveCount(1);await expect(page.locator('.collection-card.currently-playing')).toContainText('Discovery');await expect(page.locator('.card-playing')).toHaveAttribute('aria-label','Now playing');
- await expect(page.getByRole('button',{name:'Open SuperCommand'})).toHaveText('⌘');
+ await expect(page.getByRole('button',{name:'Search music and commands'})).toContainText('⌘ K');
  await expect(page.locator('.now-playing [aria-label="Open Up next"] [data-icon="queue"]')).toHaveCount(1);
  await page.screenshot({animations:'disabled',path:'out/rebuild-qa/playing-card-indicator.png'});
 });
@@ -44,16 +44,13 @@ test('grid titles cap at two lines, with full text retained for album view and t
  const nextRow=await page.locator('.collection-card').nth(6).boundingBox();expect(nextRow!.y).toBeGreaterThan(caption!.y+caption!.height);
  await page.screenshot({animations:'disabled',path:'out/rebuild-qa/long-card-titles.png'});
 });
-test('artist portrait loading has two squares, respects reduced motion, and clears after loading',async({page})=>{
- let release: (()=>Promise<void>)|undefined;
- await page.route('**/*m83*.png',route=>{release=()=>route.continue();});
+test('a delayed known artist portrait keeps its ordinary artwork without a completion overlay',async({page})=>{
+ const held: (()=>Promise<void>)[]=[];await page.route('**/*m83*.png',route=>{held.push(()=>route.continue());});
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();
- const card=page.locator('.collection-card[data-artist-name="M83"]');
- const loading=card.getByRole('status',{name:'Loading artist photo'});
- await expect(loading).toBeVisible();await expect(loading.locator('rect')).toHaveCount(2);
- await expect(card.locator('.portrait-loading > img')).toHaveCSS('filter','blur(12px)');
- await page.emulateMedia({reducedMotion:'reduce'});await expect(loading.locator('svg')).toHaveCSS('animation-name','none');
- await expect.poll(()=>!!release).toBe(true);await release!();await expect(loading).toHaveCount(0);
+ const card=page.locator('.collection-card[data-artist-name="M83"]');await expect(card).toBeVisible();
+ await expect(card.getByRole('status',{name:'Loading artist photo'})).toHaveCount(0);await expect(card.locator('.portrait-loading')).toHaveCount(0);
+ await page.emulateMedia({reducedMotion:'reduce'});await expect.poll(()=>held.length).toBeGreaterThan(0);for(const release of held)await release();
+ await expect(card.locator('img.cover')).toBeVisible();await expect(card.locator('.portrait-loading')).toHaveCount(0);
 });
 test('card artwork stays free of corner Play buttons and retains keyboard actions',async({page})=>{
  await page.goto('/?fixture=1');
