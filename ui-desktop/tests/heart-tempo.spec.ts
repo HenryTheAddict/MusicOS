@@ -13,6 +13,7 @@ test('song hearts use their own cached BPM in albums, playlists and Songs; favor
  await start(page);
  await expect(page.locator('.now-playing-title .track-favorite')).toHaveCount(0);
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
+ expect(await heart(page,1).evaluate(el=>el.querySelector('svg')!.getBoundingClientRect().width<=el.getBoundingClientRect().width*.7)).toBe(true);
  await playRow(page,1);
  await expect(page.locator('.now-playing-title .track-favorite')).toHaveCount(1);
  await expect(heart(page,1)).toHaveAttribute('data-pulsing','true');

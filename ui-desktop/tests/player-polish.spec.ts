@@ -18,7 +18,7 @@ async function start(page:Page,mode='dark',percent=100){
 }
 for(const mode of ['light','dark'])test(`${mode}: player colors belong to the playing album and its context menu`,async({page})=>{
  await start(page,mode);const bar=page.getByRole('region',{name:'Now playing',exact:true});
- const colors=()=>bar.evaluate(el=>({surface:el.style.getPropertyValue('--surface-color'),accent:el.style.getPropertyValue('--accent'),ink:el.style.getPropertyValue('--ink')}));
+ const colors=()=>bar.evaluate(el=>({surface:el.style.getPropertyValue('--surface-color'),accent:el.style.getPropertyValue('--accent'),ink:el.style.getPropertyValue('--ink'),fill:el.style.getPropertyValue('--transport-fill'),stroke:el.style.getPropertyValue('--transport-stroke')}));
  const expected=themePalette({...defaultAppearance,mode:mode as 'light'|'dark',source:'artwork'},{background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'},false)!;
  await expect.poll(async()=>(await colors()).accent).toBe(expected.accent);const before=await colors();
  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
@@ -36,6 +36,7 @@ for(const percent of [80,100,125,150])test(`heart sits beside title without cove
   await page.setViewportSize(size);
   const geometry=await heart.evaluate(el=>{const a=el.getBoundingClientRect(),label=el.parentElement!.querySelector('.overflow-label')!.getBoundingClientRect(),bar=el.closest('.now-playing')!.getBoundingClientRect();return {gap:a.left-label.right,fits:a.top>=bar.top&&a.bottom<=bar.bottom&&a.right<=bar.right};});
   expect(geometry.gap).toBeGreaterThanOrEqual(0);expect(geometry.gap).toBeLessThan(12);expect(geometry.fits).toBe(true);
+  expect(await heart.evaluate(el=>{const button=el.getBoundingClientRect(),svg=el.querySelector('svg')!.getBoundingClientRect();return svg.width<=button.width*.9&&svg.height<=button.height*.9;})).toBe(true);
  }
  await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
  await heart.click();await expect(page.getByRole('button',{name:'Unfavorite playing song',exact:true})).toHaveAttribute('aria-pressed','true');

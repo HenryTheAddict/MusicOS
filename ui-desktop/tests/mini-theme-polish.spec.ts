@@ -8,7 +8,7 @@ test('mini heart follows playing BPM, and queue retains rows/scroll across anima
  await start(page);await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
  await page.setViewportSize({width:244,height:320});
  const mini=page.locator('.mini-player'),heart=mini.locator('.mini-favorite');
- await expect(heart).toBeVisible();await expect(heart).toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
+ await expect(heart).toBeVisible();expect(await heart.evaluate(el=>el.querySelector('svg')!.getBoundingClientRect().width<=el.getBoundingClientRect().width*.6)).toBe(true);await expect(heart).toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
  await mini.getByRole('button',{name:'Pause',exact:true}).click();await expect(heart.locator('.heart-beat')).toHaveCSS('animation-name','none');
  await mini.getByRole('button',{name:'Play',exact:true}).click();await expect(heart).toHaveAttribute('data-pulsing','true');
  await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(mini).toHaveAttribute('data-layout','queue');
