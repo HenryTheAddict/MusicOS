@@ -53,6 +53,15 @@ pub struct Plan {
     pub confidence: f32,
     pub reason: String,
 }
+impl Plan {
+    /// A weak ending blend is provisional until preparation is actually due.
+    /// Otherwise analysis completing during the song can never improve it:
+    /// accepted mixer schedules correctly remain protected from replacement.
+    pub fn ready_to_schedule(&self,mode:Mode,position:f32,speed:f32)->bool {
+        mode==Mode::FullSong || self.confidence>=0.5 || self.duration==0.
+            || self.outgoing_cue-position<=12.*speed
+    }
+}
 #[derive(Clone, Copy)]
 pub struct Track<'a> {
     pub key_index:Option<usize>,
@@ -417,4 +426,17 @@ mod tests {
         assert_eq!(order, vec![5, 3, 4, 2]);
         assert!(!order.contains(&0) && !order.contains(&1));
     }
+}
+
+#[cfg(test)] mod dispatch_tests {
+ use super::*;
+ #[test]fn weak_smart_blends_wait_but_confident_and_explicit_full_song_plans_do_not(){
+  let mut plan=Plan{outgoing_cue:98.,incoming_cue:0.,duration:2.,incoming_tempo:1.,effect:Effect::CleanBlend,confidence:0.,reason:String::new()};
+  assert!(!plan.ready_to_schedule(Mode::SmartTransition,0.,1.));
+  assert!(!plan.ready_to_schedule(Mode::SmartTransition,85.,1.));
+  assert!(plan.ready_to_schedule(Mode::SmartTransition,86.,1.));
+  assert!(plan.ready_to_schedule(Mode::SmartTransition,74.,2.));
+  assert!(plan.ready_to_schedule(Mode::FullSong,0.,1.));
+  plan.confidence=0.7;assert!(plan.ready_to_schedule(Mode::SmartTransition,0.,1.));
+ }
 }

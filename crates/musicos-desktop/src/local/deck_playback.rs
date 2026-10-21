@@ -533,7 +533,7 @@ impl DesktopPlayer {
         if self.paused {
             return;
         }
-        if self.prepared.is_none() && std::time::Instant::now()>=self.retry_after {
+        if self.prepared.is_none() && std::time::Instant::now()>=self.retry_after && self.automatic_prepare_due() {
             if let Some(index) = self.current {
                 if let Some(next)=self.next_playable().filter(|_|self.repeat!=LoopMode::One) {
                     let _ = self.prepare(Transition {
@@ -590,6 +590,15 @@ impl DesktopPlayer {
         self.current
             .and_then(|i| self.queue.get(i))
             .map(|e| &e.track)
+    }
+    // A gapless prefetch is authoritative once accepted by the mixer. In DJmode
+    // it must not win the race against the musical planner at track start.
+    // Keep a bounded standalone fallback near EOF if no plan was delivered.
+    fn automatic_prepare_due(&self)->bool {
+        if !self.dj_mode || self.control.clock.drained[self.active].load(Ordering::Acquire) {return true;}
+        let generation=self.decks[self.active].generation.load(Ordering::Acquire);
+        if generation>0 && self.control.clock.failed[self.active].load(Ordering::Acquire)==generation {return true;}
+        self.current.is_some_and(|index|self.queue[index].track.duration as f32-self.get_position()<=8.*self.listening.speed)
     }
     pub fn get_position(&self) -> f32 {
         self.control.clock.source_frames[self.active].load(Ordering::Acquire) as f32 / RATE as f32
@@ -846,6 +855,18 @@ pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS
  use super::*;
  fn pending()->DesktopPlayer {
   let track=Track{id:1,path:String::new(),title:String::new(),artist:String::new(),album:String::new(),track_number:1,duration:100,file_size:0,modified_at:0,indexed_at:0,cover_art_path:None,cover_art_updated_at:None,cover_art_source_modified_at:None,favorited:false,play_count:0,last_played:None,rating:0};let mut p=DesktopPlayer::new();p.queue=vec![Entry{key:1,track:track.clone()},Entry{key:2,track}];p.current=Some(0);p.paused=false;p.prepared=Some((2,1));p.transition=Some(Transition{request_id:42,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.schedule_id=42;p.decks[1].generation.store(1,Ordering::Release);p
+ }
+ #[test]fn dj_fallback_must_not_preempt_the_smart_planner_at_track_start(){
+  let mut p=pending();p.prepared=None;p.transition=None;p.schedule_id=0;p.dj_mode=true;p.tick();
+  assert!(p.transition.is_none(),"an early safety blend must not lock out a later musical plan");
+ }
+ #[test]fn dj_fallback_still_prepares_near_the_ending_and_scales_with_user_speed(){
+  let mut p=pending();p.dj_mode=true;
+  p.control.clock.source_frames[0].store(91*RATE as u64,Ordering::Release);assert!(!p.automatic_prepare_due());
+  p.control.clock.source_frames[0].store(92*RATE as u64,Ordering::Release);assert!(p.automatic_prepare_due());
+  p.listening.speed=2.;p.control.clock.source_frames[0].store(84*RATE as u64,Ordering::Release);assert!(p.automatic_prepare_due());
+  p.control.clock.source_frames[0].store(0,Ordering::Release);p.dj_mode=false;assert!(p.automatic_prepare_due());
+  p.dj_mode=true;p.control.clock.drained[0].store(true,Ordering::Release);assert!(p.automatic_prepare_due());
  }
  #[test]fn organized_paths_preserve_duplicate_entries_pins_and_position(){let mut p=pending();p.paused=true;p.pins.insert(2);let ids=p.entry_ids();let position=p.get_position();let mut track=p.queue[0].track.clone();track.path="/new/Artist/Album/song.flac".into();p.refresh_paths(&[track]);assert_eq!(p.entry_ids(),ids);assert!(p.pins.contains(&2));assert_eq!(p.current,Some(0));assert_eq!(p.get_position(),position);assert!(p.queue.iter().all(|e|e.track.path=="/new/Artist/Album/song.flac"));assert!(p.transition.is_none());}
  #[test]fn accepted_plan_cannot_be_replaced_by_routine_preparation(){let mut p=pending();p.scheduled_reported=true;let before=p.decks[1].generation.load(Ordering::Acquire);let mut next=p.transition.clone().unwrap();next.request_id=43;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);assert_eq!(p.decks[1].generation.load(Ordering::Acquire),before);assert_eq!(p.transition_outcome.as_ref().unwrap().status,"rejected");}
