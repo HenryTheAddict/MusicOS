@@ -1,10 +1,10 @@
 import {test,expect,type Page} from '@playwright/test';
 import {themePalette,defaultAppearance} from '../src/appearance';
-async function start(page:Page,mode='dark'){
- await page.addInitScript(mode=>{
-  localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}}));
+async function start(page:Page,mode='dark',percent=100){
+ await page.addInitScript(({mode,percent})=>{
+  localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}}));
   localStorage.setItem('musicos-fixture-analysis',JSON.stringify([{track_id:1,bpm:120}]));
- },mode);
+ },{mode,percent});
  await page.route('**/src/fixtures.ts*',async route=>{
   const response=await route.fetch(),body=await response.text(),marker='case "artwork_palette":';
   await route.fulfill({response,body:body.replace(marker,`${marker}
@@ -29,8 +29,8 @@ for(const mode of ['light','dark'])test(`${mode}: player colors belong to the pl
  await expect(menu).not.toHaveCSS('border-top-color','rgb(255, 255, 255)');await page.keyboard.press('Escape');
  await page.screenshot({path:`out/rebuild-qa/player-polish-${mode}.png`,animations:'disabled'});
 });
-test('heart sits beside title without covering labels at compact and large sizes',async({page})=>{
- await start(page);const heart=page.locator('.now-playing-title .track-favorite');
+for(const percent of [80,100,125,150])test(`heart sits beside title without covering labels at compact and large sizes (${percent}%)`,async({page})=>{
+ await start(page,'dark',percent);const heart=page.locator('.now-playing-title .track-favorite');
  for(const size of [{width:720,height:480},{width:1280,height:800}]){
   await page.setViewportSize(size);
   const geometry=await heart.evaluate(el=>{const a=el.getBoundingClientRect(),label=el.parentElement!.querySelector('.overflow-label')!.getBoundingClientRect(),bar=el.closest('.now-playing')!.getBoundingClientRect();return {gap:a.left-label.right,fits:a.top>=bar.top&&a.bottom<=bar.bottom&&a.right<=bar.right};});
