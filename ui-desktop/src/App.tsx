@@ -1,6 +1,5 @@
 import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
-import PlaybackRipple from './PlaybackRipple';
 import {playerTheme} from './playerTheme';
 import {invalidateDisplay,type LibraryChanged} from './displayData';
 import {KeepView} from './ViewScope';
@@ -1120,7 +1119,6 @@ export default function App() {
             )}
           <div className="page-frame">
             <div className="theme-layer current-theme" aria-hidden="true"/>
-            <PlaybackRipple playing={player.is_playing} active={!loading&&miniMode==='normal'}/>
             <main
               id="library-content"
               className={`page-scroll ${section.toLowerCase()}-page`}

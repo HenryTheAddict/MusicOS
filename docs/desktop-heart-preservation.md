@@ -10,4 +10,4 @@ This desktop patch is isolated from unfinished OS changes on `codex/desktop-hear
 
 Verification: 139 native tests, 105 UI unit tests, 2 song-row heart behavior checks, and 15 album/artist/navigation motion checks pass. Compact/large header geometry, pause/resume, favorites, and Reduced Motion are covered. Human motion acceptance remains separate. Windows/Linux were not tested for this patch.
 
-The playing bar and its context/audio/queue surfaces now resolve the playing release independently of the browsed release. Long title/album labels fade at the edge and reveal on hover or keyboard focus. Play starts one finite background ripple; Reduced Motion suppresses it. The playback diagnostics use a chevron and labeled rows.
+The playing bar and its context/audio/queue surfaces now resolve the playing release independently of the browsed release. Long title/album labels fade at the edge and reveal on hover or keyboard focus. The rejected page ripple is removed. Play/Pause uses a short liquid reveal clipped to the supplied glyph geometry; fill and outline remain distinct. Reduced Motion switches immediately. The playback diagnostics use a chevron and labeled rows.

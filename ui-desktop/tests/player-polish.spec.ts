@@ -51,10 +51,16 @@ test('overflow fades, reveals on hover, and stays still with Reduced Motion; aud
  await expect(panel.locator('summary')).toHaveCSS('list-style-type','none');await expect(panel.getByText('Up to date',{exact:true})).toBeVisible();
  await page.screenshot({path:'out/rebuild-qa/player-audio-disclosure.png',animations:'disabled'});
 });
-test('playback ripple is finite and suppressed by Reduced Motion',async({page})=>{
+test('water feedback stays inside the two-tone transport and respects Reduced Motion',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
- await page.getByRole('button',{name:'Play collection',exact:true}).click();await expect(page.locator('.playback-ripple')).toHaveCount(1);
- await expect(page.locator('.playback-ripple')).toHaveCount(0);
- await page.getByRole('button',{name:'Pause',exact:true}).click();await page.emulateMedia({reducedMotion:'reduce'});
- await page.getByRole('button',{name:'Play',exact:true}).click();await expect(page.locator('.playback-ripple')).toHaveCount(0);
+ const glyph=page.locator('.now-playing .transport .asset-icon[data-icon=play]');
+ const tones=await glyph.locator('path[stroke]').evaluate(el=>({fill:getComputedStyle(el).fill,stroke:getComputedStyle(el).stroke}));expect(tones.fill).not.toBe(tones.stroke);
+ await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ const water=page.locator('.now-playing .transport [data-transport-water]');await expect(water).toHaveCount(1);
+ await expect(page.locator('.page-frame .playback-ripple')).toHaveCount(0);
+ await expect(water).toHaveCount(0);
+ const pause=page.locator('.now-playing .transport .asset-icon[data-icon=pause]');
+ const finalTones=await pause.locator('path[stroke]').first().evaluate(el=>({fill:getComputedStyle(el).fill,stroke:getComputedStyle(el).stroke}));expect(finalTones.fill).not.toBe(finalTones.stroke);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Pause',exact:true}).click();
+ await expect(page.locator('[data-transport-water]')).toHaveCount(0);
 });

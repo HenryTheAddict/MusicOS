@@ -854,7 +854,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 .now-playing .icon-button:hover{background:var(--control-surface);}
 .now-playing .mini-controls .icon-button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 16%,var(--surface-color));color:var(--accent);}
 .now-playing .asset-icon{--icon-fill:currentColor;--icon-stroke:currentColor;}
-.now-playing .transport .asset-icon,.now-playing-heart .asset-icon{--icon-fill:var(--accent);--icon-stroke:var(--accent);}
+.now-playing-heart .asset-icon{--icon-fill:var(--accent);--icon-stroke:var(--accent);}
 .overflow-label{display:block;min-width:0;max-width:100%;overflow:hidden;white-space:nowrap;}
 .overflow-label>span{display:block;width:max-content;max-width:none;transform:translateX(0);transition:transform 180ms ease-out;}
 /* This is a text-coverage mask only; every UI surface stays solid. */
@@ -871,12 +871,13 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 .audio-application-details dl{display:grid;gap:.5rem;margin:.5rem 0 0;}
 .audio-application-details dl>div{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;}
 .audio-application-details dt{color:var(--secondary-ink,var(--ink));}.audio-application-details dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;}
-.playback-ripple{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:1;animation:playback-splash-life 800ms linear;}
-.playback-ripple>i{position:absolute;left:65%;top:30%;width:16rem;height:16rem;margin:-8rem;border:1px solid var(--accent);border-radius:50%;opacity:0;animation:playback-splash-ring 650ms ease-out both;}
-.playback-ripple>i+i{animation-delay:100ms;}
-@keyframes playback-splash-life{from{opacity:1}to{opacity:1}}
-@keyframes playback-splash-ring{from{transform:scale(.15);opacity:.16}to{transform:scale(3.5);opacity:0}}
-@media(prefers-reduced-motion:reduce){.overflow-label>span{transition:none!important;transform:none!important;}.disclosure-chevron{transition:none;}.playback-ripple{display:none;}}
+@media(prefers-reduced-motion:reduce){.overflow-label>span{transition:none!important;transform:none!important;}.disclosure-chevron{transition:none;}}
 
 .now-playing{transition:background-color 180ms ease-out,color 180ms ease-out,--accent 180ms ease-out,--surface-color 180ms ease-out,--blob-color 180ms ease-out;}
 @media(prefers-reduced-motion:reduce){.now-playing{transition:none;}}
+
+/* Keep the supplied two-tone transport: readable fill, distinct soft outline. */
+:is(.now-playing .transport,.mini-player .mini-player-transport) .asset-icon{
+ --icon-fill:var(--ink);
+ --icon-stroke:color-mix(in srgb,var(--ink) 58%,var(--surface-color));
+}
