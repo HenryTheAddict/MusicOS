@@ -1,4 +1,3 @@
-import FavoriteButton from './FavoriteButton';
 import {invalidateDisplay,type LibraryChanged} from './displayData';
 import {KeepView} from './ViewScope';
 import {mergePlaybackUpdate} from './playbackPresentation';
@@ -962,7 +961,6 @@ export default function App() {
             <strong key={player.track?.id ?? "empty"} title={player.track?.title}>
               {player.track?.title ?? (loading?"":"Nothing playing yet")}
             </strong>
-            {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={player.is_playing} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'} onFavorite={favorite}/>}
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button onClick={()=>void showPlaying('album')} title={player.track.album}>{player.track.album}</button></>:loading?"":"Your next favorite is waiting."}</span>
             <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}

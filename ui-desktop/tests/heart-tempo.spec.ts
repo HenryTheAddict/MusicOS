@@ -11,6 +11,7 @@ const heart=(page:Page,id:number)=>page.locator(`[data-track-id="${id}"] .track-
 async function playRow(page:Page,id:number){const row=page.locator(`[data-track-id="${id}"]`);await row.hover();await row.locator('.row-play').click();}
 test('song hearts use their own cached BPM in albums, playlists and Songs; favorites remain clickable',async({page})=>{
  await start(page);
+ await expect(page.locator('.now-playing .track-favorite')).toHaveCount(0);
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
  await playRow(page,1);
  await expect(heart(page,1)).toHaveAttribute('data-pulsing','true');
@@ -54,25 +55,4 @@ test('off-screen and Reduced Motion hearts stay still; refreshed or invalid BPM 
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
  await heart(page,1).scrollIntoViewIfNeeded();
  await expect(heart(page,1)).toHaveAttribute('data-pulsing','true');
-});
-
-test('the Now Playing heart keeps its BPM while browsing Artists and Albums',async({page})=>{
- await start(page);await playRow(page,1);
- const playingHeart=page.getByRole('button',{name:'Favorite playing song',exact:true});
- await expect(playingHeart).toHaveAttribute('data-pulsing','true');
- await expect(playingHeart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
- await page.getByRole('button',{name:'Artists',exact:true}).click();
- await expect(playingHeart).toHaveAttribute('data-pulsing','true');
- await playingHeart.click();
- const favorite=page.getByRole('button',{name:'Unfavorite playing song',exact:true});
- await expect(favorite).toHaveAttribute('aria-pressed','true');
- await page.getByRole('button',{name:'Albums',exact:true}).click();
- await expect(favorite.locator('.heart-beat')).toHaveCSS('animation-name','heart-tempo');
- await page.getByRole('button',{name:'Pause',exact:true}).click();
- await expect(favorite.locator('.heart-beat')).toHaveCSS('animation-name','none');
- for(const size of [{width:720,height:480},{width:1280,height:800}]){
-  await page.setViewportSize(size);
-  const fits=await favorite.evaluate(el=>{const heart=el.getBoundingClientRect(),bar=el.closest('.now-playing')!.getBoundingClientRect(),title=el.parentElement!.querySelector('strong')!.getBoundingClientRect();return heart.left>=bar.left&&heart.right<=bar.right&&heart.top>=bar.top&&heart.bottom<=bar.bottom&&title.left<heart.left;});
-  expect(fits).toBe(true);
- }
 });
