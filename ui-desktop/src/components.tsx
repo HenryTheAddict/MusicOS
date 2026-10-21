@@ -196,8 +196,10 @@ export function Menu({
   contextOnly = false,
   selectedLabel,
   onIntent,
+  theme,
 }: {
   contextOnly?: boolean;
+  theme?:CSSProperties;
   selectedLabel?:string;
   onIntent?:()=>void;
   label: string;
@@ -221,6 +223,7 @@ export function Menu({
       <Dropdown.Portal>
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
+          style={theme}
           data-pointer-menu={point?true:undefined}
           className={`dropdown ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":undefined}
@@ -244,9 +247,9 @@ export function Menu({
     </Dropdown.Root>
   );
 }
-export function Overflow({ items, contextOnly=false }: { items: MenuItem[]; contextOnly?:boolean }) {
+export function Overflow({ items, contextOnly=false,theme }: { items: MenuItem[]; contextOnly?:boolean;theme?:CSSProperties }) {
   return (
-    <Menu label="More actions" items={items} contextOnly={contextOnly}>
+    <Menu label="More actions" items={items} contextOnly={contextOnly} theme={theme}>
       <Icon name="3dots_(nocircle)" />
     </Menu>
   );

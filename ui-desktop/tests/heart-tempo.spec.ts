@@ -11,9 +11,10 @@ const heart=(page:Page,id:number)=>page.locator(`[data-track-id="${id}"] .track-
 async function playRow(page:Page,id:number){const row=page.locator(`[data-track-id="${id}"]`);await row.hover();await row.locator('.row-play').click();}
 test('song hearts use their own cached BPM in albums, playlists and Songs; favorites remain clickable',async({page})=>{
  await start(page);
- await expect(page.locator('.now-playing .track-favorite')).toHaveCount(0);
+ await expect(page.locator('.now-playing-title .track-favorite')).toHaveCount(0);
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
  await playRow(page,1);
+ await expect(page.locator('.now-playing-title .track-favorite')).toHaveCount(1);
  await expect(heart(page,1)).toHaveAttribute('data-pulsing','true');
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
  await expect(heart(page,2).locator('.heart-beat')).toHaveCSS('animation-name','none');

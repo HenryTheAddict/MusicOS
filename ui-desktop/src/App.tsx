@@ -1,3 +1,7 @@
+import FavoriteButton from './FavoriteButton';
+import OverflowLabel from './OverflowLabel';
+import PlaybackRipple from './PlaybackRipple';
+import {playerTheme} from './playerTheme';
 import {invalidateDisplay,type LibraryChanged} from './displayData';
 import {KeepView} from './ViewScope';
 import {mergePlaybackUpdate} from './playbackPresentation';
@@ -390,6 +394,17 @@ export default function App() {
     player.track?.cover_art_path ??
     library.albums.find((a) => a.track_ids.includes(player.track?.id ?? -1))
       ?.cover;
+  const [playingArtPalette,setPlayingArtPalette]=useState<Palette|null>(null);
+  const playingThemeRequest=JSON.stringify([playingCover??null,playingAlbum?.track_ids[0]??player.track?.id]);
+  useEffect(()=>{
+    let gone=false;
+    if(loading||look.source!=='artwork'){setPlayingArtPalette(null);return;}
+    const [cover,id]=JSON.parse(playingThemeRequest) as [string|null,number|undefined];
+    void resolveArtworkTheme([cover],id).then(result=>{if(!gone)setPlayingArtPalette(result?.palette??null);});
+    return()=>{gone=true;};
+  },[loading,look.source,playingThemeRequest,themeEpoch]);
+  const playingPalette=useMemo(()=>themePalette(look,playingArtPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,playingArtPalette,systemDark]);
+  const playingStyle=useMemo(()=>playerTheme(playingPalette),[playingPalette]);
   const source = themeSource(
     section === "Library"
       ? route.view === "catalog" && route.catalog?.kind === "album"
@@ -937,8 +952,8 @@ export default function App() {
         <Menu label="MusicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><Icon name="3dots_(nocircle)"/></Menu>
         </div>
         <div className="header-drag-spacer" />
-        <section className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
-          <Overflow contextOnly items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:windowPinned?'Unpin window':'Pin window',icon:windowPinned?'unPin':'Pin',onSelect:()=>void toggleWindowPin()},...nowActions]}/>
+        <section style={playingStyle} className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
+          <Overflow theme={playingStyle} contextOnly items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:windowPinned?'Unpin window':'Pin window',icon:windowPinned?'unPin':'Pin',onSelect:()=>void toggleWindowPin()},...nowActions]}/>
           <button
             className="now-playing-cover"
             aria-label="Show playing album"
@@ -958,10 +973,11 @@ export default function App() {
             />
           </button>
           <div className="now-playing-info">
-            <strong key={player.track?.id ?? "empty"} title={player.track?.title}>
-              {player.track?.title ?? (loading?"":"Nothing playing yet")}
+            <strong className="now-playing-title" title={player.track?.title}>
+              <OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/>
+              {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
-            <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button onClick={()=>void showPlaying('album')} title={player.track.album}>{player.track.album}</button></>:loading?"":"Your next favorite is waiting."}</span>
+            <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:loading?"":"Your next favorite is waiting."}</span>
             <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}})); }} />
@@ -1104,6 +1120,7 @@ export default function App() {
             )}
           <div className="page-frame">
             <div className="theme-layer current-theme" aria-hidden="true"/>
+            <PlaybackRipple playing={player.is_playing} active={!loading&&miniMode==='normal'}/>
             <main
               id="library-content"
               className={`page-scroll ${section.toLowerCase()}-page`}
@@ -1232,9 +1249,9 @@ export default function App() {
           </div>
         </dialog>
       )}
-      <QuickAudio player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
+      <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
-      {queuePresent&&<AudioPanel closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
+      {queuePresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
       {commandOpen&&<Suspense fallback={null}><SuperCommand library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">
