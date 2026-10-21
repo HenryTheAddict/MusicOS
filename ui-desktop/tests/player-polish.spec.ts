@@ -24,6 +24,7 @@ for(const mode of ['light','dark'])test(`${mode}: player colors belong to the pl
  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).not.toBe(before.surface);
  expect(await colors()).toEqual(before);
+ const tones=await bar.locator('.transport path[stroke]').first().evaluate(el=>({fill:getComputedStyle(el).fill,stroke:getComputedStyle(el).stroke}));expect(tones.fill).not.toBe(tones.stroke);
  await bar.click({button:'right'});const menu=page.getByRole('menu');await expect(menu).toBeVisible();
  expect(await menu.evaluate(el=>el.style.getPropertyValue('--accent'))).toBe(before.accent);
  await expect(menu).not.toHaveCSS('border-top-color','rgb(255, 255, 255)');await page.keyboard.press('Escape');
