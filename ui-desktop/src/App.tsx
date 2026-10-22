@@ -84,6 +84,7 @@ import { useSmoothCorners } from "./smoothCorners";
 import PlaybackProgress from "./PlaybackProgress";
 import AudioQuality from "./AudioQuality";
 import AlbumDescription from "./AlbumDescription";
+const PersonalHome = lazy(()=>import("./PersonalHome"));
 const SuperCommand = lazy(()=>import("./SuperCommand"));
 import type {
   SavedCollection,
@@ -711,6 +712,7 @@ export default function App() {
 
       </div>
     );
+  else if(route.view==='home')content=<PersonalHome name={preferences.display_name} library={library} collections={collections} recommendations={sparkRecommendations} player={player} active={section==='Library'&&miniMode==='normal'} onAlbum={openAlbum} onCollection={openCollection} onPlay={ids=>playIds(ids)} onToggle={()=>void run({type:'toggle'})} onScope={goScope} onCreate={setCreatingCollection} onAdd={()=>void chooseFolder(false)}/>;
   else if (route.view === "album" && album)
     content = (
       <article className="album-detail" data-album-id={album.id}>
@@ -1036,13 +1038,13 @@ export default function App() {
       <div className={`workspace ${section !== "Library" ? "full-width" : ""}`}>
         {section === "Library" && (
           <aside className="library-sidebar">
-            <span className="sidebar-label">Library</span>
+            <button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>{preferences.display_name}'s stuff</button>
             <div className="sidebar-search-slot">
               {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
               {navigation.history.length>0&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>}
             </div>
             <nav aria-label="Library">
-              {(["albums", "artists", "genres", "songs"] as Scope[]).map(
+              {(["albums", "artists", "genres", "songs", "playlists", "sparklists"] as Scope[]).map(
                 (scope) => (
                   <button
                     className={displayScope === scope ? "active" : ""}
@@ -1054,36 +1056,13 @@ export default function App() {
                   </button>
                 ),
               )}
+              <button className={route.view==='favorites'?'active':''} onClick={()=>goScope('favorites')}><Icon name="hearted"/><span>Favorites</span></button>
             </nav>
             <div className="collection-create-actions">
               <button className="sketch-button" onClick={()=>setCreatingCollection('manual')}><Icon name="Playlist"/><span>Create playlist</span></button>
               <button className="sketch-button secondary" onClick={()=>setCreatingCollection('spark')}><Icon name="Sparklist"/><span>Create Sparklist</span></button>
             </div>
-            <section className="personal-library">
-              <div className="collections-heading"><h2><button className="collections-heading-link" aria-label="Manage collections" onClick={()=>{setSection('Library');goScope('playlists');}}>{preferences.display_name}'s stuff</button></h2></div>
-              <button
-                className={route.view === "favorites" ? "active" : ""}
-                onClick={() => goScope("favorites")}
-              >
-                <Icon name="hearted" />
-                <span>
-                  <strong>Favorites</strong>
-                  <small aria-busy={loading}>
-                    {loading?'\u00a0':`${librarySummary.favorites} songs`}
-                  </small>
-                </span>
-              </button>
-              {sparkRecommendations.length>0&&<section className="spark-recommendations" aria-label="Recommended Sparklists"><header><h3>For your mood</h3><button aria-label="More Sparklist recommendations" onClick={()=>setCommandOpen(true)}>More</button></header>{sparkRecommendations.slice(0,1).map(({item,reason})=><button key={item.id} className="spark-recommendation" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span><strong>{item.name}</strong><small>{reason}</small></span><Icon name="Sparklist"/></button>)}</section>}
-              <div className="personal-collections">{collections.map(item=>{
-                const summary=collectionSummaries.get(item.id)!;
-                const icon=item.kind==='audio'?'Sparklist':'Playlist';
-                return <div key={item.id} data-manual-collection={item.kind!=='audio'&&!item.spark?item.id:undefined} className={`personal-collection ${route.id===item.id?'active':''}`}>
-                  <button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong><span>{item.name}</span><Icon name={icon}/></strong><small>{item.kind==='rule'?'Smart playlist · ':''}{item.track_ids.length} {item.track_ids.length===1?'song':'songs'} · {collectionDuration(summary.duration)}</small></span></button>
-                  <button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button>
-                </div>;
-              })}</div>
-              {collectionError&&<small role="alert">{collectionError}</small>}
-            </section>
+            <div className="sidebar-collection-shortcuts" aria-label="Playlist shortcuts"><button aria-label="Manage collections" onClick={()=>goScope('playlists')}>Manage collections</button>{collections.filter(item=>item.kind!=='audio'&&!item.spark).slice(0,3).map(item=>{const summary=collectionSummaries.get(item.id)!;return <div key={item.id} data-manual-collection={item.id} className={`personal-collection ${route.id===item.id?'active':''}`}><button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong>{item.name}</strong><small>{item.track_ids.length} songs · {collectionDuration(summary.duration)}</small></span></button><button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button></div>})}{collectionError&&<small role="alert">{collectionError}</small>}</div>
             <footer className="sidebar-footer">
               <span aria-busy={loading}>{loading?"":`${library.tracks.length} songs`}</span>
               <span>
@@ -1103,7 +1082,7 @@ export default function App() {
                     onClick={() => goBack()}
                   />
                 )}
-                {route.view === "albums" ? <LibraryFilter library={library} value={{...defaultFilters,...preferences.library_filters}} onChange={library_filters=>changePreferences({...preferences,library_filters})}/> : <span className="toolbar-title">
+                {route.view === "home" ? <span className="toolbar-title">Your music</span> : route.view === "albums" ? <LibraryFilter library={library} value={{...defaultFilters,...preferences.library_filters}} onChange={library_filters=>changePreferences({...preferences,library_filters})}/> : <span className="toolbar-title">
                   {route.view === "album"
                     ? album?.title
                     : route.view === "artist"

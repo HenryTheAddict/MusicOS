@@ -5,7 +5,7 @@ export interface Navigation {
   locations?: Partial<Record<Route["view"], Route>>;
 }
 export const initialNavigation: Navigation = {
-  current: { view: "albums", search: "", scroll: 0 },
+  current: { view: "home", search: "", scroll: 0 },
   history: [],
 };
 export type NavigationAction =
@@ -61,6 +61,7 @@ export function restoreNavigation(raw: string | null): Navigation {
   try {
     const state = JSON.parse(raw ?? "null");
     const allowed = [
+      "home",
       "albums",
       "artists",
       "genres",

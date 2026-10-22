@@ -24,6 +24,7 @@ pub mod audio_collections;
 
 pub mod spark_commands;
 pub mod spark_recommendations;
+pub mod home;
 
 pub mod spark_install;
 

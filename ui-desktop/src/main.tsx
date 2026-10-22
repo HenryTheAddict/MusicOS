@@ -9,6 +9,7 @@ import "./settings.css";
 import "./management.css";
 import "./listeningPolish.css";
 import "./desktopConsistency.css";
+import "./personalHome.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

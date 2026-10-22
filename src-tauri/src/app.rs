@@ -1167,6 +1167,11 @@ async fn playlist_file(
     .await
 }
 #[tauri::command]
+async fn home_activity(app:tauri::AppHandle)->ApiResult<crate::home::Activity>{blocking(move||{
+ let config=app.state::<AppState>().config();let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;
+ Ok(crate::home::summarize(database.get_tracks()?.into_iter().map(|t|(t.id,t.play_count,t.last_played))))
+}).await}
+#[tauri::command]
 async fn spark_recommendations(app:tauri::AppHandle,current:Option<i64>)->ApiResult<Vec<crate::spark_recommendations::Recommendation>>{blocking(move||{
  let state=app.state::<AppState>();let config=state.config();let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);
  let items=crate::collections::list(&repo)?;if !items.iter().any(|c|c.kind=="audio"){return Ok(vec![]);}
@@ -1587,7 +1592,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             audio_analysis, audio_tempos, playlist_file, sparklist,
             bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
-            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
+            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin
         ])
         .setup(|app| {
