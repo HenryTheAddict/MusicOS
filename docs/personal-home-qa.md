@@ -25,7 +25,7 @@ With no listening history, the home labels its selection **From your library**, 
 
 Evidence: `out/qa/os-foundation/personal-home/`. The preview server runs from the isolated desktop worktree on port 1420.
 
-## Signed candidate and pending native gate
+## Signed build and native delivery
 
 The candidate is retained at `releases/desktop-personal-home-2026-10-22/MusicOS.app` with a copy of the previously installed app. Ad-hoc signing and deep strict signature verification passed.
 
@@ -36,6 +36,10 @@ Unchanged embedded components:
 - `musicos-mac`: `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`
 - ONNX runtime: `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`
 
-**Not installed in the main MusicOS app yet.** macOS reported a locked screen on both native-access attempts. An unlock request is pending. The currently installed app, preferences, library database, and live playback have not been replaced or changed for this delivery. Before installation, inspect actual playback, pause/stop if needed, quit, make a fresh private preference checkpoint, publish through a verified staged bundle/rename, then verify real listening shelves, collections, queue, and playback restoration. Update `release.json` only after that succeeds.
+**Installed and verified after the user unlocked the Mac.** Before replacement, native controls showed PILOT paused at 147.3 seconds, 11 upcoming songs, 507 songs and 22 favorites. MusicOS was quit; latest preferences were checkpointed under application-data `Development/checkpoints/2026-10-22-personal-home-install/`. The app actually installed at publication time is retained as `Pre-install MusicOS.app` in the release directory. Publication used a hash/signature-verified staging bundle and rename while the main process was stopped.
+
+Native Home displayed the real listening data: six frequently played albums, three recommended saved Sparklists, recent songs, Favorites, and the saved collection shelf with **View all 11 collections**. The manual playlist and ten Sparklists were retained. Startup showed the same PILOT song; the user then resumed playback, browsed the Home album shelf, and selected UTOPIA music during verification. Latest observed playback was MODERN JAM. Further UI changes stopped so the user’s latest playback and browsing were preserved; no claim is made that playback stayed paused during their interaction. Native queue-order comparison after that interaction was not attempted. Isolated fixture checks cover queue preservation and resume semantics.
+
+Installed executable and embedded hashes were rechecked after publication; strict signature verification passed. `release.json` records installed and loaded/verified status.
 
 Subjective design acceptance, native motion/resize checks, physical touchscreen behavior, Windows/Linux, and packaged frame-interval measurement on a physical 120 Hz display remain separate gates. No frame-rate claim is made.
