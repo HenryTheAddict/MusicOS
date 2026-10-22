@@ -157,3 +157,12 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .personal-collection[data-spark=true] .collection-shuffle .asset-icon,.playlist-hero[data-spark=true] .collection-actions>.shuffle-button .asset-icon{--icon-fill:var(--ink);--icon-stroke:var(--secondary-ink);}
 .personal-collection .collection-shuffle{display:grid;place-items:center;align-self:center;}
 .personal-collection .collection-shuffle>.icon{width:2rem;height:2rem;display:block;margin:0;}
+/* Short native windows need the full reading width below the centered cover. */
+@container(max-height:360px){
+ .mini-player:is([data-layout=tall],[data-layout=queue]){padding:10px;gap:6px;}
+ .mini-player[data-layout=tall]{--mini-art-size:min(calc(100cqw - 22px),calc(100cqh - 168px));grid-template-rows:minmax(0,1fr) 52px 36px 40px;}
+ .mini-player[data-layout=tall] .mini-player-copy{width:100%;}
+ .mini-player[data-layout=queue]{grid-template-rows:64px minmax(0,1fr) 36px 40px;}
+ .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools{height:36px;}
+ .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools>button{width:36px;height:36px;flex-basis:36px;}
+}
