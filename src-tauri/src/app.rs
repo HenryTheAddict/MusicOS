@@ -1167,6 +1167,19 @@ async fn playlist_file(
     .await
 }
 #[tauri::command]
+async fn spark_recommendations(app:tauri::AppHandle,current:Option<i64>)->ApiResult<Vec<crate::spark_recommendations::Recommendation>>{blocking(move||{
+ let state=app.state::<AppState>();let config=state.config();let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);
+ let items=crate::collections::list(&repo)?;if !items.iter().any(|c|c.kind=="audio"){return Ok(vec![]);}
+ let library=repo.snapshot(&LibraryQuery::default())?;
+ let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;
+ let mut played=database.get_tracks()?.into_iter().filter(|t|t.last_played.is_some_and(|time|time>0)).collect::<Vec<_>>();played.sort_by_key(|t|(std::cmp::Reverse(t.last_played),t.id));
+ let recent=played.iter().take(12).map(|t|t.id).collect::<Vec<_>>();
+ let beta=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta;
+ let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join("runtime/libonnxruntime.1.31.0.dylib"),beta);
+ let audio=if beta{crate::spark_engine::read_manifest(&setup.dir,setup.evaluation).ok().map(|manifest|crate::embeddings::candidates(&config.db_path,&library.tracks,&format!("{}@{}",manifest.id,manifest.revision))).unwrap_or_default()}else{vec![]};
+ Ok(crate::spark_recommendations::rank(&items,&library.tracks,&audio,current,&recent))
+}).await}
+#[tauri::command]
 async fn playlist_suggestions(app:tauri::AppHandle,id:String)->ApiResult<Value>{blocking(move||{
  let state=app.state::<AppState>();let config=state.config();let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);let item=crate::collections::list(&repo)?.into_iter().find(|c|c.id==id).context("Playlist no longer exists")?;anyhow::ensure!(item.kind=="manual","Suggestions are for manual playlists");
  let beta=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta;if !beta{return Ok(json!({"ids":[],"state":"setup","message":"Enable Sparklist audio suggestions in Audio settings."}));}
@@ -1574,7 +1587,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             audio_analysis, audio_tempos, playlist_file, sparklist,
             bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
-            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
+            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin
         ])
         .setup(|app| {

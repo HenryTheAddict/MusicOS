@@ -1,4 +1,4 @@
-import {useEffect,useLayoutEffect,useRef,useMemo} from 'react';
+import {useEffect,useLayoutEffect,useRef,useMemo,useState} from 'react';
 import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
 import {trackCredits} from './credits';
@@ -18,13 +18,25 @@ export default function MiniPlayer({player,cover,bpm,mode,onMode,onAction,onFavo
  },[player.queue,player.queue_entry_ids,player.queue_index,player.arranged_entries,player.pinned_entries,onAction]);
  const actions=useRef({onMode,onQueue});actions.current={onMode,onQueue};
  const root=useRef<HTMLElement>(null);
+ const [displayedMode,setDisplayedMode]=useState(mode);
  const fade=useRef<Animation[]>([]);
+ const lastMode=useRef(mode);
  useLayoutEffect(()=>{
-  const content=[...(root.current?.querySelectorAll<HTMLElement>('.mini-player-art,.mini-player-copy')??[])];
-  const reversing=fade.current.some(animation=>animation.playState==='running'),opacities=content.map(node=>reversing?getComputedStyle(node).opacity:'0');
+  const content=[...(root.current?.querySelectorAll<HTMLElement>('.mini-player-art,.mini-player-copy,.mini-queue-list')??[])];
+  const interrupted=fade.current.some(animation=>animation.playState==='running');
+  const opacity=content.map(node=>getComputedStyle(node).opacity);
   fade.current.forEach(animation=>animation.cancel());fade.current=[];
-  if(!window.matchMedia('(prefers-reduced-motion: reduce)').matches)fade.current=content.map((node,index)=>node.animate([{opacity:opacities[index]},{opacity:1}],{duration:180,easing:'ease-out'}));
- },[mode]);
+  if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){setDisplayedMode(mode);return;}
+  if(mode===displayedMode){
+   if(lastMode.current!==mode||interrupted)fade.current=content.flatMap((node,index)=>node.className==='mini-queue-list'&&mode!=='queue'?[]:[node.animate([{opacity:lastMode.current===mode?opacity[index]:0},{opacity:1}],{duration:105,easing:'ease-out'})]);
+   lastMode.current=mode;return;
+  }
+  // Fade the old layout out before reflow. Controls never leave their bottom frame.
+  let live=true;
+  fade.current=content.map((node,index)=>node.animate([{opacity:opacity[index]},{opacity:0}],{duration:75,easing:'ease-out',fill:'forwards'}));
+  void Promise.all(fade.current.map(animation=>animation.finished)).then(()=>{if(live)setDisplayedMode(mode);}).catch(()=>{});
+  return()=>{live=false;};
+ },[mode,displayedMode]);
  useEffect(()=>()=>fade.current.forEach(animation=>animation.cancel()),[]);
  useEffect(()=>{root.current?.focus();},[]);
  useEffect(()=>{
@@ -35,7 +47,7 @@ export default function MiniPlayer({player,cover,bpm,mode,onMode,onAction,onFavo
   window.addEventListener('keydown',escape);
   return()=>window.removeEventListener('keydown',escape);
  },[mode]);
- return <section ref={root} tabIndex={-1} className="mini-player" data-layout={mode} aria-label="Mini Player" onMouseDown={e=>dragWindow(e,onWindowError)} onContextMenu={e=>{if(e.defaultPrevented)return;e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new Event('musicos-open-menu'));}if(e.key==='Escape'&&!document.querySelector('.mini-actions-popover:popover-open')&&!e.defaultPrevented&&!((e.target as HTMLElement).closest('[role=menu]'))){e.preventDefault();mode==='queue'?onQueue():onMode('normal');}}}>
+ return <section ref={root} tabIndex={-1} className="mini-player" data-layout={displayedMode} aria-label="Mini Player" onMouseDown={e=>dragWindow(e,onWindowError)} onContextMenu={e=>{if(e.defaultPrevented)return;e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new Event('musicos-open-menu'));}if(e.key==='Escape'&&!document.querySelector('.mini-actions-popover:popover-open')&&!e.defaultPrevented&&!((e.target as HTMLElement).closest('[role=menu]'))){e.preventDefault();mode==='queue'?onQueue():onMode('normal');}}}>
   <button className="mini-player-art" onClick={onAlbum} aria-label="Show playing album" disabled={!track}><Cover src={cover} trackId={track?.id} title={track?.album??'No music playing'}/></button>
   <div className="mini-player-copy"><strong title={track?.title}><OverflowLabel text={track?.title??'Nothing playing yet'}/></strong><button className="mini-player-album" onClick={onAlbum} disabled={!track} aria-label="Show playing album details" title={track?`${track.artist} · ${track.album}`:undefined}><OverflowLabel text={track?`${trackCredits(track).join(' + ')} · ${track.album}`:'Choose a song in Library'}/></button><PlaybackProgress trackId={track?.id} position={player.position} duration={track?.duration??0} showTime transition={player.dj_transition} seek={position=>onAction({type:'seek',position})}/></div>
   <div className="mini-queue-list" role="region" aria-label="Up next" aria-hidden={mode!=='queue'} inert={mode!=='queue'}><header className="mini-queue-heading"><strong>Up next</strong><span>{upcomingCount} {upcomingCount===1?'song':'songs'}</span></header>{queueContent}</div>

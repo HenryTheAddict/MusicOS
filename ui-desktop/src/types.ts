@@ -235,6 +235,7 @@ export type IntegrationRequest =
   | { action: "disconnect_lastfm" };
 
 export interface SparkDefinition {name:string;match_mode:'all'|'any';rules:{field:string;op:string;value:string}[];limit:number|null}
+export interface SparkRecommendation {id:string;reason:string}
 export interface SavedCollection {updated_at?:number;id:string;name:string;track_ids:number[];spark:SparkDefinition|null;kind?:'manual'|'rule'|'audio';description?:string;artwork?:string|null;artwork_choice?:string|null;target_count?:number|null}
 export interface CollectionRequest {action:'length'|'cover'|'create'|'rename'|'describe'|'delete'|'add'|'remove'|'reorder'|'create_spark'|'update_spark';id?:string;name?:string;track_ids?:number[];definition?:SparkDefinition;description?:string;artwork_choice?:string;target_count?:number}
 

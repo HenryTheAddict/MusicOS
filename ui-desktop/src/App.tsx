@@ -1,3 +1,4 @@
+import useSparkRecommendations from './useSparkRecommendations';
 import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
 import {playerTheme} from './playerTheme';
@@ -173,6 +174,7 @@ export default function App() {
   useEffect(()=>{const open=()=>{setQueueOpen(false);setSection('Settings');sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page','quality');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:'quality'}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
   const [commandOpen,setCommandOpen]=useState(false);
   const commandPresent=usePanelPresence(commandOpen);
+  const sparkRecommendations=useSparkRecommendations(collections,player.track?.id,!loading&&miniMode==='normal'&&(section==='Library'||commandOpen),library,preferences.sparklist_beta);
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
   const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
@@ -1071,6 +1073,7 @@ export default function App() {
                   </small>
                 </span>
               </button>
+              {sparkRecommendations.length>0&&<section className="spark-recommendations" aria-label="Recommended Sparklists"><header><h3>For your mood</h3><button aria-label="More Sparklist recommendations" onClick={()=>setCommandOpen(true)}>More</button></header>{sparkRecommendations.slice(0,1).map(({item,reason})=><button key={item.id} className="spark-recommendation" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span><strong>{item.name}</strong><small>{reason}</small></span><Icon name="Sparklist"/></button>)}</section>}
               <div className="personal-collections">{collections.map(item=>{
                 const summary=collectionSummaries.get(item.id)!;
                 const icon=item.kind==='audio'?'Sparklist':'Playlist';
@@ -1255,7 +1258,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
+      {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">
           <span>{error || visiblePlaybackError}</span>

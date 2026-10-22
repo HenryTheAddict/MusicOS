@@ -3,9 +3,9 @@ import {Cover,Icon} from './components';
 import {call,errorText} from './bridge';
 import {trackCredits} from './credits';
 import {searchScore,groupMusicResults} from './commandSearch';
-import type {Album,Artist,Library,SavedCollection} from './types';
+import type {Album,Artist,Library,SavedCollection,SparkRecommendation} from './types';
 interface Result {group:string;score:number;id:string;title:string;detail:string;icon?:string;cover?:string|null;run:()=>void}
-export default function SuperCommand({open,library,collections,isPlaying,hasTrack,onClose,onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue,onCreate}:{open:boolean;library:Library;collections:SavedCollection[];isPlaying:boolean;hasTrack:boolean;onClose:()=>void;onPlay:(id:number)=>void;onAlbum:(album:Album)=>void;onArtist:(artist:Artist)=>void;onCollection:(item:SavedCollection)=>void;onNavigate:(destination:string)=>void;onPlayback:(action:'toggle'|'next'|'previous')=>void;onQueue:()=>void;onCreate:(items:SavedCollection[])=>void}){
+export default function SuperCommand({open,library,collections,recommendations,isPlaying,hasTrack,onClose,onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue,onCreate}:{open:boolean;library:Library;collections:SavedCollection[];recommendations:(SparkRecommendation&{item:SavedCollection})[];isPlaying:boolean;hasTrack:boolean;onClose:()=>void;onPlay:(id:number)=>void;onAlbum:(album:Album)=>void;onArtist:(artist:Artist)=>void;onCollection:(item:SavedCollection)=>void;onNavigate:(destination:string)=>void;onPlayback:(action:'toggle'|'next'|'previous')=>void;onQueue:()=>void;onCreate:(items:SavedCollection[])=>void}){
  const dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null);
  const transition=useRef<Animation|null>(null);
  const handlers=useRef({onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue});handlers.current={onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue};
@@ -34,8 +34,9 @@ export default function SuperCommand({open,library,collections,isPlaying,hasTrac
      found.push(...library.artists.filter(a=>matches(a.name)).map(a=>({group:'Artists',score:searchScore(needle,a.name),id:a.id,title:a.name,detail:'Artist',cover:a.portrait,icon:'Artist',run:()=>handlers.current.onArtist(a)})));
    }
    found.push(...collections.filter(c=>matches(c.name)).map(c=>({group:'Collections',score:searchScore(needle,c.name),id:c.id,title:c.name,detail:`${c.kind==='audio'?'Sparklist':c.spark?'Smart playlist':'Playlist'} · ${c.track_ids.length} songs`,icon:c.kind==='audio'?'Sparklist':'Playlist',run:()=>handlers.current.onCollection(c)})));
-   return [...groupMusicResults(found),...commands];
- },[query,library,collections,isPlaying,hasTrack]);
+   const recommended:Result[]=!needle?recommendations.map(({item,reason})=>({group:'For your mood',score:0,id:`recommended-${item.id}`,title:item.name,detail:reason,icon:'Sparklist',run:()=>handlers.current.onCollection(item)})):[];
+   return [...recommended,...groupMusicResults(found.filter(row=>!recommended.some(r=>r.id===`recommended-${row.id}`))),...commands];
+ },[query,library,collections,recommendations,isPlaying,hasTrack]);
  useEffect(()=>setActive(0),[query]);
  useEffect(()=>setActive(index=>Math.max(0,Math.min(index,results.length-1))),[results.length]);
  useEffect(()=>{dialog.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});},[active,results.length]);

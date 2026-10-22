@@ -110,6 +110,7 @@ type Commands = {
   forget_source:{args:{id:number;token?:string};result:{id:number;name:string;path:string;songs:number;favorites:number;memberships:number;metadata?:number;token:string;count?:number}};
   library_source: {args:{id:number;enabled:boolean};result:void};
   audio_specs: {args:{trackId:number};result:{format:string;sample_rate:number|null;bit_depth:number|null;bitrate:number|null;channels:number|null;lossless:boolean}};
+  spark_recommendations:{args:{current:number|null};result:import("./types").SparkRecommendation[]};
   playlist_suggestions:{args:{id:string};result:{ids:number[];state:string;message:string}};
   collections: {args:{request?:import("./types").CollectionRequest};result:import("./types").SavedCollection[]};
   toggle_favorite:{args:{trackId:number};result:boolean};

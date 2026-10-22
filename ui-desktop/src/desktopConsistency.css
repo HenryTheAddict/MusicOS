@@ -166,3 +166,22 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
  .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools{height:36px;}
  .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools>button{width:36px;height:36px;flex-basis:36px;}
 }
+
+/* Saved mixes remain in their familiar order; a compact shortcut explains each recommendation. */
+.personal-library .spark-recommendations{padding:4px 0 10px;margin:0 0 8px;border-bottom:1px solid var(--control-border);}
+.spark-recommendations h3{font-size:.7rem;font-weight:600;color:var(--secondary-ink);margin:4px 10px 6px;text-align:left;}
+.personal-library .spark-recommendation{display:flex;align-items:center;gap:.5rem;min-width:0;width:100%;padding:.45rem .6rem;border-radius:.65rem;text-align:left;background:transparent;color:var(--ink);border:0;box-shadow:none;}
+.personal-library .spark-recommendation:hover,.personal-library .spark-recommendation:focus-visible{background:var(--control-surface);}
+.spark-recommendation>.playlist-artwork-tone{width:2rem;height:2rem;flex:0 0 2rem;}
+.spark-recommendation .cover,.spark-recommendation .playlist-collage{width:2rem;height:2rem;border-radius:.35rem;}
+.personal-library .spark-recommendation>span:not(.playlist-artwork-tone){min-width:0;flex:1;display:flex;flex-direction:column;gap:2px;}
+.spark-recommendation strong{font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.personal-library .spark-recommendation small{font-size:.6rem;line-height:1.35;white-space:normal;color:var(--secondary-ink);}
+.personal-library .spark-recommendation>.icon{width:1rem;height:1rem;flex:0 0 1rem;color:var(--secondary-ink);}
+/* The outgoing queue has already dissolved before layout changes. Hide it without a second delayed fade. */
+.mini-player .mini-queue-list{transition:none;}
+.mini-player[data-layout=tall] .mini-queue-list{visibility:hidden;opacity:0;}
+
+.spark-recommendations>header{display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.personal-library .spark-recommendations>header>button{width:auto;min-height:0;padding:4px 8px;margin:0;background:transparent;border:0;box-shadow:none;border-radius:6px;font-size:.65rem;color:var(--ink);}
+.personal-library .spark-recommendations>header>button:hover{background:var(--control-surface);}
