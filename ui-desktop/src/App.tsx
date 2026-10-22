@@ -952,7 +952,7 @@ export default function App() {
           }))}
         >
           <span className="section-name">{section}</span>
-          <span className="chevron" aria-hidden="true"><svg viewBox="0 0 24 12"><path d="M1 1 12 10 23 1" /></svg></span>
+          <span className="chevron" aria-hidden="true"><svg viewBox="0 0 24 12"><path d="M1 1 12 11 23 1" /></svg></span>
         </Menu>
         <Menu label="MusicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><Icon name="3dots_(nocircle)"/></Menu>
         </div>
@@ -1038,13 +1038,13 @@ export default function App() {
       <div className={`workspace ${section !== "Library" ? "full-width" : ""}`}>
         {section === "Library" && (
           <aside className="library-sidebar">
-            <button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>{preferences.display_name}'s stuff</button>
+            <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>{preferences.display_name}'s stuff</button>{collections.filter(item=>item.kind!=='audio'&&!item.spark).slice(0,2).map(item=>{const summary=collectionSummaries.get(item.id)!;return <div key={item.id} data-manual-collection={item.id} className={`personal-collection ${route.id===item.id?'active':''}`}><button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong>{item.name}</strong><small>{item.track_ids.length} songs · {collectionDuration(summary.duration)}</small></span></button><button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button></div>})}</section>
             <div className="sidebar-search-slot">
               {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
               {navigation.history.length>0&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>}
             </div>
             <nav aria-label="Library">
-              {(["albums", "artists", "genres", "songs", "playlists", "sparklists"] as Scope[]).map(
+              {(["albums", "artists", "songs"] as Scope[]).map(
                 (scope) => (
                   <button
                     className={displayScope === scope ? "active" : ""}
@@ -1056,13 +1056,9 @@ export default function App() {
                   </button>
                 ),
               )}
-              <button className={route.view==='favorites'?'active':''} onClick={()=>goScope('favorites')}><Icon name="hearted"/><span>Favorites</span></button>
             </nav>
-            <div className="collection-create-actions">
-              <button className="sketch-button" onClick={()=>setCreatingCollection('manual')}><Icon name="Playlist"/><span>Create playlist</span></button>
-              <button className="sketch-button secondary" onClick={()=>setCreatingCollection('spark')}><Icon name="Sparklist"/><span>Create Sparklist</span></button>
-            </div>
-            <div className="sidebar-collection-shortcuts" aria-label="Playlist shortcuts"><button aria-label="Manage collections" onClick={()=>goScope('playlists')}>Manage collections</button>{collections.filter(item=>item.kind!=='audio'&&!item.spark).slice(0,3).map(item=>{const summary=collectionSummaries.get(item.id)!;return <div key={item.id} data-manual-collection={item.id} className={`personal-collection ${route.id===item.id?'active':''}`}><button className="collection-open" onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong>{item.name}</strong><small>{item.track_ids.length} songs · {collectionDuration(summary.duration)}</small></span></button><button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button></div>})}{collectionError&&<small role="alert">{collectionError}</small>}</div>
+            <div className="sidebar-more"><Menu label="More library views" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},{label:'Create playlist',icon:'Playlist',onSelect:()=>setCreatingCollection('manual')},{label:'Create Sparklist',icon:'Sparklist',onSelect:()=>setCreatingCollection('spark')}]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
+            {collectionError&&<small role="alert">{collectionError}</small>}
             <footer className="sidebar-footer">
               <span aria-busy={loading}>{loading?"":`${library.tracks.length} songs`}</span>
               <span>

@@ -7,7 +7,9 @@
 .now-playing-credits>.now-playing-album{flex:1 1 0;min-width:2rem;overflow:hidden;padding:0;line-height:inherit;}
 .now-playing .icon-button,.mini-player .icon-button{display:grid;place-items:center;padding:0;line-height:0;}
 .now-playing .icon-button>.icon,.mini-player .icon-button>.icon{display:block;flex:none;margin:0;}
-.track-favorite{--favorite-tone:var(--accent);opacity:1;}
+.track-favorite{--favorite-tone:var(--accent);opacity:1;display:grid;place-items:center;line-height:0;}
+.track-favorite :is(.heart-beat,.heart-motion,.heart-layer){display:grid;place-items:center;line-height:0;}
+.track-favorite .heart-layer>.asset-icon{display:block;line-height:0;}
 .track-favorite[data-playing=true]{--favorite-tone:var(--playing-favorite-tone,var(--accent));}
 .track-favorite .heart-layer .asset-icon{opacity:1;--icon-fill:var(--favorite-tone);--icon-stroke:var(--favorite-tone);}
 .track-favorite .heart-empty[data-active=true]{opacity:.85;}
@@ -46,7 +48,8 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .section-d
 body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dropdown{background:var(--control-surface);color:var(--ink);}
 .section-dropdown .dropdown-item{min-height:3rem;padding:.625rem .875rem;border-radius:.75rem;color:inherit;font-size:1rem;}
 .section-dropdown .dropdown-item[data-highlighted]{color:inherit;background:color-mix(in srgb,currentColor 10%,transparent);}
-.section-control>.menu-trigger:first-child .chevron{transition:transform 140ms ease-out;}
+.section-control>.menu-trigger:first-child .chevron{display:grid;place-items:center;width:1.5rem;height:.75rem;line-height:0;transform-origin:50% 50%;rotate:none;transform:scaleY(1);transition:transform 140ms ease-out;}
+.section-control>.menu-trigger:first-child[data-state=open] .chevron{rotate:none;transform:scaleY(-1);}
 @keyframes section-reveal{from{opacity:0;clip-path:inset(0 0 100% round 0 0 1rem 1rem)}to{opacity:1;clip-path:inset(0 round 0 0 1rem 1rem)}}
 /* One search entry point, with music grouped ahead of commands. */
 .sidebar-search-slot>.sidebar-search{display:flex;align-items:center;justify-content:flex-start;gap:.5rem;flex:1;min-width:0;text-align:left;border:1px solid var(--control-border);background:var(--control-surface);color:var(--secondary-ink);padding:.5rem .625rem;}
