@@ -189,7 +189,7 @@
 .app-shell[data-adaptive="true"] :is(.track-row,.album-detail .track-row) { background:color-mix(in srgb,var(--blob-color) 48%,var(--surface-color)); color:var(--ink); }
 .app-shell[data-adaptive="true"] :is(.track-row:hover,.track-row.selected,.track-row.playing,.album-detail .track-row:hover) { background:color-mix(in srgb,var(--blob-color) 85%,white); color:var(--ink); }
 .app-shell[data-adaptive="true"] :is(.track-artist,.track-album,.track-row .time,.track-heading,.track-row .text-link) { color:color-mix(in srgb,var(--ink) 80%,transparent); }
-.app-shell[data-adaptive="true"] :is(.library-shortcuts > .menu-trigger,.personal-library > button,.source-row,.review-row,.metadata-selection,.metadata-fields) { background:color-mix(in srgb,var(--surface-color) 80%,white); color:var(--ink); border-color:color-mix(in srgb,var(--accent) 25%,transparent); }
+.app-shell[data-adaptive="true"] :is(.library-shortcuts > .menu-trigger,.personal-library > button,.review-row,.metadata-selection,.metadata-fields) { background:color-mix(in srgb,var(--surface-color) 80%,white); color:var(--ink); border-color:color-mix(in srgb,var(--accent) 25%,transparent); }
 .library-tools { max-width:54rem; margin-inline:auto; }
 .library-tools .page-heading h1 { font-size:1.5rem; text-align:left; letter-spacing:-.025em; }
 .library-tools .page-heading p { max-width:42rem; font-size:.8125rem; line-height:1.5; margin-top:.5rem; }

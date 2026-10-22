@@ -172,11 +172,12 @@ export default function App() {
   const queuePresent=usePanelPresence(queueOpen);
   useEffect(()=>{const open=()=>{setQueueOpen(false);setSection('Settings');sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page','quality');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:'quality'}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
   const [commandOpen,setCommandOpen]=useState(false);
+  const commandPresent=usePanelPresence(commandOpen);
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
   const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
   const [resolvedThemeCover, setResolvedThemeCover] = useState<string | null>(null);
-  useEffect(()=>{if(loading)return;const warm=()=>{void import('./Settings');void import('./CollectionManager');if(native)void call('library_ready').catch(()=>{});};const id=window.setTimeout(warm,1200);return()=>clearTimeout(id);},[loading]);
+  useEffect(()=>{if(loading)return;const warm=()=>{void import('./Settings');void import('./CollectionManager');void import('./SuperCommand');void import('./LibraryTools');if(native)void call('library_ready').catch(()=>{});};const id=window.setTimeout(warm,1200);return()=>clearTimeout(id);},[loading]);
   const [themeEpoch, setThemeEpoch] = useState(0);
   useEffect(() => { const clear = () => { clearThemeCache(); setThemeEpoch(n=>n+1); }; window.addEventListener("musicos-artwork-invalidated", clear); return () => window.removeEventListener("musicos-artwork-invalidated", clear); }, []);
   const [artPalette,setArtPalette]=useState<Palette|null>(null);
@@ -1036,7 +1037,7 @@ export default function App() {
             <span className="sidebar-label">Library</span>
             <div className="sidebar-search-slot">
               {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
-              {navigation.history.length>0&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><span aria-hidden="true" className="command-symbol">⌘</span></button>}
+              {navigation.history.length>0&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>}
             </div>
             <nav aria-label="Library">
               {(["albums", "artists", "genres", "songs"] as Scope[]).map(
@@ -1117,6 +1118,7 @@ export default function App() {
                               : route.view[0].toUpperCase() +
                                 route.view.slice(1)}
                 </span>}
+                <button className="library-search-action" aria-label="Search library" aria-keyshortcuts="Meta+K Control+K" onPointerEnter={()=>void import("./SuperCommand")} onFocus={()=>void import("./SuperCommand")} onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>
                 {route.view==="artists"&&<ThemedSwitch label="Album Artists" checked={!!preferences.artists_album_only} onChange={artists_album_only=>changePreferences({...preferences,artists_album_only})}/>}
               </div>
             )}
@@ -1253,7 +1255,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {commandOpen&&<Suspense fallback={null}><SuperCommand library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
+      {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">
           <span>{error || visiblePlaybackError}</span>

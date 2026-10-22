@@ -130,7 +130,13 @@ export function useDepthArtwork(root:RefObject<HTMLElement|null>,scroll:RefObjec
   entry.targetX=Math.max(-3,Math.min(3,(e.clientX-left-entry.width/2)/Math.max(1,entry.width)*6));entry.targetY=Math.max(-3,Math.min(3,(e.clientY-top-entry.height/2)/Math.max(1,entry.height)*6));schedule();};
  const scrolled=()=>{const now=performance.now(),position=Math.max(0,Math.min(viewport.scrollTop,viewport.scrollHeight-viewport.clientHeight));velocity=(position-previousScroll)/Math.max(8,now-previousScrollTime);previousScroll=position;previousScrollTime=now;scrolling=true;if(!hero)wrapper.style.transform=`translateY(${Math.max(0,Math.min(viewport.scrollTop,viewport.scrollHeight-viewport.clientHeight))-baseScroll}px)`;for(const entry of entries.values()){entry.hover=entry.art.matches(':focus-within');entry.targetX=entry.targetY=entry.pointerX=entry.pointerY=0;delete entry.art.dataset.depthReady;}clearTimeout(flingTimer);flinging ||= Math.abs(velocity)>1.2;
   if(flinging){wrapper.style.visibility='hidden';cancelAnimationFrame(frame);frame=0;last=0;}else{schedule();scheduleLoad();}
-  flingTimer=setTimeout(()=>{flinging=false;velocity=0;dirty=true;schedule();scheduleLoad();},100);
+  flingTimer=setTimeout(()=>{flinging=false;scrolling=false;velocity=0;
+   for(const entry of entries.values())if(visible.has(entry.art)){
+    const focused=entry.art.matches(':focus-within')||!!entry.art.closest('.card-open')?.matches(':focus-visible');
+    const hovered=entry.art.matches(':hover')||!!entry.art.closest('.card-open')?.matches(':hover');
+    entry.hover=focused||hovered;if(focused){entry.targetX=1;entry.targetY=-.5;}
+   }
+   dirty=true;schedule();scheduleLoad();},100);
  };
  const fallback=()=>{if(disposed||lost)return;wrapper.style.visibility='hidden';lost=true;cancelAnimationFrame(frame);for(const art of observed)delete art.dataset.depthReady;canvas.style.visibility='hidden';if(!reduced.matches&&recoveries.current<2){recoveries.current++;resizeTimer=setTimeout(()=>{if(!disposed)setViewportEpoch(epoch=>epoch+1);},250);}};
  const contextLost=(e:Event)=>{e.preventDefault();fallback();};canvas.addEventListener('webglcontextlost',contextLost);

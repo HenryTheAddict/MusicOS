@@ -12,6 +12,7 @@ test('guest-heavy album headers remain compact and reveal clickable artist names
   await first.hover();await expect(first.locator('.artist-credit-name')).toHaveCSS('opacity','1');
   await portraits.nth(1).focus();await expect(portraits.nth(1).locator('.artist-credit-name')).toHaveCSS('opacity','1');
   const bounds=await credits.evaluate(el=>({height:el.getBoundingClientRect().height,rem:parseFloat(getComputedStyle(document.documentElement).fontSize),overflow:el.scrollWidth>el.clientWidth+1}));expect(bounds.overflow).toBe(false);expect(bounds.height/bounds.rem).toBeLessThan(10);
+  const layout=await page.locator('.album-copy').evaluate(el=>{const credits=el.querySelector('.album-artist-credits')!.getBoundingClientRect(),quality=el.querySelector('.audio-quality')!.getBoundingClientRect(),actions=el.querySelector('.collection-actions')!.getBoundingClientRect();return {creditsBottom:credits.bottom,qualityTop:quality.top,qualityBottom:quality.bottom,actionsTop:actions.top};});expect(layout.qualityTop).toBeGreaterThanOrEqual(layout.creditsBottom);expect(layout.actionsTop).toBeGreaterThanOrEqual(layout.qualityBottom);
   const description=page.getByRole('region',{name:'About this album'});await expect(description).toBeVisible();
   await description.getByRole('button',{name:'Read more'}).click();await expect(description.locator('p')).toHaveAttribute('data-expanded','true');
   await description.getByRole('button',{name:'Read less'}).click();await expect(description.locator('p')).toHaveAttribute('data-expanded','false');

@@ -169,3 +169,39 @@
 .metadata-workspace .metadata-bulk-review{background:transparent;border:0;border-radius:0;padding:.75rem 0;}
 .metadata-workspace .metadata-bulk-review .file-write-option{border:0;border-radius:0;background:transparent;padding:.75rem 0;}
 @container(min-width:48rem){.metadata-workspace .metadata-back,.metadata-workspace .metadata-continue{display:none!important;}}
+/* Collection management is a browser, with destructive actions kept in its menu. */
+.collection-hub{padding:.5rem;max-width:60rem;margin:0 auto;}
+.collection-hub>header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin:0 0 1rem;}
+.collection-hub>header>div{flex:1;min-width:12rem;}
+.collection-hub>header h1{font-size:1.75rem;line-height:1.2;}
+.collection-hub>header p{max-width:52ch;margin:.5rem 0 0;font-size:.8125rem;line-height:1.5;color:var(--secondary-ink);}
+.collection-hub .hub-create{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;padding:.625rem .875rem;border:0;border-radius:.75rem;background:var(--accent);color:var(--accent-ink);min-height:2.5rem;}
+.hub-create>.icon{width:1.125rem;height:1.125rem;flex:none;}
+.collection-hub>.library-settings-nav{display:flex;gap:.25rem;padding:.25rem;margin:0 0 1rem;border-radius:.875rem;background:var(--control-surface);}
+.collection-hub>.library-settings-nav>button{flex:1;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.375rem;border:0;border-radius:.625rem;padding:.5rem .625rem;background:transparent;min-height:2.375rem;}
+.collection-hub>.library-settings-nav>button[aria-selected=true]{background:var(--surface-color);color:var(--ink);}
+.collection-hub>.library-settings-nav small{font-size:.6875rem;color:var(--secondary-ink);font-variant-numeric:tabular-nums;}
+.collection-hub-tools{margin:0 0 .5rem;gap:.625rem;}
+.collection-hub-tools>.hub-search{flex:1 1 12rem;display:flex;align-items:center;gap:.5rem;padding:0 .625rem;min-height:2.375rem;background:var(--control-surface);border-radius:.75rem;}
+.hub-search>.icon{width:1.125rem;height:1.125rem;flex:none;color:var(--secondary-ink);}
+.collection-hub-tools .hub-search input{border:0;background:transparent;padding:.5rem 0;width:100%;min-width:0;font-size:.8125rem;outline:none;}
+.hub-search:focus-within{outline:2px solid var(--accent);outline-offset:2px;}
+.collection-hub-tools>label:not(.hub-search){gap:.375rem;color:var(--secondary-ink);}
+.collection-hub-tools>button{border:0;background:transparent;}
+.collection-result-count{margin:.625rem 0;color:var(--secondary-ink);font-size:.75rem;}
+.collection-hub-list{display:grid;gap:0;border-radius:1rem;background:var(--control-surface);overflow:hidden;}
+.collection-hub-list>article{padding:.75rem;background:transparent;border-radius:0;gap:.75rem;}
+.collection-hub-list>article+article{border-top:1px solid var(--control-border);}
+.collection-hub-list .hub-collection-open{flex:1 1 8rem;min-width:0;border-radius:.625rem;}
+.hub-collection-open>.playlist-artwork-tone{width:3.25rem;height:3.25rem;}
+.hub-collection-open strong{font-size:.875rem;line-height:1.35;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;}
+.hub-collection-open small{font-size:.75rem;color:var(--secondary-ink);opacity:1;}
+.hub-collection-actions{flex:none;display:flex;align-items:center;}
+.hub-collection-actions>.menu-trigger{display:grid;place-items:center;width:2rem;height:2rem;border:0;border-radius:.625rem;background:transparent;}
+.hub-collection-actions>.menu-trigger>.icon{width:1.25rem;height:1.25rem;}
+.hub-collection-actions>.menu-trigger:hover{background:color-mix(in srgb,var(--ink) 7%,transparent);}
+.hub-delete-review{display:flex;flex-wrap:wrap;gap:.375rem;max-width:15rem;}
+.hub-delete-review>span{flex-basis:100%;font-size:.75rem;color:var(--secondary-ink);}
+.collection-hub button{transition:background-color 140ms ease-out,color 140ms ease-out;}
+@media(max-width:800px){.collection-hub-list .hub-collection-open{flex-basis:8rem;}.hub-collection-actions:has(.hub-delete-review){flex-basis:100%;}.collection-hub>header .hub-create{width:auto;}}
+@media(prefers-reduced-motion:reduce){.collection-hub button{transition:none;}}

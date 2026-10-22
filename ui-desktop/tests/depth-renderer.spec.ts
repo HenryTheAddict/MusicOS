@@ -79,3 +79,12 @@ test('large grids reuse prepared images across reversals and recover a lost cont
  await expect(page.locator('canvas[data-persistent]')).toHaveCount(1);await expect.poll(()=>canvas.getAttribute('data-cache-hits')).not.toBe('0');expect(Number(await canvas.getAttribute('data-ram-bytes'))).toBeLessThanOrEqual(256*1024*1024);expect(Number(await canvas.getAttribute('data-texture-bytes'))).toBeLessThanOrEqual(128*1024*1024);
  await canvas.evaluate(el=>(el as HTMLCanvasElement).getContext('webgl2')!.getExtension('WEBGL_lose_context')!.loseContext());await expect(page.locator('.card-artwork > img').first()).toHaveCSS('opacity','1');await page.locator('.card-artwork').first().hover();await expect(page.locator('.card-artwork[data-depth-ready=true]').first()).toBeVisible({timeout:15000});await expect(page.locator('.depth-compositor')).toHaveCount(1);
 });
+
+test('hover resumes after scrolling settles with the pointer left over artwork',async({page})=>{
+ await start(page);const art=page.locator('.card-artwork').first();await art.hover({position:{x:50,y:50}});await expect(art).toHaveAttribute('data-depth-ready','true');
+ // Real scroll events clear active depth while the native scroll position moves.
+ // Returning to the same position leaves the pointer over the original cover.
+ await page.locator('.page-scroll').evaluate(el=>{el.scrollTop=150;el.dispatchEvent(new Event('scroll'));el.scrollTop=0;el.dispatchEvent(new Event('scroll'));});
+ await expect.poll(()=>page.locator('.depth-compositor canvas').evaluate(canvas=>(canvas as any).depthGeometry().some((entry:any)=>entry.hover))).toBe(true);
+ await expect(art).toHaveAttribute('data-depth-ready','true');
+});

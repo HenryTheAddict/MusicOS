@@ -23,3 +23,11 @@ test('shape morph stays continuous, reverses from the visible state, and leaves 
  step(480);expect(host.innerHTML).toBe(canonical);expect(host.dataset.transportMorphProgress).toBe('0');expect(host.dataset.morphing).toBeUndefined();expect(frames.size).toBe(0);
  host.remove();
 });
+
+test('sampled transport contours retain supplied widths and never stretch beyond their endpoints',async()=>{
+ const {transportContours}=await import('../src/playPauseMorph');
+ const bounds=(progress:number)=>{const xs=transportContours(progress).flat().map(p=>p[0]);return {left:Math.min(...xs),right:Math.max(...xs),width:Math.max(...xs)-Math.min(...xs)};};
+ expect(bounds(0).width).toBeCloseTo(22.764,1);expect(bounds(1).width).toBeCloseTo(20,1);
+ let previous=bounds(0);
+ for(let i=1;i<=100;i++){const current=bounds(i/100);expect(current.left).toBeGreaterThanOrEqual(4-.01);expect(current.right).toBeLessThanOrEqual(26.764+.01);expect(Math.abs(current.width-previous.width)).toBeLessThan(.15);previous=current;}
+});
