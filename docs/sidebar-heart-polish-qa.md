@@ -28,6 +28,13 @@ Unchanged embedded hashes:
 - `musicos-mac`: `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`
 - ONNX runtime: `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`
 
-**Native installation pending.** The user was actively changing playback, Settings, collections, and navigation during final rollout. The pause/quit attempts did not complete, and the raise attempt reported that the user had changed the app; the main app remained running and playing. No bundle replacement or stale-profile restoration occurred. An asynchronous request asks the user to pause and leave the window untouched briefly. Before publishing, confirm paused/stopped state, quit, make a fresh private preference checkpoint, retain the app actually installed at that time, verify a staging bundle, then rename and check real rows/Home/dropdown. Update the release manifest after verification.
+## Native delivery verified
+
+After the user paused and left the app untouched, native accessibility confirmed **Play** for The Recipe at 218.6 seconds. MusicOS quit normally; process absence was checked before replacement. A fresh private preference checkpoint and the actual previous application bundle were retained. The staged and installed bundles passed all three hash checks and deep strict signature verification.
+
+The updated main app visibly shows the padded Henry’s stuff box, three primary library tabs, and More. More exposes Genres, Favorites, Playlists, Sparklists, and creation actions; Escape restores trigger focus. The connected section dropdown retains its header and closes with focus restored. Real album rows show centered empty and filled heart artwork alongside the other row controls. Native Home and album screenshots are saved with the QA evidence.
+
+The live library still contains 507 songs, 23 favorites, and 12 collections, including the newly created Mm playlist. Relaunch initially showed paused playback. The user then selected and played Another life during verification; their latest playback was left untouched. No older profile, queue, or preferences were restored. The installed executable and both embedded runtime hashes match the signed candidate above.
+
 
 Subjective design acceptance, physical touchscreen behavior, Windows/Linux, full native resize/focus testing, and packaged frame intervals on a physical 120 Hz display remain separate gates. No guaranteed refresh rate is claimed.
