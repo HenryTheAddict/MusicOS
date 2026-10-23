@@ -10,7 +10,7 @@ Play/Pause now uses authored compatible cubic paths with the supplied Sketch end
 
 Expanded artist biographies become the left two-thirds column at 48 rem of available content width, with portrait/facts/playback on the right. Narrow layouts expand below the header. Text is never scaled; paragraphs, attribution and Read less remain available.
 
-Appearance offers Standard (244×320) and Compact (220×280) with still previews using the same player presentation and current playing artwork. Previews are inert, have no playback clock and request no metadata. Compact uses 10 px padding, 6 px gaps, 36 px targets and readable 11 px secondary labels. Native and frontend bounds agree; session sizes are keyed by density. View switches retain size, queue DOM and scroll. Hidden main-window presentation is retained without rebuilding its JSX on mini-player position updates.
+Appearance offers Standard (244×320) and Compact (220×280) with still previews using the same player presentation and current playing artwork. Previews are inert, have no playback clock and request no metadata. Compact uses 10 px padding, 6 px gaps, 36 px targets and readable 11 px secondary labels. Native and frontend bounds agree; session sizes are keyed by density. Temporary menu expansion is capped to the monitor work area; tall players open the scrollable menu above their controls when there is no space below. View switches retain size, queue DOM and scroll. Hidden main-window presentation is retained without rebuilding its JSX on mini-player position updates.
 
 The only new saved preference is optional `mini_player_density`, defaulting to Standard. No database migration, playback protocol, OS source, model pins or embedded audio runtime changes are included. Sketch Home, Smart playlist and Plus exports were refreshed from the current masters; Play next/Add to queue already matched. Provenance is in the asset manifest.
 
@@ -22,7 +22,7 @@ Set up Discord contains the existing MusicOS icon, a download and the one-time i
 
 ## Verification and measurement
 
-- 132 UI unit tests and 152 Rust library tests passed. UI production compilation passed.
+- 133 UI unit tests and 153 Rust library tests passed. UI production compilation passed.
 - The full 41-case browser run passed, including the 40-combination matrix: 720×480 / 1280×800, 80/100/125/150%, Light/Dark/blue/artwork/extreme custom. Geometry, menu collisions, footer spacing, readable contrast, keyboard/focus behavior, contributor deduplication, retained Settings, queue/heart alignment and transparent 1×/2× mini-player corners were checked.
 - Final focused reruns passed after fixing an Appearance rule that overrode preset label alignment and after deferring lazy-page entrances until content resolves. Midpoint/reversal/Reduced Motion tests verify exact endpoint weight, a stable footprint and no remaining morph work.
 - Baseline executable before changes: `c61e2e0baad148824643deb7b903ea72fb97f14c2d5eba02a0c5b3b6833512ea`. A native process sample is retained. Instruments/xctrace is unavailable on this Mac, so native presented-frame intervals and missed-frame counts are not established by this check.

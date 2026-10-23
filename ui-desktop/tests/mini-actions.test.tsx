@@ -41,3 +41,8 @@ it('rapid reopening keeps the footprint frozen until the last close',async()=>{
  const root=document.querySelector<HTMLElement>('.mini-player')!;vi.spyOn(root,'getBoundingClientRect').mockReturnValue({height:420} as DOMRect);const opener=screen.getByRole('button',{name:'Mini Player actions'});
  fireEvent.click(opener);await screen.findByRole('menuitem');fireEvent.keyDown(screen.getByRole('menuitem'),{key:'Escape'});await waitFor(()=>expect(resize).toHaveBeenLastCalledWith(false));fireEvent.click(opener);release();await screen.findByRole('menuitem');expect(root.style.getPropertyValue('--mini-player-height')).toBe('420px');
 });
+
+it('uses available space above the controls when a tall window cannot expand further',async()=>{
+ const resize=vi.fn().mockResolvedValue(undefined);render(<section className="mini-player"><MiniActions height={768} onResize={resize} items={[{label:'Up next',onSelect:()=>{}}]}/></section>);
+ const root=document.querySelector<HTMLElement>('.mini-player')!;vi.spyOn(root,'getBoundingClientRect').mockReturnValue({height:768} as DOMRect);const opener=screen.getByRole('button',{name:'Mini Player actions'});vi.spyOn(opener,'getBoundingClientRect').mockReturnValue({top:680} as DOMRect);fireEvent.click(opener);const panel=await screen.findByRole('menu');expect(panel.style.top).toBe('444px');expect(panel.style.maxHeight).toBe('232px');expect(panel).toHaveAttribute('data-side','top');
+});

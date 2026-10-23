@@ -204,7 +204,8 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
         #[cfg(not(target_os = "macos"))]
         window.set_decorations(false)?;
         window.set_resizable(!expanded)?;
-        let size = tauri::PhysicalSize::new(base_size.width, base_size.height + if expanded {(244.0 * factor).round() as u32} else {0});
+        let work_height=window.current_monitor()?.map(|monitor|monitor.work_area().size.height).unwrap_or(u32::MAX);
+        let size = tauri::PhysicalSize::new(base_size.width, if expanded {mini_menu_height(base_size.height,(244.0*factor).round() as u32,work_height)}else{base_size.height});
         window.set_size(size)?;
         window.set_min_size(Some(tauri::LogicalSize::new(minimum.0, if expanded {size.height as f64 / factor} else {minimum.1})))?;
         window.set_always_on_top(pinned.unwrap_or(true))?;
@@ -258,6 +259,8 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
     }.await;
     result.map_err(AppError::from)
 }
+
+fn mini_menu_height(base:u32,extra:u32,work:u32)->u32{base.saturating_add(extra).min(work.max(base))}
 
 fn mini_minimum(density:&str)->(f64,f64){if density=="compact"{(220.,280.)}else{(244.,320.)}}
 
@@ -1861,5 +1864,6 @@ fn saved_playback(snapshot:&musicos_desktop::local::LocalPlaybackSnapshot)->musi
 
 #[cfg(test)]
 mod mini_density_tests {
+ #[test]fn action_space_stays_inside_the_work_area_without_shrinking_the_player(){assert_eq!(super::mini_menu_height(640,488,1000),1000);assert_eq!(super::mini_menu_height(1500,488,1500),1500);assert_eq!(super::mini_menu_height(1600,488,1500),1600);}
  #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("compact"),(220.,280.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
 }
