@@ -5,8 +5,9 @@ import { playPauseMorph } from "./playPauseMorph";
 
 const exports = import.meta.glob("../../assets/icons/ui/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const icons = Object.fromEntries(Object.entries(exports).map(([path, svg]) => [path.split("/").at(-1)!.replace(/\.svg$/, ""), svg.slice(svg.indexOf("<svg"))]));
+icons.menuPlus = '<svg viewBox="0 0 32 32"><path d="M7 16H25M16 7V25" fill="none" stroke="var(--icon-stroke,currentColor)" stroke-width="2" stroke-linecap="round"/></svg>';
 icons.rowLevels = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g fill="var(--icon-fill,currentColor)" stroke="var(--icon-stroke,currentColor)" stroke-width="1.5"><rect x="5" y="6" width="5" height="20" rx="2"/><rect x="13.5" y="6" width="5" height="20" rx="2"/><rect x="22" y="6" width="5" height="20" rx="2"/></g></svg>';
-const groups = [["play", "rowLevels"], ["play", "pause"], ["tinyPlay", "tinyPause"], ["hearted", "noheart"], ["RepeatOFF", "RepeatON", "RepeatONE"]];
+const groups = [["queue","tinyX"],["3dots_(nocircle)","tinyX"],["3dots(incircle)","tinyX"],["menuPlus","tinyX"],["play", "rowLevels"], ["play", "pause"], ["tinyPlay", "tinyPause"], ["hearted", "noheart"], ["RepeatOFF", "RepeatON", "RepeatONE"]];
 
 // Only playback/collection controls retain shading; other UI assets stay solid.
 export function solidIcon(svg:string, name:string) {
@@ -21,6 +22,7 @@ export function solidIcon(svg:string, name:string) {
     result=result.replace(/(<path\b[^>]*?)fill="#000000"/g,'$1fill="url(#transport-shade)"');
     result=result.replace(/(<svg\b[^>]*>)/,'$1<defs><linearGradient id="transport-shade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--transport-top,var(--icon-fill,currentColor))"/><stop offset="1" stop-color="var(--transport-bottom,var(--icon-fill,currentColor))"/></linearGradient></defs>');
   }
+  if(name==='tinyX')result=result.replace(/stroke="#979797"/g,'stroke="var(--icon-stroke,currentColor)"');
   return result;
 }
 
@@ -49,7 +51,7 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
     } else if (old !== name && host.innerHTML && !reduced.matches && groups.some(group => group.includes(old) && group.includes(name))) {
       cancel = [old,name].every(value=>value==='play'||value==='rowLevels') ? playLevelsMorph(host,name==='rowLevels',markup)
         : [old,name].every(value=>value==='play'||value==='pause') ? playPauseMorph(host,name==='pause',markup)
-        : morphSvg(host, host.innerHTML, markup);
+        : morphSvg(host, host.innerHTML, markup, ['queue','tinyX','menuPlus','3dots_(nocircle)','3dots(incircle)'].includes(name)?140:180);
     } else {host.innerHTML = markup;host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);}
     const finish = () => { if (reduced.matches) { cancel(); host.innerHTML = markup;host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0); } };
     reduced.addEventListener("change", finish);

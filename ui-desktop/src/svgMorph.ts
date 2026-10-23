@@ -37,7 +37,7 @@ function sample(markup: string, color:string, fill:string, stroke:string): Conto
           const transformed = new DOMPoint(point.x, point.y).matrixTransform(matrix);
           return { x: transformed.x * 32 / svg.viewBox.baseVal.width, y: transformed.y * 32 / svg.viewBox.baseVal.height };
         });
-        contours.push({ points, closed, fill: style.fill, stroke: style.stroke, width: parseFloat(style.strokeWidth), rule: style.fillRule });
+        contours.push({ points, closed, fill: style.fill, stroke: style.stroke, width: parseFloat(style.strokeWidth)*32/svg.viewBox.baseVal.width, rule: style.fillRule });
       }
     });
     return contours;

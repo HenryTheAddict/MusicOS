@@ -8,7 +8,7 @@ it('prepares menu space and collapses it before selecting a playback-window acti
  const resize=vi.fn(async(open:boolean)=>{calls.push(open?'expand':'collapse');if(!open)await new Promise<void>(resolve=>{finish=resolve;});});
  render(<MiniActions height={48} onResize={resize} items={[{label:'Up next',onSelect:()=>calls.push('queue')}]}/>);
  fireEvent.click(screen.getByRole('button',{name:'Mini Player actions'}));await screen.findByRole('menuitem',{name:'Up next'});
- fireEvent.click(screen.getByRole('menuitem',{name:'Up next'}));await waitFor(()=>expect(calls).toEqual(['expand','collapse']));expect(screen.queryByRole('menu')).not.toBeInTheDocument();finish();await waitFor(()=>expect(calls).toEqual(['expand','collapse','queue']));
+ fireEvent.click(screen.getByRole('menuitem',{name:'Up next'}));await waitFor(()=>expect(calls).toEqual(['expand','collapse']));expect(screen.getByRole('menu')).toHaveAttribute('inert');finish();await waitFor(()=>expect(calls).toEqual(['expand','collapse','queue']));
 });
 it('Escape collapses menu space and restores focus',async()=>{
  const resize=vi.fn().mockResolvedValue(undefined);

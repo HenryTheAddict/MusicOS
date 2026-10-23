@@ -14,16 +14,6 @@
 .track-favorite .heart-layer .asset-icon{opacity:1;--icon-fill:var(--favorite-tone);--icon-stroke:var(--favorite-tone);}
 .track-favorite .heart-empty[data-active=true]{opacity:.85;}
 .now-playing .track-favorite,.mini-player .track-favorite{--favorite-tone:var(--accent);}
-.mini-player:is([data-layout=tall],[data-layout=queue]) :is(.mini-player-tools,.mini-player-transport){position:relative;inset:auto;grid-column:1/-1;display:flex;align-items:center;justify-content:center;justify-self:stretch;gap:8px;height:40px;pointer-events:auto;}
-.mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools{grid-row:3;}
-.mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-transport{grid-row:4;}
-.mini-player:is([data-layout=tall],[data-layout=queue]) :is(.mini-player-tools,.mini-player-transport)>button{position:relative;inset:auto;display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;margin:0;line-height:0;border-radius:10px;}
-.mini-player .mini-player-tools .icon{width:24px;height:24px;}
-.mini-player .track-favorite .heart-layer>.asset-icon{width:100%;height:100%;}
-.mini-player .mini-player-tools .heart-beat{width:18px;height:18px;}
-.mini-player .mini-player-copy>.overflow-label,.mini-player-copy>span:has(.overflow-label){overflow:hidden;min-width:0;}
-.mini-player-copy>strong{display:block;min-width:0;}
-.mini-player{--playback-tone:var(--accent);}
 :is(.quick-audio,.audio-panel.queue-panel){border:1px solid var(--control-border);border-radius:1.25rem;background:var(--surface-color);box-shadow:0 .5rem 1.5rem #0002;}
 .audio-panel.queue-panel{padding:.875rem;gap:.75rem;}
 .audio-panel.queue-panel>.listening-panel-header{display:flex;align-items:center;justify-content:space-between;margin:0;min-height:2rem;}
@@ -87,27 +77,21 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .spark-setup>.settings-group-row>button{flex:none;margin:0;padding:.5rem .75rem;border-radius:.625rem;background:var(--surface-color);color:var(--ink);font-size:.75rem;}
 .spark-setup>details{border-top:1px solid var(--control-border);margin-top:1rem;padding-top:.75rem;}
 .spark-setup>details summary{font-size:.75rem;cursor:pointer;}
-.spark-setup>details p{margin:.5rem 0;}
-@container settings (max-width:22rem){.appearance-controls .settings-group-row:has(>input[type=range]){grid-template-columns:minmax(0,1fr) 3rem;}.appearance-controls .settings-group-row:has(>input[type=range]) input{grid-column:1;grid-row:2;}.appearance-controls .settings-group-row:has(>input[type=range]) output{grid-column:2;grid-row:2;}.settings .appearance-controls>.settings-group-row>.themed-choice{min-width:0;}.settings .settings-group-row{flex-wrap:wrap;}}
-@media(prefers-reduced-motion:reduce){.section-control .chevron{transition:none!important;}.section-dropdown{animation:none!important;}}
+.spark-setup>details p{margin:.5rem 0;}@container settings (max-width:22rem){.appearance-controls .settings-group-row:has(>input[type=range]){grid-template-columns:minmax(0,1fr) 3rem;}.appearance-controls .settings-group-row:has(>input[type=range]) input{grid-column:1;grid-row:2;}.appearance-controls .settings-group-row:has(>input[type=range]) output{grid-column:2;grid-row:2;}.settings .appearance-controls>.settings-group-row>.themed-choice{min-width:0;}.settings .settings-group-row{flex-wrap:wrap;}}@media(prefers-reduced-motion:reduce){.section-control .chevron{transition:none!important;}.section-dropdown{animation:none!important;}}
 
 .overflow-label:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:.25rem;mask-image:none;}
 .overflow-label[data-overflow=true]:focus-visible>span{transform:translateX(var(--label-offset));transition-duration:var(--label-duration);transition-timing-function:linear;transition-delay:500ms;}
-.mini-player-copy>.mini-player-album{display:block;width:100%;min-width:0;padding:0;margin:0;text-align:left;font-size:11px;line-height:1.4;color:var(--secondary-ink);background:transparent;border:0;}
 
 /* Search presence stays mounted through close; WAAPI reverses from its visual state. */
 .supercommand{animation:none;transform-origin:50% 0;}
 .supercommand[data-open=false]{pointer-events:none;}
 .supercommand::backdrop{opacity:1;transition:opacity 180ms ease-out;}
-.supercommand[data-open=false]::backdrop{opacity:0;}
-@starting-style{.supercommand::backdrop{opacity:0;}}
+.supercommand[data-open=false]::backdrop{opacity:0;}@starting-style{.supercommand::backdrop{opacity:0;}}
 .library-toolbar>.library-search-action{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-width:2rem;height:1.75rem;margin-left:auto;padding:0 .5rem;border:0;border-radius:.5rem;background:transparent;color:var(--secondary-ink);font:inherit;font-size:.8125rem;}
 .library-search-action>.icon,.sidebar-search-slot>.command-shortcut>.icon{width:1.125rem;height:1.125rem;flex:none;}
 .library-search-action>kbd{font:inherit;font-size:.625rem;opacity:.8;white-space:nowrap;}
 .library-toolbar>.library-search-action:hover{background:var(--control-surface);color:var(--ink);}
-.library-search-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-@media(max-width:800px){.library-search-action>kbd{display:none;}}
-@media(prefers-reduced-motion:reduce){.supercommand::backdrop{transition:none;}}
+.library-search-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}@media(max-width:800px){.library-search-action>kbd{display:none;}}@media(prefers-reduced-motion:reduce){.supercommand::backdrop{transition:none;}}
 
 /* Contributor rows participate in layout instead of growing under controls. */
 .album-detail .album-copy{display:flex;flex-direction:column;gap:.5rem;min-height:8rem;padding:0;}
@@ -121,54 +105,15 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .album-detail .album-credit-portraits>.album-primary-artist{min-width:0;white-space:normal;overflow:visible;}
 .album-primary-artist .artist-credit-name{overflow-wrap:anywhere;min-width:0;}
 .artist-name-popover:popover-open{background:var(--control-surface);color:var(--ink);border:1px solid var(--control-border);box-shadow:0 3px 8px #0002;animation:none!important;transition:none!important;}
-.album-artist-credits[data-compact=true] .artist-name-popover:popover-open{box-shadow:0 3px 8px #0002;}
-@container(max-width:26rem){.album-detail .album-hero{grid-template-columns:5rem minmax(0,1fr);}.album-detail .album-copy{grid-column:2;}.album-detail .album-copy h1{font-size:1.5rem;}}
+.album-artist-credits[data-compact=true] .artist-name-popover:popover-open{box-shadow:0 3px 8px #0002;}@container(max-width:26rem){.album-detail .album-hero{grid-template-columns:5rem minmax(0,1fr);}.album-detail .album-copy{grid-column:2;}.album-detail .album-copy h1{font-size:1.5rem;}}
 
 /* A shared bottom frame keeps Mini Player tools steady as its content changes. */
-.mini-shell{container-type:size;}
-.mini-player:is([data-layout=tall],[data-layout=queue]){padding:12px;gap:8px;background:var(--surface-color);border:1px solid var(--control-border);box-shadow:none;}
-.mini-player[data-layout=tall]{--mini-art-size:min(calc(100cqw - 26px),calc(100cqh - 186px));grid-template-rows:minmax(0,1fr) 56px 40px 40px;}
-.mini-player[data-layout=tall] .mini-player-art{width:var(--mini-art-size);height:var(--mini-art-size);max-width:100%;max-height:100%;border-radius:14px;align-self:center;justify-self:center;}
-.mini-player[data-layout=tall] .mini-player-copy{width:var(--mini-art-size);max-width:100%;justify-self:center;align-self:start;}
-.mini-player .mini-player-copy>strong{font-size:14px;line-height:19px;letter-spacing:-.015em;}
-.mini-player .mini-player-copy>.mini-player-album{font-size:11px;line-height:16px;}
-.mini-player .mini-player-copy .playback-progress{margin-top:3px;}
-.mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools{border-top:1px solid var(--control-border);}
-.mini-player[data-layout=queue]{grid-template-columns:48px minmax(0,1fr);grid-template-rows:64px minmax(0,1fr) 40px 40px;}
-.mini-player[data-layout=queue] .mini-player-art{width:48px;height:48px;border-radius:8px;margin:0;}
-.mini-player[data-layout=queue] .mini-player-copy{padding:0;align-self:start;}
-.mini-player[data-layout=queue] .playback-progress{margin-top:2px;height:24px;}
-.mini-player[data-layout=queue] .playback-time{align-self:flex-start;font-size:10px;line-height:12px;}
-.mini-player .mini-queue-list{border-radius:12px;flex-direction:column;background:var(--control-surface);}
-.mini-queue-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;padding:8px 10px 5px;font-size:11px;line-height:16px;}
-.mini-queue-heading>strong{font-weight:650;}.mini-queue-heading>span{font-size:10px;color:var(--secondary-ink);}
-.mini-player .mini-queue-list .queue-scroll{height:auto;min-height:0;flex:1;scroll-padding:4px;}
-.mini-queue-list .queue-row{height:46px;min-height:46px;padding:5px 8px;gap:4px;border:0;border-radius:8px;box-shadow:none;background:transparent;}
-.mini-queue-list .queue-row+.queue-row{border-top:1px solid color-mix(in srgb,var(--ink) 6%,transparent);}
-.mini-queue-list .queue-track{gap:8px;min-width:0;padding:0;text-align:left;border-radius:6px;}
-.mini-queue-list .queue-track .cover{width:32px;height:32px;flex-basis:32px;border-radius:5px;}
-.mini-queue-list .queue-track-copy{min-width:0;}
-.mini-queue-list .queue-track-copy strong{font-size:12px;line-height:16px;}
-.mini-queue-list .queue-track-copy small{font-size:11px;line-height:14px;color:var(--secondary-ink);}
-.mini-queue-list .queue-remove{display:grid;place-items:center;width:24px;height:28px;flex:0 0 24px;border-radius:6px;}
-.mini-queue-list .queue-remove:hover{background:color-mix(in srgb,var(--ink) 8%,transparent);opacity:1;}
-.mini-player .mini-player-transport .icon-button:nth-child(2)>.icon{width:36px;height:36px;}
-.mini-player .mini-player-transport .icon-button:not(:nth-child(2))>.icon{width:29px;height:29px;}
-.mini-player .mini-queue-empty{padding:12px;text-align:left;margin:0;font-size:12px;color:var(--secondary-ink);opacity:1;}
 /* Collection shading stays soft; the glyph is always readable on its face. */
 :is(.personal-collection,.playlist-hero)[data-spark=true] .asset-icon{--shuffle-top:color-mix(in srgb,var(--collection-hue-1,var(--accent)) 14%,var(--control-surface));--shuffle-bottom:color-mix(in srgb,var(--collection-hue-2,var(--accent)) 18%,var(--control-surface));}
 .personal-collection[data-spark=true] .collection-shuffle .asset-icon,.playlist-hero[data-spark=true] .collection-actions>.shuffle-button .asset-icon{--icon-fill:var(--ink);--icon-stroke:var(--secondary-ink);}
 .personal-collection .collection-shuffle{display:grid;place-items:center;align-self:center;}
 .personal-collection .collection-shuffle>.icon{width:2rem;height:2rem;display:block;margin:0;}
 /* Short native windows need the full reading width below the centered cover. */
-@container(max-height:360px){
- .mini-player:is([data-layout=tall],[data-layout=queue]){padding:10px;gap:6px;}
- .mini-player[data-layout=tall]{--mini-art-size:min(calc(100cqw - 22px),calc(100cqh - 168px));grid-template-rows:minmax(0,1fr) 52px 36px 40px;}
- .mini-player[data-layout=tall] .mini-player-copy{width:100%;}
- .mini-player[data-layout=queue]{grid-template-rows:64px minmax(0,1fr) 36px 40px;}
- .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools{height:36px;}
- .mini-player:is([data-layout=tall],[data-layout=queue]) .mini-player-tools>button{width:36px;height:36px;flex-basis:36px;}
-}
 
 /* Saved mixes remain in their familiar order; a compact shortcut explains each recommendation. */
 .personal-library .spark-recommendations{padding:4px 0 10px;margin:0 0 8px;border-bottom:1px solid var(--control-border);}
@@ -182,8 +127,6 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .personal-library .spark-recommendation small{font-size:.6rem;line-height:1.35;white-space:normal;color:var(--secondary-ink);}
 .personal-library .spark-recommendation>.icon{width:1rem;height:1rem;flex:0 0 1rem;color:var(--secondary-ink);}
 /* The outgoing queue has already dissolved before layout changes. Hide it without a second delayed fade. */
-.mini-player .mini-queue-list{transition:none;}
-.mini-player[data-layout=tall] .mini-queue-list{visibility:hidden;opacity:0;}
 
 .spark-recommendations>header{display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .personal-library .spark-recommendations>header>button{width:auto;min-height:0;padding:4px 8px;margin:0;background:transparent;border:0;box-shadow:none;border-radius:6px;font-size:.65rem;color:var(--ink);}

@@ -45,7 +45,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const animations:Animation[]=[],disposers:(()=>void)[]=[];let frame=0,removed=false;
   const cancel=()=>{if(removed)return;removed=true;cancelAnimationFrame(frame);animations.forEach(animation=>animation.cancel());disposers.forEach(dispose=>dispose());};
   const changed=()=>{if(motion.matches)cancel();};motion.addEventListener('change',changed);
-  const animate=(node:HTMLElement|null,delay:number,y=7,duration=220,id='album-detail-reveal',scale=1)=>{
+  const animate=(node:HTMLElement|null,delay:number,y=7,duration=180,id='album-detail-reveal',scale=1)=>{
    if(!node)return;const animation=node.animate([{opacity:0,transform:`translateY(${y}px) scale(${scale})`},{opacity:1,transform:'translateY(0) scale(1)'}],{duration,delay,easing:'cubic-bezier(.16,1,.3,1)',fill:'backwards'});animation.id=id;animations.push(animation);
   };
   if(departingToolbar){
@@ -60,18 +60,18 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const artist=page.querySelector<HTMLElement>('.library-view:not([hidden]) .artist-detail');
   if(album){
    const selectors=['.album-copy h1','.collection-meta','.album-copy > .audio-quality','.collection-actions'];
-   selectors.forEach((selector,index)=>animate(album.querySelector(selector),index===0?30:54+index*24,7,220));
-   album.querySelectorAll<HTMLElement>('.album-credit-portraits .artist-avatar').forEach((avatar,index)=>{if(index<8)animate(avatar,54+index*24,6,240,'artist-credit-reveal',.84);});
-   animate(album.querySelector('.album-primary-artist .artist-credit-name'),88,8,240,'artist-credit-name');
-   animate(album.querySelector('.album-description'),100,5,220);
+   selectors.forEach((selector,index)=>animate(album.querySelector(selector),0,5,180));
+   album.querySelectorAll<HTMLElement>('.album-credit-portraits .artist-avatar').forEach((avatar,index)=>{if(index<8)animate(avatar,Math.min(index*8,32),4,148,'artist-credit-reveal',.84);});
+   animate(album.querySelector('.album-primary-artist .artist-credit-name'),16,5,164,'artist-credit-name');
+   animate(album.querySelector('.album-description'),0,4,180);
    // A single row group keeps long albums cheap, with stable action columns.
-   animate(album.querySelector('.track-table'),135,5,220);
+   animate(album.querySelector('.track-table'),0,4,180);
   }else if(artist){
-   artist.querySelectorAll<HTMLElement>('.artist-name-part').forEach((word,index)=>animate(word,30+Math.min(index,7)*24,14,280,'artist-name-reveal'));
+   artist.querySelectorAll<HTMLElement>('.artist-name-part').forEach((word,index)=>animate(word,Math.min(index*8,32),6,148,'artist-name-reveal'));
    const transferring=origin?.kind==='artist'&&origin.id===artist.dataset.artistId&&!origin.returning&&performance.now()-origin.at<750;
-   if(!transferring)animate(artist.querySelector('.artist-portrait-button'),0,10,300,'artist-portrait-reveal',.92);
-   ['.artist-about','.artist-statistics','.album-strip'].forEach((selector,index)=>animate(artist.querySelector(selector),85+index*35,origin?.returning&&selector==='.album-strip'?0:7,240,'artist-detail-reveal'));
-   animate(artist.querySelector('.track-table'),180,5,220,'artist-detail-reveal');
+   if(!transferring)animate(artist.querySelector('.artist-portrait-button'),0,5,180,'artist-portrait-reveal',.92);
+   ['.artist-about','.artist-statistics','.album-strip'].forEach((selector,index)=>animate(artist.querySelector(selector),0,origin?.returning&&selector==='.album-strip'?0:5,180,'artist-detail-reveal'));
+   animate(artist.querySelector('.track-table'),0,4,180,'artist-detail-reveal');
   }
   const captured=origin;origin=null;
   if(captured&&performance.now()-captured.at<750){

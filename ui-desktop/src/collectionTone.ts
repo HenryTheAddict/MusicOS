@@ -1,4 +1,5 @@
 import {useEffect,useRef} from 'react';
+import {transportTones} from './playerTheme';
 import {resolveArtworkTheme} from './artworkTheme';
 type Palette={tone:string;stops:string[];surfaces:string[]};
 const colors=new Map<string,Palette>();
@@ -22,13 +23,19 @@ export function collectionPalette(pixels:ArrayLike<number>):Palette {
  const stops=selected.map(rgb=>{const scale=Math.min(1,112/Math.max(...rgb));return `rgb(${rgb.map(v=>Math.round(v*scale)).join(' ')})`;});
  return {tone:stops[0],stops,surfaces:selected.map(rgb=>`rgb(${rgb.map(Math.round).join(' ')})`)};
 }
-export function useCollectionTone(spark:boolean){
+export function useCollectionTone(spark:boolean,identity=''){
  const ref=useRef<HTMLSpanElement>(null);
  useEffect(()=>{
-  const root=ref.current,host=root?.closest<HTMLElement>('.personal-collection,.playlist-hero,.playlist-card,.hub-collection-open');if(!root||!host)return;
+  const root=ref.current,host=root?.closest<HTMLElement>('[data-collection-tone],.personal-collection,.playlist-hero,.playlist-card,.hub-collection-open');if(!root||!host)return;
   host.dataset.spark=String(spark);
-  let alive=true;
+  let alive=true,current:Palette|undefined;
   const apply=(palette:Palette)=>{
+   current=palette;
+   const style=getComputedStyle(host),toHex=(value:string,fallback:string)=>/^#[0-9a-f]{6}$/i.test(value.trim())?value.trim():value.startsWith('rgb')?'#'+(value.match(/[\d.]+/g)??[]).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join(''):fallback;
+   const surface=toHex(style.getPropertyValue('--surface-color'),'#f7fbff'),ink=toHex(style.getPropertyValue('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
+   const tones=transportTones({background:surface,blob:surface,text:ink,accent});
+   host.style.setProperty('--collection-transport-top',tones.fill);host.style.setProperty('--collection-transport-bottom',tones.stroke);host.style.setProperty('--collection-transport-stroke',tones.stroke);
+
    host.style.setProperty('--collection-tone',palette.tone);
    palette.stops.forEach((stop,i)=>{
     host.style.setProperty(`--collection-color-${i+1}`,spark?stop:palette.tone);
@@ -57,6 +64,7 @@ export function useCollectionTone(spark:boolean){
    }}
    apply(palette);
   };
-  root.addEventListener('load',update,true);update();return()=>{alive=false;root.removeEventListener('load',update,true);};
- },[spark]);return ref;
+  const observer=new MutationObserver(()=>{if(current)apply(current);});const shell=host.closest('.app-shell');if(shell)observer.observe(shell,{attributes:true,attributeFilter:['style','data-theme-mode']});
+  root.addEventListener('load',update,true);update();return()=>{alive=false;observer.disconnect();root.removeEventListener('load',update,true);};
+ },[spark,identity]);return ref;
 }

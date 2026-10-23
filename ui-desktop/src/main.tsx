@@ -10,6 +10,8 @@ import "./management.css";
 import "./listeningPolish.css";
 import "./desktopConsistency.css";
 import "./personalHome.css";
+import "./miniPlayer.css";
+import "./connectedMotion.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

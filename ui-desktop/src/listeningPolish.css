@@ -27,9 +27,7 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .app-shell[data-adaptive] .collection-actions>.menu-trigger,.app-shell .collection-actions>.menu-trigger{background:var(--control-surface);color:var(--ink);}
 .app-shell .collection-actions>button{transition:background-color 140ms ease-out,opacity 140ms ease-out,transform 140ms ease-out;}
 .app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:scale(.96);}
-.app-shell .album-artist-credits,.app-shell .artist-credit-name{color:var(--ink);}
-
-@media(prefers-reduced-motion:reduce){.album-cover-transfer{display:none;}.artist-portrait-stage .portrait-fact{transition:none;transform:none;}.app-shell .collection-actions>button{transition:none;}.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:none;}}
+.app-shell .album-artist-credits,.app-shell .artist-credit-name{color:var(--ink);}@media(prefers-reduced-motion:reduce){.album-cover-transfer{display:none;}.artist-portrait-stage .portrait-fact{transition:none;transform:none;}.app-shell .collection-actions>button{transition:none;}.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:none;}}
 /* Column labels and navigation are reading controls, including in Dark mode. */
 .app-shell :is(.track-head,.track-heading){color:var(--secondary-ink,var(--ink));opacity:1;}
 .app-shell[data-theme-mode=dark] .sidebar-back{background:var(--control-surface);color:var(--ink);}
@@ -46,8 +44,6 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .artist-about[data-expanded=true] .artist-biography-actions{padding:0;}
 
 /* Icon hosts align to button centers instead of an inline text baseline. */
-.mini-player :is(.mini-player-tools,.mini-player-transport)>:is(.icon-button,.menu-trigger){display:grid;place-items:center;padding:0;line-height:0;}
-.mini-player :is(.mini-player-tools,.mini-player-transport) .icon{display:block;margin:0;}
 
 /* One shared vertical frame: title at the cover top, rail near its bottom. */
 .now-playing .now-playing-cover{width:2.125rem;height:2.125rem;}

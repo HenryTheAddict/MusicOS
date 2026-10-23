@@ -27,7 +27,7 @@ test('song hearts use their own cached BPM in albums, playlists and Songs; favor
  await playRow(page,2);
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
  await expect(heart(page,2).locator('.heart-beat')).toHaveCSS('animation-duration','0.666667s');
- await page.getByRole('button',{name:'Heart tempo QA 3 songs',exact:false}).click();
+ await page.locator('.sidebar-home').click();await page.getByRole('button',{name:/Heart tempo QA Playlist/}).click();
  await expect(heart(page,1).locator('.heart-beat')).toHaveCSS('animation-name','none');
  await expect(heart(page,2).locator('.heart-beat')).toHaveCSS('animation-duration','0.666667s');
  await page.getByRole('button',{name:'Songs',exact:true}).click();

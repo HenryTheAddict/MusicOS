@@ -188,6 +188,7 @@ export interface MenuItem {
   onSelect: () => void;
   icon?: string;
   disabled?: boolean;
+  group?: "playback"|"organize"|"danger";
 }
 export function Menu({
   label,
@@ -197,8 +198,10 @@ export function Menu({
   selectedLabel,
   onIntent,
   theme,
+  morph,
 }: {
   contextOnly?: boolean;
+  morph?:"dots"|"plus";
   theme?:CSSProperties;
   selectedLabel?:string;
   onIntent?:()=>void;
@@ -206,36 +209,43 @@ export function Menu({
   children: ReactNode;
   items: MenuItem[];
 }) {
+  const [inherited,setInherited]=useState<CSSProperties>({});
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
-  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null);
+  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),pendingAction=useRef<(()=>void)|null>(null);
+  const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
+  const group=(item:MenuItem)=>item.group??(/delete|remove|forget/i.test(item.label)?'danger':/^(play|shuffle|add to queue)/i.test(item.label)?'playback':'organize');
+  const ordered=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
+
   const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(point.y,innerHeight-menu.offsetHeight-8))}px`;};
   useLayoutEffect(()=>{if(open&&content.current)position(content.current);},[open,point]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current)position(content.current);};window.addEventListener('resize',update);return()=>window.removeEventListener('resize',update);},[open,point]);
-  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);
+  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);
   return (
-    <Dropdown.Root modal={!selectedLabel} open={open} onOpenChange={next=>{setOpen(next);if(!next)setPoint(null);}}>
+    <Dropdown.Root modal={!selectedLabel} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-y',`${style.transform==='none'?0:new DOMMatrixReadOnly(style.transform).m42}px`);}if(next){pendingAction.current=null;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
         <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label}>
-          {children}
+          {morph?<><Icon name={open?'tinyX':morph==='plus'?'menuPlus':'3dots_(nocircle)'}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
-          style={theme}
+          style={{...inherited,...theme}}
           data-pointer-menu={point?true:undefined}
           className={`dropdown ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":undefined}
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
-          onCloseAutoFocus={contextOnly ? e=>{e.preventDefault();const row=trigger.current?.closest('.queue-row');if(row)row.querySelector<HTMLButtonElement>('.queue-track')?.focus();else if(trigger.current?.closest('.now-playing'))trigger.current.closest('.now-playing')?.querySelector<HTMLButtonElement>('.now-playing-cover')?.focus();else trigger.current?.closest('.collection-card')?.querySelector<HTMLButtonElement>('.card-open')?.focus();} : undefined}
+          onCloseAutoFocus={event=>{event.preventDefault();const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;setPoint(null);const action=pendingAction.current;pendingAction.current=null;action?.();}}
+
         >
-          {(selectedLabel?items.filter(item=>item.label!==selectedLabel):items).map((item, i) => (
+          {ordered.map((item, i) => (
             <Dropdown.Item
               className="dropdown-item"
+              data-group-start={i>0&&group(item)!==group(ordered[i-1])||undefined}
               key={`${item.label}-${i}`}
-              onSelect={item.onSelect}
+              onSelect={()=>{pendingAction.current=item.onSelect;}}
               disabled={item.disabled}
             >
               {item.icon&&<Icon name={item.icon}/>}
@@ -633,7 +643,7 @@ export function QueueRows({tracks,entryIds,arranged=[],pinned=[],current,scale,o
  const autoscroll=()=>{const active=drag.current,container=ref.current;if(!active?.moving||!container)return;const box=container.getBoundingClientRect(),edge=40*scale;const delta=active.y<box.top+edge?-8*scale:active.y>box.bottom-edge?8*scale:0;if(delta){container.scrollTop+=delta;locate(active.y);}frame.current=requestAnimationFrame(autoscroll);};
  return <div className="queue-scroll" ref={ref}
  onPointerMove={e=>{const active=drag.current;if(!active||active.pointer!==e.pointerId)return;active.y=e.clientY;if(!active.moving&&Math.hypot(e.clientX-active.x,e.clientY-active.startY)>6*scale){active.moving=true;e.currentTarget.setPointerCapture(e.pointerId);frame.current=requestAnimationFrame(autoscroll);}if(active.moving){e.preventDefault();locate(e.clientY);}}}
- onPointerUp={e=>{if(drag.current?.pointer===e.pointerId)finish(true);}} onPointerCancel={()=>finish(false)} onLostPointerCapture={()=>finish(false)}><span className="sr-only" aria-live="polite">{announcement}</span><div style={tracks.length>100?{height:virtual.getTotalSize(),position:'relative'}:undefined}>{indices.map(({index,top})=>{const t=tracks[index];return <div ref={tracks.length>100?virtual.measureElement:undefined} data-index={index} key={entryIds?.[index]??`${t.id}-${index}`} data-queue-index={index} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} className={`queue-row ${index===current?'active':''} ${target===index?`drop-target ${drag.current&&index>drag.current.from?'drop-after':''}`:''}`} style={tracks.length>100?{position:'absolute',top,minHeight:60*scale,width:'100%'}:undefined}>
+ onPointerUp={e=>{if(drag.current?.pointer===e.pointerId)finish(true);}} onPointerCancel={()=>finish(false)} onLostPointerCapture={()=>finish(false)}><span className="sr-only" aria-live="polite">{announcement}</span><div style={tracks.length>100?{height:virtual.getTotalSize(),position:'relative'}:undefined}>{indices.map(({index,top})=>{const t=tracks[index];return <div ref={tracks.length>100?virtual.measureElement:undefined} data-index={index} key={entryIds?.[index]??`${t.id}-${index}`} data-queue-index={index} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.stopPropagation();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.dispatchEvent(new Event('musicos-open-menu'));}}} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} className={`queue-row ${index===current?'active':''} ${target===index?`drop-target ${drag.current&&index>drag.current.from?'drop-after':''}`:''}`} style={tracks.length>100?{position:'absolute',top,minHeight:60*scale,width:'100%'}:undefined}>
  <button className="queue-track" aria-label={`Play ${t.title} from queue`} aria-current={index===current?'true':undefined} onDragStart={e=>e.preventDefault()}
  onPointerDown={e=>{if(!onMove||e.button!==0||e.pointerType==='touch')return;e.preventDefault();e.currentTarget.focus();suppressClick.current=false;drag.current={from:index,to:index,x:e.clientX,startY:e.clientY,y:e.clientY,pointer:e.pointerId,moving:false,entry:entryIds?.[index]};}}
 

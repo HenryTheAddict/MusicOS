@@ -5,18 +5,20 @@ import SparkSetup from './SparkSetup';
 import SongSelector from './SongSelector';
 import {collectionCover,suggestedSparkCover} from './CollectionDesign';
 import {encodeVibe,parseVibe} from './vibeArtwork';
-import {useEffect,useState} from 'react';
+import {useEffect,useState,useRef} from 'react';
 import {call,errorText} from './bridge';
 import {Cover,Icon,duration,collectionDuration} from './components';
 import {CoverChoice} from './CollectionDesign';
 import type {Library,SavedCollection,SparkGeneration,SparkState,Preferences} from './types';
 const moods=['Chilled','Energetic','Melancholic','Bright','Focused','Dreamy'];
-export default function SparkCreate({library,items,onChange,onOpen,onClose,onPlay,onToggle,playingId,isPlaying,onSetup,preferences,onPreferences}:{preferences?:Preferences;onPreferences?:(p:Preferences)=>void;library:Library;items:SavedCollection[];onChange:(items:SavedCollection[])=>void;onOpen:(item:SavedCollection)=>void;onClose:()=>void;onPlay:(ids:number[])=>void|Promise<void>;onToggle?:()=>Promise<void>;playingId?:number;isPlaying?:boolean;onSetup:()=>void}){
+export default function SparkCreate({library,items,onChange,onOpen,onClose,onPlay,onToggle,playingId,isPlaying,onSetup,preferences,onPreferences,initialSeed}:{initialSeed?:number;preferences?:Preferences;onPreferences?:(p:Preferences)=>void;library:Library;items:SavedCollection[];onChange:(items:SavedCollection[])=>void;onOpen:(item:SavedCollection)=>void;onClose:()=>void;onPlay:(ids:number[])=>void|Promise<void>;onToggle?:()=>Promise<void>;playingId?:number;isPlaying?:boolean;onSetup:()=>void}){
  const [targetCount,setTargetCount]=useState(25),[artworkEdited,setArtworkEdited]=useState(false);
  const [previewStarted,setPreviewStarted]=useState(false);
  const [stage,setStage]=useState<1|2|3>(1);const [choosingSeed,setChoosingSeed]=useState(false);
- const [seed,setSeed]=useState<number|null>(null),[mood,setMood]=useState<string|null>(null),[state,setState]=useState<SparkState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(''),[choice,setChoice]=useState('auto/1'),[feedback,setFeedback]=useState<number[]>([]),[variant,setVariant]=useState(0);
+ const [seed,setSeed]=useState<number|null>(initialSeed??null),[mood,setMood]=useState<string|null>(null),[state,setState]=useState<SparkState|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[name,setName]=useState(''),[choice,setChoice]=useState('auto/1'),[feedback,setFeedback]=useState<number[]>([]),[variant,setVariant]=useState(0);
  useEffect(()=>{let alive=true,pending=false;async function refresh(){if(pending)return;pending=true;try{const s=await call('sparklist',{request:{action:'status'}});if(alive)setState(old=>({...s,preview:s.ready?old?.preview??null:null,generated_artwork:old?.generated_artwork??null}));}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}void refresh();const timer=setInterval(()=>void refresh(),1500);return()=>{alive=false;clearInterval(timer);};},[]);
+ const autoPreviewed=useRef(false);
+ useEffect(()=>{if(initialSeed===undefined||autoPreviewed.current||busy||!state?.ready||state.analyzed<2||!state.analyzed_ids.includes(initialSeed))return;autoPreviewed.current=true;void preview();},[initialSeed,state?.ready,state?.analyzed,busy]);
  const generation:SparkGeneration={seed,mood,less_like:feedback,variant,target_count:targetCount};
  const selected=library.tracks.find(t=>t.id===seed);
  const enough=(state?.analyzed??0)>=2;
