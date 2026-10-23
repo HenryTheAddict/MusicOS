@@ -26,3 +26,15 @@ This change is desktop-only. Embedded audio and ONNX runtime bytes, OS source, d
 - Existing cached model state stays visible during refresh. Hidden Settings pages and completed installations do not gain idle polling.
 
 Evidence is in the isolated worktree's `out/rebuild-qa/spark-auto-*`. Native delivery and exact build/model/runtime hashes are appended after signed installation. Listening quality, physical touchscreen behavior, Windows, and Linux remain separate acceptance gates.
+
+## Native signed delivery
+
+- Desktop source `4b2b8e7`; primary cherry-pick `ac432b0`. The primary `.gitignore` conflict was resolved by retaining both OS cleanup exclusions and the generated-model exclusion.
+- Signed executable SHA256: `fb0688301e15800dd6fbd2a55bc269e72cd043a73e0b7abfd3b0f7f50e783c32`.
+- Embedded audio executable unchanged: `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`.
+- Embedded ONNX runtime unchanged: `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`.
+- Final build: 1m31s, 367.64 MiB app bundle. Ad hoc signing and strict deep verification passed. All three bundled model artifacts match the unchanged pinned manifest; license included.
+- Preserved the installed application, latest private preferences, and verified SQLite backups. Loaded while paused. On Track restored paused at 233 seconds; 507 songs, 26 favorites, and 12 collections remained.
+- The existing profile already had Sparklist beta enabled. On launch the app automatically installed its model without a folder chooser or preference changes. All three installed artifact hashes and the installed license were independently verified.
+- Opening Mm now displays ten real audio-based suggestions, including Kon Queso, SAFARI, and Droppin’ Seeds. Existing prepared embeddings were reused; no whole-library analysis was started. Saved playlist/collection/Sparklist tables match the immediate pre-load backup exactly.
+- Native screenshot: `out/qa/os-foundation/spark-auto/native-suggestions.png`. Retained app, prior app, exact model hashes, and delivery status: `releases/desktop-spark-auto-2026-10-22/release.json`.
