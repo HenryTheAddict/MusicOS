@@ -11,3 +11,10 @@ for(const width of [720,1280])test(`compact description beside controls and full
 test('artist browsing has no duplicate search bar, and pointer menus keep their position while closing',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await expect(page.locator('.library-toolbar .library-search-action')).toHaveCount(0);await page.locator('.collection-card').first().getByRole('button',{name:/Open/}).click({button:'right'});const menu=page.getByRole('menu');const before=await menu.boundingBox();await page.keyboard.press('Escape');expect(await menu.boundingBox()).toEqual(before);await expect(menu).toBeHidden();
 });
+test('album header and new mix ideas fit every scale, size and theme',async({page})=>{
+ test.setTimeout(120000);
+ await page.addInitScript(()=>{const q=new URLSearchParams(location.search);localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:Number(q.get('scale')),appearance:{mode:q.get('mode'),source:q.get('source'),accent:'#ff00ff',saturation:150,tint:30}}));});
+ for(const scale of [80,100,125,150])for(const width of [720,1280])for(const [mode,source] of [['light','blue'],['light','artwork'],['dark','blue'],['dark','artwork'],['dark','custom']]){
+  await page.setViewportSize({width,height:width===720?480:800});await page.goto(`/?fixture=1&contributors=10&scale=${scale}&mode=${mode}&source=${source}`);await page.locator('.sidebar-home').click();await expect(page.locator('.home-new-mixes')).toBeVisible();expect(await page.locator('.home-new-mixes').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const footer=page.locator('.album-footer');await expect(footer).toBeVisible();expect(await footer.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);expect(await page.locator('.page-scroll').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);
+ }
+});
