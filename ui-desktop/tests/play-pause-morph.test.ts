@@ -14,7 +14,7 @@ test('shape morph stays continuous, reverses from the visible state, and leaves 
  const progress=host.dataset.transportMorphProgress;
  expect(Number(progress)).toBeGreaterThan(0);expect(Number(progress)).toBeLessThan(1);
  expect(host.querySelector('[data-transport-morph]')).not.toBeNull();
- expect(host.querySelectorAll('path')).toHaveLength(4);
+ expect(host.querySelectorAll('path')).toHaveLength(5);
  const clips=[...host.querySelectorAll('path')].map(p=>p.getAttribute('d'));
  clips.forEach(d=>expect(d).not.toMatch(/NaN|Infinity/));
  cancel();expect(frames.size).toBe(0);
@@ -30,4 +30,23 @@ test('sampled transport contours retain supplied widths and never stretch beyond
  expect(bounds(0).width).toBeCloseTo(22.764,1);expect(bounds(1).width).toBeCloseTo(20,1);
  let previous=bounds(0);
  for(let i=1;i<=100;i++){const current=bounds(i/100);expect(current.left).toBeGreaterThanOrEqual(4-.01);expect(current.right).toBeLessThanOrEqual(26.764+.01);expect(Math.abs(current.width-previous.width)).toBeLessThan(.15);previous=current;}
+});
+
+test('each transport half owns its bar without overlapping triangles or a width surge',async()=>{
+ const {transportContours}=await import('../src/playPauseMorph');
+ for(let step=0;step<=100;step++){
+  const [left,right]=transportContours(step/100);
+  expect(Math.max(...left.map(p=>p[0]))).toBeLessThanOrEqual(Math.min(...right.map(p=>p[0]))+.001);
+  const xs=[...left,...right].map(p=>p[0]);
+  expect(Math.max(...xs)-Math.min(...xs)).toBeGreaterThan(19.9);
+  expect(Math.max(...xs)-Math.min(...xs)).toBeLessThan(22.8);
+ }
+});
+
+test('joined triangle has no interior stroke; pause reveals both inner edges',async()=>{
+ const {transportDrawing}=await import('../src/playPauseMorph');
+ const joined=transportDrawing(0),separate=transportDrawing(1);
+ expect(joined.fill.match(/ Z/g)).toHaveLength(2);
+ expect(joined.seams.every(d=>d.includes('L'))).toBe(true);
+ expect(separate.outlines.every(d=>d.includes('L'))).toBe(true);
 });

@@ -1,3 +1,4 @@
+import ActionSurface from './ActionSurface';
 import useSparkRecommendations from './useSparkRecommendations';
 import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
@@ -1062,6 +1063,7 @@ export default function App() {
       <div className={`workspace ${section !== "Library" ? "full-width" : ""}`}>
         {section === "Library" && (
           <aside className="library-sidebar">
+            <div className="sidebar-body">
             <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>{preferences.display_name}'s stuff</button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'Playlist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
             <div className="sidebar-search-slot">
               {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
@@ -1082,7 +1084,21 @@ export default function App() {
               )}
             </nav>
             <div className="sidebar-more"><Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
+            <section className="sidebar-playlists" aria-label="Your playlists">
+              <h2>Playlists</h2>
+              <div className="sidebar-playlist-list">
+                {collections.filter(item=>item.kind!=='audio'&&!item.spark).map(item=>{
+                  const summary=collectionSummaries.get(item.id)!;
+                  return <ActionSurface contextOnly items={actionsForCollection(item)} key={item.id} className={`personal-collection ${route.view==='playlist'&&route.id===item.id?'active':''}`} data-collection-tone="true" data-manual-collection={item.kind==='manual'?item.id:undefined}>
+                    <button className="collection-open" aria-label={`Open playlist ${item.name}`} aria-current={route.view==='playlist'&&route.id===item.id?'page':undefined} onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong>{item.name}</strong><small>{item.track_ids.length} {item.track_ids.length===1?'song':'songs'}</small></span></button>
+                    <button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button>
+                  </ActionSurface>;
+                })}
+                {!collections.some(item=>item.kind!=='audio'&&!item.spark)&&<p>Your saved playlists appear here.</p>}
+              </div>
+            </section>
             {collectionError&&<small role="alert">{collectionError}</small>}
+            </div>
             <footer className="sidebar-footer">
               <span aria-busy={loading}>{loading?"":`${library.tracks.length} songs`}</span>
               <span>

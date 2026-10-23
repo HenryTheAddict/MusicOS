@@ -1,7 +1,17 @@
 import ArtistCredit from './ArtistCredit';
+import {Menu} from './components';
 import type {Artist} from './types';
+
 export default function AlbumArtists({artists,primaryId,loading,onOpen}:{artists:Artist[];primaryId:string;loading:Set<string>;onOpen:(artist:Artist)=>void}) {
- const ordered=[...artists].sort((a,b)=>Number(b.id===primaryId)-Number(a.id===primaryId));
- const credit=(artist:Artist)=><ArtistCredit key={artist.id} artist={artist} primary={artist.id===primaryId} loading={loading.has(artist.name)} onOpen={()=>onOpen(artist)}/>;
- return <div className="album-artist-credits" data-compact="true" data-many={ordered.length>6}><div className="album-credit-portraits" role="group" aria-label="Album artists">{ordered.length>6?<>{ordered.filter(a=>a.id===primaryId).map(credit)}<div className="album-guest-portraits" role="group" aria-label="Contributing artists">{ordered.filter(a=>a.id!==primaryId).map(credit)}</div></>:ordered.map(credit)}</div></div>;
+ const primary=artists.find(artist=>artist.id===primaryId)??artists[0];
+ const guests=artists.filter(artist=>artist.id!==primary?.id);
+ const visible=guests.length>3?guests.slice(0,2):guests;
+ return <div className="album-artist-credits" role="group" aria-label="Album artists">
+  {primary&&<ArtistCredit artist={primary} primary loading={loading.has(primary.name)} onOpen={()=>onOpen(primary)}/>}
+  {guests.length>0&&<div className="album-contributors" role="group" aria-label="Contributing artists">
+   <span className="album-contributors-label">With</span>
+   {visible.map(artist=><ArtistCredit key={artist.id} artist={artist} primary={false} loading={loading.has(artist.name)} onOpen={()=>onOpen(artist)}/>)}
+   {guests.length>3&&<Menu label={`All ${guests.length} contributing artists`} items={guests.map(artist=>({label:artist.name,icon:'Artist',onSelect:()=>onOpen(artist)}))}>+{guests.length-visible.length} artists</Menu>}
+  </div>}
+ </div>;
 }

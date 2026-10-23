@@ -225,7 +225,7 @@ export function Menu({
 
       <Dropdown.Trigger asChild>
         <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label}>
-          {morph?<><Icon name={open?'tinyX':morph==='plus'?'menuPlus':'3dots_(nocircle)'}/>{morph==='dots'&&<span>More</span>}</>:children}
+          {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'tinyX':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
       <Dropdown.Portal>

@@ -814,22 +814,10 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid v
 }
 .album-detail .track-table[data-local-songs] .track-row { grid-template-columns:1.75rem minmax(0,1fr) 5.5rem; grid-template-areas:"index title actions"; gap:.375rem; }
 
-/* Compact contributor portraits keep guest-heavy records from dominating the header. */
-.album-credit-portraits { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem 1rem; min-width:0; max-width:100%; }
-.album-detail .album-artist-credits[data-compact=true] { display:flex; flex-direction:column; align-items:flex-start; gap:.5rem; }
-.various-artists-label { font-size:1rem; font-weight:500; line-height:1.3; }
-.various-artists-label small { display:block; font-size:.6875rem; font-weight:400; color:color-mix(in srgb,var(--ink) 72%,transparent); }
-.album-artist-credits[data-compact=true] .album-credit-portraits { position:relative; gap:.25rem; }
-.album-detail .album-artist-credits[data-compact=true] .artist-link { position:static; display:grid; place-items:center; width:2rem; height:2rem; padding:0; flex:0 0 2rem; background:transparent; border:0; box-shadow:none; border-radius:50%; text-decoration:none; }
-.album-artist-credits[data-compact=true] .artist-avatar { width:1.75rem; height:1.75rem; font-size:.75rem; flex:none; transition:transform 160ms; }
-.album-artist-credits[data-compact=true] .artist-link:is(:hover,:focus-visible) .artist-avatar { transform:translateY(-.125rem); }
-.album-artist-credits[data-compact=true] .artist-credit-name { position:absolute; z-index:5; left:0; bottom:calc(100% + .375rem); width:max-content; max-width:100%; padding:.375rem .625rem; border-radius:.5rem; font-size:.75rem; line-height:1.3; font-weight:500; background:color-mix(in srgb,var(--accent) 18%,var(--surface-color)); color:var(--ink); border:1px solid color-mix(in srgb,var(--accent) 25%,var(--surface-color)); box-shadow:inset 0 1px 1px color-mix(in srgb,var(--surface-color) 70%,transparent),0 3px 12px color-mix(in srgb,var(--ink) 15%,transparent); pointer-events:none; opacity:0; transform:translateY(.125rem); transition:opacity 150ms,transform 150ms; }
-.album-artist-credits[data-compact=true] .artist-link:is(:hover,:focus) .artist-credit-name { opacity:1; transform:none; }
 .album-description { padding:1rem 1.125rem; }
 .album-description p { max-width:none; margin:.5rem 0 0; line-height:1.6; text-wrap:pretty; }
 .album-description p[data-expanded=false] { -webkit-line-clamp:5; }
 .album-description footer { align-items:center; gap:.75rem 1.25rem; margin-top:.625rem; }
-@media(prefers-reduced-motion:reduce) { .album-artist-credits[data-compact=true] :is(.artist-avatar,.artist-credit-name) { transition:none; transform:none; } }
 .spark-selected-seed { display:flex; align-items:center; gap:.5rem; margin:.625rem 0; padding:.5rem; border-radius:.625rem; background:color-mix(in srgb,var(--accent) 15%,var(--surface-color)); }
 .spark-selected-seed .cover { width:2rem; height:2rem; flex:0 0 2rem; border-radius:.375rem; }
 .spark-selected-seed > span { min-width:0; flex:1; }
@@ -841,11 +829,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid v
 .spark-preview-coverage { font-size:.6875rem; line-height:1.45; margin:.5rem 0; }
 .spark-seed-list strong,.spark-seed-list small { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 
-/* Album leads retain their names; guest credits stay compact. */
-.album-detail .album-artist-credits[data-compact=true] .album-primary-artist { display:flex; width:auto; height:auto; flex:0 1 auto; gap:.5rem; padding:0 .5rem 0 0; }
-.album-artist-credits[data-compact=true] .album-primary-artist .artist-avatar { width:2rem; height:2rem; }
-.album-artist-credits[data-compact=true] .album-primary-artist .artist-credit-name { position:static; opacity:1; transform:none; background:transparent; border:0; box-shadow:none; padding:0; font-size:1.125rem; font-weight:500; max-width:100%; }
-.album-artist-credits[data-compact=true] .album-credit-portraits { gap:.375rem; }
 .audio-panel .queue-row { min-height:3.75rem; padding:.5rem; gap:.375rem; }
 .audio-panel .queue-track { touch-action:pan-x; user-select:none; cursor:grab; gap:.625rem; border:0; box-shadow:none; }
 .audio-panel .queue-track:active { cursor:grabbing; }

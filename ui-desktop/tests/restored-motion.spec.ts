@@ -16,11 +16,10 @@ test('song and now-playing time preferences survive restart',async({page})=>{
  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')!).show_now_playing_time)).toBe(false);
  await page.reload();await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await expect(songs).not.toBeChecked();await expect(playing).not.toBeChecked();
 });
-test('artist popover follows cursor within viewport and dismisses on Escape and scrolling',async({page})=>{
- await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Open Junk',exact:true}).click();
- const artist=page.locator('.album-collaborator').first(),tip=artist.locator('[popover]');
- await artist.hover();await expect(tip).toBeVisible();const bounds=await tip.boundingBox();expect(bounds!.x).toBeGreaterThanOrEqual(8);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(1272);
- await page.keyboard.press('Escape');await expect(tip).not.toBeVisible();await page.locator('.album-copy h1').hover();await artist.hover();await expect(tip).toBeVisible();await page.locator('.page-scroll').evaluate(el=>el.dispatchEvent(new Event('scroll')));await expect(tip).not.toBeVisible();
+test('contributor names stay visible and the complete artist menu restores focus',async({page})=>{
+ await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ const artist=page.locator('.album-collaborator').first();await expect(artist.locator('.artist-credit-name')).toBeVisible();await artist.hover();await expect(page.locator('.artist-name-popover')).toHaveCount(0);
+ const all=page.getByRole('button',{name:'All 17 contributing artists'});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(all).toBeFocused();
 });
 test('compact rows and playback times fit at both window sizes and all interface sizes',async({page})=>{
  for(const width of [720,1280])for(const size of [80,100,125,150]){
@@ -49,14 +48,14 @@ test('current-row Play morphs into levels and back on pause without hiding the n
  await page.emulateMedia({reducedMotion:'reduce'});await control.click();await expect(control.locator('[data-icon=rowLevels] rect')).toHaveCount(3);await expect(control.locator('[data-morphing=true]')).toHaveCount(0);
 });
 
-test('album durations stay on the song row and About remains below the header',async({page})=>{
+test('album durations stay on the song row and compact About stays beside header controls',async({page})=>{
  test.setTimeout(60000);
  for(const size of [{width:720,height:480},{width:1280,height:800}])for(const percent of [80,100,125,150]){
   await page.setViewportSize(size);await page.goto('/?fixture=1&contributors=1');
   await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,show_song_durations:true}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
-  await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
   const description=page.getByRole('region',{name:'About this album'});await expect(description).toBeVisible();
-  const header=page.locator('.album-hero');const a=(await header.boundingBox())!,b=(await description.boundingBox())!;expect(b.y).toBeGreaterThanOrEqual(a.y+a.height-1);
+  const header=page.locator('.album-hero');const a=(await header.boundingBox())!,b=(await description.boundingBox())!;expect(b.y).toBeGreaterThanOrEqual(a.y);expect(b.y+b.height).toBeLessThanOrEqual(a.y+a.height+1);await expect(page.locator('.album-footer>.album-description')).toBeVisible();
   const row=page.locator('.track-row').first();await row.scrollIntoViewIfNeeded();await expect(row.locator('.time')).toBeVisible();
   const box=(await row.boundingBox())!,time=(await row.locator('.time').boundingBox())!,actions=(await row.locator('.track-actions').boundingBox())!;expect(time.y).toBeGreaterThanOrEqual(box.y);expect(time.y+time.height).toBeLessThanOrEqual(box.y+box.height+1);expect(time.x+time.width).toBeLessThanOrEqual(actions.x+1);
   if(percent===100)await page.screenshot({path:`out/rebuild-qa/album-duration-${size.width}.png`,animations:'disabled'});

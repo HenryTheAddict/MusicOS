@@ -99,13 +99,7 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .album-detail .album-copy>.collection-actions{position:static;inset:auto;margin:.25rem 0 0;align-self:flex-end;grid-column:auto;grid-row:auto;}
 .album-detail .album-copy>.collection-meta{margin:0;color:var(--secondary-ink);}
 .album-detail .album-copy>.album-artist-credits{width:100%;min-width:0;}
-.album-artist-credits[data-many=true]>.album-credit-portraits{display:flex;flex-direction:column;align-items:flex-start;width:100%;gap:.5rem;}
-.album-guest-portraits{display:flex;gap:.375rem;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;padding:.125rem .125rem .375rem;scroll-padding:.125rem;}
-.album-guest-portraits>.artist-link{flex:none;}
-.album-detail .album-credit-portraits>.album-primary-artist{min-width:0;white-space:normal;overflow:visible;}
-.album-primary-artist .artist-credit-name{overflow-wrap:anywhere;min-width:0;}
-.artist-name-popover:popover-open{background:var(--control-surface);color:var(--ink);border:1px solid var(--control-border);box-shadow:0 3px 8px #0002;animation:none!important;transition:none!important;}
-.album-artist-credits[data-compact=true] .artist-name-popover:popover-open{box-shadow:0 3px 8px #0002;}@container(max-width:26rem){.album-detail .album-hero{grid-template-columns:5rem minmax(0,1fr);}.album-detail .album-copy{grid-column:2;}.album-detail .album-copy h1{font-size:1.5rem;}}
+@container(max-width:26rem){.album-detail .album-hero{grid-template-columns:5rem minmax(0,1fr);}.album-detail .album-copy{grid-column:2;}.album-detail .album-copy h1{font-size:1.5rem;}}
 
 /* A shared bottom frame keeps Mini Player tools steady as its content changes. */
 /* Collection shading stays soft; the glyph is always readable on its face. */
