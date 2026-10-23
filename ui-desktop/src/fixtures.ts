@@ -154,6 +154,7 @@ let integrationStatus = {
   config: { discord_enabled: false, discord_client_id: "", lastfm_enabled: false, lastfm_username: null },
   discord: "Off", lastfm: "Off", queued: 0,
 };
+let fixtureModelStarted=0,fixtureModelInstalled=false;
 let player: Playback = { ...emptyPlayback };
 let preferences:Preferences={...defaultPreferences,...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
 let savedCollections: import("./types").SavedCollection[]=JSON.parse(localStorage.getItem("musicos-fixture-collections")??"[]");
@@ -169,6 +170,14 @@ export async function fixtureCall(
   switch (command) {
     case 'metadata_status': return {cached:8,checking:a.retry?2:0,unavailable:2,retryable:a.retry?0:2};
     case 'sparklist': {
+      if(new URLSearchParams(location.search).has('sparkSetup')){
+       const request=a.request,base={beta:!!preferences.sparklist_beta,installed:fixtureModelInstalled,ready:fixtureModelInstalled,staged_available:true,reason:null,download_bytes:281234043,analyzed:0,available:tracks.length,analyzed_ids:[],preview:null,items:savedCollections,chosen_id:null};
+       if(request.action==='install_staged'){if(!preferences.sparklist_beta)throw Error('Enable audio Sparklists first.');fixtureModelStarted=Date.now();}
+       if(request.action==='cancel_install'){fixtureModelStarted=0;return {...base,installation:{running:false,error:'Model installation cancelled',copied:0,total:281234043}};}
+       if(fixtureModelStarted&&Date.now()-fixtureModelStarted>100){fixtureModelInstalled=true;fixtureModelStarted=0;}
+       return {...base,installed:fixtureModelInstalled,ready:fixtureModelInstalled,installation:{running:!!fixtureModelStarted,error:null,copied:fixtureModelInstalled?281234043:0,total:281234043}};
+      }
+
       if(!new URLSearchParams(location.search).has('sparkReady'))return {ready:false,reason:'The music model is awaiting listening evaluation and a reviewed release download. Audio generation is unavailable.',download_bytes:277183168,analyzed:0,available:tracks.filter(t=>t.available).length,analyzed_ids:[],preview:null,items:savedCollections,chosen_id:null};
       // Explicit development fixture only; no production model-validation bypass.
       const ids=tracks.filter(t=>t.available).map(t=>t.id),r=a.request;
@@ -303,7 +312,7 @@ export async function fixtureCall(
     }
     case 'home_activity': return JSON.parse(localStorage.getItem('musicos-fixture-home-activity')??'{"frequent":[],"recent":[]}');
     case 'spark_recommendations': return savedCollections.filter(c=>c.kind==='audio'&&c.track_ids.some(id=>tracks.some(t=>t.id===id&&t.available))).slice().sort((x,y)=>Number(y.track_ids.includes(a.current))-Number(x.track_ids.includes(a.current))||x.id.localeCompare(y.id)).slice(0,3).map(c=>({id:c.id,reason:c.track_ids.includes(a.current)?'Includes what’s playing':'From your recent listening'}));
-    case 'playlist_suggestions': {const item=savedCollections.find(c=>c.id===a.id);return {ids:item?.track_ids.length?tracks.filter(t=>!item.track_ids.includes(t.id)).slice(0,10).map(t=>t.id):[],state:item?.track_ids.length?'ready':'empty',message:item?.track_ids.length?'Suggested from this playlist’s sound.':'Choose a starting song.'};}
+    case 'playlist_suggestions': {if(new URLSearchParams(location.search).has('sparkSetup'))return {ids:[],state:fixtureModelInstalled?'analysis':'setup',message:fixtureModelInstalled?'Prepare songs to get suggestions.':'Audio suggestions use the local Sparklist model.'};const item=savedCollections.find(c=>c.id===a.id);return {ids:item?.track_ids.length?tracks.filter(t=>!item.track_ids.includes(t.id)).slice(0,10).map(t=>t.id):[],state:item?.track_ids.length?'ready':'empty',message:item?.track_ids.length?'Suggested from this playlist’s sound.':'Choose a starting song.'};}
     case 'metadata_files': return a.action==='inspect'?{values:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({...t,revision:1})),files:a.writeFiles?{backup_bytes:120000,files:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({path:t.path,format:'FLAC'})),supported_fields:['Title','Artist','Album','Album artist','Genre','Year','Track and disc numbers']}:null}:{jobs:[]};
     case 'album_metadata': {const r=a.request;const ignored=JSON.parse(localStorage.getItem('musicos-fixture-ignored')??'[]') as typeof metadataSuggestions;const visible=metadataSuggestions.filter(s=>!ignored.some(i=>i.track_id===s.track_id&&i.candidate_token===s.candidate_token));const albums=library.albums.filter(album=>visible.some(s=>album.track_ids.includes(s.track_id))&&`${album.title} ${album.artist}`.toLowerCase().includes((r.search??'').toLowerCase())).map(album=>{const rows=album.track_ids.map(id=>{const t=tracks.find(t=>t.id===id)!;const candidate=visible.find(s=>s.track_id===id);return {track_id:id,current:{...t,revision:1},candidate:candidate?.candidate??null,candidate_token:candidate?.candidate_token};});return {album_id:album.id,title:album.title,artist:album.artist,cover:album.cover,rows,token:JSON.stringify(rows)};});if(r.action==='list')return {albums};const album=albums.find(album=>album.album_id===r.album_id);if(!album||album.token!==r.token)throw new Error('This album changed. Refresh the comparison.');let count=0;for(const choice of r.rows){const suggestion=visible.find(s=>s.track_id===choice.track_id);if(!suggestion)continue;const t=tracks.find(t=>t.id===choice.track_id)!;const before={...t};for(const field of choice.fields)Object.assign(t,{[field==='artwork'?'cover_art_path':field]:(suggestion.candidate as any)[field==='artwork'?'artwork_path':field]});metadataHistory.unshift({id:Date.now(),created_at:Date.now()/1000,undone:false,conflict:false,changes:[{track_id:t.id,before,after:{...t},current:null,conflict:false}]});metadataSuggestions=metadataSuggestions.filter(s=>s.track_id!==t.id);count++;}return {count,history_id:Date.now()};}
     case "metadata_edit": {

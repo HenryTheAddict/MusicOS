@@ -1,3 +1,4 @@
+import {useAutomaticSparkModel} from './sparkModel';
 import ActionSurface from './ActionSurface';
 import useSparkRecommendations from './useSparkRecommendations';
 import FavoriteButton from './FavoriteButton';
@@ -143,6 +144,7 @@ export default function App() {
   const librarySummary=useMemo(()=>({favorites:library.tracks.filter(t=>t.favorited).length,duration:library.tracks.reduce((sum,t)=>sum+t.duration,0)}),[library.tracks]);
   const collectionSummaries=useMemo(()=>new Map(collections.map(item=>{let duration=0,available=0;for(const id of item.track_ids){const track=tracksById.get(id);if(track){duration+=track.duration;available++;}}return [item.id,{duration,available}];})),[collections,tracksById]);
   const [preferences, setPreferences] = useState(defaultPreferences);
+  const savedSparkBeta=useRef(defaultPreferences.sparklist_beta);
   useSmoothCorners();
   const [miniMode,setMiniMode]=useState<'normal'|'tall'|'queue'>('normal');
   const miniChanging=useRef(false);
@@ -179,9 +181,10 @@ export default function App() {
   }, [pendingImport]);
   const [queueOpen, setQueueOpen] = useState(false);
   const queuePresent=usePanelPresence(queueOpen);
-  useEffect(()=>{const open=()=>{setQueueOpen(false);setSection('Settings');sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page','quality');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:'quality'}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
+  useEffect(()=>{const open=(event:Event)=>{const page=(event as CustomEvent<{page?:string}>).detail?.page==='spark'?'spark':'quality';setQueueOpen(false);sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page',page);setSection('Settings');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:page}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
   const [commandOpen,setCommandOpen]=useState(false);
   const commandPresent=usePanelPresence(commandOpen);
+  const automaticModel=useAutomaticSparkModel(!!preferences.sparklist_beta,!loading&&miniMode==='normal'&&section==='Library');
   const sparkRecommendations=useSparkRecommendations(collections,player.track?.id,!loading&&miniMode==='normal'&&(section==='Library'||commandOpen),library,preferences.sparklist_beta);
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
@@ -259,7 +262,7 @@ export default function App() {
     let cleanups: (() => void)[] = [];
     let gone = false;
     const lightweight=call("bootstrap_state").then(data=>{
-      if(gone)return;setPreferences(data.preferences);setPlayer(data.playback);setTask(data.task);
+      if(gone)return;savedSparkBeta.current=data.preferences.sparklist_beta;setPreferences(data.preferences);setPlayer(data.playback);setTask(data.task);
       if(data.preference_error)setSaveError(data.preference_error);
     });
     const libraryLoad=call("refresh_library").then(data=>{if(!gone)setLibrary(data);});
@@ -500,7 +503,7 @@ export default function App() {
     if(savingPreferences.current)return;
     savingPreferences.current=true;
     void (async()=>{
-      try {while(savePending.current){const latest=savePending.current;savePending.current=null;try {await call("save_preferences",{preferences:latest});if(mounted.current)setSaveError("");}catch(e){if(mounted.current)setSaveError(`Could not save settings. ${errorText(e)}`);}}}
+      try {while(savePending.current){const latest=savePending.current;savePending.current=null;try {await call("save_preferences",{preferences:latest});if(savedSparkBeta.current!==latest.sparklist_beta){savedSparkBeta.current=latest.sparklist_beta;invalidateDisplay('sparklist');}if(mounted.current)setSaveError("");}catch(e){if(mounted.current)setSaveError(`Could not save settings. ${errorText(e)}`);}}}
       finally {savingPreferences.current=false;}
     })();
   }
@@ -838,7 +841,7 @@ export default function App() {
   else if(route.view==='playlist') {
     const item=collections.find(c=>c.id===route.id);
     const Detail=item?.kind==='audio'?AudioSparkDetail:PlaylistDetail;
-    content=item?<Detail key={item.id} editRequest={collectionEdit?.id===item.id?collectionEdit.revision:0} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} visibleTrackIds={tracks.map(t=>t.id)} actions={collectionActions(tracks.map(t=>t.id))}>{rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
+    content=item?<Detail audioModel={automaticModel.state} key={item.id} editRequest={collectionEdit?.id===item.id?collectionEdit.revision:0} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} visibleTrackIds={tracks.map(t=>t.id)} actions={collectionActions(tracks.map(t=>t.id))}>{rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
   }
   else if (route.view === "songs" || route.view === "favorites")
     content = tracks.length ? (
@@ -1064,7 +1067,7 @@ export default function App() {
         {section === "Library" && (
           <aside className="library-sidebar">
             <div className="sidebar-body">
-            <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>{preferences.display_name}'s stuff</button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'Playlist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
+            <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>Your things</button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'Playlist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
             <div className="sidebar-search-slot">
               {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
               {navigation.history.length>0&&route.view!=='artist'&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>}
@@ -1085,7 +1088,7 @@ export default function App() {
             </nav>
             <div className="sidebar-more"><Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
             <section className="sidebar-playlists" aria-label="Your playlists">
-              <h2>Playlists</h2>
+              <h2>Your things</h2>
               <div className="sidebar-playlist-list">
                 {collections.filter(item=>item.kind!=='audio'&&!item.spark).map(item=>{
                   const summary=collectionSummaries.get(item.id)!;

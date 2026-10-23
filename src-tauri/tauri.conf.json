@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "node scripts/prepare-desktop.mjs --debug && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build:ui && node scripts/prepare-desktop.mjs",
+    "beforeBuildCommand": "npm run build:ui && node scripts/prepare-spark-model.mjs && node scripts/prepare-desktop.mjs",
     "frontendDist": "../dist"
   },
   "app": {
@@ -49,7 +49,8 @@
     "resources": {
       "../assets/fonts/Figtree-OFL.txt": "fonts/Figtree-OFL.txt",
       "../third_party/licenses/": "licenses/",
-      "resources/runtime/libonnxruntime.1.31.0.dylib": "runtime/libonnxruntime.1.31.0.dylib"
+      "resources/runtime/libonnxruntime.1.31.0.dylib": "runtime/libonnxruntime.1.31.0.dylib",
+      "resources/models/": "models/"
     }
   }
 }

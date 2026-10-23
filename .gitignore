@@ -63,3 +63,7 @@ preferences.json
 
 # Generated audio used by desktop seek regression test
 !src-tauri/tests/fixtures/seek.flac
+
+# Generated, checksum-verified desktop model bundle
+/src-tauri/resources/models/*
+!/src-tauri/resources/models/.gitkeep

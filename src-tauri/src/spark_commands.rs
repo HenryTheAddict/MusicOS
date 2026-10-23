@@ -24,6 +24,12 @@ pub enum Request {
 pub struct Setup {pub dir:PathBuf,pub runtime:PathBuf,pub evaluation:bool}
 pub fn staged_candidate()->PathBuf{PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../out/rebuild-qa/model-evaluation-general/release-candidate/clap-general-v1")}
 impl Setup {
+ /// Installed applications fetch from their signed resource bundle. Developer
+ /// staging is only a fallback for unbundled builds.
+ pub fn candidate_source(&self)->PathBuf {
+  let bundled=self.runtime.parent().and_then(Path::parent).unwrap_or(Path::new(".")).join("models/clap-general-v1");
+  if bundled.join("manifest.json").is_file(){bundled}else{staged_candidate()}
+ }
  pub fn for_library(db:&Path,runtime:PathBuf,beta:bool)->Self {
   let dir=db.parent().unwrap_or(Path::new(".")).join("audio-model");
   #[cfg(debug_assertions)]
@@ -35,7 +41,7 @@ pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Resul
  match &request {
   Request::Install{directory}=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first");crate::spark_install::start(directory.into(),setup.dir.clone())?;},
   Request::CancelInstall=>crate::spark_install::cancel(),
-  Request::InstallStaged=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first.");let source=staged_candidate();ensure!(source.join("manifest.json").is_file(),"The reviewed staged candidate is not available on this machine.");crate::spark_install::start(source,setup.dir.clone())?;},
+  Request::InstallStaged=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first.");if spark_engine::read_manifest(&setup.dir,setup.evaluation).is_err()&&!crate::spark_install::status().running {let source=setup.candidate_source();ensure!(source.join("manifest.json").is_file(),"The verified model is missing from this app. Reinstall the complete MusicOS package, or choose a verified model folder in Details.");crate::spark_install::start(source,setup.dir.clone())?;}},
   Request::RemoveModel=>crate::spark_install::remove(&setup.dir)?,_=>{}
  }
  let manifest=spark_engine::read_manifest(&setup.dir,setup.evaluation);
@@ -43,9 +49,9 @@ pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Resul
  let library=repo.snapshot(&Default::default())?;let available=library.tracks.iter().filter(|t|Path::new(&t.path).is_file()).count();
  let (model,candidates,reason)=match manifest {
   Ok(manifest)=>{let id=format!("{}@{}",manifest.id,manifest.revision);let candidates=crate::embeddings::candidates(repo.db_path(),&library.tracks,&id);(Some(manifest),candidates,None)},
-  Err(error)=>{let reason=if !setup.dir.join("manifest.json").exists(){if setup.evaluation {"Install the checksum-verified staged beta model, then analyze local songs. Public download is not available yet."} else {"Enable experimental audio Sparklist beta in Settings → Audio to evaluate the local model."}.into()}else{format!("{error:#}")};(None,Vec::new(),Some(reason))},
+  Err(error)=>{let reason=if !setup.dir.join("manifest.json").exists(){if setup.evaluation {"The verified model will install automatically when you use audio suggestions."} else {"Enable experimental audio Sparklist beta in Settings → Audio to evaluate the local model."}.into()}else{format!("{error:#}")};(None,Vec::new(),Some(reason))},
  };
- let mut state=State{installed:setup.dir.join("manifest.json").is_file(),generated_artwork:None,analysis:Default::default(),staged_available:staged_candidate().join("manifest.json").is_file(),installation:crate::spark_install::status(),beta:setup.evaluation,ready:model.is_some(),reason,download_bytes:candidate.files.iter().map(|f|f.bytes).sum(),analyzed:candidates.len(),available,analyzed_ids:candidates.iter().map(|c|c.id).collect(),preview:None,items:collections::list(repo)?,chosen_id:None};
+ let mut state=State{installed:setup.dir.join("manifest.json").is_file(),generated_artwork:None,analysis:Default::default(),staged_available:setup.candidate_source().join("manifest.json").is_file(),installation:crate::spark_install::status(),beta:setup.evaluation,ready:model.is_some(),reason,download_bytes:candidate.files.iter().map(|f|f.bytes).sum(),analyzed:candidates.len(),available,analyzed_ids:candidates.iter().map(|c|c.id).collect(),preview:None,items:collections::list(repo)?,chosen_id:None};
  if matches!(request,Request::Status|Request::InstallStaged|Request::Install{..}|Request::CancelInstall|Request::RemoveModel){return Ok(state);}
  if let Request::AsPlaylist{id,name}=&request {audio_collections::as_manual(repo,id,name)?;state.items=collections::list(repo)?;return Ok(state);}
  ensure!(state.ready,"{}",state.reason.as_deref().unwrap_or("Audio model is unavailable"));
@@ -76,6 +82,11 @@ fn preserve_preview(preview:Option<Preview>,generation:&Generation,candidates:&[
  Ok(preview)
 }
 #[cfg(test)]mod tests{
+ #[test]fn packaged_model_source_is_independent_of_build_checkout(){
+  let temp=tempfile::tempdir().unwrap();let resources=temp.path().join("Resources");let bundled=resources.join("models/clap-general-v1");std::fs::create_dir_all(&bundled).unwrap();std::fs::write(bundled.join("manifest.json"),b"{}").unwrap();
+  let setup=Setup{dir:temp.path().join("installed"),runtime:resources.join("runtime/libonnxruntime.1.31.0.dylib"),evaluation:true};assert_eq!(setup.candidate_source(),bundled);
+ }
+
  use super::*;
  #[test]fn saving_preserves_preview_when_analysis_coverage_grows(){
   let candidates=(1..=4).map(|id|spark_engine::Candidate{id,artist:id.to_string(),album:"Album".into(),favorite:false,embedding:vec![1.;512]}).collect::<Vec<_>>();

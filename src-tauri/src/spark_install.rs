@@ -1,5 +1,6 @@
 //! Optional, atomic installation of the single reviewed beta artifact. The
-//! directory is selected by the user; model contents never choose runtime code.
+//! source is the signed app bundle or an explicitly selected verified folder;
+//! model contents never choose runtime code.
 use anyhow::{ensure, Context, Result};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -20,6 +21,9 @@ pub fn start(source:PathBuf,destination:PathBuf)->Result<()> {
   let result=(||->Result<()>{
    ensure!(source!=destination&&source!=staging,"Choose the staged model folder");
    ensure!(!destination.exists(),"Remove the installed model before replacing it");
+   fs::create_dir_all(destination.parent().context("Model destination has no parent")?)?;
+   let required=candidate.files.iter().map(|file|file.bytes).sum::<u64>()+64*1024*1024;
+   ensure!(fs2::available_space(destination.parent().unwrap())?>=required,"Not enough space for the audio model. Free at least {} MB and retry.",required/1_000_000);
    if staging.exists(){fs::remove_dir_all(&staging)?;}fs::create_dir_all(&staging)?;
    for artifact in &candidate.files {
     let mut input=fs::File::open(source.join(&artifact.name)).with_context(||format!("Missing {} in selected folder",artifact.name))?;
@@ -29,6 +33,7 @@ pub fn start(source:PathBuf,destination:PathBuf)->Result<()> {
     output.sync_all()?;ensure!(format!("{:x}",hash.finalize())==artifact.sha256,"Model checksum failed: {}",artifact.name);
    }
    ensure!(!CANCEL.load(Ordering::Acquire),"Model installation cancelled");
+   if source.join("LICENSE.txt").is_file(){fs::copy(source.join("LICENSE.txt"),staging.join("LICENSE.txt"))?;}
    fs::write(staging.join("manifest.json"),serde_json::to_vec_pretty(&candidate)?)?;
    fs::File::open(staging.join("manifest.json"))?.sync_all()?;
    fs::rename(&staging,&destination)?;Ok(())
