@@ -21,3 +21,14 @@ This is a desktop-only follow-up on `codex/desktop-heart-preservation`. OS sourc
 Logs and screenshots are under `out/rebuild-qa/credits-*` in the isolated worktree. Native delivery and hashes are recorded in the release manifest and the delivery section below.
 
 Human motion/design acceptance, physical display frame timing, touch, Windows, and Linux remain separate gates. No guaranteed refresh-rate claim is made.
+
+## Signed delivery
+
+- Desktop source: `34aba0e`; primary compatibility cherry-pick: `3ad3520`.
+- Signed application executable SHA256: `e3809c940528e0a13b56d4fdbd55242f1f99a318e369d1aa2806cc2af31f8284`.
+- Unchanged embedded audio executable: `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`.
+- Unchanged embedded ONNX runtime: `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`.
+- Ad hoc signed and verified with strict deep verification. Existing compiler warnings only; release build completed in 1m33s.
+- Preserved the previously installed application, latest private preferences, and verified SQLite backups before replacing the paused app. No older preferences or queue snapshot was restored.
+- Installed and loaded in the main MusicOS. On Track restored paused at 233 seconds; 507 songs, 26 favorites, and 12 saved collections remained. Mm and Poop appear below More. Opening Mm and its shared right-click menu was verified natively. User navigation interrupted the attempted native album check; the contributor layout/menu was verified in the browser and size/theme matrix instead.
+- Evidence: `out/qa/os-foundation/credits-motion/`; retained package and previous app: `releases/desktop-credits-motion-2026-10-22/`. `release.json` records exact hashes and delivery status.
