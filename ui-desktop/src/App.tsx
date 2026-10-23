@@ -1,3 +1,5 @@
+import ListFind from './ListFind';
+import {compileListFind} from './findQuery';
 import {useAutomaticSparkModel} from './sparkModel';
 import ActionSurface from './ActionSurface';
 import useSparkRecommendations from './useSparkRecommendations';
@@ -226,6 +228,21 @@ export default function App() {
     restoreNavigation(sessionStorage.getItem("musicos-navigation-v1")),
   );
   const route = navigation.current;
+  const findRoute=`${route.view}:${route.id??''}`;
+  const findSupported=['albums','songs','favorites','playlist','genres','genre'].includes(route.view);
+  const collectionFind=['playlists','sparklists'].includes(route.view);
+  const [findKey,setFindKey]=useState<string|null>(null),[findRequest,setFindRequest]=useState(0);
+  const findOpen=findSupported&&(findKey===findRoute||!!route.search);
+  const findOrigins=useRef(new Map<string,number>()),findRouteRef=useRef(findRoute);findRouteRef.current=findRoute;
+  function openFind(){
+   if(collectionFind){setFindKey(findRoute);setFindRequest(value=>value+1);return;}
+   if(!findSupported)return;
+   if(!findOpen)findOrigins.current.set(findRoute,scrollRef.current?.scrollTop??route.scroll);
+   setQueueOpen(false);setFindKey(findRoute);setFindRequest(value=>value+1);
+  }
+  function changeFind(search:string){dispatch({type:'patch',patch:{search,scroll:0}});if(scrollRef.current)scrollRef.current.scrollTop=0;}
+  function closeFind(){const key=findRoute,scroll=findOrigins.current.get(key)??0;findOrigins.current.delete(key);setFindKey(null);dispatch({type:'patch',patch:{search:'',scroll}});requestAnimationFrame(()=>{if(findRouteRef.current!==key)return;if(scrollRef.current)scrollRef.current.scrollTop=scroll;document.querySelector<HTMLButtonElement>('.library-find-action')?.focus({preventScroll:true});});}
+
   const liveView=useRef({section,miniMode}),scrollRestoring=useRef(false);
   if(liveView.current.section!==section||liveView.current.miniMode!==miniMode)scrollRestoring.current=true;
   liveView.current={section,miniMode};
@@ -458,6 +475,9 @@ export default function App() {
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){
         e.preventDefault();setCommandOpen(value=>!value);return;
       }
+      if((e.metaKey||e.ctrlKey)&&!e.altKey&&e.key.toLowerCase()==='f'&&section==='Library'&&miniMode==='normal'&&(findSupported||collectionFind)&&!commandOpen&&!document.querySelector('dialog[open],[role=menu]')){
+        e.preventDefault();openFind();return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === ",") {
         e.preventDefault();
         chooseSection("Settings");
@@ -489,7 +509,7 @@ export default function App() {
     };
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
-  }, [run, section, queueOpen, player.track?.id]);
+  }, [run, section, queueOpen, player.track?.id,findRoute,findOpen,miniMode,commandOpen]);
   function changePreferences(next: Preferences) {
     // A deliberate theme choice must not continue the launch interpolation:
     // intermediate light/dark ink and surfaces can be unreadable together.
@@ -584,22 +604,27 @@ export default function App() {
       setError(errorText(e)),
     );
   }
-  const needle = route.search.toLocaleLowerCase().trim();
-  const match = (...s: string[]) =>
-    !needle || s.some((v) => v.toLocaleLowerCase().includes(needle));
-  const tracks = useMemo(() => {
-    let records = library.tracks;
-    if (route.view === "album")
-      records = (album?.track_ids ?? [])
-        .map((id) => tracksById.get(id)!)
-        .filter(Boolean);
-    if (route.view === "artist")
-      records = records.filter((t) => artist?.track_ids.includes(t.id));
-    if(route.view==="playlist")records=(collections.find(c=>c.id===route.id)?.track_ids??[]).map(id=>tracksById.get(id)!).filter(Boolean);
-    if (route.view === "favorites")
-      records = records.filter((t) => t.favorited);
-    return records.filter((t) => match(t.title, t.artist, t.album, t.genre));
-  }, [library, route.view, route.id, needle,collections]);
+  const needle=route.search.trim();
+  const findMatch=useMemo(()=>compileListFind(needle),[needle]);
+  const scopedTracks=useMemo(()=>{
+    let records=library.tracks;
+    if(route.view==='album')records=(album?.track_ids??[]).map(id=>tracksById.get(id)!).filter(Boolean);
+    if(route.view==='artist')records=records.filter(track=>artist?.track_ids.includes(track.id));
+    if(route.view==='playlist')records=(collections.find(item=>item.id===route.id)?.track_ids??[]).map(id=>tracksById.get(id)!).filter(Boolean);
+    if(route.view==='favorites')records=records.filter(track=>track.favorited);
+    return records;
+  },[library,route.view,route.id,collections,album,artist,tracksById]);
+  const tracks=useMemo(()=>scopedTracks.filter(findMatch),[scopedTracks,findMatch]);
+  const genreScope=route.view==='genre'?library.genres.find(genre=>genre.id===route.id):null;
+  const albumFilters={...defaultFilters,...preferences.library_filters};
+  const scopedAlbums=useMemo(()=>['albums','genre'].includes(route.view)?filterAlbums(library,albumFilters).filter(a=>!genreScope||genreScope.album_ids.includes(a.id)):[],[library,preferences.library_filters,route.view,genreScope]);
+  const foundAlbums=useMemo(()=>scopedAlbums.filter(a=>findMatch({title:a.title,album:a.title,artist:a.artist,genre:a.genre,year:a.year,favorited:a.track_ids.some(id=>tracksById.get(id)?.favorited),available:a.track_ids.some(id=>tracksById.get(id)?.available)})),[scopedAlbums,findMatch,tracksById]);
+  const foundGenres=useMemo(()=>library.genres.filter(genre=>findMatch({title:genre.name,genre:genre.name})),[library.genres,findMatch]);
+  const findGrid=['albums','genre'].includes(route.view),findGenres=route.view==='genres';
+  const findCount=findGrid?foundAlbums.length:findGenres?foundGenres.length:tracks.length;
+  const findTotal=findGrid?scopedAlbums.length:findGenres?library.genres.length:scopedTracks.length;
+  const findUnit=findGrid?'album':findGenres?'genre':'song';
+  const findContext=route.view==='playlist'?(collections.find(item=>item.id===route.id)?.name??'this playlist'):route.view==='genre'?(genreScope?.name??'this genre'):route.view==='favorites'?'Favorites':route.view==='songs'?'Songs':route.view==='albums'?'Albums':'Genres';
   async function queueTracks(ids:number[],next=false){const playable=ids.filter(id=>availableIds.has(id));for(const id of next?[...playable].reverse():playable)await run({type:next?'play_next':'add_to_queue',id});}
   function playbackItems(ids:number[]){return [
    {label:'Play',icon:'play',disabled:!ids.some(id=>availableIds.has(id)),onSelect:()=>playIds(ids)},
@@ -824,7 +849,7 @@ export default function App() {
         Rescan your music folders to update the library.
       </Empty>
     );
-  else if(route.view==='sparklists'||route.view==='playlists') content=<CollectionManager library={library} items={collections} onChange={setCollections} onOpen={openCollection} actionsFor={actionsForCollection} initialTab={route.view==='sparklists'?'audio':'manual'} onCreate={createCollection} onSetup={()=>{sessionStorage.setItem('musicos-audio-page','spark');sessionStorage.setItem('musicos-settings-tab','Audio');setSection('Settings');}}/>;
+  else if(route.view==='sparklists'||route.view==='playlists') content=<CollectionManager findRequest={findKey===findRoute?findRequest:0} library={library} items={collections} onChange={setCollections} onOpen={openCollection} actionsFor={actionsForCollection} initialTab={route.view==='sparklists'?'audio':'manual'} onCreate={createCollection} onSetup={()=>{sessionStorage.setItem('musicos-audio-page','spark');sessionStorage.setItem('musicos-settings-tab','Audio');setSection('Settings');}}/>;
   else if (!library.tracks.length && route.view!=='playlist')
     content = (
       <Empty
@@ -841,7 +866,7 @@ export default function App() {
   else if(route.view==='playlist') {
     const item=collections.find(c=>c.id===route.id);
     const Detail=item?.kind==='audio'?AudioSparkDetail:PlaylistDetail;
-    content=item?<Detail audioModel={automaticModel.state} key={item.id} editRequest={collectionEdit?.id===item.id?collectionEdit.revision:0} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} visibleTrackIds={tracks.map(t=>t.id)} actions={collectionActions(tracks.map(t=>t.id))}>{rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
+    content=item?<Detail finding={!!needle} audioModel={automaticModel.state} key={item.id} editRequest={collectionEdit?.id===item.id?collectionEdit.revision:0} item={item} items={collections} library={library} onChange={setCollections} onDeleted={()=>navigation.history.length?goBack():goScope('albums')} scale={scale} visibleTrackIds={tracks.map(t=>t.id)} actions={collectionActions(tracks.map(t=>t.id))}>{needle&&!tracks.length?<p className="find-empty" role="status">No matching songs. Try another term or clear Find.</p>:rows(tracks)}</Detail>:<Empty title="Playlist unavailable">It may have been removed.</Empty>;
   }
   else if (route.view === "songs" || route.view === "favorites")
     content = tracks.length ? (
@@ -854,7 +879,7 @@ export default function App() {
   else if (route.view === "artists")
     content = grid(
       (preferences.artists_album_only?albumArtists(library):library.artists)
-        .filter((a) => match(a.name))
+        .filter((a) => findMatch({title:a.name,artist:a.name}))
         .map((a) => ({
           id: a.id,
           title: a.name,
@@ -883,8 +908,7 @@ export default function App() {
     );
   else if (route.view === "genres")
     content = grid(
-      library.genres
-        .filter((g) => match(g.name))
+      foundGenres
         .map((g) => ({
           id: g.id,
           title: g.name,
@@ -899,11 +923,8 @@ export default function App() {
       route.view === "genre"
         ? library.genres.find((g) => g.id === route.id)
         : null;
-    const filters={...defaultFilters,...preferences.library_filters};
-    const albums = filterAlbums(library,filters).filter(
-      (a) =>
-        (!g || g.album_ids.includes(a.id)) && match(a.title, a.artist, a.genre),
-    ).sort((a,b) => filters.sort === "title" ? a.title.localeCompare(b.title) : b.track_ids.reduce((m,id) => Math.max(m,id),0) - a.track_ids.reduce((m,id) => Math.max(m,id),0));
+    const filters=albumFilters;
+    const albums=[...foundAlbums].sort((a,b)=>filters.sort==='title'?a.title.localeCompare(b.title):b.track_ids.reduce((m,id)=>Math.max(m,id),0)-a.track_ids.reduce((m,id)=>Math.max(m,id),0));
     content = (
       <>
         {g && (
@@ -1139,10 +1160,11 @@ export default function App() {
                               : route.view[0].toUpperCase() +
                                 route.view.slice(1)}
                 </span>}
-                {route.view!=='artists'&&<button className="library-search-action" aria-label="Search library" aria-keyshortcuts="Meta+K Control+K" onPointerEnter={()=>void import("./SuperCommand")} onFocus={()=>void import("./SuperCommand")} onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
+                {(findSupported||collectionFind)&&<button className="library-find-action" aria-label="Find in this list" aria-keyshortcuts="Meta+F Control+F" aria-expanded={findSupported?findOpen:undefined} aria-controls={findSupported?"list-find":undefined} onClick={openFind}><Icon name="search"/><span>Find</span><kbd>{/Mac|iPhone|iPad/.test(navigator.platform)?"⌘ F":"Ctrl F"}</kbd></button>}
                 {route.view==="artists"&&<ThemedSwitch label="Album Artists" checked={!!preferences.artists_album_only} onChange={artists_album_only=>changePreferences({...preferences,artists_album_only})}/>}
               </div>
             )}
+          {section==='Library'&&findSupported&&<ListFind open={findOpen} focusRequest={findRequest} value={route.search} context={findContext} count={findCount} total={findTotal} unit={findUnit} onChange={changeFind} onClose={closeFind}/>}
           <div className="page-frame">
             <div className="theme-layer current-theme" aria-hidden="true"/>
             <main

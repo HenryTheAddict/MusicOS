@@ -12,6 +12,7 @@ import "./desktopConsistency.css";
 import "./personalHome.css";
 import "./miniPlayer.css";
 import "./connectedMotion.css";
+import "./listFind.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />
