@@ -166,6 +166,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
         *state.mini_player.lock().unwrap_or_else(|e| e.into_inner()) = Some(bounds);
     }
     if mode == "normal" {
+        if state.mini_layout.lock().unwrap_or_else(|e|e.into_inner()).as_str()!="normal" {let density=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).mini_player_density.clone();state.mini_sizes.lock().unwrap_or_else(|e|e.into_inner()).insert(density,window.inner_size()?);}
         if let Some(bounds) = saved.as_ref() {
             window.set_always_on_top(bounds.always_on_top)?;
             window.set_max_size(None::<tauri::LogicalSize<f64>>)?;
@@ -182,12 +183,14 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
         let factor = window.scale_factor()?;
         let old_layout = state.mini_layout.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let menu_size = *state.mini_menu_size.lock().unwrap_or_else(|e| e.into_inner());
-        let key = |_layout: &str| "expanded";
+        let density=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).mini_player_density.clone();
+        let minimum=mini_minimum(&density);
+        let key = |_layout: &str| density.as_str();
         if old_layout != "normal" && menu_size.is_none() {
             state.mini_sizes.lock().unwrap_or_else(|e| e.into_inner()).insert(key(&old_layout).into(), window.inner_size()?);
         }
         let base_size = menu_size.or_else(|| state.mini_sizes.lock().unwrap_or_else(|e| e.into_inner()).get(key(&mode)).copied())
-            .unwrap_or_else(|| tauri::LogicalSize::new(244.0, 320.0).to_physical::<u32>(factor));
+            .unwrap_or_else(|| tauri::LogicalSize::new(minimum.0, minimum.1).to_physical::<u32>(factor));
         let expanded = menu_open == Some(true);
         if expanded {
             let position = window.outer_position()?;
@@ -203,7 +206,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
         window.set_resizable(!expanded)?;
         let size = tauri::PhysicalSize::new(base_size.width, base_size.height + if expanded {(244.0 * factor).round() as u32} else {0});
         window.set_size(size)?;
-        window.set_min_size(Some(tauri::LogicalSize::new(244.0, if expanded {size.height as f64 / factor} else {320.0})))?;
+        window.set_min_size(Some(tauri::LogicalSize::new(minimum.0, if expanded {size.height as f64 / factor} else {minimum.1})))?;
         window.set_always_on_top(pinned.unwrap_or(true))?;
         if expanded {
             if let Some(monitor) = window.current_monitor()? {
@@ -256,6 +259,8 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
     result.map_err(AppError::from)
 }
 
+fn mini_minimum(density:&str)->(f64,f64){if density=="compact"{(220.,280.)}else{(244.,320.)}}
+
 #[tauri::command]
 async fn mini_resize(window:tauri::WebviewWindow,state:State<'_,AppState>,width:f64,height:f64)->ApiResult<()> {
     let _operation=state.player_window_operation.lock().await;
@@ -266,9 +271,10 @@ async fn mini_resize(window:tauri::WebviewWindow,state:State<'_,AppState>,width:
         let factor=window.scale_factor()?;
         let bounds=window.current_monitor()?.map(|m|(m.work_area().size.width as f64/factor,m.work_area().size.height as f64/factor)).unwrap_or((2400.,1400.));
         
-        let size=tauri::LogicalSize::new(width.clamp(244.,bounds.0.max(334.)),height.clamp(320.,bounds.1.max(320.)));
+        let density=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).mini_player_density.clone();let minimum=mini_minimum(&density);
+        let size=tauri::LogicalSize::new(width.clamp(minimum.0,bounds.0.max(minimum.0)),height.clamp(minimum.1,bounds.1.max(minimum.1)));
         window.set_size(size)?;
-        state.mini_sizes.lock().unwrap_or_else(|e|e.into_inner()).insert("expanded".into(),size.to_physical::<u32>(factor));
+        state.mini_sizes.lock().unwrap_or_else(|e|e.into_inner()).insert(density,size.to_physical::<u32>(factor));
         Ok(())
     })();result.map_err(AppError::from)
 }
@@ -1851,4 +1857,9 @@ mod tests {
 
 fn saved_playback(snapshot:&musicos_desktop::local::LocalPlaybackSnapshot)->musicos_desktop::models::PlaybackPreferences {
  musicos_desktop::models::PlaybackPreferences{queue_track_ids:snapshot.queue.iter().map(|t|t.id).collect(),queue_index:snapshot.queue_index.unwrap_or(0),position:snapshot.position.max(0.),volume:snapshot.volume,shuffle:snapshot.shuffle,repeat:snapshot.repeat.clone()}
+}
+
+#[cfg(test)]
+mod mini_density_tests {
+ #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("compact"),(220.,280.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
 }

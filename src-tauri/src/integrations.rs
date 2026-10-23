@@ -28,6 +28,8 @@ pub struct Config {
 pub struct Status {
     pub config: Config,
     pub discord: String,
+    pub discord_artwork: String,
+    pub discord_rpc: String,
     pub lastfm: String,
     pub queued: usize,
 }
@@ -158,12 +160,15 @@ struct Worker {
     discord_key: String,
     discord_retry: Instant,
     covers: BTreeMap<String, CoverLookup>,
-    cover_sender: std::sync::mpsc::Sender<(String, Option<String>)>,
-    cover_receiver: std::sync::mpsc::Receiver<(String, Option<String>)>,
+    cover_sender: std::sync::mpsc::Sender<(String, Instant, std::result::Result<Option<String>,String>)>,
+    cover_receiver: std::sync::mpsc::Receiver<(String, Instant, std::result::Result<Option<String>,String>)>,
 }
-struct CoverLookup{url:Option<String>,attempts:u32,checked:Instant,pending:bool}
+struct CoverLookup{url:Option<String>,attempts:u32,checked:Instant,pending:bool,error:Option<String>}
 impl CoverLookup{fn due(&self)->bool{let delay=if self.pending{Duration::from_secs(45)}else if self.url.is_some(){Duration::from_secs(6*3600)}else{Duration::from_secs((30_u64*2_u64.pow(self.attempts.min(5))).min(15*60))};self.checked.elapsed()>=delay}}
-fn discord_artist(track:&musicos_desktop::models::Track)->String{track.album_artist.as_deref().filter(|s|!s.trim().is_empty()).map(str::to_owned).unwrap_or_else(||crate::library::split_artist_credits(&track.artist)[0].to_owned())}
+fn accept_cover_result(lookup:&mut CoverLookup,started:Instant,result:std::result::Result<Option<String>,String>)->bool{
+ if !lookup.pending||lookup.checked!=started{return false;}match result{Ok(url)=>{lookup.url=url;lookup.error=None;},Err(error)=>{lookup.error=Some(error);}}lookup.pending=false;lookup.checked=Instant::now();true
+}
+fn discord_artist(track:&musicos_desktop::models::Track)->String{let credits=track.album_artist.as_deref().filter(|s|!s.trim().is_empty()).unwrap_or(&track.artist);crate::library::split_artist_credits(credits).into_iter().next().unwrap_or_default().to_owned()}
 impl Worker {
     fn entry(&self) -> Result<keyring::Entry> {
         let profile = format!(
@@ -283,6 +288,8 @@ impl Worker {
                 if listening_changed {
                     self.listen = Listen::default();
                 }
+                self.status.discord_artwork=if discord_enabled {"Waiting for playback"}else{"Off"}.into();
+                self.status.discord_rpc="Not connected".into();
                 self.status.discord = if discord_enabled {
                     "Waiting for Discord…"
                 } else {
@@ -378,8 +385,8 @@ impl Worker {
         let elapsed = self.last_tick.elapsed().as_secs_f32();
         self.last_tick = Instant::now();
         if self.config.discord_enabled {
-            for (key, url) in self.cover_receiver.try_iter() {
-                if let Some(lookup)=self.covers.get_mut(&key){lookup.url=url;lookup.pending=false;lookup.checked=Instant::now();}
+            for (key, started, result) in self.cover_receiver.try_iter() {
+                if let Some(lookup)=self.covers.get_mut(&key){accept_cover_result(lookup,started,result);}
             }
             let album_key = s
                 .track
@@ -389,20 +396,19 @@ impl Worker {
                 if let (Some(track), Some(key)) = (s.track.as_ref(), album_key.as_ref()) {
                     if self.covers.get(key).is_none_or(CoverLookup::due) {
                         if self.covers.len()>=256&&!self.covers.contains_key(key){if let Some(oldest)=self.covers.iter().min_by_key(|(_,entry)|entry.checked).map(|(key,_)|key.clone()){self.covers.remove(&oldest);}}
-                        let attempts=self.covers.get(key).map_or(1,|entry|entry.attempts+1);let url=self.covers.get(key).and_then(|entry|entry.url.clone());self.covers.insert(key.clone(),CoverLookup{url,attempts,checked:Instant::now(),pending:true});
+                        let attempts=self.covers.get(key).map_or(1,|entry|entry.attempts+1);let url=self.covers.get(key).and_then(|entry|entry.url.clone());let started=Instant::now();self.covers.insert(key.clone(),CoverLookup{url,attempts,checked:started,pending:true,error:None});
                         let sender = self.cover_sender.clone();
                         let key = key.clone();
                         let artist = discord_artist(track);
                         let album = track.album.clone();
                         std::thread::spawn(move || {
-                            let url = crate::providers::discord_album_cover(&artist, &album)
-                                .ok()
-                                .flatten();
-                            let _ = sender.send((key, url));
+                            let result = crate::providers::discord_album_cover(&artist, &album).map_err(|_|"Artwork provider unavailable".to_owned());
+                            let _ = sender.send((key, started, result));
                         });
                     }
                 }
             }
+            self.status.discord_artwork=if !s.is_playing {"Waiting for playback"}else{match album_key.as_ref().and_then(|key|self.covers.get(key)){Some(lookup) if lookup.url.is_some()=>"Album artwork available",Some(lookup) if lookup.pending=>"Looking for album artwork · MusicOS icon fallback",Some(lookup) if lookup.error.is_some()=>"Artwork lookup failed · MusicOS icon fallback",_=>"No matching public cover · MusicOS icon fallback"}}.into();
             let cover = album_key
                 .as_ref()
                 .and_then(|key| self.covers.get(key))
@@ -425,6 +431,7 @@ impl Worker {
                     .update(&self.config.discord_client_id, &s, cover)
                 {
                     Ok(()) => {
+                        self.status.discord_rpc="Acknowledged by Discord · image rendering not verified".into();
                         self.discord_key = key;
                         self.status.discord = if s.is_playing {
                             "Sharing your music"
@@ -434,10 +441,12 @@ impl Worker {
                         .into();
                     }
                     Err(_) => {
-                        self.discord = Discord::default();
-                        self.status.discord =
-                            "Open Discord desktop, and check your Application ID.".into();
-                        self.discord_retry = Instant::now() + Duration::from_secs(13);
+                        if cover.is_some()&&self.discord.update(&self.config.discord_client_id,&s,None).is_ok(){
+                            self.discord_key=key;self.status.discord="Sharing your music".into();self.status.discord_rpc="Fallback activity acknowledged · image rendering not verified".into();self.status.discord_artwork="Album image not accepted · MusicOS icon fallback".into();
+                            if let Some(lookup)=album_key.as_ref().and_then(|key|self.covers.get_mut(key)){lookup.url=None;lookup.pending=false;lookup.error=Some("Discord did not accept this image".into());lookup.checked=Instant::now();}
+                        }else{
+                            self.status.discord_rpc="Not acknowledged · check Discord and application assets".into();self.discord=Discord::default();self.status.discord="Open Discord desktop, and check your Application ID.".into();self.discord_retry=Instant::now()+Duration::from_secs(13);
+                        }
                     }
                 }
             }
@@ -563,6 +572,8 @@ impl IntegrationService {
                 "Off"
             }
             .into(),
+            discord_artwork: "Waiting for playback".into(),
+            discord_rpc: "Not connected".into(),
             queued: queue.len(),
         };
         let (cover_sender, cover_receiver) = std::sync::mpsc::channel();
@@ -718,14 +729,15 @@ fn discord_activity(s: &LocalPlaybackSnapshot, cover: Option<&str>) -> Value {
     }
     s.track.as_ref().map(|t|{
         let mut activity=json!({"type":2,"details":t.title.chars().take(128).collect::<String>(),"state":format!("{} · {}",t.artist,t.album).chars().take(128).collect::<String>(),"timestamps":{"start":now().saturating_sub(s.position as u64),"end":now().saturating_sub(s.position as u64)+t.duration.max(0) as u64}});
-        if let Some(url)=cover.filter(|url|url.starts_with("https://")) {activity["assets"]=json!({"large_image":url,"large_text":t.album.chars().take(128).collect::<String>()});}
+        let cover=cover.filter(|url|url::Url::parse(url).is_ok_and(|u|u.scheme()=="https"&&u.username().is_empty()&&u.password().is_none()&&u.host_str().is_some_and(|host|host.ends_with(".mzstatic.com"))));
+        activity["assets"]=if let Some(url)=cover{json!({"large_image":url,"large_text":t.album.chars().take(128).collect::<String>()})}else{json!({"large_image":"musicos","large_text":"MusicOS"})};
         activity
     }).unwrap_or(Value::Null)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]fn covers_use_album_artist_and_failed_lookups_expire(){let track=musicos_desktop::models::Track{artist:"Main; Guest".into(),..Default::default()};assert_eq!(discord_artist(&track),"Main");assert_eq!(discord_artist(&musicos_desktop::models::Track{album_artist:Some("Album artist".into()),..track}),"Album artist");assert!(!CoverLookup{url:None,attempts:1,checked:Instant::now(),pending:false}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(61),pending:false}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(46),pending:true}.due());}
+    #[test]fn covers_use_album_artist_and_failed_lookups_expire(){let track=musicos_desktop::models::Track{artist:"Main; Guest".into(),..Default::default()};assert_eq!(discord_artist(&track),"Main");assert_eq!(discord_artist(&musicos_desktop::models::Track{album_artist:Some("Album artist".into()),..track}),"Album artist");assert!(!CoverLookup{url:None,attempts:1,checked:Instant::now(),pending:false,error:None}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(61),pending:false,error:None}.due());assert!(CoverLookup{url:None,attempts:1,checked:Instant::now()-Duration::from_secs(46),pending:true,error:None}.due());}
     #[test]
     fn discord_artwork_is_included_and_pause_clears_activity() {
         use musicos_desktop::models::Track;
@@ -744,7 +756,7 @@ mod tests {
             .as_str()
             .unwrap()
             .starts_with("https://"));
-        assert!(discord_activity(&snapshot, Some("file:///cover.png"))["assets"].is_null());
+        assert_eq!(discord_activity(&snapshot, Some("file:///cover.png"))["assets"]["large_image"],"musicos");
         snapshot.is_playing = false;
         assert!(discord_activity(&snapshot, None).is_null());
     }
@@ -904,4 +916,12 @@ mod tests {
         assert!(discord.exchange(1, json!({"nonce":"2"})).is_err());
         peer.join().unwrap();
     }
+}
+
+#[cfg(test)]
+mod artwork_delivery_tests {
+ use super::*;
+ #[test]fn stale_cover_results_cannot_replace_a_newer_lookup(){let started=Instant::now();let mut lookup=CoverLookup{url:None,attempts:2,checked:started,pending:true,error:None};assert!(!accept_cover_result(&mut lookup,started-Duration::from_secs(1),Ok(Some("old".into()))));assert!(lookup.url.is_none()&&lookup.pending);assert!(accept_cover_result(&mut lookup,started,Err("offline".into())));assert_eq!(lookup.error.as_deref(),Some("offline"));assert!(!accept_cover_result(&mut lookup,started,Ok(Some("late".into()))));}
+ #[test]fn album_artist_credits_use_the_primary_identity_for_public_artwork(){let track=musicos_desktop::models::Track{artist:"Guest; Other".into(),album_artist:Some("Main; Featured".into()),..Default::default()};assert_eq!(discord_artist(&track),"Main");}
+ #[test]fn unknown_or_local_images_use_the_music_os_asset(){let snapshot=LocalPlaybackSnapshot{track:Some(musicos_desktop::models::Track{title:"Local song".into(),..Default::default()}),is_playing:true,..Default::default()};for value in [None,Some("file:///private/cover.jpg"),Some("https://127.0.0.1/cover.jpg"),Some("https://example.org/cover.jpg")]{assert_eq!(discord_activity(&snapshot,value)["assets"]["large_image"],"musicos");}assert!(discord_activity(&LocalPlaybackSnapshot{is_playing:false,..snapshot},None).is_null());}
 }

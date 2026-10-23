@@ -1,3 +1,5 @@
+import {secondaryInk} from './appearance';
+import {personalName} from './personalName';
 import ListFind from './ListFind';
 import {compileListFind} from './findQuery';
 import {useAutomaticSparkModel} from './sparkModel';
@@ -220,6 +222,7 @@ export default function App() {
     }
     else if(previous.resolved&&themeResolved&&previous.palette!==palette)document.documentElement.dataset.themeMotion='artwork';
     const tokens={'--page-color':palette?.background??(section==='Library'?'#00aeff':'#c9efff'),'--shell-color':palette?.blob??'#00baff','--accent':palette?.accent??'#0064df','--surface-color':palette?.background??'#cbf1ff','--blob-color':palette?.blob??'#54b9ff','--ink':palette?.text??'#111820','--accent-ink':look.source==='artwork'?(look.mode==='dark'||(look.mode==='system'&&systemDark)?'#000000':'#ffffff'):readableInk(palette?.accent??'#0064df')};
+    document.documentElement.style.setProperty('--secondary-ink',secondaryInk(tokens['--ink'],tokens['--surface-color'],tokens['--blob-color'],look.mode==='dark'||(look.mode==='system'&&systemDark)));
     document.documentElement.style.setProperty('--playback-tone',tokens['--ink']);
     for(const [name,value] of Object.entries(tokens))document.documentElement.style.setProperty(name,value);
     appliedTheme.current={appearance:appearanceKey,resolved:themeResolved,palette};
@@ -760,7 +763,8 @@ export default function App() {
     </div>
   );
   let content;
-  if (loading)
+  if (miniMode!=='normal')content=null;
+  else if (loading)
     content = (
       <div className="loading" role="status">
 
@@ -975,8 +979,8 @@ export default function App() {
       : route.view
   ) as Scope;
   return (<>
-    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
-    <KeepView className="main-view" active={miniMode==='normal'}><div
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
+    <KeepView className="main-view" active={miniMode==='normal'}>{miniMode==='normal'&&<div
       className="app-shell"
       style={{'--playing-favorite-tone':playingPalette?.accent??'var(--accent)'} as CSSProperties}
       data-size={preferences.interface_percent}
@@ -1088,10 +1092,10 @@ export default function App() {
         {section === "Library" && (
           <aside className="library-sidebar">
             <div className="sidebar-body">
-            <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}>Your things</button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'Playlist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
-            <div className="sidebar-search-slot">
-              {navigation.history.length>0?<button className="sidebar-back" onClick={goBack}><Icon name="Back"/><span>Back to {(() => {const view=navigation.history.at(-1)!.view;return ['album','artist','genre'].includes(view)?view:view[0].toUpperCase()+view.slice(1);})()}</span></button>:<button className="search sidebar-search" aria-label="Search music and commands" aria-keyshortcuts="Meta+K Control+K" onClick={()=>setCommandOpen(true)}><Icon name="search"/><span>Search</span><kbd>⌘ K</kbd></button>}
-              {navigation.history.length>0&&route.view!=='artist'&&<button className="command-shortcut" aria-label="Open SuperCommand" title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>}
+            <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}><Icon name="Home"/><span>{personalName(preferences.display_name,!loading)}</span></button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'SmartPlaylist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
+            <div className="sidebar-search-slot" data-back={navigation.history.length>0}>
+              <button className={`sidebar-navigation ${navigation.history.length?'sidebar-back':'search sidebar-search'}`} aria-label={navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search music and commands'} aria-keyshortcuts={navigation.history.length?undefined:'Meta+K Control+K'} onClick={navigation.history.length?goBack:()=>setCommandOpen(true)}><span className="sidebar-nav-glyph" aria-hidden="true"><span className="sidebar-glyph-search"><Icon name="search"/></span><span className="sidebar-glyph-back"><Icon name="Back"/></span></span><span className="sidebar-nav-label">{navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search'}</span>{!navigation.history.length&&<kbd>⌘ K</kbd>}</button>
+              <button className="command-shortcut" aria-label="Open SuperCommand" aria-hidden={!navigation.history.length} inert={!navigation.history.length} tabIndex={navigation.history.length?0:-1} title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>
             </div>
             <nav aria-label="Library">
               {(["albums", "artists", "songs"] as Scope[]).map(
@@ -1109,7 +1113,7 @@ export default function App() {
             </nav>
             <div className="sidebar-more"><Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
             <section className="sidebar-playlists" aria-label="Your playlists">
-              <h2>Your things</h2>
+              <h2>{personalName(preferences.display_name,!loading)}</h2>
               <div className="sidebar-playlist-list">
                 {collections.filter(item=>item.kind!=='audio'&&!item.spark).map(item=>{
                   const summary=collectionSummaries.get(item.id)!;
@@ -1180,6 +1184,7 @@ export default function App() {
                   error={saveError}
                   cover={playingCover ?? resolvedThemeCover}
                   playback={player}
+                  miniTheme={playingStyle}
                   onVolume={volume=>run({type:"volume",volume})}
                   palette={palette}
                   audioContent={<AudioAnalysis library={library}/>}
@@ -1320,6 +1325,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div></KeepView></>
+    </div>}</KeepView></>
   );
 }

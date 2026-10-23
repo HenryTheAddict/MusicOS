@@ -1,3 +1,4 @@
+import {createPortal} from 'react-dom';
 import {useContext} from 'react';
 import {TrackSelection} from './TrackSelection';
 import {
@@ -188,6 +189,7 @@ export interface MenuItem {
   onSelect: () => void;
   icon?: string;
   disabled?: boolean;
+  portrait?: string|null;
   group?: "playback"|"organize"|"danger";
 }
 export function Menu({
@@ -211,31 +213,34 @@ export function Menu({
 }) {
   const [inherited,setInherited]=useState<CSSProperties>({});
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
-  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),pendingAction=useRef<(()=>void)|null>(null);
+  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),connection=useRef<HTMLSpanElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),pendingAction=useRef<(()=>void)|null>(null);
   const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
   const group=(item:MenuItem)=>item.group??(/delete|remove|forget/i.test(item.label)?'danger':/^(play|shuffle|add to queue)/i.test(item.label)?'playback':'organize');
   const ordered=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
 
-  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(point.y,innerHeight-menu.offsetHeight-8))}px`;};
-  useLayoutEffect(()=>{if(open&&content.current)position(content.current);},[open,point]);
-  useEffect(()=>{if(!open)return;const update=()=>{if(content.current)position(content.current);};window.addEventListener('resize',update);return()=>window.removeEventListener('resize',update);},[open,point]);
+  const join=()=>{const menu=content.current,button=trigger.current;if(!menu||!button)return;const side=menu.dataset.side??'bottom';button.dataset.connectedSide=side;const box=menu.getBoundingClientRect(),anchor=(point?origin.current:button)?.getBoundingClientRect()??button.getBoundingClientRect();const left=Math.max(0,Math.min(box.width-16,(point?.x??anchor.left)-box.left));menu.style.setProperty('--menu-join-left',`${left}px`);const width=Math.max(16,Math.min(point?32:anchor.width,box.width-left));menu.style.setProperty('--menu-join-width',`${width}px`);if(connection.current)Object.assign(connection.current.style,{left:`${box.left+left}px`,top:`${side==='top'?box.bottom-1:box.top}px`,width:`${width}px`});};
+  useEffect(()=>()=>{trigger.current?.removeAttribute('data-connected-side');},[]);
+  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const anchor=origin.current?.getBoundingClientRect();const y=anchor?anchor.bottom-1:point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?(anchor?.top??point.y)-menu.offsetHeight+1:y,innerHeight-menu.offsetHeight-8))}px`;};
+  useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);join();const observer=new MutationObserver(()=>{position(menu);join();});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);join();});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
+  useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);join();}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
   useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);
   return (
-    <Dropdown.Root modal={!selectedLabel} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-y',`${style.transform==='none'?0:new DOMMatrixReadOnly(style.transform).m42}px`);}if(next){pendingAction.current=null;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
+    <Dropdown.Root modal={!selectedLabel} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-clip',style.clipPath==='none'?'inset(0)':style.clipPath);content.current.style.setProperty('--menu-start-y',`${style.transform==='none'?0:new DOMMatrixReadOnly(style.transform).m42}px`);}if(next){pendingAction.current=null;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
-        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label}>
-          {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'tinyX':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
+        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
+          {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
+      {open&&!selectedLabel&&createPortal(<span ref={connection} className="menu-connection" style={{...inherited,...theme}} aria-hidden="true"/>,document.body)}
       <Dropdown.Portal>
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
           style={{...inherited,...theme}}
           data-pointer-menu={point?true:undefined}
           className={`dropdown ${selectedLabel?"section-dropdown":""}`}
-          align={selectedLabel?"end":undefined}
-          sideOffset={selectedLabel?0:6}
+          align={selectedLabel?"end":"start"}
+          sideOffset={selectedLabel?0:-1}
           collisionPadding={selectedLabel?0:8}
           onCloseAutoFocus={event=>{event.preventDefault();const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;setPoint(null);const action=pendingAction.current;pendingAction.current=null;action?.();}}
 
@@ -248,7 +253,7 @@ export function Menu({
               onSelect={()=>{pendingAction.current=item.onSelect;}}
               disabled={item.disabled}
             >
-              {item.icon&&<Icon name={item.icon}/>}
+              {item.portrait?<Cover src={item.portrait} title="" portrait/>:item.icon&&<Icon name={item.icon}/>}
               <span>{item.label}</span>
             </Dropdown.Item>
           ))}

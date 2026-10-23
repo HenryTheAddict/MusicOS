@@ -49,3 +49,5 @@ test('muted green and monochrome artwork never acquire a default blue accent',()
   }
  }
 });
+
+test('secondary copy preserves readable contrast near the light artwork floor',async()=>{const {secondaryInk}=await import('../src/appearance');for(const mode of ['light','dark'] as const)for(const source of ['artwork','custom','blue'] as const){const theme=themePalette({...defaultAppearance,mode,source,tint:40,saturation:150,accent:'#00ff00'},{background:'#775533',blob:'#996633',accent:'#ff0000',text:'#12202a'},false)!;const ink=secondaryInk(theme.text,theme.background,theme.blob,mode==='dark');expect(contrast(ink,theme.background)).toBeGreaterThanOrEqual(4.5);expect(contrast(ink,theme.blob)).toBeGreaterThanOrEqual(4.5);}});

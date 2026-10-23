@@ -16,6 +16,7 @@ impl Appearance{fn normalize(mut self)->Self{if !["system","light","dark"].conta
 pub struct Preferences {
     pub version: u32,
     pub mini_player_view: String,
+    pub mini_player_density: String,
     pub now_playing_artwork_action: String,
     pub display_name: String,
     pub interface_percent: u16,
@@ -37,8 +38,9 @@ impl Default for Preferences {
         Self {
             version: 1,
             mini_player_view: "artwork".into(),
+            mini_player_density: "standard".into(),
             now_playing_artwork_action: "album".into(),
-            display_name: "Henry".into(),
+            display_name: String::new(),
             interface_percent: 100,
             coverflow_colors: false,
             appearance:Default::default(),
@@ -58,6 +60,7 @@ impl Default for Preferences {
 impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
+        if self.mini_player_density != "compact" {self.mini_player_density="standard".into();}
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
         self.listening=self.listening.normalize();
@@ -70,11 +73,10 @@ impl Preferences {
             self.audio_presentation = "sidebar".into();
         }
         self.display_name = self.display_name.trim().to_owned();
-        if self.display_name.is_empty()
-            || self.display_name.chars().count() > 48
+        if self.display_name.chars().count() > 48
             || self.display_name.contains(['\n', '\r', '\t'])
         {
-            self.display_name = "Henry".into();
+            self.display_name.clear();
         }
         if ![80, 100, 125, 150].contains(&self.interface_percent) {
             self.interface_percent = 100;
@@ -83,7 +85,7 @@ impl Preferences {
     }
     pub fn validate(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
-            !self.display_name.trim().is_empty(),
+            self.display_name.is_empty() || !self.display_name.trim().is_empty(),
             "Enter a name before saving."
         );
         anyhow::ensure!(
@@ -103,6 +105,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         // Parse fields independently: one invalid field must not discard valid siblings.
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
+            if let Some(s)=v["mini_player_density"].as_str(){p.mini_player_density=s.into();}
             if let Some(s)=v["mini_player_view"].as_str(){p.mini_player_view=s.into();}
             if let Some(s)=v["now_playing_artwork_action"].as_str(){p.now_playing_artwork_action=s.into();}
             if let Some(s) = v["display_name"].as_str() {
@@ -261,4 +264,10 @@ mod tests {
       value.mini_player_view="queue".into();atomic_write_json(&path,&value).unwrap();assert_eq!(load_from(&path,None).mini_player_view,"queue");
     }
 
+}
+
+#[cfg(test)]
+mod density_tests {
+ use super::*;
+ #[test]fn compact_density_round_trips_without_inventing_a_name(){let root=tempfile::tempdir().unwrap();let path=root.path().join("prefs.json");let initial=load_from(&path,None);assert!(initial.display_name.is_empty());assert_eq!(initial.mini_player_density,"standard");std::fs::write(&path,r#"{"mini_player_density":"compact","display_name":"Zoë","mini_player_view":"queue"}"#).unwrap();let value=load_from(&path,None);assert_eq!(value.mini_player_density,"compact");assert_eq!(value.display_name,"Zoë");assert_eq!(value.mini_player_view,"queue");atomic_write_json(&path,&value).unwrap();assert_eq!(load_from(&path,None),value);std::fs::write(&path,r#"{"mini_player_density":"slim"}"#).unwrap();assert_eq!(load_from(&path,None).mini_player_density,"standard");}
 }

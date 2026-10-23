@@ -55,8 +55,8 @@
 .settings :is(.switch-track,.switch-track::after) { box-shadow:none; }
 
 /* One flat control system for every Settings section, including nested setup. */
-.settings button:not([role=tab]){appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:2rem;max-width:100%;padding:.5rem .75rem;border:0;border-radius:.75rem;background:var(--surface-color);background-image:none;color:var(--ink);font:inherit;font-size:.8125rem;line-height:1.3;box-shadow:none!important;filter:none;}
-.settings button:not([role=tab]):hover:not(:disabled){background:color-mix(in srgb,var(--ink) 8%,var(--surface-color));}
+.settings button:not([role=tab]):not(.mini-preview button):not(.mini-preset-option>button){appearance:none;display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:2rem;max-width:100%;padding:.5rem .75rem;border:0;border-radius:.75rem;background:var(--surface-color);background-image:none;color:var(--ink);font:inherit;font-size:.8125rem;line-height:1.3;box-shadow:none!important;filter:none;}
+.settings button:not([role=tab]):not(.mini-preview button):hover:not(:disabled){background:color-mix(in srgb,var(--ink) 8%,var(--surface-color));}
 .settings button { transition:background-color 140ms ease-out,color 140ms ease-out; }
 .settings :is(button[aria-pressed=true],button.primary):not([role=tab]) { background:var(--accent);color:var(--accent-ink); }
 .settings button:disabled { cursor:default; opacity:.45; }

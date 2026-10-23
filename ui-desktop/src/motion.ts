@@ -1,3 +1,4 @@
+import {animateOwned} from './presentationMotion';
 import {useAlbumReveal} from "./albumTransitions";
 import { useLayoutEffect, useRef, type RefObject } from "react";
 
@@ -8,12 +9,19 @@ export function useGridReflow(root: RefObject<HTMLElement | null>, columns: numb
 
 // Content fades belong to deliberate navigation, never analysis or scrolling.
 export function useContentFade(root:RefObject<HTMLElement|null>,location:string,ready=true,selector?:string,id='content-change') {
- const reversal=useRef<string|null>(null);
+ const reversal=useRef<{opacity:string;transform:string}|null>(null);
  useLayoutEffect(()=>{
   const node=selector?root.current?.querySelector<HTMLElement>(selector):root.current;
   if(!ready||!node||node.closest('[hidden]')||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
-  const animation=node.animate([{opacity:reversal.current??'.55'},{opacity:1}],{duration:180,easing:'ease-out'});animation.id=id;reversal.current=null;
-  return()=>{if(animation.playState==='running')reversal.current=getComputedStyle(node).opacity;animation.cancel();};
+  let cancel:(()=>void)|undefined,observer:MutationObserver|undefined;
+  const enter=()=>{
+   // A first lazy visit should reveal the actual page, rather than spend its
+   // entrance on the quiet loading placeholder. Stop observing after that paint.
+   if([...node.querySelectorAll('.screen-placeholder')].some(child=>!child.closest('[hidden]')))return;
+   observer?.disconnect();cancel=animateOwned(node,id,[reversal.current??{opacity:'.6',transform:'translateY(6px)'},{opacity:1,transform:'none'}],180);reversal.current=null;
+  };
+  observer=new MutationObserver(enter);observer.observe(node,{childList:true,subtree:true});enter();
+  return()=>{observer?.disconnect();if(cancel){const moving=node.getAnimations().some(animation=>animation.id===id&&animation.playState==='running'),style=getComputedStyle(node);reversal.current=moving?{opacity:style.opacity,transform:style.transform}:null;cancel();}};
  },[root,location,ready,selector,id]);
 }
 export function usePageEntrance(root:RefObject<HTMLElement|null>,location:string,ready:boolean) {

@@ -1,0 +1,10 @@
+import {useMemo,useState,type CSSProperties} from 'react';
+import MiniPlayer from './MiniPlayer';
+import type {Playback,Preferences} from './types';
+const noop=()=>{};const action=async()=>{};
+export default function MiniPresetPicker({playback,cover,value,onChange,theme}:{theme?:CSSProperties;playback:Playback;cover?:string|null;value:NonNullable<Preferences['mini_player_density']>;onChange:(density:NonNullable<Preferences['mini_player_density']>)=>void}){
+ const [view,setView]=useState<'tall'|'queue'>('tall');
+ // A still preview reuses the player composition without a playback clock or jobs.
+ const snapshot=useMemo(()=>({...playback,is_playing:false,position:playback.track?playback.track.duration*.3:0,queue_index:null,queue:playback.queue.slice(playback.queue_index===null?0:playback.queue_index+1).slice(0,4)}),[playback.track?.id,cover]);
+ return <article className="settings-tile mini-presets"><h2>Mini Player</h2><p>Choose a comfortable fit. Both sizes include artwork and Up next.</p><div className="size-options mini-preview-mode" role="group" aria-label="Preview Mini Player view"><button aria-pressed={view==='tall'} onClick={()=>setView('tall')}>Artwork</button><button aria-pressed={view==='queue'} onClick={()=>setView('queue')}>Up next</button></div><div className="mini-preset-options" role="group" aria-label="Mini Player size">{(['standard','compact'] as const).map(density=><div className="mini-preset-option" key={density}><button aria-pressed={value===density} onClick={()=>onChange(density)}><strong>{density==='compact'?'Compact':'Standard'}</strong><small>{density==='compact'?'220 × 280 minimum':'244 × 320 minimum'}</small></button><div className="mini-preview" style={{...theme,background:'transparent'}} aria-hidden="true" data-density={density}><MiniPlayer preview density={density} player={snapshot} cover={cover} mode={view} onMode={noop} onAction={action} onFavorite={noop} onAlbum={noop} onQueue={noop} onMenuResize={action} pinned={false} onPin={noop} onWindowError={noop} items={[]}/></div></div>)}</div></article>;
+}

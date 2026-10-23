@@ -9,6 +9,7 @@ function near(a:string,b:string){
 }
 export function compileListFind(query:string){
  const tokens=[...query.matchAll(/(-?)(?:(title|artist|album|genre|year|is):)?(?:"([^"]*)(?:"|$)|(\S+))/gi)].map(match=>({negative:!!match[1],field:match[2]?.toLowerCase(),raw:match[3]??match[4],phrase:match[3]!==undefined}));
+ if(!tokens.length)return (_record:FindRecord)=>true;
  return (record:FindRecord)=>{
   const text=fold([record.title,record.artist,record.album,record.genre,record.year,record.text].filter(value=>value!==undefined).join(' '));
   return tokens.every(token=>{

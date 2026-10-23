@@ -1,3 +1,4 @@
+import {animateOwned} from './presentationMotion';
 import {useLayoutEffect,type RefObject} from 'react';
 import {smoothPath} from './smoothCorners';
 
@@ -46,7 +47,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const cancel=()=>{if(removed)return;removed=true;cancelAnimationFrame(frame);animations.forEach(animation=>animation.cancel());disposers.forEach(dispose=>dispose());};
   const changed=()=>{if(motion.matches)cancel();};motion.addEventListener('change',changed);
   const animate=(node:HTMLElement|null,delay:number,y=7,duration=180,id='album-detail-reveal',scale=1)=>{
-   if(!node)return;const animation=node.animate([{opacity:0,transform:`translateY(${y}px) scale(${scale})`},{opacity:1,transform:'translateY(0) scale(1)'}],{duration,delay,easing:'cubic-bezier(.16,1,.3,1)',fill:'backwards'});animation.id=id;animations.push(animation);
+   if(!node)return;disposers.push(animateOwned(node,id,[{opacity:0,transform:`translateY(${y}px) scale(${scale})`},{opacity:1,transform:'none'}],duration));
   };
   if(departingToolbar){
    page.closest('.content-column')?.append(departingToolbar);

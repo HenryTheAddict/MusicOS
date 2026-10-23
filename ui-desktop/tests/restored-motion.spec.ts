@@ -19,7 +19,7 @@ test('song and now-playing time preferences survive restart',async({page})=>{
 test('contributor names stay visible and the complete artist menu restores focus',async({page})=>{
  await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  const artist=page.locator('.album-collaborator').first();await expect(artist.locator('.artist-credit-name')).toBeVisible();await artist.hover();await expect(page.locator('.artist-name-popover')).toHaveCount(0);
- const all=page.getByRole('button',{name:'All 17 contributing artists'});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(all).toBeFocused();
+ const all=page.getByRole('button',{name:'15 more contributing artists'});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(all).toBeFocused();
 });
 test('compact rows and playback times fit at both window sizes and all interface sizes',async({page})=>{
  for(const width of [720,1280])for(const size of [80,100,125,150]){

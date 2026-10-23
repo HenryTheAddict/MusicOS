@@ -47,6 +47,10 @@ test('joined triangle has no interior stroke; pause reveals both inner edges',as
  const {transportDrawing}=await import('../src/playPauseMorph');
  const joined=transportDrawing(0),separate=transportDrawing(1);
  expect(joined.fill.match(/ Z/g)).toHaveLength(2);
- expect(joined.seams.every(d=>d.includes('L'))).toBe(true);
- expect(separate.outlines.every(d=>d.includes('L'))).toBe(true);
+ expect(joined.seams.every(d=>d.includes('C'))).toBe(true);
+ expect(separate.outlines.every(d=>d.includes('C'))).toBe(true);
+});
+
+test('temporary drawing retains the same outline weight as the exact endpoints',()=>{
+ const host=document.createElement('i');host.innerHTML='<svg/>';document.body.append(host);const cancel=playPauseMorph(host,true,'<svg/>');const paths=host.querySelectorAll('path');expect(paths[0]).toHaveAttribute('fill','var(--icon-fill,currentColor)');for(const path of [...paths].slice(1))expect(path).toHaveAttribute('stroke-width','3');expect(paths[3]).toHaveAttribute('stroke-opacity','0');expect(paths[4]).toHaveAttribute('stroke-opacity','0');cancel();host.remove();
 });

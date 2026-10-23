@@ -53,3 +53,6 @@ export function themePalette(a:Appearance,art:Palette|null,systemDark:boolean):P
  for(let n=0;n<30&&contrast(blob,ink)<surfaceContrast;n++)blob=mix(blob,'#ffffff',.03);
  return {background,blob,accent,text:ink};
 }
+
+/** Keep secondary copy readable on both page and raised solid surfaces. */
+export function secondaryInk(ink:string,surface:string,blob:string,dark=false){const controls=dark?mix(blob,ink,.08):mix(surface,blob,.22);for(let amount=.18;amount>=0;amount-=.01){const candidate=mix(ink,surface,Math.max(0,amount));if([surface,blob,controls].every(background=>contrast(candidate,background)>=4.5))return candidate;}return ink;}

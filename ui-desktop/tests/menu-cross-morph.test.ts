@@ -10,7 +10,7 @@ test('creation cross keeps its strokes and center and reverses from the visible 
  const host=document.createElement('i'),final='<svg data-end="closed"></svg>';
  const cancel=menuCrossMorph(host,true,final);step(55);
  const angle=host.querySelector('path')!.getAttribute('transform'),progress=host.dataset.crossProgress;
- expect(host.querySelectorAll('path')).toHaveLength(1);expect(host.querySelector('path')).toHaveAttribute('d','M7 16H25M16 7V25');
+ expect(host.querySelectorAll('path')).toHaveLength(1);expect(host.querySelector('path')).toHaveAttribute('d','M4 16H28M16 4V28');
  expect(host.querySelector('path')).toHaveAttribute('stroke-width','2');
  expect(Number(progress)).toBeGreaterThan(0);expect(Number(progress)).toBeLessThan(1);
  cancel();menuCrossMorph(host,false,final);expect(host.querySelector('path')).toHaveAttribute('transform',angle!);expect(host.dataset.crossProgress).toBe(progress);

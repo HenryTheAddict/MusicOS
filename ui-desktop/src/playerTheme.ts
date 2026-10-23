@@ -1,5 +1,5 @@
 import type {CSSProperties} from 'react';
-import {readableInk,contrast} from './appearance';
+import {readableInk,contrast,secondaryInk} from './appearance';
 import type {Palette} from './types';
 const mix=(a:string,b:string,t:number)=>'#'+[1,3,5].map(i=>Math.round(parseInt(a.slice(i,i+2),16)*(1-t)+parseInt(b.slice(i,i+2),16)*t).toString(16).padStart(2,'0')).join('');
 /** Retain the design's hue in both tones while bounding their surface contrast. */
@@ -24,7 +24,7 @@ export function playerTheme(palette:Palette|null):CSSProperties{
   '--transport-top':mix(tones.fill,ink,.08),'--transport-bottom':tones.fill,
   '--control-surface':'color-mix(in srgb,var(--surface-color) 78%,var(--blob-color))',
   '--control-border':'color-mix(in srgb,var(--ink) 18%,transparent)',
-  '--secondary-ink':'color-mix(in srgb,var(--ink) 82%,var(--surface-color))',
+  '--secondary-ink':secondaryInk(ink,palette?.background??'#f7fbff',palette?.blob??'#e6f1fc'),
   color:ink,background:palette?.background??'#f7fbff',
  } as CSSProperties;
 }

@@ -13,6 +13,7 @@ import "./personalHome.css";
 import "./miniPlayer.css";
 import "./connectedMotion.css";
 import "./listFind.css";
+import "./connectedConsistency.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

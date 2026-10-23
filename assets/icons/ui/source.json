@@ -1,6 +1,6 @@
 {
   "document": "C8FFC865-CF40-43FB-AA71-0B45DBA1EF0C",
-  "exported": "2026-10-17",
+  "exported": "2026-10-23",
   "note": "Exact selected vectors; white canvas backgrounds omitted for transparent app icons. Duplicate RepeatON masters are identical. Frame is the search icon.",
   "icons": [
     {
@@ -250,16 +250,6 @@
       "file": "LastFM.svg"
     },
     {
-      "layer": "AE12EA91-1E86-4CFA-9C52-6EBD4847EE0E",
-      "name": "Play Next",
-      "file": "Play Next.svg"
-    },
-    {
-      "layer": "D7D6ABA3-3F42-4F0D-A1C7-25C5CA31864D",
-      "name": "Add to queue",
-      "file": "Add to queue.svg"
-    },
-    {
       "layer": "824CE03C-B3C0-4D53-9900-865FCAA4F109",
       "name": "depth",
       "file": "depth.svg"
@@ -303,6 +293,31 @@
       "name": "Pin",
       "layer": "67796EA7-CF22-4970-8CC3-AC15F64B7B66",
       "file": "Pin.svg"
+    },
+    {
+      "layer": "36210BD9-D100-414C-8B9D-7BE39C8B7467",
+      "name": "Home",
+      "file": "Home.svg"
+    },
+    {
+      "layer": "60EF5EBC-841C-4BA0-8194-A4E3F511879A",
+      "name": "SmartPlaylist",
+      "file": "SmartPlaylist.svg"
+    },
+    {
+      "layer": "E3288150-4BDB-4DBF-98AC-27730D3D06EC",
+      "name": "Plus",
+      "file": "Plus.svg"
+    },
+    {
+      "layer": "AE12EA91-1E86-4CFA-9C52-6EBD4847EE0E",
+      "name": "Play Next",
+      "file": "Play Next.svg"
+    },
+    {
+      "layer": "D7D6ABA3-3F42-4F0D-A1C7-25C5CA31864D",
+      "name": "Add to queue",
+      "file": "Add to queue.svg"
     }
   ]
 }

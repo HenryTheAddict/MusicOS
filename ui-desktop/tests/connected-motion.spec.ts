@@ -4,7 +4,7 @@ test('personal entry has creation, no shortcuts, and More only navigates',async(
  await page.goto('/?fixture=1');expect(await page.locator('.sidebar-personal .personal-collection').count()).toBe(0);
  for(const [name,dialog] of [['New playlist','Create playlist'],['New Sparklist','Create Sparklist'],['New Smart playlist','Create Smart playlist']]){
  await page.getByRole('button',{name:'Create collection',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();await expect(page.getByRole('dialog',{name:dialog,exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'Create collection',exact:true})).toBeFocused();}
- await page.getByRole('button',{name:'More library views'}).click();await expect(page.getByRole('menuitem',{name:'Playlists',exact:true})).toBeVisible();expect(await page.getByRole('menuitem',{name:/Create|New /}).count()).toBe(0);await expect(page.locator('.sidebar-more [data-icon=tinyX]')).toBeVisible();
+ await page.getByRole('button',{name:'More library views'}).click();await expect(page.getByRole('menuitem',{name:'Playlists',exact:true})).toBeVisible();expect(await page.getByRole('menuitem',{name:/Create|New /}).count()).toBe(0);await expect(page.locator('.sidebar-more [data-icon=menuDotsClose]')).toBeVisible();
 });
 test('Home artwork stays bounded and has matching pointer and keyboard context actions',async({page})=>{
  await page.goto('/?fixture=1');const album=page.locator('.home-album-card').first(),art=album.locator('.card-artwork');const before=await art.boundingBox();await art.hover();await page.waitForTimeout(200);expect(await art.boundingBox()).toEqual(before);

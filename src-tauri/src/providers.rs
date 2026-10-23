@@ -706,6 +706,13 @@ pub fn album_info(
     atomic_write_json(&path, &info)?;
     Ok(info)
 }
+/// Reuse exact identities from the bounded local catalog cache before networking.
+fn cached_discord_album_cover(artist:&str,album:&str)->Option<String>{
+ let directory=desktop_data_dir().join("catalog-v1");let mut entries=std::fs::read_dir(directory).ok()?.take(4096).filter_map(|entry|{let entry=entry.ok()?;let metadata=entry.metadata().ok()?;if entry.path().extension()?.to_str()? != "json"||metadata.len()>2*1024*1024{return None;}Some((metadata.modified().ok()?,entry.path()))}).collect::<Vec<_>>();
+ entries.sort_unstable_by(|a,b|b.0.cmp(&a.0));
+ for (_,path) in entries.into_iter().take(1024){if let Ok(bytes)=std::fs::read(path){if let Ok(value)=serde_json::from_slice::<Value>(&bytes){if let Some(url)=exact_album_cover(&value,artist,album){return Some(url);}}}}
+ None
+}
 /// Discord must fetch a public image; local paths and embedded artwork are never uploaded.
 pub fn discord_album_cover(artist: &str, album: &str) -> Result<Option<String>> {
     if artist.trim().is_empty()
@@ -714,6 +721,7 @@ pub fn discord_album_cover(artist: &str, album: &str) -> Result<Option<String>> 
     {
         return Ok(None);
     }
+    if let Some(url)=cached_discord_album_cover(artist,album){return Ok(Some(url));}
     let term = format!("{artist} {album}");
     let value = cached_json(
         "https://itunes.apple.com/search",

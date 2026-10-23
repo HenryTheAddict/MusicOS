@@ -21,7 +21,7 @@ for(const percent of [80,100,125,150])for(const theme of ['light','dark'])test(`
   expect(await credits.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);
   const contributorBottom=(await credits.boundingBox())!.y+(await credits.boundingBox())!.height;
   expect((await page.getByRole('button',{name:'Play collection',exact:true}).boundingBox())!.y).toBeGreaterThanOrEqual(contributorBottom);
-  const all=page.getByRole('button',{name:'All 17 contributing artists',exact:true});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('End');await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeFocused();await page.keyboard.press('Escape');await expect(all).toBeFocused();
+  const all=page.getByRole('button',{name:'15 more contributing artists',exact:true});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('End');await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeFocused();await page.keyboard.press('Escape');await expect(all).toBeFocused();
   const box=page.getByRole('region',{name:'Your playlists'});await box.scrollIntoViewIfNeeded();expect((await box.boundingBox())!.height).toBeGreaterThan(32);expect(await page.locator('.library-sidebar').evaluate(el=>el.scrollHeight-el.clientHeight)).toBeLessThan(2);
   await page.screenshot({path:`out/rebuild-qa/credits-${theme}-${percent}-${size.width}.png`});
  }

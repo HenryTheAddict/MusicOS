@@ -1,3 +1,4 @@
+import discordIcon from '../../src-tauri/icons/generated/128x128@2x.png';
 import {useViewActive} from './ViewScope';
 import ThemedSwitch from './ThemedSwitch';
 import { useEffect, useRef, useState } from "react";
@@ -62,8 +63,7 @@ export default function BetaIntegrations() {
   async function link(url: string) {
     try { await call("open_provider", { url }); } catch (e) { setError(errorText(e)); }
   }
-  return <section className="beta-integrations" aria-labelledby="labs-title">
-    <header className="labs-heading"><h2 id="labs-title">Integrations</h2></header>
+  return <section className="beta-integrations" aria-label="Connected services">
     <p className="labs-intro">Share what’s playing or keep a listening history. Both are optional.</p>
     {!native && <p className="labs-note">Connections run in the MusicOS desktop app.</p>}
     <div className="integration-list" aria-busy={busy}>
@@ -72,7 +72,7 @@ export default function BetaIntegrations() {
           <ThemedSwitch label="Discord presence" checked={status?.config.discord_enabled??false} disabled={!status||busy} onChange={checked=>configure({discord_enabled:checked})}/>
         </div>
         <p className="integration-status" role="status">{!status?"Checking connection…":!status.config.discord_client_id?"Setup needed":!status.config.discord_enabled?"Off":/^Connected|^Listening|^Ready|^Sharing/i.test(status.discord)?"Connected":"Needs attention"}</p>
-        <details><summary>Set up Discord</summary><p>1. Create a Discord application named MusicOS. 2. Paste its Application ID below. 3. Enable presence when you’re ready. Keep Discord desktop running. Presence shares the song, artist, album, listening time, and matching public album art. Artist and album names are used to find artwork in Apple’s catalog; local cover files stay on your device.</p>
+        <details><summary>Set up Discord</summary><div className="discord-icon-setup"><img src={discordIcon} alt="MusicOS application icon" width="64" height="64"/><p>For the fallback image, upload this icon in your Discord application’s Rich Presence → Art Assets and name it <code>musicos</code>. Local album artwork is never uploaded.</p><a href={discordIcon} download="MusicOS.png">Download MusicOS icon</a></div><p>1. Create a Discord application named MusicOS. 2. Paste its Application ID below. 3. Enable presence when you’re ready. Keep Discord desktop running. Presence shares the song, artist, album, listening time, and matching public album art. Artist and album names are used to find artwork in Apple’s catalog; local cover files stay on your device.</p>
           <button className="text-link" onClick={() => void link("https://discord.com/developers/applications")}>Open Discord developer portal ↗</button>
           <label className="field-label" htmlFor="discord-id">Application ID</label><div className="integration-field"><input id="discord-id" inputMode="numeric" autoComplete="off" value={id} placeholder="Your MusicOS application ID" onChange={e => setId(e.target.value)} maxLength={20}/><button disabled={!status || busy || id===status.config.discord_client_id} onClick={() => configure({})}>Save</button></div>
         </details>
@@ -93,7 +93,7 @@ export default function BetaIntegrations() {
         </details>}
       </article>
     </div>
-    {status&&<details className="integration-diagnostics"><summary>Connection details</summary><p>Discord: {status.discord}</p><p>Last.fm: {status.lastfm}</p><p>{status.queued} listens waiting to sync.</p></details>}
+    {status&&<details className="integration-diagnostics"><summary>Connection details</summary><p>Discord: {status.discord}</p><p>Artwork: {status.discord_artwork??"Waiting for playback"}</p><p>Activity delivery: {status.discord_rpc??"Not connected"}</p><p>Last.fm: {status.lastfm}</p><p>{status.queued} listens waiting to sync.</p></details>}
     {error && <div className="inline-error" role="alert"><p>Couldn’t update this connection. Your previous settings are retained.</p><details><summary>Details</summary>{error}</details></div>}
   </section>;
 }

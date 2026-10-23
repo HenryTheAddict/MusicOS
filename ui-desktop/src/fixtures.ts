@@ -156,7 +156,7 @@ let integrationStatus = {
 };
 let fixtureModelStarted=0,fixtureModelInstalled=false;
 let player: Playback = { ...emptyPlayback };
-let preferences:Preferences={...defaultPreferences,...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
+let preferences:Preferences={...defaultPreferences,display_name:"Henry",...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
 let savedCollections: import("./types").SavedCollection[]=JSON.parse(localStorage.getItem("musicos-fixture-collections")??"[]");
 let metadataSuggestions=tracks.slice(0,3).map(t=>({track_id:t.id,current_title:t.title,current_artist:t.artist,current_album:t.album,current_year:t.year,current_artwork:t.cover_art_path,revision:1,candidate_token:String(t.id),candidate:{title:t.title,artist:t.artist,album:`${t.album} (Deluxe)`,year:2012,confidence:.82,recording_mbid:'example-recording',release_mbid:'example-release',artwork_path:t.cover_art_path}}));
 let metadataHistory:import('./types').MetadataHistory[]=[];
@@ -234,7 +234,7 @@ export async function fixtureCall(
     case "artist_info":
       return {
         lookup_status: new URLSearchParams(location.search).get('profiles')==='pending'?'loading':'cached',
-        biography:
+        biography:new URLSearchParams(location.search).has('longBiography')?("M83 combines electronic music, ambient textures, and cinematic arrangements. Their records include Hurry Up, We’re Dreaming and Junk. ".repeat(15)+"\n\nThis final paragraph must remain readable when expanded."):
           "M83 is a French electronic music project formed in Antibes in 1999. Initially a duo of Nicolas Fromageau and Anthony Gonzalez, it is now led by Gonzalez. The project combines electronic music, ambient textures, and cinematic arrangements. Their records include Hurry Up, We’re Dreaming and Junk.",
         portrait:
           a.name === "M83" ? fixtureAssets["assets/artists/m83.png"] : null,
