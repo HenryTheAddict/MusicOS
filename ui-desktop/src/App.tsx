@@ -298,6 +298,7 @@ export default function App() {
         subscribe<Task>("task", setTask),
         subscribe<LibraryChanged | null>("library-changed", (change) => {if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));void refresh();}),
         subscribe("native-open-queue",()=>nativeQueueAction.current()),
+        subscribe<string>("native-playback-error",setError),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
         subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
         subscribe<{track_id:number;path:string}>("song-artwork-found",update=>setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id?{...t,cover_art_path:update.path}:t)}))),
@@ -954,10 +955,10 @@ export default function App() {
   async function changeMini(mode:'normal'|'tall'|'queue') {
     if(miniChanging.current)return;
     miniChanging.current=true;
-    let exit:(()=>void)|undefined;
-    try {if(mode==='normal'&&miniMode!=='normal'){const node=document.querySelector<HTMLElement>('.mini-shell>.mini-player');if(node&&!matchMedia('(prefers-reduced-motion: reduce)').matches){exit=animateOwned(node,'mini-window-exit',[{opacity:getComputedStyle(node).opacity,transform:getComputedStyle(node).transform},{opacity:0,transform:'translateY(4px)'}],140);await Promise.allSettled(node.getAnimations().map(animation=>animation.finished));}}if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
+    let exit:(()=>void)|undefined;let exitNode:HTMLElement|null=null;
+    try {if(mode==='normal'&&miniMode!=='normal'){const node=document.querySelector<HTMLElement>('.mini-shell>.mini-player');if(node){exitNode=node;node.inert=true;}if(node&&!matchMedia('(prefers-reduced-motion: reduce)').matches){exit=animateOwned(node,'mini-window-exit',[{opacity:getComputedStyle(node).opacity,transform:getComputedStyle(node).transform},{opacity:0,transform:'translateY(4px)'}],140);await Promise.allSettled(node.getAnimations().map(animation=>animation.finished));}}if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
     catch(e){if(native)await call('mini_player',{mode:'normal'}).catch(()=>{});setMiniMode('normal');setError(errorText(e));}
-    finally {exit?.();miniChanging.current=false;}
+    finally {exit?.();if(exitNode?.isConnected)exitNode.inert=false;miniChanging.current=false;}
   }
   async function toggleWindowPin(){
     const enabled=!(miniMode==='normal'?windowPinned:miniPinned);
