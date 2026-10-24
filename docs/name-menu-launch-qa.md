@@ -38,7 +38,7 @@ Light, and startup does not issue playback actions.
 ## Verification
 
 - Production UI build and 147 UI unit tests pass.
-- 155 native library tests pass; the release build checks the native startup path.
+- 156 native library tests pass; the release build checks the native startup path.
 - Browser regressions cover saved name changes, first rendered frame in Dark on a
   Light system, System on a Dark system and explicit Light on a Dark system;
   context-menu opacity/geometry throughout exit, rapid replacement, keyboard focus;
@@ -58,3 +58,12 @@ path rather than changing the user's preference for a screenshot.
 Signed build identity, full embedded hashes, paused checkpoint and post-load
 preservation checks are recorded with the release under
 `releases/desktop-name-menu-launch-2026-10-24/`.
+
+## Native startup correction
+
+The first signed candidate was rejected during native launch. The macOS config
+replaced Tauri’s window array and omitted manual creation, producing a duplicate
+main window. The previous app was restored immediately without restoring an old
+profile. The macOS override now carries the same manual-creation/background contract
+as the shared config, and a native regression test checks both arrays. The rejected
+candidate is retained separately; only the corrected build is a delivery candidate.

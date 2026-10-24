@@ -1893,3 +1893,19 @@ mod mini_density_tests {
  #[test]fn action_space_stays_inside_the_work_area_without_shrinking_the_player(){assert_eq!(super::mini_menu_height(640,488,1000),1000);assert_eq!(super::mini_menu_height(1500,488,1500),1500);assert_eq!(super::mini_menu_height(1600,488,1500),1600);}
  #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("wide"),(320.,120.));assert_eq!(super::mini_minimum("compact"),(220.,120.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
 }
+
+#[cfg(test)]
+mod launch_window_tests {
+    #[test]
+    fn platform_window_overrides_keep_manual_creation_and_safe_background() {
+        // Tauri replaces the windows array when merging a platform config.
+        // Omitting create:false there causes a duplicate main-window launch.
+        for raw in [include_str!("../tauri.conf.json"),include_str!("../tauri.macos.conf.json")] {
+            let config:serde_json::Value=serde_json::from_str(raw).unwrap();
+            let main=&config["app"]["windows"][0];
+            assert_eq!(main["label"],"main");
+            assert_eq!(main["create"],false);
+            assert_eq!(main["backgroundColor"],"#282c3f");
+        }
+    }
+}

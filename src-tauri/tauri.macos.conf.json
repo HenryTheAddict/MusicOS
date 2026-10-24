@@ -1,1 +1,1 @@
-{"app":{"windows":[{"label":"main","title":"MusicOS","width":1280,"height":800,"minWidth":720,"minHeight":480,"resizable":true,"titleBarStyle":"Overlay","hiddenTitle":true,"backgroundColor":"#00BAFF"}]}}
+{"app":{"windows":[{"label":"main","create":false,"title":"MusicOS","width":1280,"height":800,"minWidth":720,"minHeight":480,"resizable":true,"titleBarStyle":"Overlay","hiddenTitle":true,"backgroundColor":"#282c3f"}]}}
