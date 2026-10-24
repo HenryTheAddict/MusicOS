@@ -15,3 +15,11 @@ Action menus use a finite 140 ms opacity/scale reveal from their pointer or butt
 - Evidence remains in ignored `out/rebuild-qa/`, with native delivery recorded below after loading.
 
 This pass does not claim measured native display pacing or guaranteed frame rate. Physical touch and Windows/Linux native behavior remain separate gates. Embedded runtime and model resources are preserved.
+
+## Native delivery
+
+Source `a91f410`, copied to the shared foundation as `61e7bc5`; the primary compatibility check passed and retained `connected_device`. Signed executable SHA-256: `88d318bc3d33296a68c1a51574f834cfcad82bc3102ecb03f2a824ea211f4384`. Ad-hoc signing and strict deep verification passed. The embedded runtime, ONNX library and all three model resources match the preceding release exactly; the full manifest and previous application are retained in `releases/desktop-mini-refinement-2026-10-24/`.
+
+A fresh native paused-state check preceded clean quit, private profile copying and a verified SQLite backup. BUFFALO resumed at 24.7 seconds paused with 508 songs. All six saved collection/artwork/membership tables compared exactly with the immediate pre-load backup; integration configuration bytes were unchanged. No profile snapshot was restored.
+
+The native Wide capture is 640×240 pixels at 2× density, matching 320×120 logical units. A native drag gesture completed without error or playback-position/transport changes. Right-click opened mini-player actions; Escape restored the original window footprint and focus. Switching artwork/queue retained the same window size and bottom controls, with one complete upcoming song visible. The artwork view and Wide preference were retained after checks. macOS cursor/window-sharing overlays visible in the native capture are separate from MusicOS artwork. Native evidence and checks are under `out/qa/os-foundation/mini-refinement/`.
