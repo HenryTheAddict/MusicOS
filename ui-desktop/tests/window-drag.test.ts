@@ -17,3 +17,19 @@ it('keeps controls, queue rows, and right clicks interactive',()=>{
 it('reports a failed native move instead of discarding it',async()=>{
  mocks.start.mockRejectedValueOnce(Error('window'));const failed=vi.fn();dragWindow(event(document.body),failed);await vi.waitFor(()=>expect(failed).toHaveBeenCalledWith(expect.stringContaining('Could not move')));
 });
+
+it('long focusable song labels remain draggable without stealing keyboard or control clicks',()=>{
+ document.body.innerHTML='<section class="mini-player"><strong><span class="overflow-label" tabindex="0"><span>Very long song title</span></span></strong><button><span class="overflow-label" tabindex="0">Album link</span></button><div tabindex="0">Interactive surface</div></section>';
+ dragWindow(event(document.querySelector('.overflow-label span')!),vi.fn());
+ dragWindow(event(document.querySelector('button span')!),vi.fn());dragWindow(event(document.querySelector('div')!),vi.fn());
+ expect(mocks.start).toHaveBeenCalledOnce();
+});
+it('never races a menu expansion or collapse with a native drag',()=>{
+ document.body.innerHTML='<section class="mini-player" style="--mini-player-height:120px"><strong>Song title</strong></section>';
+ dragWindow(event(document.querySelector('strong')!),vi.fn());expect(mocks.start).not.toHaveBeenCalled();
+ document.querySelector<HTMLElement>('section')!.style.removeProperty('--mini-player-height');dragWindow(event(document.querySelector('strong')!),vi.fn());expect(mocks.start).toHaveBeenCalledOnce();
+});
+it('preserves editable text and draggable queue items',()=>{
+ document.body.innerHTML='<div contenteditable="true"><span>Draft</span></div><div draggable="true"><strong>Queue item</strong></div>';
+ for(const target of document.querySelectorAll('span,strong'))dragWindow(event(target),vi.fn());expect(mocks.start).not.toHaveBeenCalled();
+});

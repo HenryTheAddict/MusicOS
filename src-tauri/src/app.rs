@@ -281,7 +281,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
 
 fn mini_menu_height(base:u32,extra:u32,work:u32)->u32{base.saturating_add(extra).min(work.max(base))}
 
-fn mini_minimum(density:&str)->(f64,f64){if density=="wide"{(360.,144.)}else if density=="compact"{(220.,136.)}else{(244.,320.)}}
+fn mini_minimum(density:&str)->(f64,f64){if density=="wide"{(320.,120.)}else if density=="compact"{(220.,120.)}else{(244.,320.)}}
 
 #[tauri::command]
 async fn mini_resize(window:tauri::WebviewWindow,state:State<'_,AppState>,width:f64,height:f64)->ApiResult<()> {
@@ -1884,5 +1884,5 @@ fn saved_playback(snapshot:&musicos_desktop::local::LocalPlaybackSnapshot)->musi
 #[cfg(test)]
 mod mini_density_tests {
  #[test]fn action_space_stays_inside_the_work_area_without_shrinking_the_player(){assert_eq!(super::mini_menu_height(640,488,1000),1000);assert_eq!(super::mini_menu_height(1500,488,1500),1500);assert_eq!(super::mini_menu_height(1600,488,1500),1600);}
- #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("compact"),(220.,136.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
+ #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("wide"),(320.,120.));assert_eq!(super::mini_minimum("compact"),(220.,120.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
 }

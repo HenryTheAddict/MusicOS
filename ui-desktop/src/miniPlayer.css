@@ -45,14 +45,14 @@
 .mini-player-tools>[aria-pressed=true]{background:var(--control-surface)!important;color:var(--accent);}
 .mini-player .mini-player-transport .asset-icon{--icon-stroke:var(--transport-stroke,var(--ink));}
 .mini-actions-popover{position:fixed;left:8px;right:8px;width:calc(100% - 16px);margin:0;padding:4px;overflow:auto;overscroll-behavior:contain;border:1px solid var(--control-border);border-radius:14px;background:var(--surface-color);color:var(--ink);font-size:13px;box-shadow:0 4px 16px #0002;}
-.mini-actions-popover:popover-open{display:block;animation:mini-menu-in 140ms ease-out;}
+.mini-actions-popover:popover-open{display:block;animation:mini-action-reveal 140ms cubic-bezier(.2,.8,.2,1);}
 .mini-actions-popover .dropdown-item{display:flex;width:100%;min-height:34px;align-items:center;gap:8px;border:0;border-radius:8px;padding:7px 8px;background:transparent;color:inherit;font:inherit;text-align:left;}
 .mini-actions-popover .dropdown-item:is(:hover,:focus-visible){background:var(--control-surface);outline:none;}
 .mini-actions-popover .icon{width:18px;height:18px;flex:none;}
 .mini-player>.mini-resize-edge{position:absolute;z-index:5;touch-action:none;outline-offset:-2px;}
 .mini-player:has(.menu-trigger[aria-expanded=true])>.mini-resize-edge{pointer-events:none;}
 .mini-player-error{position:fixed;inset:auto 0 0;z-index:6;background:var(--surface-color);color:var(--ink);font-size:11px;}
-@keyframes mini-menu-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+@keyframes mini-action-reveal{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.mini-composition,.mini-player button{transition:none!important;}.mini-actions-popover:popover-open{animation:none!important;}}
 .mini-track-fade{position:relative;min-width:0;}
 :is(.mini-player-art,.mini-player-thumb) .mini-track-fade,:is(.mini-player-art,.mini-player-thumb) .mini-track-content{width:100%;height:100%;}
@@ -62,11 +62,11 @@
 /* Density owns pixel metrics independently of the desktop interface scale. */
 /* Compact keeps a small thumbnail and one stationary row of controls. */
 .mini-player-footer{display:contents;}
-.mini-player:is([data-density=compact],[data-density=wide]){min-height:136px;padding:8px;gap:4px;grid-template-rows:minmax(0,1fr) 36px;border-radius:18px;}
+.mini-player:is([data-density=compact],[data-density=wide]){min-height:120px;padding:8px;gap:4px;grid-template-rows:minmax(0,1fr) 36px;border-radius:18px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-composition{gap:6px;}
-.mini-player:is([data-density=compact],[data-density=wide]) .mini-tall-view{grid-template-columns:32px minmax(0,1fr);grid-template-rows:minmax(0,1fr);align-items:start;}
-.mini-player:is([data-density=compact],[data-density=wide]) .mini-player-art{width:32px;height:32px;align-self:start;border-radius:8px;}
-.mini-player:is([data-density=compact],[data-density=wide]) .mini-player-copy{width:100%;min-width:0;justify-self:stretch;align-self:start;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-tall-view{grid-template-columns:32px minmax(0,1fr);grid-template-rows:minmax(0,1fr);align-items:center;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-player-art{width:32px;height:32px;align-self:center;border-radius:8px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-player-copy{width:100%;min-width:0;justify-self:stretch;align-self:center;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-player-copy strong{font-size:13px;line-height:16px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-player-album{font-size:11px;line-height:14px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .playback-progress{height:14px;gap:4px;}.mini-player:is([data-density=compact],[data-density=wide]) .playback-time{font-size:9px;line-height:12px;}
@@ -80,17 +80,16 @@
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-row{height:30px;min-height:30px;padding:2px 6px;}.mini-player:is([data-density=compact],[data-density=wide]) .queue-track .cover{width:24px;height:24px;flex-basis:24px;}.mini-player:is([data-density=compact],[data-density=wide]) .queue-track-copy strong{font-size:11px;line-height:13px;}.mini-player:is([data-density=compact],[data-density=wide]) .queue-track-copy small{font-size:11px;line-height:12px;}.mini-player:is([data-density=compact],[data-density=wide]) .queue-remove{height:24px;width:20px;flex-basis:20px;}
 .mini-preview-queue{overflow:hidden;min-height:0;}.mini-preview-queue>div{padding:5px 8px;font-size:12px;line-height:16px;}.mini-preview-queue strong,.mini-preview-queue small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}.mini-preview-queue small{font-size:11px;color:var(--secondary-ink);}
 
-/* Wide is an explicit preset, never an automatic resize or legacy layout mapping. */
-.mini-player[data-density=wide]{min-height:144px;padding:10px;gap:6px;border-radius:18px;}
-.mini-player[data-density=wide] .mini-tall-view{grid-template-columns:72px minmax(0,1fr);gap:10px;align-items:center;}
-.mini-player[data-density=wide] .mini-player-art{width:72px;height:72px;align-self:center;border-radius:12px;}
-.mini-player[data-density=wide] .mini-player-copy{align-self:center;}
-.mini-player[data-density=wide] .mini-player-footer{justify-content:end;gap:8px;}
-.mini-player[data-density=wide] .mini-queue-view{grid-template-columns:32px minmax(0,1fr);grid-template-rows:40px minmax(0,1fr);}
-.mini-player[data-density=wide] .mini-player-thumb{width:32px;height:32px;}
+/* Wide adds room for labels, with a small cover and the same compact control row. */
+.mini-player[data-density=wide]{min-height:120px;}
+.mini-player[data-density=wide] .mini-tall-view{grid-template-columns:48px minmax(0,1fr);gap:8px;}
+.mini-player[data-density=wide] .mini-player-art{width:48px;height:48px;border-radius:10px;}
 
 /* Keep one complete upcoming row readable even at the smallest preset. */
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view{grid-template-columns:24px minmax(0,1fr);grid-template-rows:30px minmax(0,1fr);gap:4px 6px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-player-thumb{width:24px;height:24px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .mini-player-album{display:none;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-heading{padding:0 6px;line-height:14px;}
+
+/* The region and selected queue control supply the heading at small sizes. */
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-heading{display:none;}

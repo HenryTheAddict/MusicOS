@@ -7,7 +7,12 @@ import {native} from './bridge';
 export function dragWindow(event:MouseEvent<HTMLElement>,failed:(message:string)=>void){
  if(!native||event.button!==0||event.defaultPrevented)return;
  const target=event.target as Element;
- if(target.closest('button,a,input,textarea,select,[role=menu],[role=slider],[role=separator],[tabindex="0"],.playback-progress,.queue-scroll')||document.querySelector('.mini-actions-popover:popover-open'))return;
+ const player=target.closest<HTMLElement>('.mini-player');
+ // Focusable overflow text is still a drag surface. Actual controls keep their clicks.
+ if(target.closest('button,a,input,textarea,select,[contenteditable=true],[role=menu],[role=slider],[role=separator],[draggable=true],.playback-progress,.queue-scroll')
+  ||target.closest('[tabindex="0"]:not(.overflow-label)')
+  ||player?.style.getPropertyValue('--mini-player-height')
+  ||document.querySelector('.mini-actions-popover:popover-open'))return;
  event.preventDefault();
  void getCurrentWindow().startDragging().catch(()=>failed('Could not move the window. Try dragging the song title again.'));
 }
