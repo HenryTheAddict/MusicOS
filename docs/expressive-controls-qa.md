@@ -76,3 +76,26 @@ all five protected resources match: `musicos-mac`, ONNX Runtime, `audio.onnx`,
 `moods.json`, and `preprocessor_config.json`. Full hashes are in the release
 manifest. The previous app is retained. Installation requires a fresh native paused
 check, a clean quit, a verified SQLite backup and a copy of the latest profile.
+
+## Native post-load verification
+
+The signed app was installed after a fresh native Play (paused) check and clean
+quit. The immediate profile copy and SQLite backup passed `quick_check`. All six
+collection tables, favorite flags and integration configuration match that backup;
+508 songs remain. The interface preference comparison is recorded in
+`post-load-checks.json`.
+
+Native song selection did not start playback; the restored title-column reveal
+kept the number visible. Right-click exposed shared playback/organization actions,
+and the open section chevron pointed up. Audio Settings showed themed choices and
+a visible slider thumb. Compact artwork/queue switching kept the saved playhead,
+and returning to the main window retained Audio Settings.
+
+The first post-load observation displayed 19.5 seconds despite the saved profile
+still containing 107.32798 seconds. The paused playhead was restored through native
+controls to the nearest supported tenth (107.3). A further clean-process restart
+then restored 107.3 correctly, still paused, with an explicit Resume card on Home.
+This observation is recorded rather than claiming an unrelated startup fix.
+
+The app is left open on Home, paused. Native screenshots, full hashes and preserved
+previous app are retained. Blind listening and human motion acceptance remain open.
