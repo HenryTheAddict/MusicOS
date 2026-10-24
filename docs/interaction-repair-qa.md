@@ -37,3 +37,17 @@ An isolated copy of the immediately preceding desktop source was compared with t
 Total task work fell about 60.5% and scripting about 84.7%. Style/layout rose by about 9.0/5.3 ms per sample; that increase is included in total work rather than omitted. Native frame presentation and human motion acceptance remain separate gates. The temporary baseline server was stopped after measurement.
 
 Evidence: `out/rebuild-qa/interaction-*.log`, `interaction-profile.json`, `wide-player-artwork.png`, and `interaction-menu-preview.png`. Signed native delivery and state preservation are recorded after completion below.
+
+## Installed native build
+
+Desktop source `5948aa8`, copied to the shared foundation as `3a58085`. The compatibility merge retained the OS branch's existing `connected_device` command alongside the new Finder action. The primary desktop compatibility check passed. Embedded runtime/model source and binaries were not rebuilt or replaced.
+
+Signed executable SHA-256: `ebe95645c4cc0f151b01f0e886948d4e3e1799fc37d0effa70448bb12d822b23`. Ad-hoc signing and strict deep signature verification passed. The full five-resource manifest is retained with the dated release; its embedded runtime, ONNX library and three model resources match the preceding release exactly. Runtime: `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d`; ONNX: `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920`.
+
+A fresh paused-state check preceded clean quit, private JSON/profile copying and a SQLite backup verified with `quick_check`. The previous app is retained in `releases/desktop-interaction-repair-2026-10-23/previous-MusicOS.app`. The replacement restored PILOT at 195.7 seconds, paused, and 508 songs. Integration configuration bytes were unchanged.
+
+Native Show in Finder selected the actual PILOT FLAC inside its album folder. The Wide window measured 720×288 image pixels at 2× density, matching 360×144 logical units; artwork/queue switches retained that size and the same bottom controls. Actions/menu return and retained Settings were exercised. Wide was selected for the live check. Native screenshots are retained under `out/qa/os-foundation/interaction-repair/`; macOS window-sharing indicators are system overlays rather than MusicOS artwork.
+
+The final focused browser regression run passed all 12 cases. The 24-combination minimum geometry run, 135 unit tests and 155 Rust tests also passed. During native checks the user continued interacting: Mm changed from two to three songs, and playback/navigation changed. Those latest edits were retained and captured in a second private verified backup; the pre-load database was never restored. Saved art, playlist tombstones and details remained equal, while playlist membership and modified timestamps reflected the live edits. No native collection edit or playback command was performed for the smoke check.
+
+Native hover frame presentation was not instrumented; the measured scripting reduction is the browser comparison above. Human interaction/motion acceptance, physical touch, and Windows/Linux native checks remain separate gates.
