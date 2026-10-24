@@ -1624,6 +1624,16 @@ pub fn run() {
             artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
+            let state = AppState::new()?;
+            let launch_appearance=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).appearance.clone();
+            let client = state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
+            client.send(LocalPlaybackCommand::SetListening(state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening.clone()))?;
+            app.manage(state);
+            let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};",serde_json::to_string(&launch_appearance)?);
+            let window=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?
+                .initialization_script(init).visible(false).build()?;
+            let dark=launch_appearance.mode=="dark" || (launch_appearance.mode=="system"&&window.theme().ok()==Some(tauri::Theme::Dark));
+            window.set_background_color(Some(if dark {tauri::window::Color(40,44,63,255)}else{tauri::window::Color(0,186,255,255)}))?;
             #[cfg(target_os="macos")]
             if let Some(window)=app.get_webview_window("main") {
                 let _=window.with_webview(|view| {
@@ -1632,12 +1642,9 @@ pub fn run() {
                 });
             }
 
-            let state = AppState::new()?;
-            let client = state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
-            client.send(LocalPlaybackCommand::SetListening(state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening.clone()))?;
             #[cfg(target_os="macos")]
             crate::system_media::register(client.clone(),app.handle().clone())?;
-            app.manage(state);
+            window.show()?;
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut last_queue_revision = u64::MAX;

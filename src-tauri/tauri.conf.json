@@ -13,13 +13,14 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "MusicOS",
         "width": 720,
         "height": 480,
         "minWidth": 720,
         "minHeight": 480,
         "resizable": true,
-        "backgroundColor": "#00BAFF",
+        "backgroundColor": "#282c3f",
         "dragDropEnabled": true
       }
     ],

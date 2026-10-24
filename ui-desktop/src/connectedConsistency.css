@@ -39,8 +39,8 @@
 /* Action panels float at the pointer/button; selection never waits for the exit. */
 .dropdown:not(.section-dropdown){padding:5px;min-width:12rem;border-radius:12px!important;background:var(--surface-color);box-shadow:0 6px 22px #0003;clip-path:none!important;transform-origin:var(--menu-origin,var(--radix-dropdown-menu-content-transform-origin));}
 .menu-trigger[data-connected-open=true]{border-radius:inherit!important;}
-.dropdown:not(.section-dropdown)[data-state=open]{animation:responsive-menu-in 140ms cubic-bezier(.2,.8,.2,1)!important;}
-.dropdown:not(.section-dropdown)[data-state=closed]{animation:responsive-menu-out 90ms ease-out!important;pointer-events:none;}
+.dropdown:not(.section-dropdown)[data-state=open]{animation:responsive-menu-in 140ms cubic-bezier(.2,.8,.2,1) both!important;}
+.dropdown:not(.section-dropdown)[data-state=closed]{animation:responsive-menu-out 140ms ease-out both!important;pointer-events:none;}
 .dropdown:not(.section-dropdown) .dropdown-item{min-height:30px;padding:5px 8px;font-size:13px;line-height:20px;transition:none;}
 .dropdown:not(.section-dropdown) .dropdown-item[data-group-start=true]{margin-top:7px;}
 .dropdown-item[data-group-start=true]:before{top:-4px;}

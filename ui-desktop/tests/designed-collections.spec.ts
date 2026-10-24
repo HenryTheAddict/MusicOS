@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 test('collections live under personal heading, persist cover selection, and have separate shuffle',async({page})=>{
- await page.goto('/?fixture=1');await expect(page.getByRole('heading',{name:"Your things",level:1})).toBeVisible();
+ await page.goto('/?fixture=1');await expect(page.getByRole('heading',{name:"Henry",level:1})).toBeVisible();
  const nav=page.getByRole('navigation',{name:'Library',exact:true});
  await expect(nav.getByRole('button')).toHaveCount(4);await expect(nav.getByRole('button',{name:'Playlists',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Add music',exact:true})).toHaveCount(0);

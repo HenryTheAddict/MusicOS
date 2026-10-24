@@ -1,3 +1,4 @@
+import {prepareLaunchTheme} from './launchTheme';
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
@@ -15,6 +16,7 @@ import "./connectedMotion.css";
 import "./listFind.css";
 import "./connectedConsistency.css";
 import "./interactionPolish.css";
+prepareLaunchTheme();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

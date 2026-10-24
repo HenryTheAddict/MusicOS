@@ -1,3 +1,4 @@
+import {launchPreferences,rememberLaunchAppearance} from './launchTheme';
 import {usePlaylistDrop} from './usePlaylistDrop';
 import {usePlaybackFeed} from './playbackFeed';
 import {animateOwned} from './presentationMotion';
@@ -81,7 +82,7 @@ import {
   QueueRows,
   type CollectionItem,
 } from "./components";
-import {PlaylistDetail,PlaylistArtwork,AudioSparkDetail} from './PlaylistLibrary';
+import {PlaylistDetail,PlaylistArtwork,AudioSparkDetail,playlistFile} from './PlaylistLibrary';
 const CollectionManager = lazy(()=>import("./CollectionManager"));
 const AudioAnalysis = lazy(()=>import("./AudioAnalysis"));
 const Settings = lazy(()=>import("./Settings"));
@@ -151,7 +152,7 @@ export default function App() {
   const librarySummary=useMemo(()=>({favorites:library.tracks.filter(t=>t.favorited).length,duration:library.tracks.reduce((sum,t)=>sum+t.duration,0)}),[library.tracks]);
   const dropNotice=usePlaylistDrop(collections,library.tracks,setCollections,setCollectionError);
   const collectionSummaries=useMemo(()=>new Map(collections.map(item=>{let duration=0,available=0;for(const id of item.track_ids){const track=tracksById.get(id);if(track){duration+=track.duration;available++;}}return [item.id,{duration,available}];})),[collections,tracksById]);
-  const [preferences, setPreferences] = useState(defaultPreferences);
+  const [preferences, setPreferences] = useState(()=>launchPreferences(defaultPreferences));
   const savedSparkBeta=useRef(defaultPreferences.sparklist_beta);
   useSmoothCorners();
   const [miniMode,setMiniMode]=useState<'normal'|'tall'|'queue'>('normal');
@@ -205,6 +206,7 @@ export default function App() {
   const [systemDark,setSystemDark]=useState(()=>matchMedia('(prefers-color-scheme: dark)').matches);
   useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)');const change=()=>setSystemDark(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   const look=appearance(preferences);
+  useEffect(()=>{if(!loading)rememberLaunchAppearance(look);},[loading,look.mode,look.source,look.accent,look.saturation,look.tint]);
   useEffect(()=>{document.documentElement.dataset.themeMode=look.mode==='system'?(systemDark?'dark':'light'):look.mode;},[look.mode,systemDark]);
   const palette=useMemo(()=>themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark]);
   useLayoutEffect(()=>{document.documentElement.dataset.playerLayout=miniMode;return()=>{delete document.documentElement.dataset.playerLayout;};},[miniMode]);
@@ -674,6 +676,7 @@ export default function App() {
   function actionsForCollection(item:SavedCollection){return [...playbackItems(item.track_ids),
    {label:'Open collection',icon:'Playlist',onSelect:()=>openCollection(item)},
    {label:item.spark?'Edit rules…':'Edit details…',icon:'File',onSelect:()=>{openCollection(item);setCollectionEdit({id:item.id,revision:Date.now()});}},
+   ...(item.kind!=='audio'&&!item.spark?[{label:'Export M3U…',icon:'File',onSelect:()=>void playlistFile('export',item.id).catch(e=>setError(errorText(e)))}]:[]),
    {label:'Delete collection…',icon:'Delete',onSelect:()=>setDeletingCollection(item)},
   ];}
   function albumItems(records: Album[]): CollectionItem[] {

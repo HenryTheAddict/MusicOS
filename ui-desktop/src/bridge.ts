@@ -69,7 +69,7 @@ export const emptyLibrary: Library = {
 };
 export const defaultPreferences: Preferences = {
   version: 1,
-  display_name: "Henry",
+  display_name: "",
   interface_percent: 100,
   coverflow_colors: false,
 };

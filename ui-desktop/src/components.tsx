@@ -217,6 +217,8 @@ export interface MenuItem {
   portrait?: string|null;
   group?: "playback"|"organize"|"danger";
 }
+// Only the newest panel may restore focus when an older exit completes.
+let activeMenuOwner:HTMLButtonElement|null=null;
 export function Menu({
   label,
   children,
@@ -249,9 +251,9 @@ export function Menu({
   useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
   const captureMenuFrame=()=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-transform',style.transform);}};
-  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:button}));setPresent(true);captureMenuFrame();didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);const retire=(event:Event)=>{if((event as CustomEvent).detail===button||!content.current)return;didSelect.current=true;setPresent(false);setOpen(false);};window.addEventListener('musicos-menu-will-open',retire);return()=>{button?.removeEventListener('musicos-open-menu',show);window.removeEventListener('musicos-menu-will-open',retire);};},[]);
+  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;activeMenuOwner=button;window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:button}));setPresent(true);captureMenuFrame();didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);const retire=(event:Event)=>{if((event as CustomEvent).detail===button||!content.current)return;didSelect.current=true;setPresent(false);setOpen(false);};window.addEventListener('musicos-menu-will-open',retire);return()=>{button?.removeEventListener('musicos-open-menu',show);window.removeEventListener('musicos-menu-will-open',retire);};},[]);
   return (
-    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{captureMenuFrame();if(next){window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:trigger.current}));setPresent(true);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
+    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{captureMenuFrame();if(next){activeMenuOwner=trigger.current;setPoint(null);window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:trigger.current}));setPresent(true);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
         <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
@@ -262,12 +264,13 @@ export function Menu({
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
           style={{...inherited,...theme}}
+          inert={!open||undefined}
           data-pointer-menu={point?true:undefined}
           className={`dropdown ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":"start"}
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
-          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current){didSelect.current=false;contextOpened.current=false;setPoint(null);return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;setPoint(null);}}
+          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||activeMenuOwner!==trigger.current){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
 
         >
           {ordered.map((item, i) => (
@@ -275,7 +278,7 @@ export function Menu({
               className="dropdown-item"
               data-group-start={i>0&&group(item)!==group(ordered[i-1])||undefined}
               key={`${item.label}-${i}`}
-              onSelect={event=>{event.preventDefault();didSelect.current=true;const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(content.current)content.current.style.setProperty("animation","none","important");flushSync(()=>setOpen(false));if(target?.isConnected)target.focus({preventScroll:true});item.onSelect();}}
+              onSelect={event=>{event.preventDefault();didSelect.current=true;const target=contextOpened.current||contextOnly?origin.current:trigger.current;captureMenuFrame();flushSync(()=>setOpen(false));if(target?.isConnected)target.focus({preventScroll:true});item.onSelect();}}
               disabled={item.disabled}
             >
               {item.portrait?<Cover src={item.portrait} title="" portrait/>:item.icon&&<Icon name={item.icon}/>}

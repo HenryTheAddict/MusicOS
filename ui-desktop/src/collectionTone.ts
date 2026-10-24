@@ -33,7 +33,9 @@ export function useCollectionTone(spark:boolean,identity=''){
    current=palette;
    const style=getComputedStyle(host),toHex=(value:string,fallback:string)=>/^#[0-9a-f]{6}$/i.test(value.trim())?value.trim():value.startsWith('rgb')?'#'+(value.match(/[\d.]+/g)??[]).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join(''):fallback;
    const surface=toHex(style.getPropertyValue('--surface-color'),'#f7fbff'),ink=toHex(style.getPropertyValue('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
-   const tones=transportTones({background:surface,blob:surface,text:ink,accent});
+   const control='#'+[1,3,5].map(i=>Math.round(parseInt(surface.slice(i,i+2),16)*.88+parseInt(accent.slice(i,i+2),16)*.12).toString(16).padStart(2,'0')).join('');
+   const tones=transportTones({background:control,blob:control,text:ink,accent});
+   host.style.setProperty('--collection-control-surface',control);
    host.style.setProperty('--collection-transport-top',tones.fill);host.style.setProperty('--collection-transport-bottom',tones.stroke);host.style.setProperty('--collection-transport-stroke',tones.stroke);
 
    host.style.setProperty('--collection-tone',palette.tone);
