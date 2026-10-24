@@ -75,6 +75,7 @@ serializations have regression coverage; artwork-owned colors remain cached.
 
 The same plate also retained the launch surface when artwork analysis finished:
 its observer watched the shell but the final theme lived on the root. Controls now
-observe the owning shell and root and derive contrast from explicit target tokens,
-so they do not capture an early intermediate launch color. The regression changes
-root colors after artwork has loaded and checks refreshed surface and contrast.
+observe the owning shell and root and read the explicit target ink for Light/Dark
+contrast. Each plate uses its own artwork over a neutral foundation, so another
+album changing the page hue cannot recolor it. The regression checks stability
+after a page-color change and refreshed surface/contrast after a mode change.

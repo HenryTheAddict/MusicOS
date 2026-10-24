@@ -1,3 +1,4 @@
+import {luminance} from './appearance';
 import {cssColorHex} from './colorValue';
 import {useEffect,useRef} from 'react';
 import {transportTones} from './playerTheme';
@@ -35,8 +36,11 @@ export function useCollectionTone(spark:boolean,identity=''){
    const style=getComputedStyle(host),toHex=cssColorHex;
    const themeOwner=host.closest<HTMLElement>('.app-shell');
    const targetColor=(key:string)=>themeOwner?.style.getPropertyValue(key)||document.documentElement.style.getPropertyValue(key)||style.getPropertyValue(key);
-   const surface=toHex(targetColor('--surface-color'),'#f7fbff'),ink=toHex(targetColor('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
-   const control='#'+[1,3,5].map(i=>Math.round(parseInt(surface.slice(i,i+2),16)*.88+parseInt(accent.slice(i,i+2),16)*.12).toString(16).padStart(2,'0')).join('');
+   const ink=toHex(targetColor('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
+   // The artwork owns this plate. A playing album may change the page hue,
+   // but only Light/Dark contrast changes the collection's neutral foundation.
+   const surface=luminance(ink)>.5?'#282a30':'#e9ebef';
+   const control='#'+[1,3,5].map(i=>Math.round(parseInt(surface.slice(i,i+2),16)*.72+parseInt(accent.slice(i,i+2),16)*.28).toString(16).padStart(2,'0')).join('');
    const tones=transportTones({background:control,blob:control,text:ink,accent});
    host.style.setProperty('--collection-control-surface',control);
    host.style.setProperty('--collection-transport-top',tones.fill);host.style.setProperty('--collection-transport-bottom',tones.stroke);host.style.setProperty('--collection-transport-stroke',tones.stroke);
