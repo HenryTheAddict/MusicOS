@@ -36,7 +36,7 @@ test('context exit stays at its pointer without flashing or stealing a replaceme
 });
 test('existing playlists have no M3U toolbar action; file import stays at creation',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'playlist/1',name:'Test list',kind:'manual',track_ids:[1,2],artwork_choice:'collage'}])));
- await page.goto('/?fixture=1&sparkReady=1');await page.locator('.home-collection-open').click();await expect(page.locator('.playlist-tools')).not.toContainText('M3U');await page.getByRole('button',{name:'Add Music',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add Music',exact:true})).not.toContainText('M3U');await page.getByRole('button',{name:'Close song selector'}).click();
+ await page.goto('/?fixture=1&sparkReady=1');await page.locator('.home-collection-open').click();await expect(page.locator('.playlist-tools')).not.toContainText('M3U');await expect(page.getByRole('button',{name:'Edit details',exact:true}).locator('svg')).toBeVisible();await page.getByRole('button',{name:'Add Music',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add Music',exact:true})).not.toContainText('M3U');await page.getByRole('button',{name:'Close song selector'}).click();
  await page.locator('.sidebar-home').click();await page.getByRole('button',{name:'New playlist',exact:true}).click();await expect(page.getByRole('button',{name:'Import M3U',exact:true})).toBeVisible();
 });
 test('Sketch collection controls keep fixed geometry and artwork-owned shading',async({page})=>{
