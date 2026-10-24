@@ -1,0 +1,78 @@
+/** MusicOS: local Figtree typography, solid charcoal surfaces and a soft cyan accent.
+ * The installer embeds the repository's OFL-licensed font without a network request.
+ */
+:root, .theme-dark, .theme-light, .visual-refresh {
+ --font-primary: "MusicOS Sans", Figtree, -apple-system, sans-serif;
+ --font-display: "MusicOS Sans", Figtree, -apple-system, sans-serif;
+ --font-headline: "MusicOS Sans", Figtree, -apple-system, sans-serif;
+ --background-primary: #202125;
+ --background-secondary: #2c2d32;
+ --background-secondary-alt: #25262b;
+ --background-tertiary: #202125;
+ --background-floating: #3a3b40;
+ --background-accent: #3a3b40;
+ --background-base-lowest: #202125;
+ --background-base-lower: #25262b;
+ --background-base-low: #2c2d32;
+ --background-surface-high: #303137;
+ --background-surface-higher: #34353a;
+ --background-surface-highest: #3a3b40;
+ --background-mod-subtle: #34353a;
+ --background-mod-normal: #3a3b40;
+ --background-mod-strong: #424348;
+ --background-modifier-hover: #dedfe312;
+ --background-modifier-selected: #7dc2d225;
+ --background-modifier-active: #7dc2d238;
+ --background-modifier-accent: #dedfe31a;
+ --channeltextarea-background: #34353a;
+ --input-background: #34353a;
+ --modal-background: #2c2d32;
+ --modal-footer-background: #25262b;
+ --text-normal: #dedfe3;
+ --text-primary: #dedfe3;
+ --text-default: #dedfe3;
+ --text-strong: #dedfe3;
+ --text-secondary: #bfc2c8;
+ --text-muted: #bfc2c8;
+ --text-link: #7dc2d2;
+ --text-brand: #7dc2d2;
+ --text-on-brand-primary: #12202a;
+ --text-on-brand-secondary: #12202a;
+ --header-primary: #dedfe3;
+ --header-secondary: #bfc2c8;
+ --channels-default: #bfc2c8;
+ --channel-icon: #bfc2c8;
+ --interactive-normal: #bfc2c8;
+ --interactive-hover: #dedfe3;
+ --interactive-active: #7dc2d2;
+ --interactive-text-default: #bfc2c8;
+ --interactive-text-hover: #dedfe3;
+ --interactive-text-active: #7dc2d2;
+ --brand-500: #7dc2d2;
+ --brand-530: #71b3c4;
+ --brand-560: #65a7b8;
+ --brand-600: #5391a2;
+ --brand-experiment: #7dc2d2;
+ --button-filled-brand-background: #7dc2d2;
+ --button-filled-brand-background-hover: #96cfdb;
+ --button-filled-brand-text: #12202a;
+ --control-brand-foreground: #7dc2d2;
+ --control-primary-background-default: #7dc2d2;
+ --control-primary-background-hover: #96cfdb;
+ --control-primary-text-default: #12202a;
+ --border-subtle: #dedfe31a;
+ --border-normal: #dedfe326;
+ --font-weight-normal: 400;
+ --font-weight-medium: 500;
+ --font-weight-semibold: 600;
+ --font-weight-bold: 700;
+ --font-weight-extrabold: 800;
+}
+body { font-family: var(--font-primary) !important; }
+h1,h2,h3,h4,h5,h6 { font-family: var(--font-display) !important; }
+.visual-refresh [role="menu"] { border-radius: 14px; border: 1px solid var(--border-normal); box-shadow: 0 5px 16px #0004; }
+.visual-refresh [role="menuitem"] { border-radius: 8px; }
+.visual-refresh [class*="panels_"] { border: 1px solid var(--border-subtle); border-radius: 14px; }
+[class^="chatGradientBase_"] { display: none; }
+
+[class*="lookFilled_"][class*="colorBrand_"] { color: #12202a; }

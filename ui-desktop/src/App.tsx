@@ -1,3 +1,4 @@
+import {animateOwned} from './presentationMotion';
 import {secondaryInk} from './appearance';
 import {personalName} from './personalName';
 import ListFind from './ListFind';
@@ -296,6 +297,7 @@ export default function App() {
         ),
         subscribe<Task>("task", setTask),
         subscribe<LibraryChanged | null>("library-changed", (change) => {if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));void refresh();}),
+        subscribe("native-open-queue",()=>nativeQueueAction.current()),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
         subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
         subscribe<{track_id:number;path:string}>("song-artwork-found",update=>setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id?{...t,cover_art_path:update.path}:t)}))),
@@ -464,6 +466,7 @@ export default function App() {
     }
     void resolve();return ()=>{gone=true;};
   }, [loading,look.source,themeRequest,themeEpoch]);
+  const nativeQueueAction=useRef<()=>void>(()=>{});
   const run = useCallback(async (action: PlaybackAction) => {
     try {
       setPlayer(await call("playback", { action }));
@@ -951,9 +954,10 @@ export default function App() {
   async function changeMini(mode:'normal'|'tall'|'queue') {
     if(miniChanging.current)return;
     miniChanging.current=true;
-    try {if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
+    let exit:(()=>void)|undefined;
+    try {if(mode==='normal'&&miniMode!=='normal'){const node=document.querySelector<HTMLElement>('.mini-shell>.mini-player');if(node&&!matchMedia('(prefers-reduced-motion: reduce)').matches){exit=animateOwned(node,'mini-window-exit',[{opacity:getComputedStyle(node).opacity,transform:getComputedStyle(node).transform},{opacity:0,transform:'translateY(4px)'}],140);await Promise.allSettled(node.getAnimations().map(animation=>animation.finished));}}if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
     catch(e){if(native)await call('mini_player',{mode:'normal'}).catch(()=>{});setMiniMode('normal');setError(errorText(e));}
-    finally {miniChanging.current=false;}
+    finally {exit?.();miniChanging.current=false;}
   }
   async function toggleWindowPin(){
     const enabled=!(miniMode==='normal'?windowPinned:miniPinned);
@@ -965,6 +969,7 @@ export default function App() {
     if(player.track){setSection('Library');if(kind==='artist')artistFor(player.track,name);else albumFor(player.track);}
   }
   async function showQueue(){if(miniMode!=='normal')await changeMini('normal');setQueueOpen(true);}
+  nativeQueueAction.current=()=>void showQueue();
   const nowActions = player.track ? [
     {label:player.track.favorited?'Unfavorite song':'Favorite song',icon:player.track.favorited?'hearted':'noheart',onSelect:()=>favorite(player.track!)},
     {label:'Add to playlist…',icon:'Playlist',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setPlaylistTrack(player.track);})();}},

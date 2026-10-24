@@ -30,6 +30,8 @@ pub mod spark_install;
 
 #[cfg(target_os="macos")]
 pub mod system_media;
+#[cfg(target_os="macos")]
+pub mod native_playback_menu;
 
 pub mod portrait;
 

@@ -1,6 +1,6 @@
 import {useEffect,useRef} from 'react';
 import {call,errorText} from './bridge';
-export function miniDimensions(width:number,height:number,density?:"standard"|"compact"|boolean){return {width:Math.max(density==='compact'?220:244,Math.round(width)),height:Math.max(density==='compact'?280:320,Math.round(height))};}
+export function miniDimensions(width:number,height:number,density?:"standard"|"compact"|boolean){return {width:Math.max(density==='compact'?220:244,Math.round(width)),height:Math.max(density==='compact'?160:320,Math.round(height))};}
 export default function MiniResize({onError,density="standard"}:{density?:"standard"|"compact";onError:(message:string)=>void}){
  const latest=useRef<{width:number;height:number}|null>(null),running=useRef(false),alive=useRef(true);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;latest.current=null;};},[]);

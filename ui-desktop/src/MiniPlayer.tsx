@@ -1,6 +1,7 @@
 import {artwork} from './bridge';
 import TrackCrossfade from './TrackCrossfade';
-import {useEffect,useRef,useMemo} from 'react';
+import {useEffect,useLayoutEffect,useRef,useMemo} from 'react';
+import {animateOwned} from './presentationMotion';
 import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
 import {trackCredits} from './credits';
@@ -20,6 +21,7 @@ export default function MiniPlayer({preview=false,density="standard",player,cove
  },[player.queue,player.queue_entry_ids,player.queue_index,player.arranged_entries,player.pinned_entries,onAction]);
  const actions=useRef({onMode,onQueue});actions.current={onMode,onQueue};
  const root=useRef<HTMLElement>(null);
+ useLayoutEffect(()=>{if(!preview&&root.current)return animateOwned(root.current,'mini-window-enter',[{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],180);},[preview]);
  // Both compositions stay mounted: CSS opacity transitions reverse in place.
  useEffect(()=>{if(!preview)root.current?.focus();},[preview]);
  useEffect(()=>{
@@ -39,8 +41,9 @@ export default function MiniPlayer({preview=false,density="standard",player,cove
     {view==='queue'&&<div className="mini-queue-list" role="region" aria-label="Up next" aria-hidden={mode!=='queue'} inert={mode!=='queue'}><header className="mini-queue-heading"><strong>Up next</strong><span>{upcomingCount} {upcomingCount===1?'song':'songs'}</span></header>{preview?<div className="mini-preview-queue">{player.queue.length?player.queue.map((song,index)=><div key={`${song.id}:${index}`}><strong>{song.title}</strong><small>{trackCredits(song).join(' + ')}</small></div>):<p className="mini-queue-empty">Your next songs appear here.</p>}</div>:queueContent}</div>}
    </div>)}
   </div>
-  <div className="mini-player-tools">{track?<FavoriteButton track={track} bpm={bpm} playing={player.is_playing} className="icon-button mini-favorite" label={track.favorited?'Unfavorite song':'Favorite song'} onFavorite={onFavorite}/>:<IconButton name="noheart" label="Favorite song" disabled onClick={onFavorite}/>}<IconButton name={mode==='queue'?'controlClose':'queue'} label={mode==='queue'?'Close Up next':'Open Up next'} pressed={mode==='queue'} onClick={onQueue}/>{preview?<IconButton name="3dots(incircle)" label="Mini Player actions" onClick={()=>{}}/>:<MiniActions height={density==='compact'?280:320} onResize={onMenuResize} items={[{label:'Return to MusicOS',icon:'CloseMiniplayer',onSelect:()=>onMode('normal')},{label:pinned?'Unpin window':'Pin window',icon:pinned?'unPin':'Pin',onSelect:onPin},{label:mode==='queue'?'Hide Up next':'Up next',icon:'queue',onSelect:onQueue},...items]}/>}</div>
+  <div className="mini-player-footer"><div className="mini-player-tools">{track?<FavoriteButton track={track} bpm={bpm} playing={player.is_playing} className="icon-button mini-favorite" label={track.favorited?'Unfavorite song':'Favorite song'} onFavorite={onFavorite}/>:<IconButton name="noheart" label="Favorite song" disabled onClick={onFavorite}/>}<IconButton name={mode==='queue'?'controlClose':'queue'} label={mode==='queue'?'Close Up next':'Open Up next'} pressed={mode==='queue'} onClick={onQueue}/>{preview?<IconButton name="3dots(incircle)" label="Mini Player actions" onClick={()=>{}}/>:<MiniActions height={density==='compact'?160:320} onResize={onMenuResize} items={[{label:'Return to MusicOS',icon:'CloseMiniplayer',onSelect:()=>onMode('normal')},{label:pinned?'Unpin window':'Pin window',icon:pinned?'unPin':'Pin',onSelect:onPin},{label:mode==='queue'?'Hide Up next':'Up next',icon:'queue',onSelect:onQueue},...items]}/>}</div>
   <div className="mini-player-transport"><IconButton name="prev" label="Previous track" disabled={!track} onClick={()=>void onAction({type:'previous'})}/><IconButton name={player.is_playing?'pause':'play'} label={player.is_playing?'Pause':'Play'} disabled={!track} onClick={()=>void onAction({type:'toggle'})}/><IconButton name="next" label="Next track" disabled={!track} onClick={()=>void onAction({type:'next'})}/></div>
+  </div>
   {!preview&&<MiniResize density={density} onError={onWindowError}/>}
  </section>;
 }

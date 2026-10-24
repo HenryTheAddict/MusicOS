@@ -445,7 +445,7 @@ impl Worker {
                             self.discord_key=key;self.status.discord="Sharing your music".into();self.status.discord_rpc="Fallback activity acknowledged · image rendering not verified".into();self.status.discord_artwork="Album image not accepted · MusicOS icon fallback".into();
                             if let Some(lookup)=album_key.as_ref().and_then(|key|self.covers.get_mut(key)){lookup.url=None;lookup.pending=false;lookup.error=Some("Discord did not accept this image".into());lookup.checked=Instant::now();}
                         }else{
-                            self.status.discord_rpc="Not acknowledged · check Discord and application assets".into();self.discord=Discord::default();self.status.discord="Open Discord desktop, and check your Application ID.".into();self.discord_retry=Instant::now()+Duration::from_secs(13);
+                            self.status.discord_rpc="Not acknowledged · check Discord and application assets".into();self.discord=Discord::default();self.status.discord="Open Vesktop with Rich Presence via arRPC enabled, and check your Application ID.".into();self.discord_retry=Instant::now()+Duration::from_secs(13);
                         }
                     }
                 }
@@ -696,7 +696,7 @@ impl Discord {
                 }
             }
             if self.socket.is_none() {
-                bail!("Open Discord desktop");
+                bail!("Open Vesktop with Rich Presence via arRPC enabled");
             }
             self.exchange(0, json!({"v":1,"client_id":id}))?;
         }
