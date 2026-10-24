@@ -186,6 +186,29 @@ export function IconButton({
   );
 }
 function LiveMeter({children,trackId}:{children?:ReactNode;trackId?:number}){const clock=usePlaybackClock();const levels=trackId===undefined||clock.trackId===trackId?clock.levels:[];return <span className="live-meter" style={{'--level-1':levels[0]??0,'--level-2':levels[1]??0,'--level-3':levels[2]??0} as CSSProperties}>{children??<span className="equalizer" data-active="true">{[0,1,2].map(i=><i key={i} style={{transform:`scaleY(${levels[i]??0})`}}/>)}</span>}</span>;}
+function SongMeterFeed({host,trackId}:{host:RefObject<HTMLSpanElement|null>;trackId:number}){
+ const clock=usePlaybackClock();
+ useLayoutEffect(()=>{const node=host.current;if(!node)return;const levels=clock.trackId===trackId?clock.levels:[];for(let i=0;i<3;i++)node.style.setProperty(`--level-${i+1}`,String(levels[i]??0));},[clock.levels,clock.trackId,trackId,host]);
+ useEffect(()=>()=>{for(let i=0;i<3;i++)host.current?.style.removeProperty(`--level-${i+1}`);},[host]);return null;
+}
+// Only the current song subscribes to the output meter. Pointer intent is local
+// to this control; moving the title never changes the target of an existing press.
+function SongPlaybackControl({track,current,playing,levels,onPlay,onToggle}:{track:Track;current:boolean;playing:boolean;levels?:number[];onPlay:(track:Track)=>void;onToggle?:()=>void}){
+ const button=useRef<HTMLButtonElement>(null),meterHost=useRef<HTMLSpanElement>(null);
+ const [engaged,setEngaged]=useState(false);
+ useEffect(()=>{
+  const row=button.current?.closest<HTMLElement>('.track-row');if(!row)return;
+  let hovered=row.matches(':hover');
+  const update=()=>{if(!row.dataset.songDragging)setEngaged(hovered||row.matches(':focus-visible')||!!row.querySelector(':focus-visible'));};
+  const enter=()=>{hovered=true;update();},leave=()=>{hovered=false;update();};
+  const focusOut=()=>queueMicrotask(update);
+  row.addEventListener('pointerenter',enter);row.addEventListener('pointerleave',leave);row.addEventListener('focusin',update);row.addEventListener('focusout',focusOut);row.addEventListener('musicos-song-drag-end',update);update();
+  return()=>{row.removeEventListener('pointerenter',enter);row.removeEventListener('pointerleave',leave);row.removeEventListener('focusin',update);row.removeEventListener('focusout',focusOut);row.removeEventListener('musicos-song-drag-end',update);};
+ },[track.id]);
+ const meter=current&&playing;
+ const glyph=<Icon name={meter?(engaged?'pause':'rowLevels'):'play'}/>;
+ return <button ref={button} className="row-play" disabled={!track.available} aria-label={`${meter?'Pause':'Play'} ${track.title}`} data-meter={meter} style={{'--level-1':levels?.[0]??0,'--level-2':levels?.[1]??0,'--level-3':levels?.[2]??0} as CSSProperties} onClick={e=>{e.stopPropagation();if(current&&onToggle)onToggle();else onPlay(track);}}><span className="live-meter" ref={meterHost}>{meter&&<SongMeterFeed host={meterHost} trackId={track.id}/>} {glyph}</span></button>;
+}
 export interface MenuItem {
   label: string;
   onSelect: () => void;
@@ -390,22 +413,9 @@ export function TrackRows({
           >
             <span className="track-index" role="cell">
               <span>{multiDisc?track.track_number||index+1:index+1}</span>
-              <button
-                className="row-play"
-                disabled={!track.available}
-                aria-label={`${playingId===track.id&&isPlaying?'Pause':'Play'} ${track.title}`}
-                data-meter={playingId===track.id&&isPlaying}
-                style={{'--level-1':levels?.[0]??0,'--level-2':levels?.[1]??0,'--level-3':levels?.[2]??0} as CSSProperties}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if(playingId===track.id&&onToggle)onToggle();else onPlay(track);
-                }}
-              >
-                {playingId===track.id&&isPlaying?<LiveMeter trackId={track.id}><Icon name="rowLevels"/></LiveMeter>:<Icon name="play"/>}
-              </button>
-
             </span>
             <div className="track-title" role="cell">
+              <SongPlaybackControl track={track} current={playingId===track.id} playing={isPlaying} levels={levels} onPlay={onPlay} onToggle={onToggle}/>
               <div className="track-label">
                 <span title={track.title}>{track.title}</span>
                 <div className="track-credits" title={track.artist} hidden={!!albumArtist&&trackCredits(track).length===1&&trackCredits(track)[0].toLocaleLowerCase()===albumArtist.trim().toLocaleLowerCase()}>{trackCredits(track).map((name,index)=><span key={name}>{index>0?(trackCredits(track).length===2?' & ':', '):''}<button className="text-link muted" onClick={e=>{e.stopPropagation();onArtist(track,name);}}>{name}</button></span>)}{!track.available?' · Unavailable':''}</div>

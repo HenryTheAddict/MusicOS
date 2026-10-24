@@ -1,19 +1,22 @@
-/* Song rows have stationary text and one predictable control slot. */
-.track-table[data-local-songs] .track-row .track-title>.track-label{width:100%;transform:none;transition:none;}
-.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.selected,.playing) .track-title>.track-label{transform:none;}
-.track-table[data-local-songs] .track-title{user-select:none;}
-.track-table[data-local-songs] .track-index{position:relative;align-self:stretch;display:grid;place-items:center;}
-.track-table[data-local-songs] .track-index>.row-play{position:absolute;left:50%;top:50%;translate:-50% -50%;width:1.6rem;height:1.75rem;opacity:0;transform:none;pointer-events:none;border-radius:.5rem;transition:opacity 140ms ease-out,background-color 140ms ease-out;}
-.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.playing,:has(.menu-trigger[data-state=open])) .track-index>.row-play{opacity:1;transform:none;pointer-events:auto;}
-.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.playing,:has(.menu-trigger[data-state=open])) .track-index>span{opacity:0;}
+/* One title-column reveal; number, duration and action columns never move. */
+.track-table[data-local-songs] .track-title{position:relative;overflow:hidden;user-select:none;}
+.track-table[data-local-songs] .track-title>.track-label{width:calc(100% - 1.75rem);padding-left:0;transform:translateX(0);transition:transform 180ms cubic-bezier(.2,.7,.2,1);}
+.track-table[data-local-songs] .track-title>.row-play{position:absolute;left:0;top:50%;translate:0 -50%;display:grid;place-items:center;width:1.5rem;height:1.75rem;padding:0;opacity:0;transform:translateX(-.25rem) scale(.7);pointer-events:none;transition:opacity 140ms ease-out,transform 180ms cubic-bezier(.2,.7,.2,1);border:0;border-radius:0;background:transparent;box-shadow:none;}
+.track-table[data-local-songs] .track-row:is(:hover,:has(:focus-visible),.playing,:has(.menu-trigger[data-state=open])) .track-label{transform:translateX(1.75rem);}
+.track-table[data-local-songs] .track-row:is(:hover,:has(:focus-visible),.playing,:has(.menu-trigger[data-state=open])) .row-play{opacity:1;transform:none;pointer-events:auto;}
+.track-table[data-local-songs] .track-title>.row-play .icon{width:1.125rem;height:1.125rem;}
+.track-table[data-local-songs] .track-index{align-self:stretch;display:grid;place-items:center;}
 .track-table[data-local-songs] .track-row:has(.menu-trigger[data-state=open]){background:var(--control-surface);}
 .track-table[data-local-songs] .track-row .track-label>span{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;}
 .track-table[data-local-songs] .track-row .track-actions{flex:none;}
-.song-drag-preview{display:flex;flex-direction:column;gap:3px;max-width:min(22rem,calc(100vw - 24px));padding:8px 12px;background:var(--surface-color);color:var(--ink);font-size:13px;line-height:18px;border:1px solid var(--control-border);border-radius:10px;box-shadow:0 4px 16px #0003;}
+.track-row[data-song-dragging=true] .track-label,.track-row[data-song-dragging=true] .row-play{transition:none!important;}
+.song-drag-preview{position:fixed;left:0;top:0;z-index:99999;pointer-events:none;padding:0;max-width:min(22rem,calc(100vw - 24px));overflow:visible;background:transparent;border:0;box-shadow:none;will-change:transform;}
+.song-drag-preview-inner{display:flex;flex-direction:column;gap:3px;padding:8px 12px;border:1px solid var(--control-border);border-radius:10px;background:var(--surface-color);color:var(--ink);font-size:13px;line-height:18px;box-shadow:0 4px 16px #0003;transform-origin:20px 50%;}
+.song-drag-preview strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .song-drag-preview small{font-size:11px;color:var(--secondary-ink);}
-.song-drag-preview[data-allowed=false]{opacity:.8;}
+.song-drag-preview[data-allowed=false] .song-drag-preview-inner{opacity:.8;}
 .song-drop-notice{position:fixed;z-index:110;right:16px;bottom:16px;max-width:calc(100vw - 32px);padding:10px 14px;border:1px solid var(--control-border);border-radius:12px;background:var(--surface-color);color:var(--ink);font-size:13px;line-height:18px;pointer-events:none;}
-@media(prefers-reduced-motion:reduce){.track-table[data-local-songs] .row-play{transition:none;}}
+@media(prefers-reduced-motion:reduce){.track-table[data-local-songs] :is(.row-play,.track-label){transition:none!important;}}
 /* Integrations: two compact service rows, with setup kept beside its owner. */
 .app-shell .settings .beta-integrations{max-width:42rem;}
 .settings .beta-integrations .integration-list{display:flex;flex-direction:column;gap:0;border-radius:.875rem;background:var(--control-surface);}
@@ -53,3 +56,78 @@
 .settings .beta-integrations details[open]>summary>.icon{transform:rotate(270deg);}
 @media(prefers-reduced-motion:reduce){.settings .beta-integrations summary>.icon{transition:none;}}
 .settings .beta-integrations .integration-list{--secondary-ink:color-mix(in srgb,var(--ink) 92%,var(--control-surface));}
+
+/* The connected section header has one reversible chevron transform. */
+.section-control>.menu-trigger:first-child .chevron{display:grid;place-items:center;width:1.5rem;height:.75rem;line-height:0;rotate:none;scale:none;transform:rotate(0deg);transform-origin:50% 50%;transition:transform 140ms ease-out;}
+.section-control>.menu-trigger:first-child[data-state=open] .chevron{rotate:none;transform:rotate(180deg);}
+.section-control>.menu-trigger:first-child,.dropdown.section-dropdown{background:var(--control-surface);color:var(--ink);}
+body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.section-dropdown{background:var(--control-surface);color:var(--ink);}
+.section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem 1rem 0 0;}
+.dropdown.section-dropdown{border-radius:0 0 1rem 1rem;}
+.library-sidebar .sidebar-home>.icon{width:1.4rem;height:1.4rem;flex:0 0 1.4rem;}
+/* Home opens with a deliberate resume action and nearby saved collections. */
+.home-resume-action{display:flex;align-items:center;justify-content:center;gap:.35rem;flex:none;min-height:2.25rem;padding:.375rem .625rem;border:0;border-radius:.65rem;background:var(--surface-color);color:var(--ink);font-size:.8rem;font-weight:650;}
+.home-resume-action>.icon{width:1.5rem;height:1.5rem;}
+.personal-home{gap:1.5rem;}
+.home-collections .home-collection-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,8rem),min(100%,11rem)));}
+.home-collections .home-collection-grid .playlist-artwork-tone{aspect-ratio:1;}
+.home-recent>article>button{display:flex;align-items:center;gap:.65rem;min-width:0;width:100%;padding:.45rem;border-radius:.65rem;background:transparent;border:0;color:var(--ink);text-align:left;}
+.home-recent>article>button>span{flex:1;min-width:0;}
+.home-recent>article>button>.icon{width:1.3rem;height:1.3rem;flex:none;}
+.home-recent>article>button:hover{background:var(--control-surface);}
+.home-collection-grid>article>.icon-button{background:transparent;color:var(--collection-ink,var(--ink));}
+.home-collection-grid>article>.icon-button:is(:hover,:focus-visible){background:var(--collection-surface,var(--control-surface));}
+/* Settings roles: actions, choices, disclosures and icon controls stay distinct. */
+.settings .settings-panel{gap:.75rem;}
+.settings .settings-category-heading{padding:0 0 .25rem;}
+.settings .settings-tile{padding:.875rem;}
+.settings .settings-tile :is(p,small){line-height:1.45;}
+.settings :is(.settings-group-row,.source-actions,.tool-actions,.analysis-controls,.spark-setup,.depth-setup,.integration-field,.integration-setup-body,.file-organizer,.metadata-action-footer,.metadata-review-filters,.metadata-history,.metadata-cache-status,.album-track-comparison,.metadata-bulk-review,.metadata-selection) button:not(.themed-choice):not(.icon-button):not(.themed-switch){display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:2rem;max-width:100%;padding:.4rem .625rem;border:1px solid var(--control-border);border-radius:.625rem;background:var(--surface-color);color:var(--ink);font-size:.8125rem;line-height:1.3;box-shadow:none;}
+.settings :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters){display:flex;align-items:center;flex-wrap:wrap;gap:.25rem;width:fit-content;max-width:100%;padding:.25rem;border:0;border-radius:.75rem;background:var(--control-surface);}
+.settings :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;flex:0 1 auto;min-height:2rem;padding:.4rem .625rem;border:0;border-radius:.5rem;background:transparent;color:var(--ink);font-size:.8125rem;line-height:1.3;}
+.settings :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:is([aria-pressed=true],[aria-selected=true]){background:var(--accent);color:var(--accent-ink);font-weight:650;}
+.settings :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:hover:not([aria-pressed=true]):not([aria-selected=true]):not(:disabled){background:color-mix(in srgb,var(--ink) 9%,var(--control-surface));}
+.settings .settings-panel :is(button.primary,.metadata-action-footer>button:first-of-type){background:var(--accent);color:var(--accent-ink);border-color:transparent;}
+.settings .settings-panel button>.icon{width:1.125rem;height:1.125rem;flex:none;}
+.settings .volume-control{margin:.75rem 0 .25rem;gap:.625rem;}
+.settings .volume-control input{appearance:none;-webkit-appearance:none;min-width:0;height:1.5rem;margin:0;background:transparent;accent-color:var(--accent);}
+.settings .volume-control input::-webkit-slider-runnable-track{height:.3rem;border:0;border-radius:1rem;background:var(--control-border);}
+.settings .volume-control input::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:.875rem;height:.875rem;margin-top:-.2875rem;border:0;border-radius:50%;background:var(--accent);box-shadow:none;}
+.settings .volume-control input::-moz-range-track{height:.3rem;background:var(--control-border);border-radius:1rem;}
+.settings .volume-control input::-moz-range-progress{height:.3rem;background:var(--accent);border-radius:1rem;}
+.settings .volume-control input::-moz-range-thumb{width:.875rem;height:.875rem;border:0;border-radius:50%;background:var(--accent);box-shadow:none;}
+.settings progress,.task-status progress{appearance:none;-webkit-appearance:none;max-width:100%;height:.375rem;border:0;border-radius:1rem;overflow:hidden;background:var(--control-border);accent-color:var(--accent);}
+.settings progress::-webkit-progress-bar,.task-status progress::-webkit-progress-bar{border-radius:inherit;background:var(--control-border);}
+.settings progress::-webkit-progress-value,.task-status progress::-webkit-progress-value{border-radius:inherit;background:var(--accent);}
+.settings progress::-moz-progress-bar,.task-status progress::-moz-progress-bar{border-radius:inherit;background:var(--accent);}
+.settings .spark-setup>progress,.settings .depth-setup>progress{display:block;width:min(100%,20rem);margin:.5rem 0;}
+.settings summary{font-size:.8125rem;line-height:1.4;}
+.settings .settings-tile details{margin-top:.625rem;}
+/* A preset is one selection surface; its preview remains an inert sibling. */
+.settings .mini-preset-options{gap:.75rem;}
+.settings .mini-preset-option{position:relative;padding:.625rem;border:1px solid var(--control-border);border-radius:1rem;background:transparent;}
+.settings .mini-preset-option[data-selected=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface-color));}
+.settings .mini-preset-option>.mini-preset-select{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:.2rem;width:100%;min-height:2.75rem;padding:0;border:0;outline:0;background:transparent;color:var(--ink);text-align:left;}
+.settings .mini-preset-select::after{content:'';position:absolute;inset:0;border-radius:inherit;}
+.settings .mini-preset-select:focus-visible::after{outline:2px solid var(--accent);outline-offset:3px;}
+.settings .mini-preset-option:has(.mini-preset-select:hover){background:color-mix(in srgb,var(--ink) 5%,var(--surface-color));}
+.settings .mini-preview .mini-player{border:0;background:transparent;}
+/* Metadata's browser is a list, independent of legacy library-grid styles. */
+.settings .metadata-browser .metadata-album-list{display:flex;flex-direction:column;gap:.25rem;max-height:28rem;min-width:0;padding:.375rem 0;}
+.settings .metadata-browser .metadata-album-list>button{display:grid;grid-template-columns:2.75rem minmax(0,1fr) max-content;align-items:center;gap:.625rem;flex:none;width:100%;min-width:0;min-height:3.75rem;padding:.5rem;border:0;border-radius:.75rem;background:transparent;color:var(--ink);text-align:left;}
+.settings .metadata-album-list>button>span:nth-child(2){min-width:0;}
+.settings .metadata-album-list :is(strong,small){display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.settings .metadata-album-list strong{font-size:.8125rem;line-height:1.35;}
+.settings .metadata-album-list small{font-size:.75rem;line-height:1.4;color:var(--secondary-ink);}
+.settings .metadata-album-list .metadata-review-action{display:flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.75rem;}
+.settings .metadata-review-action>.icon{width:.75rem;height:.75rem;transform:rotate(180deg);}
+.settings .metadata-album-list>button:is(:hover,[aria-pressed=true]){background:var(--control-surface);}
+@media(prefers-reduced-motion:reduce){.section-control>.menu-trigger:first-child .chevron{transition:none;}}
+
+@media(hover:none){.track-table[data-local-songs] .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
+.settings .mini-preset-option>.mini-preset-select:is([aria-pressed=true],:hover,:active,:focus){background:transparent;color:var(--ink);border:0;outline:0;box-shadow:none;}
+.settings .mini-preset-options{display:grid;grid-template-columns:266px minmax(0,342px);justify-content:start;align-items:start;}
+.settings .mini-preset-option:first-child{grid-row:span 2;}
+.settings .mini-preset-option:nth-child(n+2){grid-column:2;}
+.settings .settings-panel :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:is([aria-pressed=true],[aria-selected=true]){background:var(--accent);color:var(--accent-ink);}
+@container settings (max-width:40rem){.settings .mini-preset-options{grid-template-columns:minmax(0,max-content);}.settings .mini-preset-option:first-child{grid-row:auto;}.settings .mini-preset-option:nth-child(n+2){grid-column:1;}}

@@ -12,7 +12,7 @@ icons.controlClose='<svg viewBox="0 0 32 32"><path d="M9 9L23 23M23 9L9 23" fill
 icons.menuDotsClose=icons.controlClose;
 icons.menuClose=icons.menuPlus.replace('<g ', '<g transform="rotate(45 16 16)" ');
 icons.rowLevels = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g fill="var(--icon-fill,currentColor)" stroke="var(--icon-stroke,currentColor)" stroke-width="1.5"><rect x="5" y="6" width="5" height="20" rx="2"/><rect x="13.5" y="6" width="5" height="20" rx="2"/><rect x="22" y="6" width="5" height="20" rx="2"/></g></svg>';
-const groups = [["queue","controlClose"],["3dots_(nocircle)","menuDotsClose"],["3dots(incircle)","menuDotsClose"],["menuPlus","menuClose"],["play", "rowLevels"], ["play", "pause"], ["tinyPlay", "tinyPause"], ["hearted", "noheart"], ["RepeatOFF", "RepeatON", "RepeatONE"]];
+const groups = [["queue","controlClose"],["3dots_(nocircle)","menuDotsClose"],["3dots(incircle)","menuDotsClose"],["menuPlus","menuClose"],["play", "pause", "rowLevels"], ["play", "pause"], ["tinyPlay", "tinyPause"], ["hearted", "noheart"], ["RepeatOFF", "RepeatON", "RepeatONE"]];
 
 // Only playback/collection controls retain shading; other UI assets stay solid.
 export function solidIcon(svg:string, name:string) {
@@ -56,7 +56,7 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
     } else if (old !== name && host.innerHTML && !reduced.matches && groups.some(group => group.includes(old) && group.includes(name))) {
       cancel = [old,name].every(value=>['3dots_(nocircle)','3dots(incircle)','menuDotsClose'].includes(value)) ? menuDotsMorph(host,name==='menuDotsClose',markup)
         : [old,name].every(value=>value==='menuPlus'||value==='menuClose') ? menuCrossMorph(host,name==='menuClose',markup)
-        : [old,name].every(value=>value==='play'||value==='rowLevels') ? playLevelsMorph(host,name==='rowLevels',markup)
+        : [old,name].includes('rowLevels') ? playLevelsMorph(host,name==='rowLevels',markup,(name==='pause'||old==='pause')?'pause':'play')
         : [old,name].every(value=>value==='play'||value==='pause') ? playPauseMorph(host,name==='pause',markup)
         : morphSvg(host, host.innerHTML, markup, ['queue','controlClose','menuDotsClose','tinyX','menuPlus','3dots_(nocircle)','3dots(incircle)'].includes(name)?140:180);
     } else {host.innerHTML = markup;host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);}

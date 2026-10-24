@@ -10,7 +10,7 @@
 /* Shared controls: optical centering and a visible switch in every palette. */
 .themed-switch { display:flex; position:relative; align-items:center; justify-content:space-between; gap:1rem; width:100%; min-height:2.25rem; margin-top:.5rem; font-size:.8125rem; cursor:pointer; }
 .themed-switch > input { position:absolute; right:0; width:2.25rem; height:1.25rem; margin:0; opacity:0; cursor:pointer; }
-.switch-track { flex:none; width:2.25rem; height:1.25rem; padding:.125rem; border-radius:.75rem; background:color-mix(in srgb,var(--ink) 20%,var(--surface-color)); box-shadow:inset 0 1px 2px #0002; transition:background 140ms; pointer-events:none; }
+.switch-track { flex:none; width:2.25rem; height:1.25rem; padding:.125rem; border-radius:.75rem; background:color-mix(in srgb,var(--ink) 20%,var(--surface-color)); box-shadow:none; transition:background 140ms; pointer-events:none; }
 .switch-track::after { content:''; display:block; width:1rem; height:1rem; border-radius:50%; background:var(--surface-color); box-shadow:0 1px 2px #0003; transition:transform 140ms; }
 .themed-switch input:checked + .switch-track { background:var(--accent); }
 .themed-switch input:checked + .switch-track::after { transform:translateX(1rem); }
@@ -65,13 +65,13 @@
 .library-filter-trigger[aria-expanded=true] { background:color-mix(in srgb,var(--ink) 8%,transparent); }
 .library-filter-panel { width:min(17rem,calc(100vw - 1rem)); padding:.625rem; overflow:visible; color:var(--ink); background:var(--surface-color); border:1px solid var(--control-border); border-radius:.875rem; box-shadow:0 .375rem 1.25rem #0002; font-size:.75rem; }
 .filter-field { display:grid; grid-template-columns:4.5rem minmax(0,1fr); align-items:center; gap:.5rem; min-height:2rem; margin:0; }
-.filter-choice { display:flex; align-items:center; justify-content:space-between; gap:.375rem; width:100%; min-width:0; height:1.75rem; margin:0; padding:0 .5rem; border:1px solid var(--control-border); border-radius:.5rem; background:var(--control-surface); box-shadow:inset 0 1px 0 color-mix(in srgb,var(--surface-color) 75%,transparent),0 1px 2px #0001; color:var(--ink); font:inherit; cursor:pointer; transition:background 140ms,box-shadow 140ms; }
+.filter-choice { display:flex; align-items:center; justify-content:space-between; gap:.375rem; width:100%; min-width:0; height:1.75rem; margin:0; padding:0 .5rem; border:1px solid var(--control-border); border-radius:.5rem; background:var(--control-surface); box-shadow:0 1px 2px #0001; color:var(--ink); font:inherit; cursor:pointer; transition:background 140ms,box-shadow 140ms; }
 .filter-choice > span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .filter-choice svg,.filter-option svg { display:block; width:.875rem; height:.875rem; flex:none; }
-.filter-choice[data-state=open] { box-shadow:inset 0 1px 3px #0002; }
+.filter-choice[data-state=open] { box-shadow:none; }
 .filter-choice[data-state=open] > svg { rotate:180deg; }
 .filter-choice > svg { transition:rotate 180ms ease; }
-.filter-options { z-index:20; min-width:var(--radix-dropdown-menu-trigger-width); max-width:min(20rem,calc(100vw - 1rem)); max-height:min(18rem,var(--radix-dropdown-menu-content-available-height)); overflow:auto; padding:.25rem; color:var(--ink); background:var(--surface-color); border:1px solid var(--control-border); border-radius:.625rem; box-shadow:0 .25rem .75rem #0002,0 1rem 2rem #0001,inset 0 1px 0 color-mix(in srgb,var(--surface-color) 70%,transparent); font-size:.75rem; transform-origin:var(--radix-dropdown-menu-content-transform-origin); animation:filter-enter 140ms ease-out; }
+.filter-options { z-index:20; min-width:var(--radix-dropdown-menu-trigger-width); max-width:min(20rem,calc(100vw - 1rem)); max-height:min(18rem,var(--radix-dropdown-menu-content-available-height)); overflow:auto; padding:.25rem; color:var(--ink); background:var(--surface-color); border:1px solid var(--control-border); border-radius:.625rem; box-shadow:0 .25rem .75rem #0002,0 1rem 2rem #0001; font-size:.75rem; transform-origin:var(--radix-dropdown-menu-content-transform-origin); animation:filter-enter 140ms ease-out; }
 .filter-option { display:flex; align-items:center; justify-content:space-between; gap:.75rem; min-height:1.75rem; padding:.25rem .5rem; border-radius:.375rem; outline:none; cursor:pointer; overflow-wrap:anywhere; }
 .filter-option[data-highlighted] { background:color-mix(in srgb,var(--ink) 10%,var(--surface-color)); }
 .filter-option[data-state=checked] { font-weight:600; }
@@ -474,7 +474,6 @@ html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-
 .section-dropdown .section-current{background:var(--accent);color:var(--accent-ink);border-radius:1rem;}
 .section-current>.icon{position:absolute;left:.5rem;width:2rem;height:2rem;}
 .menu-chevron{position:absolute;right:.625rem;width:1.5rem;height:.75rem;fill:none;stroke:currentColor;stroke-width:1.25;}
-.section-control>.menu-trigger:first-child[data-state=open] .chevron{rotate:180deg;}
 [data-song-drop=true]{outline:2px solid var(--accent);outline-offset:2px;}
 .playlist-details-sheet form{display:flex;flex-direction:column;gap:.75rem;}
 .playlist-details-sheet form>label{display:flex;flex-direction:column;gap:.375rem;}
@@ -574,8 +573,6 @@ html[data-player-layout]:not([data-player-layout=normal]),html[data-player-layou
 .section-control:has(>.menu-trigger:first-child[data-state=open])>.menu-trigger:last-child{visibility:visible;}
 .section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem 1rem 0 0;clip-path:none!important;}
 .section-dropdown{border-radius:0 0 1rem 1rem;}
-.section-control>.menu-trigger:first-child .chevron{transition:none;transform:none;rotate:none;}
-.section-control>.menu-trigger:first-child[data-state=open] .chevron{transform:rotate(180deg);rotate:none;}
 .playback-progress .progress-rail{top:50%;height:4px;border-radius:999px;transform:translateY(-50%);}
 .playback-progress .progress-rail>span{height:100%;border-radius:inherit;transform:none;transition:width 140ms linear;}
 .playback-progress:is([data-seeking=true],:focus-within) .progress-rail>span{transition:none;}@media(prefers-reduced-motion:reduce){.playback-progress .progress-rail>span{transition:none;}}
