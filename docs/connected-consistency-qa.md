@@ -37,4 +37,28 @@ The user requested a genuinely smaller Compact layout after reviewing the first 
 
 Public macOS MediaPlayer integration now adds forward/back interval commands, shuffle/repeat requests, acknowledged shuffle/repeat state, and queue index/count metadata. A native Playback menu exposes playback, ±15-second seeking, shuffle, repeat and the current/next 20 queue entries, plus Open full Up next. Queue menu identities resolve current entry IDs on activation and reject removed entries; duplicate songs remain distinct. Menu structure rebuilds only when queue/index/failure state changes, and checks update from playback snapshots. This does not add a public macOS editable queue UI or modify the embedded playback protocol.
 
-Vesktop is used for the presence check. Its existing arRPC and Quick CSS settings were already enabled; no plugins, credentials or privacy settings were changed. A reversible charcoal/cyan Figtree theme was applied, with the previous CSS privately backed up. Screenshot inspection confirmed the live font and surface colors. Theme source and opt-in installer are in `extras/vesktop/` and `scripts/theme-vesktop.mjs`.
+Vesktop is used for the presence check. Its existing arRPC and Quick CSS settings were already enabled; no plugins, credentials or privacy settings were changed. A reversible classic-blue Figtree theme was applied at the user’s request, with the original CSS privately backed up. The first live blue screenshot exposed dark profile/composer defaults and pale icons; scoped panel, overlay and icon-token fixes were then saved. After Vesktop restarted, macOS repeatedly reported noWindowsAvailable even after foregrounding. Final post-fix client rendering remains unverified; it is not claimed complete. Theme source and opt-in installer are in `extras/vesktop/` and `scripts/theme-vesktop.mjs`.
+
+## Signed native delivery
+
+Loaded the update only after a fresh paused-state check and clean application quit. The latest profile JSON files, including `integrations-v1.json`, and a verified SQLite backup were preserved privately immediately before replacement. The previous packaged app is retained in the dated release directory. The updated app restored The Prime Time of Your Life at 151.4 seconds, paused, with 508 songs; later playback/track changes were user-driven and were not overwritten.
+
+Final executable SHA-256: `19911d058c83dbf9b7e97b77763a61d4ef19b5888e82d9b6e74476c3ae95651b`. Ad-hoc signing and `codesign --verify --deep --strict` passed. Desktop source: `6a31c36` (primary compatibility copy `8da20fa`). The subsequently committed theme/documentation changes do not alter the packaged app.
+
+Unchanged embedded resources:
+
+| Resource | SHA-256 |
+| --- | --- |
+| musicos-mac | `6b1fa66db8e7c1fa1723a210018d9d2f729e76cc907357e3201b2a2f4ba80e1d` |
+| ONNX Runtime 1.31.0 | `ff52828ce7c6dd1aea99a5e9f5da9e2786e3d03e467fbf8b6893a4b624334920` |
+| CLAP audio.onnx | `0cc6fa08e10644765b907c04bf945ababf97ad1632f03e665de2b37fb4a4a78d` |
+| moods.json | `cb31d08809b7f60bb3f8dba142249e4682a32936a7686889e160ab0b1b37f732` |
+| preprocessor_config.json | `9739f58296aa6f9ac18008fd0150fb2649bc554985fbde86d0a4041c882ac753` |
+
+Native checks passed for the new Playback menu and its Open full Up next action, compact one-row presentation at 220×160, queue open/close at unchanged bounds, actions expansion/return to main, preserved pin state, and retained Appearance page. Standard was restored after checking Compact. Actual user playback continued through subsequent checks. Pointer/keyboard resize edge cases and native presented-frame timing are not newly established by this smoke check.
+
+All six saved playlist/collection tables were compared row-for-row against the immediate pre-load backup and remained equal. Integration configuration bytes, appearance, source preferences, enrichment, artwork and format profiles were retained. The only interface serialization addition observed was the default `mini_player_density: standard`. No secret values were printed.
+
+The final 40-combination browser geometry/contrast matrix passed again after the Compact follow-up. Four focused exit/compact tests passed, including immediate inertness and zero leftover exit animation work. Some earlier entrance-geometry checks sampled a moving window; those tests now wait for the finite entrance to complete before comparing static positions.
+
+Vesktop’s live presence connection was acknowledged on the installed build. The current album reported no matching public artwork and fallback; the configured Discord application’s public asset list is empty, so `musicos` still requires the documented one-time upload. No claim is made that the missing asset rendered. Actual post-update matched artwork and final blue-theme rendering remain client verification gates.

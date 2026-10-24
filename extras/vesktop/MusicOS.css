@@ -1,67 +1,92 @@
-/** MusicOS: local Figtree typography, solid charcoal surfaces and a soft cyan accent.
+/** MusicOS: local Figtree typography, solid MusicOS blue surfaces and readable dark ink.
  * The installer embeds the repository's OFL-licensed font without a network request.
  */
 :root, .theme-dark, .theme-light, .visual-refresh {
  --font-primary: "MusicOS Sans", Figtree, -apple-system, sans-serif;
  --font-display: "MusicOS Sans", Figtree, -apple-system, sans-serif;
  --font-headline: "MusicOS Sans", Figtree, -apple-system, sans-serif;
- --background-primary: #202125;
- --background-secondary: #2c2d32;
- --background-secondary-alt: #25262b;
- --background-tertiary: #202125;
- --background-floating: #3a3b40;
- --background-accent: #3a3b40;
- --background-base-lowest: #202125;
- --background-base-lower: #25262b;
- --background-base-low: #2c2d32;
- --background-surface-high: #303137;
- --background-surface-higher: #34353a;
- --background-surface-highest: #3a3b40;
- --background-mod-subtle: #34353a;
- --background-mod-normal: #3a3b40;
- --background-mod-strong: #424348;
- --background-modifier-hover: #dedfe312;
- --background-modifier-selected: #7dc2d225;
- --background-modifier-active: #7dc2d238;
- --background-modifier-accent: #dedfe31a;
- --channeltextarea-background: #34353a;
- --input-background: #34353a;
- --modal-background: #2c2d32;
- --modal-footer-background: #25262b;
- --text-normal: #dedfe3;
- --text-primary: #dedfe3;
- --text-default: #dedfe3;
- --text-strong: #dedfe3;
- --text-secondary: #bfc2c8;
- --text-muted: #bfc2c8;
- --text-link: #7dc2d2;
- --text-brand: #7dc2d2;
- --text-on-brand-primary: #12202a;
- --text-on-brand-secondary: #12202a;
- --header-primary: #dedfe3;
- --header-secondary: #bfc2c8;
- --channels-default: #bfc2c8;
- --channel-icon: #bfc2c8;
- --interactive-normal: #bfc2c8;
- --interactive-hover: #dedfe3;
- --interactive-active: #7dc2d2;
- --interactive-text-default: #bfc2c8;
- --interactive-text-hover: #dedfe3;
- --interactive-text-active: #7dc2d2;
- --brand-500: #7dc2d2;
- --brand-530: #71b3c4;
- --brand-560: #65a7b8;
- --brand-600: #5391a2;
- --brand-experiment: #7dc2d2;
- --button-filled-brand-background: #7dc2d2;
- --button-filled-brand-background-hover: #96cfdb;
- --button-filled-brand-text: #12202a;
- --control-brand-foreground: #7dc2d2;
- --control-primary-background-default: #7dc2d2;
- --control-primary-background-hover: #96cfdb;
- --control-primary-text-default: #12202a;
- --border-subtle: #dedfe31a;
- --border-normal: #dedfe326;
+ --background-primary: #cbf1ff;
+ --background-secondary: #b2e5ff;
+ --background-secondary-alt: #9cdaff;
+ --background-tertiary: #54b9ff;
+ --background-floating: #c9efff;
+ --background-accent: #8fd5ff;
+ --background-base-lowest: #00aeff;
+ --background-base-lower: #b2e5ff;
+ --background-base-low: #cbf1ff;
+ --background-surface-high: #d7f4ff;
+ --background-surface-higher: #c9efff;
+ --background-surface-highest: #bce8ff;
+ --background-mod-subtle: #bce8ff;
+ --background-mod-normal: #a7dfff;
+ --background-mod-strong: #8fd5ff;
+ --background-modifier-hover: #0064df14;
+ --background-modifier-selected: #0064df2b;
+ --background-modifier-active: #0064df3d;
+ --background-modifier-accent: #11182020;
+ --bg-overlay-1: #cbf1ff;
+ --bg-overlay-2: #b2e5ff;
+ --bg-overlay-3: #e2f6ff;
+ --bg-overlay-4: #c9efff;
+ --bg-overlay-5: #c9efff;
+ --bg-overlay-6: #b2e5ff;
+ --bg-overlay-chat: #cbf1ff;
+ --bg-overlay-floating: #c9efff;
+ --bg-overlay-selected: #a7dfff;
+ --channeltextarea-background: #e2f6ff;
+ --chat-background-default: #cbf1ff;
+ --chat-text-muted: #284b62;
+ --background-input: #e2f6ff;
+ --background-mentioned: #0064df16;
+ --background-mentioned-hover: #0064df24;
+ --background-message-hover: #0064df0d;
+ --background-code: #e2f6ff;
+ --input-background: #e2f6ff;
+ --modal-background: #cbf1ff;
+ --modal-footer-background: #b2e5ff;
+ --text-normal: #111820;
+ --text-primary: #111820;
+ --text-default: #111820;
+ --text-strong: #111820;
+ --text-secondary: #284b62;
+ --text-muted: #284b62;
+ --text-link: #0054c7;
+ --text-brand: #0054c7;
+ --text-on-brand-primary: #ffffff;
+ --text-on-brand-secondary: #ffffff;
+ --header-primary: #111820;
+ --header-secondary: #284b62;
+ --channels-default: #284b62;
+ --channel-icon: #284b62;
+ --interactive-normal: #284b62;
+ --interactive-hover: #111820;
+ --interactive-active: #0054c7;
+ --interactive-text-default: #284b62;
+ --interactive-text-hover: #111820;
+ --interactive-text-active: #0054c7;
+ --icon-primary: #284b62;
+ --icon-secondary: #284b62;
+ --icon-tertiary: #284b62;
+ --icon-muted: #42677f;
+ --icon-default: #284b62;
+ --icon-strong: #111820;
+ --interactive-icon-default: #284b62;
+ --interactive-icon-hover: #111820;
+ --interactive-icon-active: #0054c7;
+ --brand-500: #0064df;
+ --brand-530: #005bce;
+ --brand-560: #0054c7;
+ --brand-600: #0049ae;
+ --brand-experiment: #0064df;
+ --button-filled-brand-background: #0064df;
+ --button-filled-brand-background-hover: #0054c7;
+ --button-filled-brand-text: #ffffff;
+ --control-brand-foreground: #0054c7;
+ --control-primary-background-default: #0064df;
+ --control-primary-background-hover: #0054c7;
+ --control-primary-text-default: #ffffff;
+ --border-subtle: #11182020;
+ --border-normal: #11182038;
  --font-weight-normal: 400;
  --font-weight-medium: 500;
  --font-weight-semibold: 600;
@@ -75,4 +100,27 @@ h1,h2,h3,h4,h5,h6 { font-family: var(--font-display) !important; }
 .visual-refresh [class*="panels_"] { border: 1px solid var(--border-subtle); border-radius: 14px; }
 [class^="chatGradientBase_"] { display: none; }
 
-[class*="lookFilled_"][class*="colorBrand_"] { color: #12202a; }
+[class*="lookFilled_"][class*="colorBrand_"] { color: #ffffff; }
+/* These surfaces retain their own dark defaults in the current client. */
+[class*="channelTextArea_"] {
+ background: #e2f6ff !important;
+ --channeltextarea-background: #e2f6ff;
+}
+:is([class*="user-profile-"], [class*="userProfileOuter_"], [class*="userPopoutOuter_"]) {
+ --profile-body-background-color: #c9efff !important;
+ --profile-gradient-primary-color: #c9efff !important;
+ --profile-gradient-secondary-color: #b2e5ff !important;
+ --profile-gradient-overlay-color: transparent !important;
+ --profile-gradient-button-color: #0064df !important;
+ --profile-gradient-note-background-color: #e2f6ff !important;
+ --profile-gradient-section-box: #e2f6ff !important;
+ --profile-gradient-profile-body-background-hover: #b2e5ff !important;
+ --background-base-low: #c9efff !important;
+ --background-surface-high: #c9efff !important;
+ --background-surface-higher: #c9efff !important;
+ --background-surface-highest: #c9efff !important;
+ background-color: #c9efff;
+}
+/* Preserve the user's existing navigation and message-font preferences. */
+[class^="backForwardButtons"] { display: none; }
+:is([class*="pixelify_"],[class*="zillaSlab_"],[class*="cherryBomb_"],[class*="chicle_"],[class*="museoModerno_"],[class*="neoCastel_"],[class*="sinistre_"]) { font-family: var(--font-primary); }
