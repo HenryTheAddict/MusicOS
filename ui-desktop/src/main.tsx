@@ -14,6 +14,7 @@ import "./miniPlayer.css";
 import "./connectedMotion.css";
 import "./listFind.css";
 import "./connectedConsistency.css";
+import "./interactionPolish.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

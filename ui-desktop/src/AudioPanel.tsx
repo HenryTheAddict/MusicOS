@@ -3,9 +3,9 @@ import {Cover,Icon,QueueRows,duration} from './components';
 import ThemedSwitch from './ThemedSwitch';
 import ListeningPanelHeader from './ListeningPanelHeader';
 
-import type {SongDrag} from './songDrag';
+import {songDragFeedback,type SongDrag} from './songDrag';
 import type {Playback,PlaybackAction} from './types';
-export default function AudioPanel({player,scale,presentation,closing=false,onClose,onAction,onSettings,theme}:{theme?:CSSProperties;player:Playback;scale:number;closing?:boolean;presentation:'sidebar'|'floating';onClose:()=>void;onAction:(action:PlaybackAction)=>void;onSettings:()=>void}){
+export default function AudioPanel({player,scale,presentation,closing=false,onClose,onAction,onSettings,theme}:{theme?:CSSProperties;player:Playback;scale:number;closing?:boolean;presentation:'sidebar'|'floating';onClose:()=>void;onAction:(action:PlaybackAction)=>void|Promise<void>;onSettings:()=>void}){
  const offset=player.queue_index===null?0:player.queue_index+1,upcoming=player.queue.slice(offset);
  const panel=useRef<HTMLElement>(null),opener=useRef(document.querySelector<HTMLElement>('[aria-label="Open Up next"]')??document.activeElement as HTMLElement|null);
  const [docked,setDocked]=useState(false),[songDrop,setSongDrop]=useState(false);
@@ -17,8 +17,8 @@ export default function AudioPanel({player,scale,presentation,closing=false,onCl
  for(const row of rows){const box=row.getBoundingClientRect();if(drag.y<box.top+box.height/2){index=(playerRef.current.queue_index??-1)+1+Number(row.dataset.queueIndex);row.setAttribute('data-incoming-drop','true');break;}}return index;};
  const scroll=()=>{if(!last)return;const list=panel.current?.querySelector<HTMLElement>('.queue-scroll');if(list){const r=list.getBoundingClientRect();const speed=last.y<r.top+32?-8:last.y>r.bottom-32?8:0;if(speed){list.scrollTop+=speed;locate(last);}}frame=requestAnimationFrame(scroll);};
  const update=(event:Event)=>{const drag=(event as CustomEvent<SongDrag>).detail,box=panel.current?.getBoundingClientRect();const inside=!!box&&drag.x>=box.left&&drag.x<=box.right&&drag.y>=box.top&&drag.y<=box.bottom;setSongDrop(!drag.drop&&inside);
- if(inside&&!drag.drop){last=drag;locate(drag);if(!frame)frame=requestAnimationFrame(scroll);}else{last=null;cancelAnimationFrame(frame);frame=0;}
- if(drag.drop&&!drag.cancelled&&inside)actionRef.current({type:'add_to_queue',id:drag.id,index:locate(drag)});if(drag.drop||!inside)clear();};
+ if(inside&&!drag.drop){songDragFeedback(`Add ${(drag.ids??[drag.id]).length} ${(drag.ids??[drag.id]).length===1?'song':'songs'} to Up next`);last=drag;locate(drag);if(!frame)frame=requestAnimationFrame(scroll);}else{last=null;cancelAnimationFrame(frame);frame=0;}
+ if(drag.drop&&!drag.cancelled&&inside){const index=locate(drag),ids=[...new Set(drag.ids??[drag.id])];void(async()=>{for(let offset=0;offset<ids.length;offset++)await actionRef.current({type:'add_to_queue',id:ids[offset],index:index+offset});})();}if(drag.drop||!inside)clear();};
  window.addEventListener('musicos-song-drag',update);return()=>{cancelAnimationFrame(frame);clear();window.removeEventListener('musicos-song-drag',update);};},[]);
  const state=useRef({docked,onClose,closing});state.current={docked,onClose,closing};
  useLayoutEffect(()=>{const shell=panel.current?.closest<HTMLElement>('.app-shell');if(!shell)return;const header=shell.querySelector<HTMLElement>('.app-header');const update=()=>{const font=parseFloat(getComputedStyle(shell).fontSize);const sidebar=shell.querySelector('.library-sidebar')?.getBoundingClientRect().width??0;const canDock=presentation==='sidebar'&&shell.clientWidth-sidebar>=50*font;setDocked(canDock);shell.dataset.audioSidebar=String(canDock);shell.style.setProperty('--audio-top',`${header?.offsetHeight??64}px`);};const observer=new ResizeObserver(update);observer.observe(shell);if(header)observer.observe(header);update();return()=>{observer.disconnect();delete shell.dataset.audioSidebar;};},[presentation,scale]);

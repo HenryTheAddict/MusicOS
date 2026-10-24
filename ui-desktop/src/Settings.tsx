@@ -20,7 +20,7 @@ const categoryInfo:Record<Tab,{icon:string;description:string}>={
  Appearance:{icon:'Album',description:'Colors, artwork motion, and a comfortable fit for your screen.'},
  Audio:{icon:'Lossless',description:'Playback, analysis, and Sparklist setup.'},
  Library:{icon:'Storage',description:'Manage your music folders, metadata, and artwork.'},
- Integrations:{icon:'sync',description:'Connect the services you use with MusicOS.'},
+ Integrations:{icon:'sync',description:'Share your music or save a listening history. You choose what connects.'},
  General:{icon:'Artist',description:'Your name and information about MusicOS.'}
 };
 export default function Settings({preferences,onChange,error,cover,palette,playback,onVolume,libraryView,onLibraryView,onManageCollections,libraryContent,audioContent,miniTheme}:{miniTheme?:CSSProperties;preferences:Preferences;onChange:(p:Preferences)=>void;error:string;cover?:string|null;palette?:Palette|null;playback:Playback;onVolume:(volume:number)=>void|Promise<void>;libraryView:"sources"|"review"|"playlists"|"sparklists";onLibraryView:(view:"sources"|"review"|"playlists"|"sparklists")=>void;onManageCollections?:()=>void;libraryContent:ReactNode;audioContent:ReactNode}) {

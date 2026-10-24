@@ -1,0 +1,55 @@
+/* Song rows have stationary text and one predictable control slot. */
+.track-table[data-local-songs] .track-row .track-title>.track-label{width:100%;transform:none;transition:none;}
+.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.selected,.playing) .track-title>.track-label{transform:none;}
+.track-table[data-local-songs] .track-title{user-select:none;}
+.track-table[data-local-songs] .track-index{position:relative;align-self:stretch;display:grid;place-items:center;}
+.track-table[data-local-songs] .track-index>.row-play{position:absolute;left:50%;top:50%;translate:-50% -50%;width:1.6rem;height:1.75rem;opacity:0;transform:none;pointer-events:none;border-radius:.5rem;transition:opacity 140ms ease-out,background-color 140ms ease-out;}
+.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.playing,:has(.menu-trigger[data-state=open])) .track-index>.row-play{opacity:1;transform:none;pointer-events:auto;}
+.track-table[data-local-songs] .track-row:is(:hover,:focus-within,.playing,:has(.menu-trigger[data-state=open])) .track-index>span{opacity:0;}
+.track-table[data-local-songs] .track-row:has(.menu-trigger[data-state=open]){background:var(--control-surface);}
+.track-table[data-local-songs] .track-row .track-label>span{display:block;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;}
+.track-table[data-local-songs] .track-row .track-actions{flex:none;}
+.song-drag-preview{display:flex;flex-direction:column;gap:3px;max-width:min(22rem,calc(100vw - 24px));padding:8px 12px;background:var(--surface-color);color:var(--ink);font-size:13px;line-height:18px;border:1px solid var(--control-border);border-radius:10px;box-shadow:0 4px 16px #0003;}
+.song-drag-preview small{font-size:11px;color:var(--secondary-ink);}
+.song-drag-preview[data-allowed=false]{opacity:.8;}
+.song-drop-notice{position:fixed;z-index:110;right:16px;bottom:16px;max-width:calc(100vw - 32px);padding:10px 14px;border:1px solid var(--control-border);border-radius:12px;background:var(--surface-color);color:var(--ink);font-size:13px;line-height:18px;pointer-events:none;}
+@media(prefers-reduced-motion:reduce){.track-table[data-local-songs] .row-play{transition:none;}}
+/* Integrations: two compact service rows, with setup kept beside its owner. */
+.app-shell .settings .beta-integrations{max-width:42rem;}
+.settings .beta-integrations .integration-list{display:flex;flex-direction:column;gap:0;border-radius:.875rem;background:var(--control-surface);}
+.settings .beta-integrations .integration-card{padding:1rem;}
+.settings .beta-integrations .integration-heading{display:grid;grid-template-columns:1.75rem minmax(0,1fr) 2.25rem;align-items:start;gap:.625rem;}
+.settings .beta-integrations .integration-heading>.icon{width:1.5rem;height:1.5rem;margin-top:.125rem;}
+.settings .beta-integrations .integration-heading h3{font-size:.9375rem;font-weight:650;line-height:1.4;}
+.settings .beta-integrations .integration-heading p{max-width:48ch;margin:.2rem 0 0;font-size:.75rem;line-height:1.5;color:var(--secondary-ink);}
+.settings .beta-integrations .integration-heading .themed-switch{width:2.25rem;min-height:1.75rem;justify-content:flex-end;padding:0;margin:0;}
+.settings .beta-integrations .integration-status{margin:.375rem 0 .375rem 2.375rem;font-size:.6875rem;line-height:1.5;color:var(--secondary-ink);}
+.settings .beta-integrations .integration-setup{margin-left:2.375rem;}
+.settings .beta-integrations summary{list-style:none;display:flex;align-items:center;gap:.375rem;min-height:1.75rem;padding:.25rem 0;font-size:.75rem;font-weight:600;color:var(--ink);cursor:pointer;}
+.settings .beta-integrations summary::-webkit-details-marker{display:none;}
+.settings .beta-integrations summary::before{content:'›';font-size:1rem;line-height:1;transform:rotate(0);transition:transform 140ms ease-out;}
+.settings .beta-integrations details[open]>summary::before{transform:rotate(90deg);}
+.settings .beta-integrations summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:.25rem;}
+.settings .beta-integrations .integration-setup-body{padding:.5rem 0 .25rem;}
+.settings .beta-integrations .integration-setup-body :is(p,li){max-width:60ch;font-size:.75rem;line-height:1.6;color:var(--secondary-ink);}
+.settings .beta-integrations .integration-setup-body ol{margin:0 0 .75rem;padding-left:1.125rem;}
+.settings .beta-integrations .discord-icon-setup{display:grid;grid-template-columns:40px minmax(0,1fr);align-items:start;gap:.375rem .625rem;margin:0 0 .75rem;}
+.settings .beta-integrations .discord-icon-setup>img{width:40px;height:40px;border-radius:8px;}
+.settings .beta-integrations .discord-icon-setup>p{margin:0;}
+.settings .beta-integrations .discord-icon-setup>a{font-size:.6875rem;color:var(--ink);}
+.settings .beta-integrations .integration-field{align-items:center;gap:.5rem;}
+.settings .beta-integrations .integration-field>button{flex:none;}
+.settings .beta-integrations .integration-diagnostics{margin:.75rem 0 0;padding:0;color:var(--secondary-ink);}
+.settings .beta-integrations .integration-diagnostics p{margin:.375rem 0;font-size:.6875rem;line-height:1.5;overflow-wrap:anywhere;}
+.settings .beta-integrations .integration-preview-note{margin:.75rem 0 0;color:var(--secondary-ink);font-size:.6875rem;line-height:1.5;}
+@container settings (max-width:28rem){.settings .beta-integrations .integration-card{padding:.75rem;}.settings .beta-integrations .integration-setup{margin-left:0;}.settings .beta-integrations .integration-heading{gap:.5rem;grid-template-columns:1.5rem minmax(0,1fr) 2.25rem;}.settings .beta-integrations .integration-status{margin-left:2rem;}}
+@media(prefers-reduced-motion:reduce){.settings .beta-integrations summary::before{transition:none;}}
+.track-row[data-playlist-insert=before]::before,.track-row[data-playlist-insert=after]::after{content:'';position:absolute;left:.5rem;right:.5rem;height:2px;border-radius:2px;background:var(--accent);pointer-events:none;z-index:2;}
+.track-row[data-playlist-insert=before]::before{top:-2px;}.track-row[data-playlist-insert=after]::after{bottom:-2px;}
+.track-row[data-song-dragging=true]{opacity:.65;}
+
+.settings .beta-integrations summary:has(>.icon)::before{display:none;}
+.settings .beta-integrations summary>.icon{width:.65rem;height:.65rem;flex:none;transform:rotate(180deg);transition:transform 140ms ease-out;}
+.settings .beta-integrations details[open]>summary>.icon{transform:rotate(270deg);}
+@media(prefers-reduced-motion:reduce){.settings .beta-integrations summary>.icon{transition:none;}}
+.settings .beta-integrations .integration-list{--secondary-ink:color-mix(in srgb,var(--ink) 92%,var(--control-surface));}

@@ -214,6 +214,7 @@ export function Menu({
   items: MenuItem[];
 }) {
   const [inherited,setInherited]=useState<CSSProperties>({});
+  const [present,setPresent]=useState(true);
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
   const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
   const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
@@ -224,16 +225,17 @@ export function Menu({
   const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const y=point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?point.y-menu.offsetHeight:y,innerHeight-menu.offsetHeight-8))}px`;menu.style.setProperty('--menu-origin',`${Math.max(0,Math.min(menu.offsetWidth,point.x-parseFloat(menu.style.left)))}px ${Math.max(0,Math.min(menu.offsetHeight,point.y-parseFloat(menu.style.top)))}px`);};
   useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
-  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);
+  const captureMenuFrame=()=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-transform',style.transform);}};
+  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:button}));setPresent(true);captureMenuFrame();didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);const retire=(event:Event)=>{if((event as CustomEvent).detail===button||!content.current)return;didSelect.current=true;setPresent(false);setOpen(false);};window.addEventListener('musicos-menu-will-open',retire);return()=>{button?.removeEventListener('musicos-open-menu',show);window.removeEventListener('musicos-menu-will-open',retire);};},[]);
   return (
-    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-transform',style.transform);}if(next){didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
+    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{captureMenuFrame();if(next){window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:trigger.current}));setPresent(true);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
         <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
           {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
-      <Dropdown.Portal>
+      {present&&<Dropdown.Portal>
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
           style={{...inherited,...theme}}
@@ -258,7 +260,7 @@ export function Menu({
             </Dropdown.Item>
           ))}
         </Dropdown.Content>
-      </Dropdown.Portal>
+      </Dropdown.Portal>}
     </Dropdown.Root>
   );
 }
@@ -382,14 +384,12 @@ export function TrackRows({
             onKeyDown={e=>{if(selection&&e.target===e.currentTarget){if((e.metaKey||e.ctrlKey)&&e.key==='a'){e.preventDefault();selection.selectAll?.();}if(e.key===' '){e.preventDefault();selection.select(track.id,index,e as unknown as React.MouseEvent);}if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();selection.remove();}if(e.key==='Enter'&&track.available){e.preventDefault();onPlay(track);}}if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')?.dispatchEvent(new Event('musicos-open-menu'));}}}
             tabIndex={selection?0:undefined}
             aria-selected={selection?.ids.has(track.id)}
-            onClick={e=>{if(selection&&!(e.target as Element).closest("button,a")){e.currentTarget.focus({preventScroll:true});selection.select(track.id,index,e);}else if(!selection)onSelect(String(track.id));}}
-            onDoubleClick={() => track.available && onPlay(track)}
+            onClick={e=>{if((e.target as Element).closest("button,a,input"))return;if(selection){e.currentTarget.focus({preventScroll:true});selection.select(track.id,index,e);}else if(!selection)onSelect(String(track.id));}}
+            onPointerDown={e=>{if(track.available&&!(e.target as Element).closest("button,a,input"))startSongDrag(e,track,selection?.ids.has(track.id)?tracks.filter(t=>selection.ids.has(t.id)).map(t=>t.id):[track.id]);}}
+            onDoubleClick={e=>{if(track.available&&!(e.target as Element).closest("button,a,input"))onPlay(track);}}
           >
             <span className="track-index" role="cell">
               <span>{multiDisc?track.track_number||index+1:index+1}</span>
-
-            </span>
-            <div className="track-title" role="cell" onPointerDown={e=>{if(track.available&&!(e.target as Element).closest("button"))startSongDrag(e,track,selection?.ids.has(track.id)?[...selection.ids]:[track.id]);}}>
               <button
                 className="row-play"
                 disabled={!track.available}
@@ -403,6 +403,9 @@ export function TrackRows({
               >
                 {playingId===track.id&&isPlaying?<LiveMeter trackId={track.id}><Icon name="rowLevels"/></LiveMeter>:<Icon name="play"/>}
               </button>
+
+            </span>
+            <div className="track-title" role="cell">
               <div className="track-label">
                 <span title={track.title}>{track.title}</span>
                 <div className="track-credits" title={track.artist} hidden={!!albumArtist&&trackCredits(track).length===1&&trackCredits(track)[0].toLocaleLowerCase()===albumArtist.trim().toLocaleLowerCase()}>{trackCredits(track).map((name,index)=><span key={name}>{index>0?(trackCredits(track).length===2?' & ':', '):''}<button className="text-link muted" onClick={e=>{e.stopPropagation();onArtist(track,name);}}>{name}</button></span>)}{!track.available?' · Unavailable':''}</div>

@@ -1,3 +1,4 @@
+import {usePlaylistDrop} from './usePlaylistDrop';
 import {usePlaybackFeed} from './playbackFeed';
 import {animateOwned} from './presentationMotion';
 import {secondaryInk} from './appearance';
@@ -141,13 +142,14 @@ export default function App() {
   function createCollection(kind:"manual"|"spark"|"rule"){setSparkSeed(undefined);setCreatingCollection(kind);}
   const [creatingCollection,setCreatingCollection]=useState<"manual"|"spark"|"rule"|null>(null);
   const [collectionError,setCollectionError]=useState("");
-  useEffect(()=>{const drag=(event:Event)=>{const value=(event as CustomEvent<import('./songDrag').SongDrag>).detail;document.querySelectorAll('[data-song-drop]').forEach(el=>el.removeAttribute('data-song-drop'));const target=document.elementFromPoint(value.x,value.y)?.closest<HTMLElement>('[data-manual-collection]');if(!target||value.cancelled)return;if(!value.drop){target.dataset.songDrop='true';return;}void call('collections',{request:{action:'add',id:target.dataset.manualCollection,track_ids:value.ids??[value.id]}}).then(setCollections).catch(e=>setCollectionError(errorText(e)));};window.addEventListener('musicos-song-drag',drag);return()=>window.removeEventListener('musicos-song-drag',drag);},[]);
+
   const favoritePending=useRef(new Map<number,Promise<void>>());
 
   const [library, setRawLibrary] = useState<Library>(emptyLibrary);
   const setLibrary:typeof setRawLibrary=next=>setRawLibrary(old=>{const value=typeof next==='function'?next(old):next;registerAlbumArtwork(value);return value;});
   const tracksById=useMemo(()=>new Map(library.tracks.map(t=>[t.id,t])),[library.tracks]);
   const librarySummary=useMemo(()=>({favorites:library.tracks.filter(t=>t.favorited).length,duration:library.tracks.reduce((sum,t)=>sum+t.duration,0)}),[library.tracks]);
+  const dropNotice=usePlaylistDrop(collections,library.tracks,setCollections,setCollectionError);
   const collectionSummaries=useMemo(()=>new Map(collections.map(item=>{let duration=0,available=0;for(const id of item.track_ids){const track=tracksById.get(id);if(track){duration+=track.duration;available++;}}return [item.id,{duration,available}];})),[collections,tracksById]);
   const [preferences, setPreferences] = useState(defaultPreferences);
   const savedSparkBeta=useRef(defaultPreferences.sparklist_beta);
@@ -546,19 +548,23 @@ export default function App() {
   function goBack() {
     if(section==='Library'&&route.view==='album')captureAlbumReturn(scrollRef.current);
     else if(section==='Library'&&route.view==='artist')captureArtistReturn(scrollRef.current);
+    window.dispatchEvent(new Event("musicos-navigation-start"));
     captureScroll();
     dispatch({ type: "back" });
   }
   function chooseSection(next: "Library" | "Devices" | "Settings") {
+    window.dispatchEvent(new Event("musicos-navigation-start"));
     captureScroll();
     setSection(next);
   }
   function openRoute(next: Route) {
+    window.dispatchEvent(new Event("musicos-navigation-start"));
     if(section==='Library'&&['album','artist'].includes(next.view))captureLibraryToolbar(scrollRef.current);
     captureScroll();
     dispatch({ type: "open", route: next });
   }
   function goScope(view: Route["view"]) {
+    window.dispatchEvent(new Event("musicos-navigation-start"));
     captureScroll();
     dispatch({ type: "scope", view });
   }
@@ -1126,7 +1132,7 @@ export default function App() {
               <div className="sidebar-playlist-list">
                 {collections.filter(item=>item.kind!=='audio'&&!item.spark).map(item=>{
                   const summary=collectionSummaries.get(item.id)!;
-                  return <ActionSurface contextOnly items={actionsForCollection(item)} key={item.id} className={`personal-collection ${route.view==='playlist'&&route.id===item.id?'active':''}`} data-collection-tone="true" data-manual-collection={item.kind==='manual'?item.id:undefined}>
+                  return <ActionSurface contextOnly items={actionsForCollection(item)} key={item.id} className={`personal-collection ${route.view==='playlist'&&route.id===item.id?'active':''}`} data-collection-tone="true" data-manual-collection={item.kind!=='audio'&&!item.spark?item.id:undefined}>
                     <button className="collection-open" aria-label={`Open playlist ${item.name}`} aria-current={route.view==='playlist'&&route.id===item.id?'page':undefined} onClick={()=>openCollection(item)}><PlaylistArtwork item={item} library={library}/><span className="collection-label"><strong>{item.name}</strong><small>{item.track_ids.length} {item.track_ids.length===1?'song':'songs'}</small></span></button>
                     <button className="collection-shuffle" aria-label={`Shuffle ${item.name}`} disabled={!summary.available} onClick={()=>playIds(item.track_ids,true)}><Icon name="CollectionShuffle"/></button>
                   </ActionSurface>;
@@ -1313,7 +1319,8 @@ export default function App() {
       )}
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
-      {queuePresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={action=>void run(action)} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
+      {queuePresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
+      {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>setQueueOpen(true)} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">

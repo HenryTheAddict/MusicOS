@@ -132,7 +132,7 @@
 .app-shell[data-adaptive="true"] .library-sidebar nav button { background:color-mix(in srgb,var(--blob-color) 40%,white); color:var(--ink); }
 .app-shell[data-adaptive="true"] .library-sidebar nav button.active { background:var(--blob-color); }
 .app-shell[data-adaptive="true"] :is(.library-shortcuts,.settings-tabs) { background:var(--blob-color); }
-.app-shell[data-adaptive="true"] :is(.library-toolbar,.artist-about h2,.settings-tile,.beta-integrations,.integration-card) { background:var(--surface-color); color:var(--ink); }
+.app-shell[data-adaptive="true"] :is(.library-toolbar,.artist-about h2,.settings-tile) { background:var(--surface-color); color:var(--ink); }
 .app-shell[data-adaptive="true"] .artist-about { background:color-mix(in srgb,var(--blob-color) 70%,white); }
 .app-shell[data-adaptive="true"] .page-frame { border-color:var(--accent); }
 .app-shell[data-adaptive="true"] .album-detail .track-row { background:color-mix(in srgb,var(--blob-color) 35%,transparent); }

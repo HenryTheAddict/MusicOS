@@ -25,10 +25,11 @@ function snapshot(kind:CoverKind,id:string,surface:HTMLElement|null|undefined,re
  if(moving?.dataset.coverKind===kind&&moving.dataset.albumId===id){origin={kind,id,url:moving.src,rect:moving.getBoundingClientRect(),returning,at:performance.now()};return;}
  const image=surface.querySelector<HTMLImageElement>('img.cover:not(.placeholder)');
  if(!image?.complete||!image.naturalWidth)return;
- const frame=image.closest<HTMLElement>('.card-artwork,.album-artwork,.artist-portrait-button')??image,rect=frame.getBoundingClientRect();
+ const rect=image.getBoundingClientRect();
  if(!rect.width||!rect.height||rect.bottom<=0||rect.top>=innerHeight)return;
  origin={kind,id,url:image.currentSrc||image.src,rect,returning,at:performance.now()};
 }
+export function coverTransferPending(){return !!origin&&performance.now()-origin.at<750;}
 export function captureAlbumCover(id:string,surface?:HTMLElement){snapshot('album',id,surface,false);}
 export function captureAlbumReturn(root:HTMLElement|null){const album=root?.querySelector<HTMLElement>('.album-detail[data-album-id]');snapshot('album',album?.dataset.albumId??'',album,true);}
 
@@ -60,11 +61,10 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const album=page.querySelector<HTMLElement>('.library-view:not([hidden]) .album-detail');
   const artist=page.querySelector<HTMLElement>('.library-view:not([hidden]) .artist-detail');
   if(album){
-   const selectors=['.album-copy h1','.collection-meta','.album-copy > .audio-quality','.collection-actions'];
+   const selectors=['.album-copy h1','.album-artist-credits','.album-footer'];
    selectors.forEach((selector,index)=>animate(album.querySelector(selector),0,5,180));
-   album.querySelectorAll<HTMLElement>('.album-credit-portraits .artist-avatar').forEach((avatar,index)=>{if(index<8)animate(avatar,Math.min(index*8,32),4,148,'artist-credit-reveal',.84);});
-   animate(album.querySelector('.album-primary-artist .artist-credit-name'),16,5,164,'artist-credit-name');
-   animate(album.querySelector('.album-description'),0,4,180);
+   const transferring=origin?.kind==='album'&&origin.id===album.dataset.albumId&&!origin.returning&&performance.now()-origin.at<750;
+   if(!transferring)animate(album.querySelector('.album-artwork-stage'),0,0,180,'album-artwork-reveal');
    // A single row group keeps long albums cheap, with stable action columns.
    animate(album.querySelector('.track-table'),0,4,180);
   }else if(artist){
@@ -87,7 +87,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
    const transfer=()=>{
     if(removed)return;
     const target=captured.returning
-     ?page.querySelector<HTMLElement>(`[data-collection-id="${CSS.escape(captured.id)}"] .card-artwork${captured.kind==='album'?`,[data-album-id="${CSS.escape(captured.id)}"].artist-album-link > .cover`:''}`)
+     ?page.querySelector<HTMLElement>('.library-view:not([hidden])')?.querySelector<HTMLElement>(`[data-collection-id="${CSS.escape(captured.id)}"] .card-artwork${captured.kind==='album'?`,[data-album-id="${CSS.escape(captured.id)}"].artist-album-link > .cover`:''}`)
      :destination;
     if(!target){if(++attempts<3)frame=requestAnimationFrame(transfer);else if(waiting)waiting.style.opacity=waitingOpacity;return;}
     const end=target.getBoundingClientRect();if(!end.width||!end.height||end.bottom<=0||end.top>=innerHeight){if(waiting)waiting.style.opacity=waitingOpacity;return;}

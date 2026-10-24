@@ -1,5 +1,5 @@
 import {animateOwned} from './presentationMotion';
-import {useAlbumReveal} from "./albumTransitions";
+import {useAlbumReveal,coverTransferPending} from "./albumTransitions";
 import { useLayoutEffect, useRef, type RefObject } from "react";
 
 // Keep depth geometry synchronized without animating artwork between columns.
@@ -8,7 +8,7 @@ export function useGridReflow(root: RefObject<HTMLElement | null>, columns: numb
 }
 
 // Content fades belong to deliberate navigation, never analysis or scrolling.
-export function useContentFade(root:RefObject<HTMLElement|null>,location:string,ready=true,selector?:string,id='content-change') {
+export function useContentFade(root:RefObject<HTMLElement|null>,location:string,ready=true,selector?:string,id='content-change',spatial=true) {
  const reversal=useRef<{opacity:string;transform:string}|null>(null);
  useLayoutEffect(()=>{
   const node=selector?root.current?.querySelector<HTMLElement>(selector):root.current;
@@ -17,18 +17,20 @@ export function useContentFade(root:RefObject<HTMLElement|null>,location:string,
   const enter=()=>{
    // A first lazy visit should reveal the actual page, rather than spend its
    // entrance on the quiet loading placeholder. Stop observing after that paint.
-   if([...node.querySelectorAll('.screen-placeholder')].some(child=>!child.closest('[hidden]')))return;
-   observer?.disconnect();cancel=animateOwned(node,id,[reversal.current??{opacity:'.6',transform:'translateY(6px)'},{opacity:1,transform:'none'}],180);reversal.current=null;
+   if([...node.querySelectorAll('.screen-placeholder,.settings-subpage-placeholder')].some(child=>!child.closest('[hidden]')))return;
+   const movingContent=spatial&&![...node.querySelectorAll('.track-table')].some(table=>!table.closest('[hidden]'));
+   observer?.disconnect();cancel=animateOwned(node,id,[reversal.current??{opacity:'0',transform:movingContent?'translateY(5px)':'none'},{opacity:1,transform:'none'}],180);reversal.current=null;
   };
   observer=new MutationObserver(enter);observer.observe(node,{childList:true,subtree:true});enter();
   return()=>{observer?.disconnect();if(cancel){const moving=node.getAnimations().some(animation=>animation.id===id&&animation.playState==='running'),style=getComputedStyle(node);reversal.current=moving?{opacity:style.opacity,transform:style.transform}:null;cancel();}};
  },[root,location,ready,selector,id]);
 }
 export function usePageEntrance(root:RefObject<HTMLElement|null>,location:string,ready:boolean) {
+ const transfer=coverTransferPending();
  useAlbumReveal(root,location,ready);
  // Detail groups and artwork already animate independently. Fading the whole
  // retained page as well adds a large compositing layer and doubles the fade.
- useContentFade(root,location,ready&&!/^Library:(album|artist):/.test(location),'.page-content',/^Library:(albums|artists)(:|$)/.test(location)?'library-labels':'navigation-content');
+ useContentFade(root,location,ready&&!/^Library:(album|artist):/.test(location),'.page-content',/^Library:(albums|artists)(:|$)/.test(location)?'library-labels':'navigation-content',!transfer);
 }
 
 export function parallaxOffset(center:number,top:number,height:number) {
