@@ -1,3 +1,4 @@
+import {usePlaybackFeed} from './playbackFeed';
 import {animateOwned} from './presentationMotion';
 import {secondaryInk} from './appearance';
 import {personalName} from './personalName';
@@ -155,7 +156,7 @@ export default function App() {
   const miniChanging=useRef(false);
   const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
   useNativeChrome(miniMode==='normal');
-  const [rawPlayer, setPlayer] = useState<Playback>(emptyPlayback);
+  const [rawPlayer, setPlayer] = usePlaybackFeed(emptyPlayback);
   const presentedQueue=useMemo(()=>rawPlayer.queue.map(t=>tracksById.get(t.id)??t),[rawPlayer.queue,tracksById]);
   const player=useMemo(()=>({...rawPlayer,track:rawPlayer.track?(tracksById.get(rawPlayer.track.id)??rawPlayer.track):null,queue:presentedQueue}),[rawPlayer,tracksById,presentedQueue]);
   const [task, setTask] = useState<Task>(emptyTask);
@@ -643,6 +644,7 @@ export default function App() {
    {label:track.favorited?'Unfavorite song':'Favorite song',icon:track.favorited?'hearted':'noheart',onSelect:()=>favorite(track)},
    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
+   {label:native?'Show in Finder':'Show in file manager',icon:'File',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
    {label:'Show artist',icon:'Artist',onSelect:()=>artistFor(track)},
   ];}
   function actionsForAlbum(a:Album){return [...playbackItems(a.track_ids),...[
@@ -976,6 +978,7 @@ export default function App() {
     {label:'Add to playlist…',icon:'Playlist',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setPlaylistTrack(player.track);})();}},
     {label:'Show artist',icon:'Artist',onSelect:()=>void showPlaying('artist')},
     {label:'Show album',icon:'Album',onSelect:()=>void showPlaying('album')},
+    {label:'Show in Finder',icon:'File',disabled:!player.track.available,onSelect:()=>void call('reveal_track',{trackId:player.track!.id}).catch(e=>setError(errorText(e)))},
     {label:'Edit song details',icon:'Song',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');openManagement('review',[player.track!.id]);})();}},
   ] : [];
 

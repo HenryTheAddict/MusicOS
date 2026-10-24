@@ -147,6 +147,25 @@ struct PlayerWindowBounds {
     always_on_top: bool,
 }
 #[tauri::command]
+async fn reveal_track(app:tauri::AppHandle,track_id:i64)->ApiResult<()> {
+ blocking(move||{
+  let state=app.state::<AppState>();let config=state.config.lock().unwrap_or_else(|e|e.into_inner()).clone();
+  let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);
+  let snapshot=repo.snapshot(&LibraryQuery::default())?;
+  let track=snapshot.tracks.iter().find(|track|track.id==track_id).context("This song is no longer in the library")?;
+  let path=std::fs::canonicalize(&track.path).context("The song file is unavailable")?;
+  anyhow::ensure!(path.is_file(),"The song file is unavailable");
+  #[cfg(target_os="macos")]
+  let status=std::process::Command::new("/usr/bin/open").arg("-R").arg(&path).status()?;
+  #[cfg(target_os="windows")]
+  let status=std::process::Command::new("explorer.exe").arg(format!("/select,{}",path.display())).status()?;
+  #[cfg(not(any(target_os="macos",target_os="windows")))]
+  let status=std::process::Command::new("xdg-open").arg(path.parent().context("Missing parent folder")?).status()?;
+  anyhow::ensure!(status.success(),"The file manager could not show this song");Ok(())
+ }).await
+}
+
+#[tauri::command]
 async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, mode: String, menu_open: Option<bool>, pinned: Option<bool>) -> ApiResult<()> {
     let mode=if mode=="slim" {"tall".to_owned()} else {mode};
     if !matches!(mode.as_str(), "normal" | "tall" | "queue") {
@@ -262,7 +281,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
 
 fn mini_menu_height(base:u32,extra:u32,work:u32)->u32{base.saturating_add(extra).min(work.max(base))}
 
-fn mini_minimum(density:&str)->(f64,f64){if density=="compact"{(220.,160.)}else{(244.,320.)}}
+fn mini_minimum(density:&str)->(f64,f64){if density=="wide"{(360.,144.)}else if density=="compact"{(220.,136.)}else{(244.,320.)}}
 
 #[tauri::command]
 async fn mini_resize(window:tauri::WebviewWindow,state:State<'_,AppState>,width:f64,height:f64)->ApiResult<()> {
@@ -1602,7 +1621,7 @@ pub fn run() {
             audio_analysis, audio_tempos, playlist_file, sparklist,
             bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
-            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin
+            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
             #[cfg(target_os="macos")]
@@ -1865,5 +1884,5 @@ fn saved_playback(snapshot:&musicos_desktop::local::LocalPlaybackSnapshot)->musi
 #[cfg(test)]
 mod mini_density_tests {
  #[test]fn action_space_stays_inside_the_work_area_without_shrinking_the_player(){assert_eq!(super::mini_menu_height(640,488,1000),1000);assert_eq!(super::mini_menu_height(1500,488,1500),1500);assert_eq!(super::mini_menu_height(1600,488,1500),1600);}
- #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("compact"),(220.,160.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
+ #[test]fn native_minimums_match_the_density_contract(){assert_eq!(super::mini_minimum("compact"),(220.,136.));assert_eq!(super::mini_minimum("standard"),(244.,320.));assert_eq!(super::mini_minimum("unknown"),(244.,320.));}
 }

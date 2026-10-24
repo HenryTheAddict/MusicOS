@@ -1,4 +1,5 @@
-import {createPortal} from 'react-dom';
+import {flushSync} from 'react-dom';
+import {usePlaybackClock} from './playbackFeed';
 import {useContext} from 'react';
 import {TrackSelection} from './TrackSelection';
 import {
@@ -184,6 +185,7 @@ export function IconButton({
     </button>
   );
 }
+function LiveMeter({children,trackId}:{children?:ReactNode;trackId?:number}){const clock=usePlaybackClock();const levels=trackId===undefined||clock.trackId===trackId?clock.levels:[];return <span className="live-meter" style={{'--level-1':levels[0]??0,'--level-2':levels[1]??0,'--level-3':levels[2]??0} as CSSProperties}>{children??<span className="equalizer" data-active="true">{[0,1,2].map(i=><i key={i} style={{transform:`scaleY(${levels[i]??0})`}}/>)}</span>}</span>;}
 export interface MenuItem {
   label: string;
   onSelect: () => void;
@@ -213,26 +215,24 @@ export function Menu({
 }) {
   const [inherited,setInherited]=useState<CSSProperties>({});
   const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
-  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),connection=useRef<HTMLSpanElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),pendingAction=useRef<(()=>void)|null>(null);
+  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
   const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
   const group=(item:MenuItem)=>item.group??(/delete|remove|forget/i.test(item.label)?'danger':/^(play|shuffle|add to queue)/i.test(item.label)?'playback':'organize');
   const ordered=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
 
-  const join=()=>{const menu=content.current,button=trigger.current;if(!menu||!button)return;const side=menu.dataset.side??'bottom';button.dataset.connectedSide=side;const box=menu.getBoundingClientRect(),anchor=(point?origin.current:button)?.getBoundingClientRect()??button.getBoundingClientRect();const left=Math.max(0,Math.min(box.width-16,(point?.x??anchor.left)-box.left));menu.style.setProperty('--menu-join-left',`${left}px`);const width=Math.max(16,Math.min(point?32:anchor.width,box.width-left));menu.style.setProperty('--menu-join-width',`${width}px`);if(connection.current)Object.assign(connection.current.style,{left:`${box.left+left}px`,top:`${side==='top'?box.bottom-1:box.top}px`,width:`${width}px`});};
   useEffect(()=>()=>{trigger.current?.removeAttribute('data-connected-side');},[]);
-  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const anchor=origin.current?.getBoundingClientRect();const y=anchor?anchor.bottom-1:point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?(anchor?.top??point.y)-menu.offsetHeight+1:y,innerHeight-menu.offsetHeight-8))}px`;};
-  useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);join();const observer=new MutationObserver(()=>{position(menu);join();});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);join();});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
-  useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);join();}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
+  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const anchor=origin.current?.getBoundingClientRect();const y=point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?point.y-menu.offsetHeight:y,innerHeight-menu.offsetHeight-8))}px`;};
+  useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
+  useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
   useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[]);
   return (
-    <Dropdown.Root modal={!selectedLabel} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-clip',style.clipPath==='none'?'inset(0)':style.clipPath);content.current.style.setProperty('--menu-start-y',`${style.transform==='none'?0:new DOMMatrixReadOnly(style.transform).m42}px`);}if(next){pendingAction.current=null;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
+    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-clip',style.clipPath==='none'?'inset(0)':style.clipPath);content.current.style.setProperty('--menu-start-y',`${style.transform==='none'?0:new DOMMatrixReadOnly(style.transform).m42}px`);}if(next){didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
         <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
           {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
-      {open&&!selectedLabel&&createPortal(<span ref={connection} className="menu-connection" style={{...inherited,...theme}} aria-hidden="true"/>,document.body)}
       <Dropdown.Portal>
         <Dropdown.Content
           ref={node=>{content.current=node;if(node)position(node);}}
@@ -240,9 +240,9 @@ export function Menu({
           data-pointer-menu={point?true:undefined}
           className={`dropdown ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":"start"}
-          sideOffset={selectedLabel?0:-1}
+          sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
-          onCloseAutoFocus={event=>{event.preventDefault();const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;setPoint(null);const action=pendingAction.current;pendingAction.current=null;action?.();}}
+          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current){didSelect.current=false;contextOpened.current=false;setPoint(null);return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;setPoint(null);}}
 
         >
           {ordered.map((item, i) => (
@@ -250,7 +250,7 @@ export function Menu({
               className="dropdown-item"
               data-group-start={i>0&&group(item)!==group(ordered[i-1])||undefined}
               key={`${item.label}-${i}`}
-              onSelect={()=>{pendingAction.current=item.onSelect;}}
+              onSelect={event=>{event.preventDefault();didSelect.current=true;const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(content.current)content.current.style.setProperty("animation","none","important");flushSync(()=>setOpen(false));if(target?.isConnected)target.focus({preventScroll:true});item.onSelect();}}
               disabled={item.disabled}
             >
               {item.portrait?<Cover src={item.portrait} title="" portrait/>:item.icon&&<Icon name={item.icon}/>}
@@ -401,7 +401,7 @@ export function TrackRows({
                   if(playingId===track.id&&onToggle)onToggle();else onPlay(track);
                 }}
               >
-                <Icon name={playingId===track.id&&isPlaying?'rowLevels':'play'} />
+                {playingId===track.id&&isPlaying?<LiveMeter trackId={track.id}><Icon name="rowLevels"/></LiveMeter>:<Icon name="play"/>}
               </button>
               <div className="track-label">
                 <span title={track.title}>{track.title}</span>
@@ -489,7 +489,7 @@ function Card({
             portrait={item.portrait}
           />
           {photoPending&&<span className="portrait-loading" data-photo={!!item.cover}><PortraitLoading/></span>}
-          {item.playing&&<span className="card-playing" role="img" aria-label={item.isPlaying?'Now playing':'Current album, paused'}><span className="equalizer" data-active={item.isPlaying}>{[0,1,2].map(i=><i key={i} style={{transform:`scaleY(${item.isPlaying?item.levels?.[i]??0:0})`}}/>)}</span></span>}
+          {item.playing&&<span className="card-playing" role="img" aria-label={item.isPlaying?'Now playing':'Current album, paused'}>{item.isPlaying?<LiveMeter/>:null}</span>}
           </div>
         )}
         <span className="card-caption">
@@ -653,5 +653,5 @@ export function QueueRows({tracks,entryIds,arranged=[],pinned=[],current,scale,o
  onPointerDown={e=>{if(!onMove||e.button!==0||e.pointerType==='touch')return;e.preventDefault();e.currentTarget.focus();suppressClick.current=false;drag.current={from:index,to:index,x:e.clientX,startY:e.clientY,y:e.clientY,pointer:e.pointerId,moving:false,entry:entryIds?.[index]};}}
 
  onKeyDown={e=>{if(onMove&&e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')){e.preventDefault();const to=Math.max(0,Math.min(tracks.length-1,index+(e.key==='ArrowUp'?-1:1)));if(to!==index){onMove(index,to);setAnnouncement(`${t.title} moved to position ${to+1}`);requestAnimationFrame(()=>ref.current?.querySelector<HTMLElement>(`[data-queue-index="${to}"] .queue-track`)?.focus());}}}}
- onClick={e=>{if(suppressClick.current){e.preventDefault();suppressClick.current=false;return;}onSelect(index);}}><Cover songArtwork src={t.cover_art_path} trackId={t.id} title={t.album}/><span className="queue-track-copy"><strong>{t.title}</strong><small>{index===current?'Now playing · ':''}{t.artist}</small></span><span className="queue-duration">{entryIds&&arranged.includes(entryIds[index])&&<span title="Arranged by DJmode"><Icon name="DJmode"/></span>}{entryIds&&pinned.includes(entryIds[index])&&<span title="Position pinned by your move">⌖</span>}{duration(t.duration)}</span></button><span className="queue-context"><Overflow contextOnly items={[{label:"Play now",icon:"play",onSelect:()=>onSelect(index)},...(onMove&&index>0?[{label:"Play next",icon:"Play Next",onSelect:()=>onMove(index,0)}]:[]),{label:"Remove from Up next",icon:"Song",onSelect:()=>onRemove(index)}]}/></span><button className="queue-remove" aria-label={`Remove ${t.title} from queue`} onClick={()=>onRemove(index)}>×</button></div>;})}</div></div>;
+ onClick={e=>{if(suppressClick.current){e.preventDefault();suppressClick.current=false;return;}onSelect(index);}}><Cover songArtwork src={t.cover_art_path} trackId={t.id} title={t.album}/><span className="queue-track-copy"><strong>{t.title}</strong><small>{index===current?'Now playing · ':''}{t.artist}</small></span><span className="queue-duration">{entryIds&&arranged.includes(entryIds[index])&&<span title="Arranged by DJmode"><Icon name="DJmode"/></span>}{entryIds&&pinned.includes(entryIds[index])&&<span title="Position pinned by your move">⌖</span>}{duration(t.duration)}</span></button><span className="queue-context"><Overflow contextOnly items={[{label:"Play now",icon:"play",onSelect:()=>onSelect(index)},...(onMove&&index>0?[{label:"Play next",icon:"Play Next",onSelect:()=>onMove(index,0)}]:[]),{label:"Show in Finder",icon:"File",disabled:!t.available,onSelect:()=>void call("reveal_track",{trackId:t.id}).catch(error=>setAnnouncement(`Could not show file: ${String(error)}`))},{label:"Remove from Up next",icon:"Song",onSelect:()=>onRemove(index)}]}/></span><button className="queue-remove" aria-label={`Remove ${t.title} from queue`} onClick={()=>onRemove(index)}>×</button></div>;})}</div></div>;
 }

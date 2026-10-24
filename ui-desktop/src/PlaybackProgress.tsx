@@ -1,7 +1,10 @@
+import {usePlaybackClock} from './playbackFeed';
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type {Playback} from "./types";
 import { duration as formatTime } from "./components";
-export default function PlaybackProgress({trackId,position,duration,seek,showTime=true,transition}:{showTime?:boolean;transition?:Playback["dj_transition"];trackId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>}) {
+export default function PlaybackProgress({trackId,position,duration,seek,showTime=true,transition,live=true}:{live?:boolean;showTime?:boolean;transition?:Playback["dj_transition"];trackId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>}) {
+  const clock=usePlaybackClock(live);
+  if(live&&clock.trackId===trackId)position=clock.position;
   const [draft,setDraft]=useState<number|null>(null);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");

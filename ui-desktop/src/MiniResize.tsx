@@ -1,7 +1,7 @@
 import {useEffect,useRef} from 'react';
 import {call,errorText} from './bridge';
-export function miniDimensions(width:number,height:number,density?:"standard"|"compact"|boolean){return {width:Math.max(density==='compact'?220:244,Math.round(width)),height:Math.max(density==='compact'?160:320,Math.round(height))};}
-export default function MiniResize({onError,density="standard"}:{density?:"standard"|"compact";onError:(message:string)=>void}){
+export function miniDimensions(width:number,height:number,density?:"standard"|"compact"|"wide"|boolean){return {width:Math.max(density==='wide'?360:density==='compact'?220:244,Math.round(width)),height:Math.max(density==='wide'?144:density==='compact'?136:320,Math.round(height))};}
+export default function MiniResize({onError,density="standard"}:{density?:"standard"|"compact"|"wide";onError:(message:string)=>void}){
  const latest=useRef<{width:number;height:number}|null>(null),running=useRef(false),alive=useRef(true);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;latest.current=null;};},[]);
  async function request(width:number,height:number){latest.current=miniDimensions(width,height,density);if(running.current)return;running.current=true;try{while(latest.current&&alive.current){const size=latest.current;latest.current=null;await call('mini_resize',size);}}catch(error){latest.current=null;if(alive.current)onError(`Could not resize Mini Player. ${errorText(error)}`);}finally{running.current=false;}}

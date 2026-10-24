@@ -60,7 +60,7 @@ impl Default for Preferences {
 impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
-        if self.mini_player_density != "compact" {self.mini_player_density="standard".into();}
+        if self.mini_player_density != "compact" && self.mini_player_density != "wide" {self.mini_player_density="standard".into();}
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
         self.listening=self.listening.normalize();

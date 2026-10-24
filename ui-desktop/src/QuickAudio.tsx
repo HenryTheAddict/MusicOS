@@ -1,3 +1,4 @@
+import {usePlaybackClock} from './playbackFeed';
 import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
 import {call,errorText} from './bridge';
 import ThemedSwitch from './ThemedSwitch';
@@ -7,6 +8,7 @@ import VolumeControl from './VolumeControl';
 import ReverbPad from './ReverbPad';
 import type {AudioQualityInfo,Listening,Playback,Preferences,Track} from './types';
 export const defaultListening:Listening={bands:3,gains3:[0,0,0],gains8:[0,0,0,0,0,0,0,0],speed:1,pitch:0,linked:true,reverb:0,reverb_depth:.5};
+function ReverbFrames({fallback}:{fallback:number}){const clock=usePlaybackClock();return <>{(clock.trackId===undefined?fallback:clock.reverbFrames).toLocaleString()}</>;}
 export default function QuickAudio({player,preferences,onChange,onVolume,error,theme}:{theme?:CSSProperties;player:Playback;preferences:Preferences;onChange:(p:Preferences)=>void;onVolume:(v:number)=>void;error:string}){
  const panel=useRef<HTMLElement>(null),opener=useRef<HTMLElement|null>(null),[context,setContext]=useState<Track|null>(null),[opened,setOpened]=useState(false),[specs,setSpecs]=useState<AudioQualityInfo|null>(null),[specError,setSpecError]=useState('');
  const value={...defaultListening,...preferences.listening};
@@ -32,6 +34,6 @@ export default function QuickAudio({player,preferences,onChange,onVolume,error,t
  <section className="audio-card audio-reverb"><ThemedSwitch label="Reverb" checked={(value.reverb??0)>0} onChange={enabled=>update({reverb:enabled?.45:0})}/><ReverbPad wet={value.reverb??0} depth={value.reverb_depth??.5} onChange={(reverb,reverb_depth)=>update({reverb,reverb_depth})}/></section>
  </div>
  <footer><button onClick={()=>{onChange({...preferences,listening:{...defaultListening,bands:value.bands}});onVolume(1);}}>Reset audio</button><small role="status">{error?'Could not apply controls':applicationLate?'Audio controls have not applied.':pending?'Applying audio controls…':'Applies to all songs'}</small></footer>{applicationLate&&<p role="alert">{player.error??'Playback has not confirmed these settings.'} <button onClick={()=>onChange({...preferences,listening:value})}>Retry audio controls</button></p>}{error&&<p role="alert">{error}</p>}
- <details className="audio-application-details"><summary><svg className="disclosure-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>Playback details</summary><dl><div><dt>Audio controls</dt><dd>{pending?'Waiting to apply':'Up to date'}</dd></div><div><dt>Reverb</dt><dd>{Math.round((player.applied_reverb??0)*100)}% room · {Math.round((player.applied_reverb_depth??.5)*100)}% depth</dd></div><div><dt>Revision</dt><dd>{player.applied_listening_revision??'—'} / {player.requested_listening_revision??'—'}</dd></div><div><dt>Processed frames</dt><dd>{(player.reverb_processed_frames??0).toLocaleString()}</dd></div></dl></details>
+ <details className="audio-application-details"><summary><svg className="disclosure-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg>Playback details</summary><dl><div><dt>Audio controls</dt><dd>{pending?'Waiting to apply':'Up to date'}</dd></div><div><dt>Reverb</dt><dd>{Math.round((player.applied_reverb??0)*100)}% room · {Math.round((player.applied_reverb_depth??.5)*100)}% depth</dd></div><div><dt>Revision</dt><dd>{player.applied_listening_revision??'—'} / {player.requested_listening_revision??'—'}</dd></div><div><dt>Processed frames</dt><dd><ReverbFrames fallback={player.reverb_processed_frames??0}/></dd></div></dl></details>
  </aside>;
 }

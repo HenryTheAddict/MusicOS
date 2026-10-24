@@ -117,6 +117,7 @@ type Commands = {
   toggle_favorite:{args:{trackId:number};result:boolean};
   metadata_edit: { args: {ids:number[];writeFiles?:boolean;revisions?:[number,number][];patch:Partial<{title:string;artist:string;album:string;album_artist:string;genre:string;year:number;track_number:number;disc_number:number}>}; result:number };
   sync_window_chrome: {args: {centerY:number}; result: void};
+  reveal_track:{args:{trackId:number};result:void};
   mini_player: {args: {mode:'normal'|'slim'|'tall'|'queue';menuOpen?:boolean;pinned?:boolean}; result:void};
   mini_resize: {args:{width:number;height:number};result:void};
   window_pin: {args:{enabled:boolean};result:void};
