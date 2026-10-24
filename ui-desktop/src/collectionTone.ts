@@ -1,3 +1,4 @@
+import {cssColorHex} from './colorValue';
 import {useEffect,useRef} from 'react';
 import {transportTones} from './playerTheme';
 import {resolveArtworkTheme} from './artworkTheme';
@@ -31,8 +32,10 @@ export function useCollectionTone(spark:boolean,identity=''){
   let alive=true,current:Palette|undefined;
   const apply=(palette:Palette)=>{
    current=palette;
-   const style=getComputedStyle(host),toHex=(value:string,fallback:string)=>/^#[0-9a-f]{6}$/i.test(value.trim())?value.trim():value.startsWith('rgb')?'#'+(value.match(/[\d.]+/g)??[]).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join(''):fallback;
-   const surface=toHex(style.getPropertyValue('--surface-color'),'#f7fbff'),ink=toHex(style.getPropertyValue('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
+   const style=getComputedStyle(host),toHex=cssColorHex;
+   const themeOwner=host.closest<HTMLElement>('.app-shell');
+   const targetColor=(key:string)=>themeOwner?.style.getPropertyValue(key)||document.documentElement.style.getPropertyValue(key)||style.getPropertyValue(key);
+   const surface=toHex(targetColor('--surface-color'),'#f7fbff'),ink=toHex(targetColor('--ink'),'#12202a'),accent=toHex(palette.surfaces[0],'#0064df');
    const control='#'+[1,3,5].map(i=>Math.round(parseInt(surface.slice(i,i+2),16)*.88+parseInt(accent.slice(i,i+2),16)*.12).toString(16).padStart(2,'0')).join('');
    const tones=transportTones({background:control,blob:control,text:ink,accent});
    host.style.setProperty('--collection-control-surface',control);
@@ -66,7 +69,7 @@ export function useCollectionTone(spark:boolean,identity=''){
    }}
    apply(palette);
   };
-  const observer=new MutationObserver(()=>{if(current)apply(current);});const shell=host.closest('.app-shell');if(shell)observer.observe(shell,{attributes:true,attributeFilter:['style','data-theme-mode']});
+  const observer=new MutationObserver(()=>{if(current)apply(current);});const shell=host.closest('.app-shell');if(shell)observer.observe(shell,{attributes:true,attributeFilter:['style','data-theme-mode']});observer.observe(document.documentElement,{attributes:true,attributeFilter:['style']});
   root.addEventListener('load',update,true);update();return()=>{alive=false;observer.disconnect();root.removeEventListener('load',update,true);};
  },[spark,identity]);return ref;
 }

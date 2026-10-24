@@ -37,7 +37,7 @@ Light, and startup does not issue playback actions.
 
 ## Verification
 
-- Production UI build and 147 UI unit tests pass.
+- Production UI build and 149 UI unit tests pass.
 - 156 native library tests pass; the release build checks the native startup path.
 - Browser regressions cover saved name changes, first rendered frame in Dark on a
   Light system, System on a Dark system and explicit Light on a Dark system;
@@ -67,3 +67,14 @@ main window. The previous app was restored immediately without restoring an old
 profile. The macOS override now carries the same manual-creation/background contract
 as the shared config, and a native regression test checks both arrays. The rejected
 candidate is retained separately; only the corrected build is a delivery candidate.
+
+WebKit's computed `color(srgb …)` serialization is normalized before deriving the
+collection button plate and contrast tones. This corrects a native-only pale-blue
+fallback that was visible after the successful launch. RGB, percentage and sRGB
+serializations have regression coverage; artwork-owned colors remain cached.
+
+The same plate also retained the launch surface when artwork analysis finished:
+its observer watched the shell but the final theme lived on the root. Controls now
+observe the owning shell and root and derive contrast from explicit target tokens,
+so they do not capture an early intermediate launch color. The regression changes
+root colors after artwork has loaded and checks refreshed surface and contrast.
