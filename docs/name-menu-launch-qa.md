@@ -79,3 +79,24 @@ observe the owning shell and root and read the explicit target ink for Light/Dar
 contrast. Each plate uses its own artwork over a neutral foundation, so another
 album changing the page hue cannot recolor it. The regression checks stability
 after a page-color change and refreshed surface/contrast after a mode change.
+
+## Final delivery
+
+The corrected signed build was installed after another fresh paused check and clean
+quit. SHA-256 of its signed executable:
+`860b099c7d320bf8b8949badca1e84057d95e4fc97417332cdc1c24d938c1c98`.
+The rejected candidate, previous app and intermediate working app remain preserved.
+
+Native verification confirmed “Henry” in the personal entry, Home and collection
+headings; artwork-owned Home button plates; the available Sketch File/Plus glyphs;
+no M3U toolbar action on the existing playlist; shared song context actions,
+Escape dismissal and restored focus without playback. The background-launched
+window was activated before the settled Home screenshot was checked.
+
+Playback remains paused on the same song at its saved 2.0102084 seconds (displayed
+0:02). All six collection tables, favorite flags, interface preferences and
+integration configuration match the final checkpoint. The library still has
+508 songs and 34 favorites. Every embedded runtime/model hash is unchanged.
+The app is left open on Home. Native screenshots and test logs are saved under
+`out/qa/os-foundation/name-menu-launch/`; full hashes and preservation checks are
+in the release record.
