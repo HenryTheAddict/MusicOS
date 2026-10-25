@@ -5,14 +5,10 @@ import {animateOwned} from './presentationMotion';
 import {openArtwork} from './ArtworkViewer';
 import type { Album, Artist, ArtistInfo, Track } from "./types";
 export default function ArtistOverview({artist,albums,tracks,info,fallback,actions,onProvider}:{artist:Artist;albums:Album[];tracks:Track[];info:ArtistInfo|null;fallback?:Album;actions:ReactNode;onProvider:(url:string)=>void}) {
-  const suppressRestoredFocus=useRef(false),root=useRef<HTMLElement>(null);
+  const root=useRef<HTMLElement>(null);
   const previousHeight=useRef<number|null>(null);
-  const [hovered,setHovered]=useState(false);
-  const [focused,setFocused]=useState(false);
-  const [dismissed,setDismissed]=useState(false);
-  const revealed=!dismissed&&(hovered||focused);
   const [expanded,setExpanded]=useState(false);
-  useLayoutEffect(()=>{setHovered(false);setFocused(false);setDismissed(false);setExpanded(false);},[artist.id]);
+  useLayoutEffect(()=>{setExpanded(false);},[artist.id]);
   function expand(){
     previousHeight.current=root.current?.getBoundingClientRect().height??null;
     setExpanded(value=>!value);
@@ -31,8 +27,6 @@ export default function ArtistOverview({artist,albums,tracks,info,fallback,actio
     window.addEventListener('scroll',stop,{capture:true,once:true});
     return()=>{stop();window.removeEventListener('resize',stop);window.removeEventListener('scroll',stop,true);};
   },[expanded]);
-  const genres=[...new Set(tracks.map(t=>t.genre).filter(g=>g&&g!=="Unknown genre"))].slice(0,2);
-  const years=albums.map(a=>a.year).filter(Boolean).sort((a,b)=>a-b);
   const biography=info?.biography;
   const biographyRef=useRef<HTMLParagraphElement>(null),biographyId=useId();
   const [overflowing,setOverflowing]=useState(false);
@@ -43,7 +37,6 @@ export default function ArtistOverview({artist,albums,tracks,info,fallback,actio
     const observer=new ResizeObserver(measure);observer.observe(paragraph);measure();
     return()=>observer.disconnect();
   },[biography,expanded]);
-  const facts=[...genres,`${albums.length} ${albums.length===1?"album":"albums"}`,`${artist.track_ids.length} ${artist.track_ids.length===1?"song":"songs"}`,...(years.length?[years[0]===years.at(-1)?String(years[0]):`${years[0]}–${years.at(-1)}`]:[])];
   return <header ref={root} data-biography-expanded={expanded||undefined} className="artist-hero">
     <h1>{artist.name.split(/(\s+)/).map((part,index)=>/^\s+$/.test(part)?part:<span className="artist-name-part" key={index}>{part}</span>)}</h1>
     <section data-expanded={expanded || undefined} className="artist-about" aria-label={`About ${artist.name}`}>
@@ -53,17 +46,14 @@ export default function ArtistOverview({artist,albums,tracks,info,fallback,actio
       {info?.source_url && <button className="text-link" onClick={()=>onProvider(info.source_url!)}>Wikipedia ↗</button>}</div>
     </section>
     <div className="artist-summary">
-    <div className="artist-portrait-stage" data-revealed={revealed || undefined} data-dismissed={dismissed || undefined} onMouseEnter={()=>{setHovered(true);setDismissed(false);}} onMouseLeave={()=>{setHovered(false);setDismissed(false);}} onFocus={e=>{if(suppressRestoredFocus.current){suppressRestoredFocus.current=false;setFocused(false);return;}if(e.target.matches(":focus-visible")){setFocused(true);setDismissed(false);}}} onBlur={e=>{if(!e.currentTarget.contains(e.relatedTarget))setFocused(false);}}>
-      <button className="artist-portrait-button" onClick={e=>{suppressRestoredFocus.current=true;setFocused(false);setDismissed(true);openArtwork(e.currentTarget,artist.name);}} aria-label={`Expand ${artist.name} portrait`} aria-expanded={revealed} aria-controls="artist-portrait-notes" onKeyDown={e=>{if(e.key==="Escape"){setDismissed(true);}}}>
+    <div className="artist-portrait-stage">
+      <button className="artist-portrait-button" onClick={e=>openArtwork(e.currentTarget,artist.name)} aria-label={`Expand ${artist.name} portrait`} aria-haspopup="dialog">
         <Cover src={info?.portrait??artist.portrait} title={artist.name} portrait />
       </button>
-      <div className="portrait-notes" id="artist-portrait-notes" aria-label="Artist attributes">
-        {facts.slice(0,5).map((fact,index)=><span className="portrait-fact" key={fact} style={{"--note-index":index} as React.CSSProperties}>{fact}</span>)}
-        {info?.portrait_source_url && <button className="portrait-credit-link" onClick={()=>onProvider(info.portrait_source_url!)}>Photo: {info.portrait_credit?.replace(/https?:\/\/\S+/g,"Wikimedia Commons") || "Wikimedia Commons"}<small>{info.portrait_license || "View license at source"} ↗</small></button>}
-      </div>
     </div>
     <div className="artist-statistics"><span>In your library</span><div className="artist-library-counts"><strong>{albums.length} {albums.length===1?"album":"albums"}</strong><span>{artist.track_ids.length} {artist.track_ids.length===1?"song":"songs"}</span></div><span>{collectionDuration(tracks.reduce((s,t)=>s+t.duration,0))}</span></div>
     <div className="artist-playback">{actions}</div>
+    {info?.portrait_source_url && <details className="artist-photo-credit" key={artist.id}><summary>Photo credit</summary><p>{info.portrait_credit?.replace(/https?:\/\/\S+/g,"Wikimedia Commons") || "Wikimedia Commons"}</p><button className="text-link" onClick={()=>onProvider(info.portrait_source_url!)}>{info.portrait_license || "View license at source"} ↗</button></details>}
     </div>
   </header>;
 }

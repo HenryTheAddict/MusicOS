@@ -117,15 +117,6 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 .settings .spark-setup>progress,.settings .depth-setup>progress{display:block;width:min(100%,20rem);margin:.5rem 0;}
 .settings summary{font-size:.8125rem;line-height:1.4;}
 .settings .settings-tile details{margin-top:.625rem;}
-/* A preset is one selection surface; its preview remains an inert sibling. */
-.settings .mini-preset-options{gap:.75rem;}
-.settings .mini-preset-option{position:relative;padding:.625rem;border:1px solid var(--control-border);border-radius:1rem;background:transparent;}
-.settings .mini-preset-option[data-selected=true]{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface-color));}
-.settings .mini-preset-option>.mini-preset-select{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:.2rem;width:100%;min-height:2.75rem;padding:0;border:0;outline:0;background:transparent;color:var(--ink);text-align:left;}
-.settings .mini-preset-select::after{content:'';position:absolute;inset:0;border-radius:inherit;}
-.settings .mini-preset-select:focus-visible::after{outline:2px solid var(--accent);outline-offset:3px;}
-.settings .mini-preset-option:has(.mini-preset-select:hover){background:color-mix(in srgb,var(--ink) 5%,var(--surface-color));}
-.settings .mini-preview .mini-player{border:0;background:transparent;}
 /* Metadata's browser is a list, independent of legacy library-grid styles. */
 .settings .metadata-browser .metadata-album-list{display:flex;flex-direction:column;gap:.25rem;max-height:28rem;min-width:0;padding:.375rem 0;}
 .settings .metadata-browser .metadata-album-list>button{display:grid;grid-template-columns:2.75rem minmax(0,1fr) max-content;align-items:center;gap:.625rem;flex:none;width:100%;min-width:0;min-height:3.75rem;padding:.5rem;border:0;border-radius:.75rem;background:transparent;color:var(--ink);text-align:left;}
@@ -138,9 +129,4 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 .settings .metadata-album-list>button:is(:hover,[aria-pressed=true]){background:var(--control-surface);}
 
 @media(hover:none){.track-table[data-local-songs] .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
-.settings .mini-preset-option>.mini-preset-select:is([aria-pressed=true],:hover,:active,:focus){background:transparent;color:var(--ink);border:0;outline:0;box-shadow:none;}
-.settings .mini-preset-options{display:grid;grid-template-columns:266px minmax(0,342px);justify-content:start;align-items:start;}
-.settings .mini-preset-option:first-child{grid-row:span 2;}
-.settings .mini-preset-option:nth-child(n+2){grid-column:2;}
 .settings .settings-panel :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:is([aria-pressed=true],[aria-selected=true]){background:var(--accent);color:var(--accent-ink);}
-@container settings (max-width:40rem){.settings .mini-preset-options{grid-template-columns:minmax(0,max-content);}.settings .mini-preset-option:first-child{grid-row:auto;}.settings .mini-preset-option:nth-child(n+2){grid-column:1;}}

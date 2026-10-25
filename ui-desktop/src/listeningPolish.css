@@ -10,11 +10,6 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .app-shell[data-adaptive=true] .settings .settings-tabs{background:color-mix(in srgb,var(--ink) 5%,var(--surface-color));}
 .app-shell[data-adaptive=true] .page-frame{border-color:var(--control-border);}
 
-/* The artist portrait is a still photograph, with quiet contextual details. */
-.artist-portrait-stage .artist-portrait-button,.artist-portrait-stage .artist-portrait-button>.cover,.artist-portrait-stage[data-revealed=true] .artist-portrait-button>.cover{transform:none;translate:none;scale:none;transition:none;}
-.artist-portrait-stage .portrait-fact{transform:translateY(4px);box-shadow:none;transition:opacity 140ms ease-out,transform 180ms ease-out;}
-.artist-portrait-stage[data-revealed=true] .portrait-fact{transform:none;}
-.artist-portrait-stage .portrait-credit-link{box-shadow:none;}
 
 /* Artwork sets the accent; playing and reading controls keep consistent ink. */
 .app-shell .collection-actions{color:var(--ink);}
@@ -27,7 +22,7 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .app-shell[data-adaptive] .collection-actions>.menu-trigger,.app-shell .collection-actions>.menu-trigger{background:var(--control-surface);color:var(--ink);}
 .app-shell .collection-actions>button{transition:background-color 140ms ease-out,opacity 140ms ease-out,transform 140ms ease-out;}
 .app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:scale(.96);}
-.app-shell .album-artist-credits,.app-shell .artist-credit-name{color:var(--ink);}@media(prefers-reduced-motion:reduce){.album-cover-transfer{display:none;}.artist-portrait-stage .portrait-fact{transition:none;transform:none;}.app-shell .collection-actions>button{transition:none;}.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:none;}}
+.app-shell .album-artist-credits,.app-shell .artist-credit-name{color:var(--ink);}@media(prefers-reduced-motion:reduce){.album-cover-transfer{display:none;}.app-shell .collection-actions>button{transition:none;}.app-shell .collection-actions>button:active:not(:disabled),.app-shell .transport>.icon-button:active:not(:disabled){transform:none;}}
 /* Column labels and navigation are reading controls, including in Dark mode. */
 .app-shell :is(.track-head,.track-heading){color:var(--secondary-ink,var(--ink));opacity:1;}
 .app-shell[data-theme-mode=dark] .sidebar-back{background:var(--control-surface);color:var(--ink);}

@@ -674,15 +674,15 @@ test("Sketch smooth corners resize correctly and playback progress fills to seek
   await page.screenshot({path:"out/rebuild-qa/figtree-smooth-album-1280.png"});
 });
 
-test("artist notes unfold on hover and focus, settle, and respect Escape",async({page})=>{
+test("artist portrait stays unobscured on hover and focus and returns focus after viewing",async({page})=>{
  await start(page);await page.getByRole("button",{name:"Artists",exact:true}).click();await page.getByRole("button",{name:"Open M83",exact:true}).click();
- const portrait=page.getByRole("button",{name:"Expand M83 portrait",exact:true});const facts=page.locator(".portrait-fact");
- await portrait.hover();await expect(facts.first()).toHaveCSS("opacity","1");await expect(portrait).toHaveAttribute("aria-expanded","true");
+ const portrait=page.getByRole("button",{name:"Expand M83 portrait",exact:true});
+ await portrait.hover();await expect(page.locator(".portrait-fact,.portrait-notes")).toHaveCount(0);
+ await expect(portrait.locator('.cover')).toHaveCSS('transform','none');
+ await portrait.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog',{name:'M83 artwork'})).toBeVisible();
+ await page.keyboard.press('Escape');await expect(portrait).toBeFocused();
  await expect.poll(()=>page.locator(".artist-hero").evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
- await page.screenshot({path:"out/rebuild-qa/artist-notes-1280.png"});
- await portrait.press("Escape");await expect(facts.first()).toHaveCSS("opacity","0");
- await page.mouse.move(0,0);await portrait.focus();await expect(facts.first()).toHaveCSS("opacity","1");
- await page.emulateMedia({reducedMotion:"reduce"});await expect(facts.first()).toHaveCSS("transition-duration","0s");
+ await page.screenshot({path:"out/persistent-qa/artist-clean-portrait.png"});
 });
 test("Settings categories support keyboard navigation, volume and tab restoration",async({page})=>{
  await start(page);await settings(page);

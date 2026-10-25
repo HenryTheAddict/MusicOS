@@ -17,6 +17,7 @@ import "./listFind.css";
 import "./connectedConsistency.css";
 import "./interactionPolish.css";
 import "./artistOverview.css";
+import "./miniPresetPicker.css";
 import "./menuPresentation.css";
 prepareLaunchTheme();
 createRoot(document.getElementById("root")!).render(

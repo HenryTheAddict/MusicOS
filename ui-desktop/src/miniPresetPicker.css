@@ -1,0 +1,15 @@
+/* One selected composition, at actual size. Preview controls never drive playback. */
+.mini-presets{grid-column:1/-1;container:mini-presets/inline-size}
+.mini-preset-layout{display:grid;grid-template-columns:minmax(8rem,1fr) max-content;align-items:start;gap:1rem;margin-top:.75rem}
+.mini-preset-controls{min-width:0}
+.settings .mini-presets .size-options{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:.125rem;width:fit-content;max-width:100%;padding:.125rem;margin:0;border-radius:.625rem;background:var(--surface-color)}
+.settings .mini-presets .size-options>button{flex:0 1 auto;min-height:2rem;padding:.375rem .625rem;border:0;border-radius:.5rem;font-size:.75rem;line-height:1.25}
+.settings .mini-presets .mini-preset-description{margin:.625rem 0 1rem;opacity:1;color:var(--secondary-ink);font-size:.75rem}
+.settings .mini-preset-description small{display:block;margin:.25rem 0 0;opacity:1;color:var(--secondary-ink);font-size:.625rem;font-variant-numeric:tabular-nums}
+.mini-preview-choice>span{display:block;margin-bottom:.375rem;color:var(--secondary-ink);font-size:.625rem}
+.mini-preview{position:relative;width:244px;height:320px;max-width:100%;--mini-player-height:320px;pointer-events:none;border-radius:20px;background:var(--surface-color)}
+.mini-preview[data-density=compact]{width:220px;height:120px;--mini-player-height:120px}
+.mini-preview[data-density=wide]{width:320px;height:120px;--mini-player-height:120px}
+.settings .mini-preview .mini-player{width:100%;height:100%;border:1px solid var(--control-border);background:var(--surface-color)}
+.mini-preview .heart-beat{animation:none!important}
+@container mini-presets (max-width:28rem){.mini-preset-layout{grid-template-columns:minmax(0,1fr)}.mini-preview{justify-self:start}}
