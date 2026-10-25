@@ -62,3 +62,34 @@ Build identity and native delivery results are recorded below after installation
 Screenshots cannot establish physical HDR luminance. The unknown specific photos
 mentioned by the user and human display acceptance remain a separate visual gate;
 the decoder contract is tested with actual wide-gamut / HDR-tagged input files.
+
+## Build and data verification
+
+All 153 UI unit tests, 159 native library tests and 9 focused browser checks pass.
+The production UI and optimized native release builds pass. The first release-link
+attempt exposed Clang's platform-version helper when linking for macOS 11. The
+bridge now uses explicit `NSProcessInfo` version guards; newer ImageIO/Core Graphics
+symbols remain weak imports. A macOS 11-targeted object has no dependency on that
+helper, and the corrected release links successfully. Older macOS rendering is
+still an independent platform acceptance gate.
+
+The signed executable SHA-256 is
+`fbb2b8c9716dd56bffd1aa1860e901d5e1695e8b38f4b2bb224c7343330baa52`.
+Final source commits: isolated desktop `5983570`, primary mirror `adc1b3f`.
+The release, previous app, latest private checkpoint and full protected hashes are
+recorded under `releases/desktop-photo-sdr-2026-10-25/`.
+
+Installation followed a fresh paused UI check and clean quit. A private profile
+copy and verified SQLite backup were made immediately before swapping the app.
+The complete persisted playback snapshot matches, including the same saved song,
+queue, position (2.0102084 seconds), volume, shuffle and repeat. All six collection
+tables, favorite flags, interface preferences and integration configuration are
+unchanged. The library still contains 508 songs and 34 favorites. All eight embedded
+runtime/model files match the previously installed app byte for byte.
+
+The new native app launches and initially exposes the saved song with a Play
+button. macOS locked the screen before activation / settled visual verification,
+so the native photo-viewer and final saved-position display check are pending an
+unlock. No post-load visual acceptance is claimed. The release record keeps this
+gate pending, and the user has been asked to unlock the Mac. Passing test logs and
+preview evidence are under `out/qa/os-foundation/photo-sdr/`.
