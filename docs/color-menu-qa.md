@@ -51,3 +51,43 @@ A 48-combination matrix covers 720×480 / 1280×800, all four scales, Light/Dark
 artwork and blue, and extreme Light/Dark custom colors, checking menu bounds and
 filled-button contrast. Existing launch, context-exit, collection-color and standard
 photo-brightness regressions are included. Final results and delivery follow below.
+
+## Delivery
+
+Production UI and optimized native builds pass. All 154 UI unit tests pass.
+Fifteen distinct focused browser cases pass across the regression and final-focus
+runs, including the 48-combination matrix. Final frame checks also confirm that
+navigating to Settings does not replace Library's outgoing labels mid-collapse.
+There are no database, preference schema or playback-protocol changes.
+
+Source: isolated desktop `ee090ed`, primary mirror `360fb8c`. Signed executable
+SHA-256: `72857fa7198f4ae0cd4f5684fc78b4b63612a1dc1b42af4d51deaddc82077e1b`.
+Strict signature verification passes. All eight embedded runtime/model files are
+byte-identical to the prior installed app. OS implementation files were untouched.
+
+Installation followed a fresh native paused check and a clean quit. The latest
+private profile copy and verified SQLite backup were made immediately before the
+swap. The previous app, release manifest, protected hashes and checkpoint pointer
+are retained under `releases/desktop-color-menus-2026-10-25/`.
+
+Native verification uses the user's latest Light artwork appearance at 125% scale,
+150% saturation and 15% tint. The colorful artwork surfaces are visibly restored;
+those saved settings were not edited. Reset theme now has its own compact filled
+button with the supplied icon. Its destructive-to-theme action was tested in the
+fixture, rather than resetting the real profile. The actual Library section menu
+opens with a visible exterior shadow, closes with Escape, restores focus and
+reopens. Appearance choices close and restore focus. Artist Read more / Read less
+expand and collapse in place, retain attribution, and use the filled control.
+More keeps its existing four destinations and closes normally. Native pointer
+input verified the section anchor where an accessibility click was ignored.
+
+The complete saved playback snapshot still matches, including song, queue,
+position (2.0102084 seconds), volume, shuffle and repeat. Playback remains paused
+at 0:02. All six collection tables, favorite flags, interface preferences and
+integration configuration match the immediate pre-install checkpoint: 508 songs
+and 34 favorites remain. The app is left on Appearance with menus closed.
+
+Native screenshots, frame-check screenshots and passing logs are under
+`out/qa/os-foundation/color-menu/` and `out/persistent-qa/`. Native checks verify
+appearance and interaction, not a guaranteed display frame rate or physical HDR
+luminance. The standard-brightness photo pipeline remains unchanged.
