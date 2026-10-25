@@ -7,9 +7,15 @@
 .menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--surface-color);}
 html[data-theme-mode=dark] .menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--control-surface);}
 .menu-panel.section-dropdown{position:fixed;}
-.menu-panel.section-dropdown>.menu-panel-surface{border-top:0;border-radius:0 0 1rem 1rem;}
+.menu-panel.section-dropdown>.menu-panel-surface{border:0;background:transparent;box-shadow:none;}
 .menu-panel.section-dropdown>.menu-panel-items{padding:.25rem;}
-.section-control>.menu-trigger:first-child[data-panel-present=true]{border-radius:1rem 1rem 0 0;border-bottom-color:transparent;clip-path:none!important;}
+@property --menu-join-height{syntax:'<length>';inherits:true;initial-value:0px;}
+@property --menu-shadow-opacity{syntax:'<number>';inherits:true;initial-value:0;}
+/* The header and choices share one full outline. It contracts back into the
+   unchanged header bounds, so no corner or shadow snaps on the final frame. */
+.app-header:has(.section-control>.menu-trigger:first-child[data-panel-present=true]){position:relative;z-index:20;}
+.section-control>.menu-trigger:first-child[data-panel-present=true]{isolation:isolate;border-radius:1rem!important;border-color:transparent!important;background:transparent!important;box-shadow:none!important;overflow:visible;clip-path:none!important;}
+.section-control>.menu-trigger:first-child[data-panel-present=true]::after{content:'';position:absolute;z-index:-1;pointer-events:none;inset:0 0 auto;height:calc(100% + max(0px,var(--menu-join-height) - 1px));box-sizing:border-box;border:1px solid var(--control-border);border-radius:1rem;background:var(--control-surface);box-shadow:0 5px 16px rgb(0 0 0 / calc(var(--menu-shadow-opacity) * .2));}
 .menu-panel[data-state=closed]{pointer-events:none!important;}
 .menu-panel.themed-choice-menu{isolation:isolate;}
 .menu-panel .dropdown-item,.menu-panel .themed-choice-option{transform:none;}

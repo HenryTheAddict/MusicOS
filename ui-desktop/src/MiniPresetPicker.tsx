@@ -6,7 +6,7 @@ const noop=()=>{};const action=async()=>{};
 export default function MiniPresetPicker({playback,cover,value,onChange,theme}:{theme?:CSSProperties;playback:Playback;cover?:string|null;value:NonNullable<Preferences['mini_player_density']>;onChange:(density:NonNullable<Preferences['mini_player_density']>)=>void}){
  const [view,setView]=useState<'tall'|'queue'>('tall');
  // A still preview reuses the player composition without a playback clock or jobs.
- const snapshot=useMemo(()=>({...playback,is_playing:false,position:playback.track?playback.track.duration*.3:0,queue_index:null,queue:playback.queue.slice(playback.queue_index===null?0:playback.queue_index+1).slice(0,4)}),[playback.track?.id,cover]);
+ const snapshot=useMemo(()=>({...playback,is_playing:false,position:playback.track?playback.track.duration*.3:0,queue_index:null,queue_entry_ids:playback.queue_entry_ids?.slice(playback.queue_index===null?0:playback.queue_index+1).slice(0,4),queue:playback.queue.slice(playback.queue_index===null?0:playback.queue_index+1).slice(0,4)}),[playback.track?.id,cover]);
  const preset=presets[value];
  return <article className="settings-tile mini-presets">
   <h2>Mini Player</h2>
