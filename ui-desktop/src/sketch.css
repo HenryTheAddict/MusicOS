@@ -129,13 +129,9 @@
 .now-playing-info strong { animation: playing-title-in 180ms ease-out; }
 .asset-icon { display: inline-flex; flex-shrink: 0; }
 .asset-icon > svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.section-control > .menu-trigger:first-child .chevron { transition: transform 180ms cubic-bezier(.2,.7,.2,1); }
-.dropdown[data-state="open"] { animation: pop-menu-in 160ms cubic-bezier(.2,.7,.2,1) both; }
-.dropdown[data-state="closed"] { animation: pop-menu-out 120ms ease-in both; pointer-events: none; }
+.dropdown[data-state="closed"] { pointer-events: none; }
 @keyframes playing-title-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes control-state-in { from { opacity: .3; transform: scale(.85); } to { opacity: 1; transform: none; } }
-@keyframes pop-menu-in { from { opacity: 0; transform: translateY(-4px) scale(.97); } to { opacity: 1; transform: none; } }
-@keyframes pop-menu-out { to { opacity: 0; transform: translateY(-2px) scale(.98); } }
 @container (max-width:26rem) {
   .collection-grid { grid-template-columns: repeat(auto-fill,minmax(6rem,1fr)); gap: .75rem; }
 }

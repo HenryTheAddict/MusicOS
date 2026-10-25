@@ -1,3 +1,4 @@
+import {useMenuPresentation,menuOwnsFocus} from './menuPresentation';
 import {flushSync} from 'react-dom';
 import {usePlaybackClock} from './playbackFeed';
 import {useContext} from 'react';
@@ -217,8 +218,6 @@ export interface MenuItem {
   portrait?: string|null;
   group?: "playback"|"organize"|"danger";
 }
-// Only the newest panel may restore focus when an older exit completes.
-let activeMenuOwner:HTMLButtonElement|null=null;
 export function Menu({
   label,
   children,
@@ -239,52 +238,62 @@ export function Menu({
   items: MenuItem[];
 }) {
   const [inherited,setInherited]=useState<CSSProperties>({});
-  const [present,setPresent]=useState(true);
-  const [open,setOpen]=useState(false),[point,setPoint]=useState<{x:number;y:number}|null>(null);
-  const trigger=useRef<HTMLButtonElement>(null),content=useRef<HTMLDivElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
+  const [point,setPoint]=useState<{x:number;y:number}|null>(null);
+  const trigger=useRef<HTMLButtonElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
+  const panel=useMenuPresentation(trigger);
+  const {open,present,setOpen,content}=panel;
   const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
   const group=(item:MenuItem)=>item.group??(/delete|remove|forget/i.test(item.label)?'danger':/^(play|shuffle|add to queue)/i.test(item.label)?'playback':'organize');
-  const ordered=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
+  const currentItems=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
+  const retainedItems=useRef(currentItems);
+  if(open)retainedItems.current=currentItems;
+  // Navigation may change the available choices during exit. Keep the outgoing
+  // composition until it is gone, rather than swapping labels mid-collapse.
+  const ordered=present&&!open?retainedItems.current:currentItems;
 
   useEffect(()=>()=>{trigger.current?.removeAttribute('data-connected-side');},[]);
   const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const y=point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?point.y-menu.offsetHeight:y,innerHeight-menu.offsetHeight-8))}px`;menu.style.setProperty('--menu-origin',`${Math.max(0,Math.min(menu.offsetWidth,point.x-parseFloat(menu.style.left)))}px ${Math.max(0,Math.min(menu.offsetHeight,point.y-parseFloat(menu.style.top)))}px`);};
-  useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point]);
+  useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point,panel.element]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
-  const captureMenuFrame=()=>{if(content.current){const style=getComputedStyle(content.current);content.current.style.setProperty('--menu-start-opacity',style.opacity);content.current.style.setProperty('--menu-start-transform',style.transform);}};
-  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;activeMenuOwner=button;window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:button}));setPresent(true);captureMenuFrame();didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);const retire=(event:Event)=>{if((event as CustomEvent).detail===button||!content.current)return;didSelect.current=true;setPresent(false);setOpen(false);};window.addEventListener('musicos-menu-will-open',retire);return()=>{button?.removeEventListener('musicos-open-menu',show);window.removeEventListener('musicos-menu-will-open',retire);};},[]);
+  useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[setOpen]);
   return (
-    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{captureMenuFrame();if(next){activeMenuOwner=trigger.current;setPoint(null);window.dispatchEvent(new CustomEvent('musicos-menu-will-open',{detail:trigger.current}));setPresent(true);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
+    <Dropdown.Root modal={false} open={open} onOpenChange={next=>{if(next){setPoint(null);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
-        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${contextOnly?"context-only":""}`} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
+        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${morph==="dots"?"soft-action":""} ${contextOnly?"context-only":""}`} data-panel-present={present||undefined} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
           {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
-      {present&&<Dropdown.Portal>
+      {present&&<Dropdown.Portal forceMount>
         <Dropdown.Content
-          ref={node=>{content.current=node;if(node)position(node);}}
+          forceMount
+          ref={panel.ref}
           style={{...inherited,...theme}}
           inert={!open||undefined}
+          aria-hidden={!open||undefined}
           data-pointer-menu={point?true:undefined}
-          className={`dropdown ${selectedLabel?"section-dropdown":""}`}
+          className={`dropdown menu-panel ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":"start"}
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
-          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||activeMenuOwner!==trigger.current){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
+          onInteractOutside={event=>{const target=event.detail.originalEvent.target;if(!open||target instanceof Node&&trigger.current?.contains(target))event.preventDefault();}}
+          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||!menuOwnsFocus(trigger.current)){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
 
         >
+          <div className="menu-panel-surface" aria-hidden="true"/><div className="menu-panel-items">
           {ordered.map((item, i) => (
             <Dropdown.Item
               className="dropdown-item"
               data-group-start={i>0&&group(item)!==group(ordered[i-1])||undefined}
               key={`${item.label}-${i}`}
-              onSelect={event=>{event.preventDefault();didSelect.current=true;const target=contextOpened.current||contextOnly?origin.current:trigger.current;captureMenuFrame();flushSync(()=>setOpen(false));if(target?.isConnected)target.focus({preventScroll:true});item.onSelect();}}
+              onSelect={event=>{event.preventDefault();didSelect.current=true;const target=contextOpened.current||contextOnly?origin.current:trigger.current;flushSync(()=>setOpen(false));if(target?.isConnected)target.focus({preventScroll:true});item.onSelect();}}
               disabled={item.disabled}
             >
               {item.portrait?<Cover src={item.portrait} title="" portrait/>:item.icon&&<Icon name={item.icon}/>}
               <span>{item.label}</span>
             </Dropdown.Item>
           ))}
+          </div>
         </Dropdown.Content>
       </Dropdown.Portal>}
     </Dropdown.Root>

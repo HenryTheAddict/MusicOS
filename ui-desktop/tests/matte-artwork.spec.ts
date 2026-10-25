@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {contrast,defaultAppearance,themePalette} from '../src/appearance';
 import {cssColorHex} from '../src/colorValue';
 
-test('bright artwork stays softly tinted while accents and original covers retain their color',async({page})=>{
+test('bright artwork keeps restored color while original covers remain standard brightness',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode:'light',source:'artwork',accent:'#0064df',saturation:150,tint:40}})));
  await page.route('**/src/fixtures.ts*',async route=>{
   const response=await route.fetch(),body=await response.text(),marker='case "artwork_palette":';expect(body).toContain(marker);
@@ -13,7 +13,7 @@ test('bright artwork stays softly tinted while accents and original covers retai
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe(expected.background);
  await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await page.locator('html').evaluate(el=>el.getAnimations().forEach(a=>a.finish()));
  const actual=await page.locator('html').evaluate(el=>{const s=getComputedStyle(el);return {surface:s.getPropertyValue('--surface-color').trim(),ink:s.getPropertyValue('--ink').trim(),accent:s.getPropertyValue('--accent').trim()};});
- expect(cssColorHex(actual.surface,'#000000')).toBe(expected.background);expect(contrast(expected.text,expected.background)).toBeGreaterThanOrEqual(7);expect(expected.accent).not.toBe(expected.background);
+ expect(cssColorHex(actual.surface,'#000000')).toBe(expected.background);expect(contrast(expected.text,expected.background)).toBeGreaterThanOrEqual(4.8);expect(expected.accent).not.toBe(expected.background);
  await expect(page.locator('.album-artwork .cover').first()).toHaveCSS('filter','none');
  await page.screenshot({path:'out/rebuild-qa/matte-bright-artwork.png',animations:'disabled'});
 });

@@ -33,12 +33,11 @@
 /* The unchanged selected header and its choices form one connected dropdown. */
 .app-shell[data-theme-mode=dark] .section-control>.menu-trigger:first-child{background:var(--control-surface);}
 .section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem 1rem 0 0;border-bottom-color:transparent;}
-.section-dropdown{border-radius:0 0 1rem 1rem;border-top:0;padding:.25rem;transform-origin:top center;animation:section-reveal 140ms ease-out!important;}
+.section-dropdown{border-radius:0 0 1rem 1rem;border-top:0;padding:.25rem;}
 body:has(.section-control>.menu-trigger:first-child[data-state=open]) .section-dropdown{background:var(--accent);color:var(--accent-ink);}
 body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dropdown{background:var(--control-surface);color:var(--ink);}
 .section-dropdown .dropdown-item{min-height:3rem;padding:.625rem .875rem;border-radius:.75rem;color:inherit;font-size:1rem;}
 .section-dropdown .dropdown-item[data-highlighted]{color:inherit;background:color-mix(in srgb,currentColor 10%,transparent);}
-@keyframes section-reveal{from{opacity:0;clip-path:inset(0 0 100% round 0 0 1rem 1rem)}to{opacity:1;clip-path:inset(0 round 0 0 1rem 1rem)}}
 /* One search entry point, with music grouped ahead of commands. */
 .sidebar-search-slot>.sidebar-search{display:flex;align-items:center;justify-content:flex-start;gap:.5rem;flex:1;min-width:0;text-align:left;border:1px solid var(--control-border);background:var(--control-surface);color:var(--secondary-ink);padding:.5rem .625rem;}
 .sidebar-search>span{flex:1;min-width:0;}
@@ -75,7 +74,7 @@ body:has(.app-shell:is([data-adaptive=true],[data-theme-mode=dark])) .section-dr
 .spark-setup>.settings-group-row>button{flex:none;margin:0;padding:.5rem .75rem;border-radius:.625rem;background:var(--surface-color);color:var(--ink);font-size:.75rem;}
 .spark-setup>details{border-top:1px solid var(--control-border);margin-top:1rem;padding-top:.75rem;}
 .spark-setup>details summary{font-size:.75rem;cursor:pointer;}
-.spark-setup>details p{margin:.5rem 0;}@container settings (max-width:22rem){.appearance-controls .settings-group-row:has(>input[type=range]){grid-template-columns:minmax(0,1fr) 3rem;}.appearance-controls .settings-group-row:has(>input[type=range]) input{grid-column:1;grid-row:2;}.appearance-controls .settings-group-row:has(>input[type=range]) output{grid-column:2;grid-row:2;}.settings .appearance-controls>.settings-group-row>.themed-choice{min-width:0;}.settings .settings-group-row{flex-wrap:wrap;}}@media(prefers-reduced-motion:reduce){.section-control .chevron{transition:none!important;}.section-dropdown{animation:none!important;}}
+.spark-setup>details p{margin:.5rem 0;}@container settings (max-width:22rem){.appearance-controls .settings-group-row:has(>input[type=range]){grid-template-columns:minmax(0,1fr) 3rem;}.appearance-controls .settings-group-row:has(>input[type=range]) input{grid-column:1;grid-row:2;}.appearance-controls .settings-group-row:has(>input[type=range]) output{grid-column:2;grid-row:2;}.settings .appearance-controls>.settings-group-row>.themed-choice{min-width:0;}.settings .settings-group-row{flex-wrap:wrap;}}
 
 .overflow-label:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:.25rem;mask-image:none;}
 .overflow-label[data-overflow=true]:focus-visible>span{transform:translateX(var(--label-offset));transition-duration:var(--label-duration);transition-timing-function:linear;transition-delay:500ms;}

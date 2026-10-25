@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, useId, type ReactNode } from "react";
+import SecondaryAction from './SecondaryAction';
 import { Cover, collectionDuration } from "./components";
 import {animateOwned} from './presentationMotion';
 import {openArtwork} from './ArtworkViewer';
@@ -46,7 +47,7 @@ export default function ArtistOverview({artist,albums,tracks,info,fallback,actio
   return <header ref={root} data-biography-expanded={expanded||undefined} className="artist-hero">
     <h1>{artist.name.split(/(\s+)/).map((part,index)=>/^\s+$/.test(part)?part:<span className="artist-name-part" key={index}>{part}</span>)}</h1>
     <section data-expanded={expanded || undefined} className="artist-about" aria-label={`About ${artist.name}`}>
-      <div className="artist-about-heading"><h2>About</h2>{biography && (overflowing||expanded) && <button className="text-link" aria-controls={biographyId} aria-expanded={expanded} onClick={expand}>{expanded?"Read less":"Read more"}</button>}</div>
+      <div className="artist-about-heading"><h2>About</h2>{biography && (overflowing||expanded) && <SecondaryAction expanded={expanded} aria-controls={biographyId} aria-expanded={expanded} onClick={expand}>{expanded?"Read less":"Read more"}</SecondaryAction>}</div>
       <div className="artist-biography"><div id={biographyId}>{(expanded&&biography?biography.split(/\n\s*\n|\n/):[biography??(info?.lookup_status==='loading'?"Finding artist information…":"Biography unavailable.")]).map((paragraph,index)=><p key={index} ref={index===0?biographyRef:undefined}>{paragraph}</p>)}</div></div>
       <div className="artist-biography-actions">
       {info?.source_url && <button className="text-link" onClick={()=>onProvider(info.source_url!)}>Wikipedia ↗</button>}</div>

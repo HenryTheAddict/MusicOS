@@ -36,18 +36,14 @@
 .mini-preview .placeholder{display:grid;place-items:center;}.mini-preview .placeholder>.icon{width:40%;height:40%;opacity:.55;}
 
 /* Action panels float at the pointer/button; selection never waits for the exit. */
-.dropdown:not(.section-dropdown){padding:5px;min-width:12rem;border-radius:12px!important;background:var(--surface-color);box-shadow:0 6px 22px #0003;clip-path:none!important;transform-origin:var(--menu-origin,var(--radix-dropdown-menu-content-transform-origin));}
+.dropdown:not(.section-dropdown){padding:5px;min-width:12rem;border-radius:12px!important;background:var(--surface-color);box-shadow:0 6px 22px #0003;clip-path:none!important;}
 .menu-trigger[data-connected-open=true]{border-radius:inherit!important;}
-.dropdown:not(.section-dropdown)[data-state=open]{animation:responsive-menu-in 140ms cubic-bezier(.2,.8,.2,1) both!important;}
-.dropdown:not(.section-dropdown)[data-state=closed]{animation:responsive-menu-out 140ms ease-out both!important;pointer-events:none;}
+.dropdown:not(.section-dropdown)[data-state=closed]{pointer-events:none;}
 .dropdown:not(.section-dropdown) .dropdown-item{min-height:30px;padding:5px 8px;font-size:13px;line-height:20px;transition:none;}
 .dropdown:not(.section-dropdown) .dropdown-item[data-group-start=true]{margin-top:7px;}
 .dropdown-item[data-group-start=true]:before{top:-4px;}
 .dropdown-item[data-disabled]{opacity:.4;}
 .live-meter{display:contents;}
-@keyframes responsive-menu-in{from{opacity:var(--menu-start-opacity,0);transform:var(--menu-start-transform,scale(.96))}to{opacity:1;transform:scale(1)}}
-@keyframes responsive-menu-out{from{opacity:var(--menu-start-opacity,1);transform:var(--menu-start-transform,scale(1))}to{opacity:0;transform:scale(.98)}}
-@media(prefers-reduced-motion:reduce){.dropdown:not(.section-dropdown)[data-state]{animation:none!important;}}
 
 .overflow-label[data-overflow=true]:hover>span,button:focus-visible .overflow-label[data-overflow=true]>span,.overflow-label[data-overflow=true]:focus-visible>span{transition-delay:120ms;}
 .live-meter .equalizer>i{animation:none!important;transition:transform 80ms linear;}

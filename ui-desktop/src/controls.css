@@ -40,11 +40,11 @@
 .settings :is(button:not([role=tab]),select) { background:var(--control-surface);border-color:var(--control-border); }
 .settings button[aria-pressed=true] { background:var(--accent);color:var(--accent-ink,var(--ink)); }
 .track-label { transition-duration:var(--motion-reveal); }
-.audio-panel,.dropdown,.audio-specs:popover-open { animation-duration:var(--motion-panel); }
+.audio-panel,.audio-specs:popover-open { animation-duration:var(--motion-panel); }
 /* Hover uses the individual scale property; morph and parallax own their own layers. */
 .card-open .cover,.album-strip button .cover,.collection-actions > button,.collection-shuffle,.row-play,.sketch-button { transform-origin:center; }@media(prefers-reduced-motion:reduce){
  .track-label,.row-play,.switch-track,.switch-track::after { transition:none!important; }
- .audio-panel,.dropdown,.audio-specs:popover-open { animation:none!important; }
+ .audio-panel,.audio-specs:popover-open { animation:none!important; }
 }
 
 .metadata-cache-status { padding:.875rem; margin-bottom:1rem; background:var(--control-surface); border-radius:.875rem; }
@@ -380,9 +380,6 @@
 .suggestion-actions{display:flex;align-items:center;gap:.5rem;}.suggestion-actions>button:first-child,.suggestion-actions>span:first-child{flex:1;min-width:0;text-align:left;}.suggestion-actions small{display:block;}.suggestion-actions>button:last-child{flex:none;padding:.5rem;font-size:.8125rem;}
 .source-row{flex-wrap:wrap;}.source-row>div{flex:1;min-width:12rem;}.source-row p{overflow-wrap:anywhere;}.source-row button{flex:none;box-shadow:none;}
 
-.dropdown[data-pointer-menu]{animation:pointer-menu-enter 140ms ease-out;transform-origin:top left;}
-@keyframes pointer-menu-enter{from{opacity:0;translate:0 4px;}to{opacity:1;translate:0 0;}}@media(prefers-reduced-motion:reduce){.dropdown[data-pointer-menu]{animation:none;}}
-
 .depth-setup-heading{display:flex;align-items:center;gap:.5rem;}.depth-setup-heading>.icon{width:1.5rem;height:1.5rem;flex:none;}.depth-setup-heading>.themed-switch{flex:1;}
 /* Save uses its square artwork chooser; preview tools stay in the preview step. */
 .spark-preview:has(>form:not([hidden]))>:is(.spark-generated-cover,.spark-artwork-sources,.spark-preview-coverage){display:none;}
@@ -508,8 +505,7 @@ html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-
 }@media(hover:none){
  .collection-card>.context-only{opacity:1;pointer-events:auto;}
  .card-open,.queue-track,.track-row{touch-action:pan-y;}
-}
-.section-dropdown{animation:none;}@media(pointer:coarse){
+}@media(pointer:coarse){
  .library-sidebar nav button,.sidebar-back{min-height:44px;}
  .app-header .now-playing{display:grid;grid-template-columns:2rem minmax(0,1fr) auto;height:auto;gap:.25rem .375rem;}
  .now-playing-cover{grid-column:1;grid-row:1;}.now-playing-info{grid-column:2;grid-row:1;font-size:.875rem;}
@@ -649,15 +645,13 @@ html[data-theme-mode=dark] :is(.dropdown,.themed-choice-menu,.filter-options){ba
 .choice-check{width:1rem;flex:none;opacity:0;}.themed-choice-option[data-state=checked]>.choice-check{opacity:1;}
 @keyframes choice-open{from{opacity:0;translate:0 -3px}to{opacity:1;translate:0 0}}
 @keyframes choice-close{to{opacity:0;translate:0 -3px}}
-.themed-choice-menu[data-state=open]{animation:choice-open 140ms ease-out!important;}
-.themed-choice-menu[data-state=closed],.dropdown.section-dropdown[data-state=closed]{animation:none!important;}
 .section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem;}
 .section-dropdown{border-radius:1rem;padding:.25rem;}
 .section-dropdown .dropdown-item{border-radius:.75rem;}
 
 /* Retain the queue DOM and scroll position during both directions of motion. */
 .audio-panel.queue-panel{animation:choice-open 140ms ease-out!important;}
-.audio-panel.queue-panel[data-closing=true]{animation:choice-close 140ms ease-in forwards!important;pointer-events:none;}@media(prefers-reduced-motion:reduce){.themed-choice>svg,.themed-choice-option,.mini-player .mini-queue-list{transition:none;}.themed-choice-menu,.dropdown.section-dropdown,.audio-panel.queue-panel{animation:none!important;}}
+.audio-panel.queue-panel[data-closing=true]{animation:choice-close 140ms ease-in forwards!important;pointer-events:none;}@media(prefers-reduced-motion:reduce){.themed-choice>svg,.themed-choice-option,.mini-player .mini-queue-list{transition:none;}.audio-panel.queue-panel{animation:none!important;}}
 
 /* Resizing retains the player's footprint while its native action area opens. */
 .themed-choice>.asset-icon,.themed-choice-option>.asset-icon{width:1rem;height:1rem;flex:0 0 1rem;--icon-fill:currentColor;--icon-stroke:currentColor;}
@@ -683,7 +677,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 [data-theme-mode=dark] :is(.album-artwork,.viewer-artwork,.artist-portrait-button){background:transparent;box-shadow:none;}
 .appearance-controls input[type=color]{appearance:none;-webkit-appearance:none;width:3rem;height:2rem;padding:.25rem;border:1px solid var(--control-border);border-radius:.625rem;background:var(--control-surface);}
 .appearance-controls input[type=color]::-webkit-color-swatch-wrapper{padding:0;}.appearance-controls input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
-:is(.dropdown,.themed-choice-menu,.filter-options){animation-duration:140ms;animation-timing-function:ease-out;}
+:is(.filter-options){animation-duration:140ms;animation-timing-function:ease-out;}
 @keyframes mini-menu-in{from{opacity:.55}to{opacity:1}}
 
 /* Playing-album colors stay local to the player and its listening panels. */

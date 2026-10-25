@@ -58,8 +58,7 @@
 .settings .beta-integrations .integration-list{--secondary-ink:color-mix(in srgb,var(--ink) 92%,var(--control-surface));}
 
 /* The connected section header has one reversible chevron transform. */
-.section-control>.menu-trigger:first-child .chevron{display:grid;place-items:center;width:1.5rem;height:.75rem;line-height:0;rotate:none;scale:none;transform:rotate(0deg);transform-origin:50% 50%;transition:transform 140ms ease-out;}
-.section-control>.menu-trigger:first-child[data-state=open] .chevron{rotate:none;transform:rotate(180deg);}
+.section-control>.menu-trigger:first-child .chevron{display:grid;place-items:center;width:1.5rem;height:.75rem;line-height:0;transform-origin:50% 50%;}
 .section-control>.menu-trigger:first-child,.dropdown.section-dropdown{background:var(--control-surface);color:var(--ink);}
 body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.section-dropdown{background:var(--control-surface);color:var(--ink);}
 .section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem 1rem 0 0;}
@@ -137,7 +136,6 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 .settings .metadata-album-list .metadata-review-action{display:flex;align-items:center;gap:.25rem;white-space:nowrap;font-size:.75rem;}
 .settings .metadata-review-action>.icon{width:.75rem;height:.75rem;transform:rotate(180deg);}
 .settings .metadata-album-list>button:is(:hover,[aria-pressed=true]){background:var(--control-surface);}
-@media(prefers-reduced-motion:reduce){.section-control>.menu-trigger:first-child .chevron{transition:none;}}
 
 @media(hover:none){.track-table[data-local-songs] .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
 .settings .mini-preset-option>.mini-preset-select:is([aria-pressed=true],:hover,:active,:focus){background:transparent;color:var(--ink);border:0;outline:0;box-shadow:none;}

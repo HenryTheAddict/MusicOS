@@ -119,7 +119,7 @@
 /* macOS default placeholder colors do not follow artwork or custom themes. */
 .app-shell input::placeholder,.app-shell textarea::placeholder{color:color-mix(in srgb,var(--ink) 80%,var(--surface-color));opacity:1;}
 /* This menu grows from its selected header, so its origin stays stationary. */
-.dropdown.section-dropdown[data-state=open]{animation:none;transform:none;}
+.dropdown.section-dropdown[data-state=open]{transform:none;}
 /* Native scrolling surfaces use rounded overflow, without GPU path masks. */
 .page-frame,.library-sidebar,.personal-library{clip-path:none!important;}
 

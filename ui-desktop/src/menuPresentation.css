@@ -1,0 +1,31 @@
+/* One motion owner for section, choice and action menus. The unclipped surface
+   owns the rounded contour and shadow; only the inner items are clipped. */
+.menu-panel.dropdown,.menu-panel.themed-choice-menu{position:relative;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important;overflow:visible!important;animation:none!important;transform:none!important;translate:none!important;clip-path:none!important;}
+.menu-panel>.menu-panel-surface{position:absolute;z-index:-1;inset:0 0 auto;height:0;pointer-events:none;border:1px solid var(--control-border);border-radius:inherit;background:var(--control-surface);box-shadow:0 5px 16px #0003;}
+.menu-panel[data-side=top]>.menu-panel-surface{top:auto;bottom:0;}
+.menu-panel>.menu-panel-items{position:relative;max-height:inherit;overflow-y:auto;overscroll-behavior:contain;clip-path:inset(0% 0% 100% 0%);border-radius:inherit;padding:5px;}
+.menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--surface-color);}
+html[data-theme-mode=dark] .menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--control-surface);}
+.menu-panel.section-dropdown{position:fixed;}
+.menu-panel.section-dropdown>.menu-panel-surface{border-top:0;border-radius:0 0 1rem 1rem;}
+.menu-panel.section-dropdown>.menu-panel-items{padding:.25rem;}
+.section-control>.menu-trigger:first-child[data-panel-present=true]{border-radius:1rem 1rem 0 0;border-bottom-color:transparent;clip-path:none!important;}
+.menu-panel[data-state=closed]{pointer-events:none!important;}
+.menu-panel.themed-choice-menu{isolation:isolate;}
+.menu-panel .dropdown-item,.menu-panel .themed-choice-option{transform:none;}
+button.soft-action,.sidebar-more>button.soft-action{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:2rem;max-width:100%;padding:.375rem .625rem;border:0;border-radius:.625rem;background:var(--control-surface);color:var(--ink);font-family:inherit;font-size:.75rem;font-weight:550;line-height:1.4;text-decoration:none;box-shadow:none;transition:background-color 140ms ease-out,scale 140ms ease-out;}
+button.soft-action>.icon,.sidebar-more>button.soft-action>.icon{flex:none;width:1rem;height:1rem;margin:0;}
+button.soft-action:is(:hover,:focus-visible):not(:disabled){background:var(--blob-color);color:var(--ink);text-decoration:none;}
+button.soft-action:active:not(:disabled){scale:.98;}
+button.soft-action:disabled{opacity:.45;}
+button.soft-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.soft-action .action-chevron{width:.75rem;height:.75rem;flex:none;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;transition:transform 140ms ease-out;}
+.soft-action .action-chevron[data-expanded=true]{transform:rotate(180deg);}
+.sidebar-more>button.soft-action{justify-content:flex-start;min-height:2.25rem;padding:.25rem .5rem;font-size:.8rem;}
+@media(prefers-reduced-motion:reduce){button.soft-action,.soft-action .action-chevron{transition:none;}button.soft-action:active{scale:1;}}
+.section-control>.menu-trigger:first-child .chevron{transform:rotate(0deg);transform-origin:50% 50%;rotate:none;scale:none;transition:transform 140ms ease-out;}
+.section-control>.menu-trigger:first-child[data-state=open] .chevron{transform:rotate(180deg);}
+@media(prefers-reduced-motion:reduce){.section-control>.menu-trigger:first-child .chevron{transition:none;}}
+
+.settings .appearance-controls>button.soft-action{background:var(--surface-color);justify-self:start;}
+.settings .appearance-controls>button.soft-action:is(:hover,:focus-visible){background:var(--blob-color);}
