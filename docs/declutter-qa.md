@@ -46,5 +46,42 @@ build (`72857fa7…`). The prior bundle is retained at
 `releases/desktop-declutter-2026-10-25/previous-MusicOS.app`.
 The running application's original bundle path was already absent when packaging
 began, so the matching signed isolated bundle was preserved before rebuilding.
-No OS implementation files changed. Installation is pending a fresh native paused
-check; macOS window access was blocked by the lock screen at that check.
+No OS implementation files changed. Installation followed a fresh native paused check after the Mac was unlocked.
+The latest private profile copy and a verified SQLite backup were made before
+loading the app; the previous signed bundle remains available.
+
+
+## Native verification and preservation
+
+MusicOS is installed and visually checked at the saved 125% interface scale,
+Light artwork appearance, 150% saturation and 15% tint. Compact remains selected.
+Settings shows a single bounded preview, its current cover and song, with the
+size description/dimensions shown once. Artwork / Up next switches the inert
+preview while the main player remains paused at 1:08. Artist photos no longer
+acquire badges; Photo credit expands separately with PhilipRomano and
+CC BY-SA 4.0, then closes cleanly. The portrait opens the viewer, Escape closes
+it and restores portrait focus, with no badge overlay.
+
+A native startup check exposed a missing current-album source cache image.
+The running prior app had retained the cover in memory, while its saved PNG was
+absent on disk. That one missing cache file was reconstructed from the embedded
+cover in the same local album's first track. Audio SHA-256 was checked before
+and after, and no audio or database changes were made by the recovery. The cover
+now displays in Now Playing and the preview after restarting while paused.
+Other cache files and user artwork were not replaced. The cache recovery record
+is `out/qa/os-foundation/declutter/cover-recovery.json`.
+
+Playback queue, index, volume, shuffle and repeat match the immediate pre-install
+checkpoint exactly. Position is 68.73248 seconds after the native seek roundtrip,
+versus 68.7325 before: a 20 microsecond change, less than one 44.1 kHz audio frame.
+The visible paused position remains 1:08. All six collection tables, favorites,
+interface preferences and integration configuration match: 508 songs and 34
+favorites remain. Signed executable and all eight protected runtime/model hashes
+pass after installation. The app is left paused on Travis Scott's page, with
+credits collapsed and portrait focus restored.
+
+Native screenshots and final check logs are under
+`out/qa/os-foundation/declutter/`. The release manifest, protected hashes,
+post-load checks, prior app and private-checkpoint pointer are retained under
+`releases/desktop-declutter-2026-10-25/`. Source implementation is isolated commit
+`8677978`, mirrored into the OS worktree as UI-only commit `4977322`.
