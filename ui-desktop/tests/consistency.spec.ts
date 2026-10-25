@@ -26,7 +26,7 @@ test('Settings switches and artist album strip fit every window and scale',async
   await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Artists',exact:true}).click();await page.locator('.card-open').first().click();
   const strip=page.locator('.album-strip');await page.locator('.app-shell').evaluate(el=>el.setAttribute('data-adaptive','true'));await expect(strip).toHaveCSS('background-color','rgba(0, 0, 0, 0)');expect(await strip.evaluate(el=>el.scrollWidth<=el.clientWidth+1||getComputedStyle(el).overflowX!=='visible')).toBe(true);
   await page.screenshot({path:`out/rebuild-qa/polish-matrix/artist-${size.width}x${size.height}-${scale}.png`,animations:'disabled'});
-  await expect(page.locator('.artist-statistics .play-button')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
+  await expect(page.locator('.artist-playback .play-button')).toHaveCSS('background-color','rgba(0, 0, 0, 0)');
  }
  await page.screenshot({path:'out/rebuild-qa/consistency-artist-strip.png',animations:'disabled'});
 });

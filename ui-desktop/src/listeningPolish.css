@@ -32,17 +32,6 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .app-shell :is(.track-head,.track-heading){color:var(--secondary-ink,var(--ink));opacity:1;}
 .app-shell[data-theme-mode=dark] .sidebar-back{background:var(--control-surface);color:var(--ink);}
 
-/* The preview fits beside the portrait; full reading gets its own wide row. */
-.artist-about .artist-biography{max-height:none;overflow:visible;padding:.5rem .625rem;text-align:left;line-height:1.5;}
-.artist-biography>p{margin:0;white-space:pre-line;overflow-wrap:anywhere;}
-.artist-about:not([data-expanded=true]) .artist-biography>p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:8;overflow:hidden;}
-.artist-biography-actions{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:.25rem .625rem;padding:0 .625rem .5rem;}
-.artist-about .artist-biography-actions .text-link{font-size:.75rem;line-height:1.4;padding:.125rem 0;}
-.artist-about[data-expanded=true]{grid-column:1/-1;grid-row:3;margin-top:.875rem;padding:.75rem .875rem;text-align:left;}
-.artist-about[data-expanded=true] h2{background:transparent;text-align:left;}
-.artist-about[data-expanded=true] .artist-biography{max-width:65ch;padding:.5rem 0;font-size:.8125rem;line-height:1.6;}
-.artist-about[data-expanded=true] .artist-biography-actions{padding:0;}
-
 /* Icon hosts align to button centers instead of an inline text baseline. */
 
 /* One shared vertical frame: title at the cover top, rail near its bottom. */

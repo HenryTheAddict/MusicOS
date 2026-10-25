@@ -1,0 +1,39 @@
+/* Artist layout has one owner. Biography length never determines summary spacing. */
+.artist-detail{container:artist-page/inline-size;margin:0;}
+.artist-hero{display:grid;grid-template-columns:minmax(0,2fr) minmax(10rem,1fr);grid-template-areas:"name summary" "about summary";grid-template-rows:auto 1fr;align-items:start;gap:1rem 2rem;width:100%;margin:0 0 1.5rem;color:var(--ink);}
+.artist-hero>h1{grid-area:name;min-width:0;margin:0;font-size:clamp(1.75rem,4.5cqw,2.75rem);font-weight:850;line-height:1.12;letter-spacing:-.035em;overflow-wrap:anywhere;}
+.artist-name-part{max-width:100%;overflow-wrap:anywhere;}
+.artist-about{grid-area:about;min-width:0;margin:0;padding:0;overflow:visible;background:transparent;text-align:left;}
+.artist-about-heading{display:flex;align-items:baseline;justify-content:flex-start;flex-wrap:wrap;gap:.25rem 1rem;margin-bottom:.5rem;}
+.artist-about h2{margin:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--ink);font-size:.875rem;font-weight:650;line-height:1.4;}
+.artist-biography{max-width:65ch;overflow:visible;padding:0;color:var(--secondary-ink);}
+.artist-biography p{margin:0;white-space:pre-line;overflow-wrap:anywhere;font-size:.8125rem;line-height:1.65;}
+.artist-about:not([data-expanded=true]) .artist-biography p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;}
+.artist-about[data-expanded=true] .artist-biography p+p{margin-top:.875rem;}
+.artist-biography-actions{display:flex;align-items:center;flex-wrap:wrap;gap:.25rem 1rem;margin-top:.5rem;}
+.artist-about .text-link{padding:.25rem 0;color:var(--ink);font-size:.75rem;line-height:1.4;}
+.artist-summary{grid-area:summary;display:grid;justify-items:start;align-content:start;gap:.75rem;min-width:0;max-width:14rem;}
+.artist-summary .artist-portrait-stage{grid-column:auto;grid-row:auto;width:8rem;height:auto;min-height:0;aspect-ratio:1;}
+.artist-summary .artist-portrait-button{display:block;}
+.artist-statistics{display:grid;gap:.15rem;min-width:0;padding:0;margin:0;text-align:left;color:var(--secondary-ink);font-size:.75rem;line-height:1.5;font-variant-numeric:tabular-nums;}
+.artist-statistics>span:first-child{font-size:.625rem;}
+.artist-library-counts{display:flex;align-items:baseline;flex-wrap:wrap;gap:.125rem .5rem;}
+.artist-library-counts strong{color:var(--ink);font-size:.8125rem;font-weight:650;}
+.artist-playback .collection-actions{position:static;inset:auto;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:.5rem;margin:0;}
+.artist-playback .collection-actions>button{flex:none;}
+.artist-playback .collection-actions>button>span:not(.icon){display:none;}
+.artist-playback .collection-actions>.play-button{background:transparent;border-radius:0;box-shadow:none;}
+.artist-playback .collection-actions>.shuffle-button{order:-1;}
+.artist-detail>.section-title{margin:1rem 0 .5rem;font-size:1.25rem;font-weight:650;line-height:1.3;}
+@container artist-page (max-width:47.999rem){
+ .artist-hero{grid-template-columns:minmax(0,1fr);grid-template-areas:"name" "summary" "about";grid-template-rows:auto auto auto;gap:1rem;margin-bottom:1.25rem;}
+ .artist-summary{width:100%;max-width:none;grid-template-columns:5.5rem minmax(0,1fr);grid-template-rows:auto auto;gap:.5rem 1rem;align-items:center;}
+ .artist-summary .artist-portrait-stage{grid-column:1;grid-row:1/3;width:100%;}
+ .artist-statistics{grid-column:2;grid-row:1;align-self:end;}
+ .artist-playback{grid-column:2;grid-row:2;align-self:start;}
+ .artist-hero>h1{font-size:clamp(1.5rem,7cqw,2.5rem);}
+}
+@container artist-page (max-width:19rem){
+ .artist-summary{grid-template-columns:4rem minmax(0,1fr);gap:.5rem .75rem;}
+ .artist-playback .collection-actions{gap:.25rem;}
+}

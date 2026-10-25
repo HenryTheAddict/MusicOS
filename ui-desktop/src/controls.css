@@ -538,7 +538,7 @@ html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-
 .settings :is(.settings-tile,.integration-card,.beta-integrations){clip-path:none!important;animation:none!important;}
 [data-theme-mode=dark] :is(.now-playing,.mini-player){--ink:#dedfe3;color:var(--ink);background:var(--control-surface);}
 [data-theme-mode=dark] :is(.dropdown,.themed-choice-menu,.filter-options,.library-filter-panel,.audio-panel,.quick-audio,dialog){color:var(--ink);background:var(--surface-color);}
-[data-theme-mode=dark] :is(.album-copy,.artist-hero,.card-caption,.track-label,.settings-panel){color:var(--ink);}
+[data-theme-mode=dark] :is(.album-copy,.card-caption,.track-label,.settings-panel){color:var(--ink);}
 [data-theme-mode=dark] .settings :is(input,textarea,select){color:var(--ink);background:var(--blob-color);}
 [data-theme-mode=dark] .settings :is(p,small){opacity:.85;}@media(max-width:800px){.app-shell .section-control{justify-self:end;width:min(100%,13.875rem);}.app-shell .section-control>.menu-trigger:first-child{width:100%;}}@media(pointer:coarse){.now-playing .mini-controls{width:100%;grid-template-columns:none;grid-template-rows:none;gap:6px;min-height:44px;}.now-playing .audio-quality{width:44px;height:44px;display:flex;align-items:center;justify-content:center;}}
 [data-radix-popper-content-wrapper]:has(>.section-dropdown){transform:none!important;left:0!important;top:0!important;}
@@ -554,9 +554,9 @@ html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-
 html[data-player-layout]:not([data-player-layout=normal]),html[data-player-layout]:not([data-player-layout=normal]) body,html[data-player-layout]:not([data-player-layout=normal]) #root{background:transparent;}
 .now-playing-info>strong{animation:none!important;}
 .now-playing-info>.now-playing-credits{opacity:1;color:color-mix(in srgb,var(--ink) 82%,var(--surface-color));}
-.card-open small,.album-detail .artist-link,.artist-hero .artist-link{color:var(--ink);}
+.card-open small,.album-detail .artist-link{color:var(--ink);}
 [data-theme-mode=dark] .card-open small{color:#b9bcc4;}
-[data-theme-mode=dark] :is(.artist-about,.library-shortcuts,.personal-library,.settings-tabs){background:var(--blob-color);color:var(--ink);}
+[data-theme-mode=dark] :is(.library-shortcuts,.personal-library,.settings-tabs){background:var(--blob-color);color:var(--ink);}
 [data-theme-mode=dark] .now-playing-credits,[data-theme-mode=dark] .mini-player-copy>span{color:#b9bcc4;opacity:1;}
 .artist-detail .album-strip span{text-align:left;}
 .collection-card>.menu-trigger,.collection-actions>button,.transport .icon-button,.sketch-button{transition:background-color 140ms,color 140ms,opacity 140ms;}
@@ -564,7 +564,7 @@ html[data-player-layout]:not([data-player-layout=normal]),html[data-player-layou
 .menu-error{font-size:11px;color:var(--ink);}
 .app-shell[data-theme-mode=dark] .library-sidebar nav button{background:var(--blob-color);color:var(--ink);}
 .app-shell[data-theme-mode=dark] .library-sidebar nav button.active{background:var(--accent);color:var(--accent-ink);}
-.app-shell[data-theme-mode=dark] :is(.search,.library-shortcuts,.personal-library,.settings-tabs,.artist-about){background:var(--blob-color);color:var(--ink);}
+.app-shell[data-theme-mode=dark] :is(.search,.library-shortcuts,.personal-library,.settings-tabs){background:var(--blob-color);color:var(--ink);}
 .app-shell[data-theme-mode=dark] .personal-library>button,.app-shell[data-theme-mode=dark] .personal-collection{background:#33353b;color:var(--ink);}
 
 .now-playing-artists,.now-playing-artists>span{gap:.2rem;}
@@ -590,7 +590,7 @@ html[data-player-layout=queue] .dropdown-item{min-height:32px;padding:6px 8px;fo
 .app-shell[data-theme-mode=dark]{color-scheme:dark;--control-border:#ffffff1a;--control-surface:color-mix(in srgb,var(--blob-color) 92%,var(--ink));}
 .app-shell[data-theme-mode=dark] .page-frame{border-color:#ffffff1a;}
 .app-shell[data-theme-mode=dark] .settings :is(.settings-tile,.integration-card,.source-row){border-color:#ffffff0e;box-shadow:none;}
-.app-shell[data-theme-mode=dark] :is(.personal-library,.artist-about,.settings-tabs){box-shadow:none;border-color:#ffffff12;}
+.app-shell[data-theme-mode=dark] :is(.personal-library,.settings-tabs){box-shadow:none;border-color:#ffffff12;}
 .app-shell[data-theme-mode=dark] :is(.dropdown,.themed-choice-menu,.filter-options,.mini-actions-popover){background:var(--control-surface);border-color:#ffffff1a;box-shadow:0 5px 16px #0004;}
 .app-shell[data-theme-mode=dark] :is(.filter-choice,.filter-options,.themed-choice,.sketch-button){box-shadow:none;}
 .app-shell[data-theme-mode=dark] :is(.mini-player,.now-playing){--icon-fill:#dedfe3;--icon-stroke:#adb0b8;}

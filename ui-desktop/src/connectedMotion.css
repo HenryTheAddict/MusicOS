@@ -51,7 +51,6 @@
 .album-about-dialog{width:min(36rem,calc(100vw - 2rem));max-height:80dvh;overflow:auto;padding:1rem;border:1px solid var(--control-border);border-radius:1rem;background:var(--surface-color);color:var(--ink);text-align:left;}.album-about-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:1rem;}.album-about-dialog>p{display:block!important;max-width:65ch;margin:1rem 0;font-size:.85rem!important;line-height:1.65!important;white-space:pre-line;}.album-about-dialog>header>button{font-size:1.5rem!important;padding:.25rem!important;text-decoration:none;}
 @container(max-width:48rem){.home-new-mixes{grid-template-columns:1fr;}}
 @container(max-width:26rem){.album-detail .album-footer>.album-description{max-width:none;grid-column:1/-1;grid-row:6;margin:0;padding:.5rem 0;}}
-.artist-about:not([data-expanded=true]) .artist-biography>p{-webkit-line-clamp:4;}
 .album-detail .album-copy{padding-bottom:0;}
 .album-footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:1rem;width:100%;margin-top:auto;padding-top:.5rem;}
 .album-footer-controls{display:flex;flex-direction:column;align-items:flex-end;gap:.4rem;}

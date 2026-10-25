@@ -1,5 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
-async function play(page:Page){await page.getByRole('button',{name:'Open Junk',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();}
+async function play(page:Page){await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();}
 for(const scale of [80,100,125,150])test(`biography expands into a readable row at compact ${scale}%`,async({page})=>{
  await page.setViewportSize({width:720,height:480});await page.addInitScript(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:scale})),scale);await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
  const about=page.getByRole('region',{name:'About M83',exact:true}),body=about.locator('.artist-biography'),paragraph=body.locator('p'),button=about.getByRole('button',{name:'Read more',exact:true});
@@ -7,6 +7,7 @@ for(const scale of [80,100,125,150])test(`biography expands into a readable row 
  if(await button.count()===0){expect(await paragraph.evaluate(el=>el.scrollHeight<=el.clientHeight+1)).toBe(true);return;}
  await expect(button).toBeVisible();
  await button.focus();await page.keyboard.press('Enter');await expect(about.getByRole('button',{name:'Read less',exact:true})).toHaveAttribute('aria-expanded','true');
+ await expect.poll(()=>page.locator('.artist-hero').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
  const layout=await about.evaluate(el=>{const r=el.getBoundingClientRect(),p=el.querySelector('p')!,b=p.getBoundingClientRect(),portrait=el.parentElement!.querySelector('.artist-portrait-stage')!.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,textWidth:b.width,scroll:p.scrollHeight,client:p.clientHeight,portraitBottom:portrait.bottom};});
  expect(layout.left).toBeGreaterThanOrEqual(0);expect(layout.right).toBeLessThanOrEqual(721);expect(layout.top).toBeGreaterThanOrEqual(layout.portraitBottom);expect(layout.scroll).toBeLessThanOrEqual(layout.client+1);
  const albums=page.locator('.artist-detail>.section-title').first();expect((await albums.boundingBox())!.y).toBeGreaterThanOrEqual(layout.bottom);
@@ -38,5 +39,5 @@ test('cached mini queue still applies keyboard moves, removal and deck promotion
  await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const mini=page.locator('.mini-player'),rows=mini.locator('.queue-track');const count=await rows.count(),second=await rows.nth(1).locator('strong').textContent();
  await rows.nth(1).focus();await page.keyboard.press('Alt+ArrowUp');await expect(rows.first().locator('strong')).toHaveText(second!);await mini.locator('.queue-row').first().getByRole('button',{name:/Remove .+ from queue/}).click();await expect(rows).toHaveCount(count-1);
- const next=await rows.first().locator('strong').textContent();await mini.getByRole('button',{name:'Next track',exact:true}).click();await expect(mini.locator('.mini-player-copy>strong')).toHaveText(next!);await expect(rows).toHaveCount(count-2);
+ const next=await rows.first().locator('strong').textContent();await mini.getByRole('button',{name:'Next track',exact:true}).click();await expect(mini.locator('.mini-player-copy strong').first()).toHaveText(next!);await expect(rows).toHaveCount(count-2);
 });

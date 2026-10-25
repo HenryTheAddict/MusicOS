@@ -16,6 +16,7 @@ import "./connectedMotion.css";
 import "./listFind.css";
 import "./connectedConsistency.css";
 import "./interactionPolish.css";
+import "./artistOverview.css";
 prepareLaunchTheme();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

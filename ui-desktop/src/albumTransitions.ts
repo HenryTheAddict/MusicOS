@@ -71,7 +71,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
    artist.querySelectorAll<HTMLElement>('.artist-name-part').forEach((word,index)=>animate(word,Math.min(index*8,32),6,148,'artist-name-reveal'));
    const transferring=origin?.kind==='artist'&&origin.id===artist.dataset.artistId&&!origin.returning&&performance.now()-origin.at<750;
    if(!transferring)animate(artist.querySelector('.artist-portrait-button'),0,5,180,'artist-portrait-reveal',.92);
-   ['.artist-about','.artist-statistics','.album-strip'].forEach((selector,index)=>animate(artist.querySelector(selector),0,origin?.returning&&selector==='.album-strip'?0:5,180,'artist-detail-reveal'));
+   ['.artist-about','.artist-summary','.album-strip'].forEach((selector,index)=>animate(artist.querySelector(selector),0,origin?.returning&&selector==='.album-strip'?0:5,180,'artist-detail-reveal'));
    animate(artist.querySelector('.track-table'),0,4,180,'artist-detail-reveal');
   }
   const captured=origin;origin=null;
