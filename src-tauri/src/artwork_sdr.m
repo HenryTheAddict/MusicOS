@@ -13,7 +13,12 @@ int musicos_display_sdr_png(const char *sourcePath, const char *destinationPath,
             (id)kCGImageSourceThumbnailMaxPixelSize:@(maximum),
             (id)kCGImageSourceShouldAllowFloat:@NO
         } mutableCopy];
-        if (@available(macOS 14.0, *)) options[(id)kCGImageSourceDecodeRequest] = (id)kCGImageSourceDecodeToSDR;
+        // Runtime version guards avoid Clang's availability helper, which is not
+        // supplied by the Rust release linker for the macOS 11 deployment target.
+        NSOperatingSystemVersion version = NSProcessInfo.processInfo.operatingSystemVersion;
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunguarded-availability-new"
+        if (version.majorVersion >= 14) options[(id)kCGImageSourceDecodeRequest] = (id)kCGImageSourceDecodeToSDR;
         CGImageRef decoded = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
         CFRelease(source);
         if (!decoded) return -1;
@@ -22,7 +27,8 @@ int musicos_display_sdr_png(const char *sourcePath, const char *destinationPath,
         CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, 0, color, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
         CGColorSpaceRelease(color);
         if (!context) { CGImageRelease(decoded); return -1; }
-        if (@available(macOS 15.0, *)) CGContextSetEDRTargetHeadroom(context, 1.0f);
+        if (version.majorVersion >= 15) CGContextSetEDRTargetHeadroom(context, 1.0f);
+#pragma clang diagnostic pop
         CGContextSetBlendMode(context, kCGBlendModeCopy);
         CGContextDrawImage(context, CGRectMake(0, 0, width, height), decoded);
         CGImageRelease(decoded);
