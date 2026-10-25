@@ -10,7 +10,7 @@ async function coloredArtwork(page:Page,mode='light'){
     if(String(a.path).includes('Pier'))return {background:'#ecc4c4',blob:'#bc7777',accent:'#802525',text:'#12202a'};
   `)});
  });
- await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
+ await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await page.getByRole('button',{name:'Albums',exact:true}).click();
  await page.getByRole('button',{name:'Open Junk',exact:true}).click();await expect(page.locator('html')).toHaveAttribute('data-theme-motion','artwork');
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).not.toBe('#00aeff');
  await finishColors(page);await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.locator('.sidebar-back').click();
@@ -38,8 +38,8 @@ for(const mode of ['light','dark'])test(`${mode}: artwork fades after launch and
 test('late palette never replaces the current album and pending lookup retains displayed colors',async({page})=>{
  await coloredArtwork(page);const root=page.locator('html');const red=await root.evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim());
  await page.getByRole('button',{name:'Open Fantasy',exact:true}).click();expect(await root.evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim())).toBe(red);
- await page.locator('.sidebar-back').click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#c8ded9');
- await page.waitForTimeout(750);await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(200, 222, 217)');expect(await root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#c8ded9');
+ await page.locator('.sidebar-back').click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#f3f7f9');
+ await page.waitForTimeout(750);await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(243, 247, 249)');expect(await root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#f3f7f9');
 });
 test('explicit appearance changes, System mode switches, and Reduced Motion remain immediate',async({page})=>{
  await coloredArtwork(page);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>transitions(page)).toContain('--surface-color');

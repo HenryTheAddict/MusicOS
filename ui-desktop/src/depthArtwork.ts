@@ -39,6 +39,9 @@ export function useDepthArtwork(root:RefObject<HTMLElement|null>,scroll:RefObjec
  const wrapper=document.createElement('div');wrapper.className='depth-compositor';wrapper.setAttribute('aria-hidden','true');
  const canvas=document.createElement('canvas');wrapper.append(canvas);wrapper.dataset.hero=String(hero);wrapper.style.visibility='hidden';const clip=hero?node:document.createElement('div');if(!hero){clip.className='depth-clip';clip.setAttribute('aria-hidden','true');node.append(clip);}clip.append(wrapper);
  const context=canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:false,antialias:false,depth:false,stencil:false});if(!context){if(!hero)clip.remove();else wrapper.remove();return;}const gl:WebGL2RenderingContext=context;
+ // Ordinary covers and their motion layer share standard-range sRGB output.
+ if('drawingBufferColorSpace' in gl)gl.drawingBufferColorSpace='srgb';
+ if('unpackColorSpace' in gl)gl.unpackColorSpace='srgb';
  let shader:WebGLProgram;try{shader=program(gl);}catch{if(!hero)clip.remove();else wrapper.remove();return;}
  gl.useProgram(shader);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0,1,0,0,1,0,1,1,0,1,1]),gl.STATIC_DRAW);
  const point=gl.getAttribLocation(shader,'point');gl.enableVertexAttribArray(point);gl.vertexAttribPointer(point,2,gl.FLOAT,false,0,0);
@@ -80,7 +83,7 @@ export function useDepthArtwork(root:RefObject<HTMLElement|null>,scroll:RefObjec
    const full=art.classList.contains("viewer-artwork"),preparedKey=`${map.identity??key}:${full}:${photoSource}`;
    let decoded=prepared.get(preparedKey);
    if(!decoded){decoded=(async()=>{const depthImage=new Image();depthImage.src=full?(map.full_map??map.map):map.map;const photoImage=full?new Image():image;if(full)photoImage.src=map.photo;await Promise.all([depthImage.decode(),photoImage.decode()]);
-    const photo=document.createElement('canvas');photo.width=full?Math.max(1,Math.round(2048*photoImage.naturalWidth/Math.max(photoImage.naturalWidth,photoImage.naturalHeight))):512;photo.height=full?Math.max(1,Math.round(2048*photoImage.naturalHeight/Math.max(photoImage.naturalWidth,photoImage.naturalHeight))):512;const side=Math.min(photoImage.naturalWidth,photoImage.naturalHeight);if(full)photo.getContext('2d')!.drawImage(photoImage,0,0,photo.width,photo.height);else photo.getContext('2d')!.drawImage(photoImage,(photoImage.naturalWidth-side)/2,(photoImage.naturalHeight-side)/2,side,side,0,0,512,512);
+    const photo=document.createElement('canvas');photo.width=full?Math.max(1,Math.round(2048*photoImage.naturalWidth/Math.max(photoImage.naturalWidth,photoImage.naturalHeight))):512;photo.height=full?Math.max(1,Math.round(2048*photoImage.naturalHeight/Math.max(photoImage.naturalWidth,photoImage.naturalHeight))):512;const side=Math.min(photoImage.naturalWidth,photoImage.naturalHeight);if(full)photo.getContext('2d',{colorSpace:'srgb'})!.drawImage(photoImage,0,0,photo.width,photo.height);else photo.getContext('2d',{colorSpace:'srgb'})!.drawImage(photoImage,(photoImage.naturalWidth-side)/2,(photoImage.naturalHeight-side)/2,side,side,0,0,512,512);
     const depth=document.createElement('canvas');depth.width=depth.height=256;const depthContext=depth.getContext('2d')!;depthContext.filter='blur(3px)';depthContext.drawImage(depthImage,-3,-3,262,262);return {photo,depth};})();
     prepared.set(preparedKey,decoded);decoded.catch(()=>prepared.delete(preparedKey));
    }

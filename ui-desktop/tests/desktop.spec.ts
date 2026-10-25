@@ -246,7 +246,7 @@ test("default blue, adaptive theme, and disabling colors restore blue", async ({
     .click();
   await expect(page.locator(".current-theme")).toHaveCSS(
     "background-color",
-    "rgb(200, 222, 217)",
+    "rgb(243, 247, 249)",
   );
   await settings(page);
   await page.getByRole("switch", { name: "Coverflow Colors", exact: true }).uncheck();

@@ -39,17 +39,17 @@ export function themePalette(a:Appearance,art:Palette|null,systemDark:boolean):P
   return {background,blob,accent,text:ink};
  }
  for(let n=0;n<30&&contrast(accent,'#ffffff')<4.5;n++)accent=mix(accent,'#000000',.06);
- // The native artwork palette is already curated and lightened. Mixing its
- // darkest accent into white again erased almost all of the album's color.
+ // Artwork supplies a tint, not the entire window paint. Bound large Light
+ // surfaces even when the cover itself contains luminous, saturated colors.
  const artwork=a.source==='artwork'&&art;
  const artBackground=artwork?saturate(artwork.background,a.saturation/100):null;
  const artSurface=artwork?saturate(artwork.blob,a.saturation/100):null;
- let background=artBackground&&artSurface?(a.tint<=15?mix('#f7f9fc',artBackground,a.tint/15):mix(artBackground,artSurface,(a.tint-15)/100)):mix('#f7f9fc',color,a.tint/100);
+ let background=artBackground&&artSurface?mix('#f7f9fc',artBackground,a.tint/100*.6):mix('#f7f9fc',color,a.tint/100);
  // Reserve a little contrast through perceptual color interpolation, whose
  // midpoint can be darker than either of two differently hued surfaces.
  const surfaceContrast=a.source==='artwork'?4.8:4.5;
  for(let n=0;n<30&&contrast(background,ink)<surfaceContrast;n++)background=mix(background,'#ffffff',.03);
- let blob=artSurface?mix('#e6ebf4',artSurface,Math.min(1,a.tint/15)):mix('#e6ebf4',color,Math.min(.6,.2+a.tint/100));
+ let blob=artSurface?mix('#e6ebf4',artSurface,a.tint/100*.9):mix('#e6ebf4',color,Math.min(.6,.2+a.tint/100));
  for(let n=0;n<30&&contrast(blob,ink)<surfaceContrast;n++)blob=mix(blob,'#ffffff',.03);
  return {background,blob,accent,text:ink};
 }

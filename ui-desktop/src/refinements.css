@@ -493,9 +493,9 @@
 @media(prefers-reduced-motion:reduce){.collection-card[data-artist-name] .card-open:is(:hover,:focus-visible,:active) .cover{transform:none}}
 
 /* The collection controls and rows follow CreateSparklist and Frame 6 in Sketch. */
-.sketch-button { --button-fill:color-mix(in srgb,var(--accent) 76%,#0098ff); color:var(--ink); border:1px solid transparent; border-radius:1rem; background:var(--accent); box-shadow:none; min-height:2rem; padding:.375rem .625rem; font-weight:600; transition:filter 150ms,transform 150ms,box-shadow 150ms; }
+.sketch-button { --button-fill:color-mix(in srgb,var(--accent) 76%,#0098ff); color:var(--ink); border:1px solid transparent; border-radius:1rem; background:var(--accent); box-shadow:none; min-height:2rem; padding:.375rem .625rem; font-weight:600; transition:background-color 140ms ease-out,transform 140ms ease-out; }
 .sketch-button.secondary { --button-fill:color-mix(in srgb,var(--surface-color) 55%,#9bb0ff); }
-.sketch-button:hover:not(:disabled) { filter:brightness(1.06);box-shadow:none; }
+.sketch-button:hover:not(:disabled) { filter:none;background:color-mix(in srgb,var(--accent) 92%,var(--ink));box-shadow:none; }
 .sketch-button:active:not(:disabled) { transform:scale(.98); }
 .collection-create-actions { display:grid; grid-template-columns:1fr 1fr; gap:.375rem; padding:.5rem .25rem; }
 .collection-create-actions .sketch-button { min-width:0;display:flex;align-items:center;justify-content:center;gap:.25rem;font-size:.625rem;padding:.375rem .25rem; }
@@ -628,7 +628,7 @@
 .app-shell[data-adaptive="true"] .collection-create-actions .sketch-button { background:var(--accent); }
 .collection-shuffle { background:transparent; border:0; padding:0; }
 .collection-shuffle .icon { width:2rem; height:2rem; }
-.collection-shuffle:hover:not(:disabled) { filter:brightness(1.04); }
+.collection-shuffle:hover:not(:disabled) { filter:none; }
 .app-shell[data-adaptive="true"] .settings-tabs { background:color-mix(in srgb,var(--accent) 18%,var(--surface-color)); }
 .app-shell[data-adaptive="true"] .settings-tabs > button { color:var(--ink); }
 .app-shell[data-adaptive="true"] .settings-tabs > button[aria-selected="true"] { background:var(--surface-color); box-shadow:0 1px 3px #0002; }

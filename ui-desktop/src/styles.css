@@ -5,6 +5,7 @@
   font-display: swap;
 }
 :root {
+  dynamic-range-limit: standard;
   font-family: "MusicOS Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-kerning: normal;
   font-variant-ligatures: common-ligatures;
