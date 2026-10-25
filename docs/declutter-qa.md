@@ -37,3 +37,14 @@ corrected and the complete attribution/focus check passes.
 
 Browser screenshots are under `out/persistent-qa/` in the isolated desktop
 worktree. Native build, installation, preservation and screenshots follow below.
+
+The optimized native build and strict signature verification pass. The signed
+executable SHA-256 is
+`3d912baa8e9458060ab39e1d94c86ff4249c9e867c8f22f5fe546a53ebe9612d`.
+All eight embedded runtime/model files are byte-identical to the last signed
+build (`72857fa7…`). The prior bundle is retained at
+`releases/desktop-declutter-2026-10-25/previous-MusicOS.app`.
+The running application's original bundle path was already absent when packaging
+began, so the matching signed isolated bundle was preserved before rebuilding.
+No OS implementation files changed. Installation is pending a fresh native paused
+check; macOS window access was blocked by the lock screen at that check.
