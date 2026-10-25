@@ -37,14 +37,16 @@ pub fn crop(source:&Path)->Result<PathBuf> {
  use sha2::{Digest,Sha256};use std::sync::{Mutex,OnceLock};
  static WORKER:OnceLock<Mutex<()>>=OnceLock::new();
  let _worker=WORKER.get_or_init(Default::default).lock().unwrap_or_else(|e|e.into_inner());
- let key=format!("portrait-v3-landmarks-headroom:{}",crate::depth::source_identity(source)?);
+ let key=format!("portrait-v4-sdr-landmarks-headroom:{}",crate::depth::source_identity(source)?);
  let cache=musicos_desktop::storage::desktop_data_dir().join("portrait-framing-v3");std::fs::create_dir_all(&cache)?;
  let id=format!("{:x}",Sha256::digest(key.as_bytes()));let output=cache.join(format!("{id}.png"));let checked=cache.join(format!("{id}.json"));
  if output.is_file(){if image::open(&output).is_ok(){return Ok(output);}let _=std::fs::remove_file(&output);}
  if checked.is_file(){return Ok(source.to_owned());}
- let mut reader=image::io::Reader::open(source)?.with_guessed_format()?;let mut limits=image::io::Limits::default();limits.max_image_width=Some(8192);limits.max_image_height=Some(8192);limits.max_alloc=Some(128*1024*1024);reader.limits(limits);let image=reader.decode()?;
+ #[cfg(not(target_os="macos"))]
+ let image={let mut reader=image::io::Reader::open(source)?.with_guessed_format()?;let mut limits=image::io::Limits::default();limits.max_image_width=Some(8192);limits.max_image_height=Some(8192);limits.max_alloc=Some(128*1024*1024);reader.limits(limits);reader.decode()?};
  #[cfg(target_os="macos")]
- let image={drop(image);let oriented=cache.join(format!("{id}.oriented.png"));musicos_desktop::local::decoded_audio::apple::oriented_png(source,&oriented)?;
+ let image={let(w,h)=image::image_dimensions(source)?;anyhow::ensure!(w<=8192&&h<=8192,"Portrait exceeds the decoding limit");
+ let oriented=cache.join(format!("{id}.oriented.png"));crate::artwork_renditions::display_sdr_png(source,&oriented,2048)?;
  let result=image::open(&oriented);let _=std::fs::remove_file(&oriented);result?};
  let faces=detect(&image)?;
  if let Some((x,y,side))=framing(image.width(),image.height(),&faces){
@@ -62,7 +64,7 @@ pub fn crop(source:&Path)->Result<PathBuf> {
   // TIFF little endian, one EXIF orientation=6 (90 degrees clockwise).
   let exif=b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
   let mut jpeg=vec![0xff,0xd8,0xff,0xe1];jpeg.extend_from_slice(&((exif.len()+2)as u16).to_be_bytes());jpeg.extend_from_slice(exif);jpeg.extend_from_slice(&encoded[2..]);std::fs::write(&source,jpeg).unwrap();
-  musicos_desktop::local::decoded_audio::apple::oriented_png(&source,&output).unwrap();assert_eq!(image::image_dimensions(output).unwrap(),(120,80));
+  crate::artwork_renditions::display_sdr_png(&source,&output,2048).unwrap();assert_eq!(image::image_dimensions(output).unwrap(),(120,80));
  }
  #[test]fn uncertain_or_missing_faces_keep_original(){assert!(framing(400,800,&[]).is_none());assert!(framing(400,800,&[Face{x:0.1,y:0.1,w:0.2,h:0.1,confidence:0.3}]).is_none());}
  #[test]fn framing_centers_face_and_stays_inside_image(){let face=Face{x:0.6,y:0.2,w:0.15,h:0.12,confidence:0.95};let(x,y,s)=framing(800,1200,&[face]).unwrap();assert!(x+s<=800&&y+s<=1200);assert!(((face.x+face.w/2.)*800.-(x as f64+s as f64/2.)).abs()<1.);assert!(((face.y+face.h/2.)*1200.-(y as f64+s as f64*0.48)).abs()<1.);}

@@ -2,6 +2,16 @@ import {useEffect,useRef,useState,type RefObject} from 'react';
 import {call,native} from './bridge';
 import {useViewActive} from './ViewScope';
 const requests=new Map<string,Promise<string>>();
+export function artworkRendition(source:string,pixels:number,revision=0){
+ if(!native||source.startsWith('data:')||source.startsWith('assets/')||source.startsWith('/assets/'))return Promise.resolve(source);
+ const key=`${source}:${revision}:${pixels}`;let request=requests.get(key);
+ if(!request){
+  request=call('artwork_rendition',{path:source,pixels});
+  if(requests.size>=2048)requests.delete(requests.keys().next().value!);
+  requests.set(key,request);request.catch(()=>requests.delete(key));
+ }
+ return request;
+}
 export function useArtworkRendition(source:string|null|undefined,revision:number,image:RefObject<HTMLImageElement|null>,failed:()=>void){
  const cacheable=!!source&&!source.startsWith('data:')&&!source.startsWith('assets/')&&!source.startsWith('/assets/');
  const active=useViewActive(),failure=useRef(failed);failure.current=failed;
@@ -14,13 +24,8 @@ export function useArtworkRendition(source:string|null|undefined,revision:number
    if(!near)return;
    const pixels=Math.max(element.clientWidth,element.clientHeight)*Math.min(window.devicePixelRatio||1,2);
    const size=!pixels?640:pixels<=128?128:pixels<=640?640:1200;
-   if(size===last)return;last=size;const current=++serial,key=`${source}:${revision}:${size}`;
-   let request=requests.get(key);
-   if(!request){
-    request=call('artwork_rendition',{path:source,pixels:size});
-    if(requests.size>=2048)requests.delete(requests.keys().next().value!);
-    requests.set(key,request);request.catch(()=>requests.delete(key));
-   }
+   if(size===last)return;last=size;const current=++serial;
+   const request=artworkRendition(source,size,revision);
    void request.then(path=>{if(alive&&current===serial)setReady({source,path});}).catch(()=>{if(alive&&current===serial)failure.current();});
   };
   const resize=typeof ResizeObserver==='undefined'?null:new ResizeObserver(update);resize?.observe(element);

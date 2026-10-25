@@ -10,12 +10,13 @@ pub fn rendition(path: &Path, pixels: u32) -> Result<PathBuf> {
 }
 
 fn rendition_in(path: &Path, pixels: u32, directory: &Path) -> Result<PathBuf> {
-    ensure!([128, 640, 1200, 1280].contains(&pixels), "Unsupported artwork size");
+    ensure!([128, 640, 1200, 1280, 2048].contains(&pixels), "Unsupported artwork size");
     // Legacy 1280 requests now use the same 1200 px master.
-    let pixels = pixels.min(1200);
+    let pixels = if pixels == 1280 { 1200 } else { pixels };
+    let master_size = if pixels == 2048 { 2048 } else { 1200 };
     let path = path.canonicalize()?;
     let meta = path.metadata()?;
-    let identity = format!("jpeg90-png-v3-oriented:{}:{}:{:?}", path.display(), meta.len(), meta.modified()?);
+    let identity = format!("jpeg90-png-v4-sdr-srgb:{}:{}:{:?}", path.display(), meta.len(), meta.modified()?);
     let stem = |size| directory.join(format!("{:x}-{size}", Sha256::digest(identity.as_bytes())));
     let cached = |size| {
         ["jpg", "png"].into_iter().map(|ext| stem(size).with_extension(ext)).find(|candidate| {
@@ -31,7 +32,7 @@ fn rendition_in(path: &Path, pixels: u32, directory: &Path) -> Result<PathBuf> {
     let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(target) = cached(pixels) { return Ok(target); }
     std::fs::create_dir_all(directory)?;
-    let master = match cached(1200) {
+    let master = match cached(master_size) {
         Some(master) => master,
         None => {
             let (w, h) = image::image_dimensions(&path)?;
@@ -40,9 +41,9 @@ fn rendition_in(path: &Path, pixels: u32, directory: &Path) -> Result<PathBuf> {
             let original = {
                 // ImageIO downsamples during decoding and applies EXIF rotation.
                 // Rust only opens this bounded temporary, never another full copy.
-                let prepared = stem(1200).with_extension(format!("prepared-{}.png", std::process::id()));
+                let prepared = stem(master_size).with_extension(format!("prepared-{}.png", std::process::id()));
                 let result = (|| -> Result<image::DynamicImage> {
-                    musicos_desktop::local::decoded_audio::apple::artwork_png(&path, &prepared, w.max(h).min(1200))?;
+                    display_sdr_png(&path, &prepared, w.max(h).min(master_size))?;
                     Ok(image::open(&prepared)?)
                 })();
                 let _ = std::fs::remove_file(prepared);
@@ -56,17 +57,29 @@ fn rendition_in(path: &Path, pixels: u32, directory: &Path) -> Result<PathBuf> {
                 reader.limits(limits);
                 reader.decode()?
             };
-            let master = if original.width().max(original.height()) > 1200 {
-                original.resize(1200, 1200, image::imageops::FilterType::Lanczos3)
+            let master = if original.width().max(original.height()) > master_size {
+                original.resize(master_size, master_size, image::imageops::FilterType::Lanczos3)
             } else { original };
-            publish(&master, &stem(1200))?
+            publish(&master, &stem(master_size))?
         }
     };
-    if pixels == 1200 { return Ok(master); }
+    if pixels == master_size { return Ok(master); }
     let image = image::open(&master)?;
     if image.width().max(image.height()) <= pixels { return Ok(master); }
     let thumbnail = image.resize(pixels, pixels, image::imageops::FilterType::Lanczos3);
     publish(&thumbnail, &stem(pixels))
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn display_sdr_png(source: &Path, destination: &Path, maximum: u32) -> Result<()> {
+    use std::{ffi::CString, os::unix::ffi::OsStrExt};
+    unsafe extern "C" {
+        fn musicos_display_sdr_png(source: *const std::ffi::c_char, destination: *const std::ffi::c_char, maximum: u32) -> i32;
+    }
+    let source = CString::new(source.as_os_str().as_bytes())?;
+    let destination = CString::new(destination.as_os_str().as_bytes())?;
+    ensure!(unsafe { musicos_display_sdr_png(source.as_ptr(), destination.as_ptr(), maximum) } == 0, "Cannot prepare standard-brightness artwork");
+    Ok(())
 }
 
 fn publish(image: &image::DynamicImage, stem: &Path) -> Result<PathBuf> {
@@ -163,6 +176,38 @@ mod tests {
         let exif=b"Exif\0\0II\x2a\0\x08\0\0\0\x01\0\x12\x01\x03\0\x01\0\0\0\x06\0\0\0\0\0\0\0";
         let mut jpeg=vec![0xff,0xd8,0xff,0xe1];jpeg.extend_from_slice(&((exif.len()+2)as u16).to_be_bytes());jpeg.extend_from_slice(exif);jpeg.extend_from_slice(&encoded[2..]);std::fs::write(&source,jpeg).unwrap();
         let display=rendition_in(&source,1200,&temp.path().join("cache")).unwrap();assert_eq!(image::image_dimensions(display).unwrap(),(120,80));
+    }
+    #[cfg(target_os="macos")]
+    #[test]
+    fn wide_gamut_display_copies_convert_colors_instead_of_retagging() {
+        let temp=tempfile::tempdir().unwrap();let source=temp.path().join("p3.png");
+        let original=include_bytes!("../tests/fixtures/display-p3.png");std::fs::write(&source,original).unwrap();
+        let output=rendition_in(&source,1200,&temp.path().join("cache")).unwrap();
+        let color=image::open(&output).unwrap().to_rgb8().get_pixel(16,16).0;
+        // Display P3 [178,51,26] converted to sRGB, with JPEG quantization tolerance.
+        for (actual,expected) in color.into_iter().zip([194i16,34,0]) {assert!((actual as i16-expected).abs()<=5,"{color:?}");}
+        assert_eq!(std::fs::read(source).unwrap(),original);
+    }
+    #[cfg(target_os="macos")]
+    #[test]
+    fn hdr_photos_are_tone_mapped_into_eight_bit_display_copies() {
+        let temp=tempfile::tempdir().unwrap();let source=temp.path().join("pq.png");
+        let original=include_bytes!("../tests/fixtures/hdr-pq.png");std::fs::write(&source,original).unwrap();
+        let output=rendition_in(&source,2048,&temp.path().join("cache")).unwrap();
+        let image=image::open(output).unwrap();assert_eq!(image.color(),image::ColorType::Rgb8);
+        let rgb=image.to_rgb8();let levels=[16,48,80].map(|x|rgb.get_pixel(x,16)[0]);
+        assert!(levels[0]<120&&levels[1]>170&&levels[2]>225,"SDR tone mapping missing: {levels:?}");
+        assert!(levels[0]<levels[1]&&levels[1]<=levels[2]);
+        assert_eq!(std::fs::read(source).unwrap(),original);
+    }
+    #[test]
+    fn expanded_display_is_bounded_and_cached_without_upgrading_grid_masters() {
+        let temp=tempfile::tempdir().unwrap();let source=temp.path().join("large.png");let cache=temp.path().join("cache");
+        image::RgbImage::from_pixel(2400,1600,image::Rgb([80,130,180])).save(&source).unwrap();
+        let grid=rendition_in(&source,640,&cache).unwrap();let grid_modified=grid.metadata().unwrap().modified().unwrap();
+        let large=rendition_in(&source,2048,&cache).unwrap();assert_eq!(image::image_dimensions(&large).unwrap(),(2048,1365));
+        assert_eq!(rendition_in(&source,2048,&cache).unwrap(),large);assert_eq!(grid.metadata().unwrap().modified().unwrap(),grid_modified);
+        let image=image::open(large).unwrap().to_rgb8();for(actual,expected)in image.get_pixel(16,16).0.into_iter().zip([80i16,130,180]){assert!((actual as i16-expected).abs()<=3);}
     }
     #[test]
     fn changed_original_gets_a_new_revision() {
