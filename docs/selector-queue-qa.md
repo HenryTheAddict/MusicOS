@@ -42,3 +42,26 @@ queues. No horizontal Settings overflow or clipped first-row text is introduced.
 
 Build delivery and native verification follow below. Browser artifacts and logs
 are retained in `out/persistent-qa/` and `out/qa/os-foundation/selector-queue/`.
+
+
+## Signed build and native verification
+
+Implementation is isolated desktop commit `b12b4e2`, mirrored as UI-only commit
+`f70feaf`. Optimized native packaging and strict signature verification pass.
+Signed executable SHA-256:
+`1080e5114ecf77ebc28bda2557ed5ddad1b4323a98470c4b480f660fd6979bc2`.
+All eight embedded runtime/model files match the previous signed app. OS sources
+and artwork files were untouched.
+
+Installation followed a fresh native paused check on Stateside at 2:14. The
+latest profile and a verified SQLite backup were made immediately before loading.
+The prior app, protected hashes and checkpoint pointer are retained under
+`releases/desktop-selector-queue-2026-10-25/`.
+
+Native screenshots verify the single rounded Library surface and exterior
+shadow, its return to the header, section selection and the Wide Up next preview.
+The actual Wide mini-player was checked at 320×120: current cover/title/progress,
+a complete Up next / Romeo row with thumbnail and remove action, and stationary
+transport controls. Playback remains paused at 2:14. Restoring the original
+preset/view and final profile checks is pending a second Mac unlock; the lock
+screen interrupted this last step.
