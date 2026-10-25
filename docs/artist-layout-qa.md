@@ -44,3 +44,34 @@ Build identity, final test counts and native delivery verification are recorded
 below after completion. This change adds no database schema, playback protocol,
 preferences or model processing. Physical display pacing and human motion
 acceptance are not inferred from browser screenshots.
+
+## Delivery
+
+The production UI and optimized native build pass. All 153 UI unit tests and 20
+focused browser tests pass, including the 40-combination geometry/contrast matrix.
+A broader exploratory run also encountered the existing mini-player exit test's
+transient `inert` expectation; mini-player exit behavior is outside this artist
+repair, and the full desktop suite is not claimed green.
+
+Desktop source: `623d141`; primary mirror: `82edf83`. Signed executable SHA-256:
+`a85758d45bf84d8147d7cfecd5ad7120310cd237ea54f5eb898e399e8c53db1c`.
+Signature verification passes; all eight embedded runtime/model files match the
+previous app byte for byte. OS implementation files were not changed.
+
+The app was cleanly closed only after a fresh native paused-state check. The
+latest profile and SQLite database were backed up immediately before installation;
+the previous app is preserved under `releases/desktop-artist-layout-2026-10-25/`.
+The release manifest records full protected hashes and the private checkpoint.
+
+Both collapsed and expanded Travis Scott views were visually checked in the
+installed app at the existing 125% scale, Light artwork theme and current window
+size. The portrait decodes into the retained square bounds. The expanded view
+keeps statistics and transport immediately beneath it, with Read less at the top.
+The complete biography remains in paragraphs, with attribution. The app remains
+paused on Girl Like Me at 0:02. The complete saved playback snapshot still matches
+2.0102084 seconds, including queue, volume, shuffle and repeat. All six collection
+tables, favorite flags, interface preferences and integration configuration match
+the immediate pre-install checkpoint: 508 songs and 34 favorites remain.
+
+Native screenshots and passing logs: `out/qa/os-foundation/artist-layout/`.
+No native frame-rate improvement or physical display acceptance is claimed.
