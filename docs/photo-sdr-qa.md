@@ -58,7 +58,7 @@ depth, and inspect the viewer at 720×480 / 1280×800 across all four interface 
 with Reduced Motion. Existing hover bounds, context recovery, no preparation flash,
 idle drawing and expanded depth alignment are checked.
 
-Build identity and native delivery results are recorded below after installation.
+Build identity and native delivery results are recorded below.
 Screenshots cannot establish physical HDR luminance. The unknown specific photos
 mentioned by the user and human display acceptance remain a separate visual gate;
 the decoder contract is tested with actual wide-gamut / HDR-tagged input files.
@@ -87,9 +87,18 @@ tables, favorite flags, interface preferences and integration configuration are
 unchanged. The library still contains 508 songs and 34 favorites. All eight embedded
 runtime/model files match the previously installed app byte for byte.
 
-The new native app launches and initially exposes the saved song with a Play
-button. macOS locked the screen before activation / settled visual verification,
-so the native photo-viewer and final saved-position display check are pending an
-unlock. No post-load visual acceptance is claimed. The release record keeps this
-gate pending, and the user has been asked to unlock the Mac. Passing test logs and
-preview evidence are under `out/qa/os-foundation/photo-sdr/`.
+After the user unlocked the Mac, the installed app was checked on its existing
+Travis Scott artist photo. The photo opens at its original aspect ratio, remains
+visible when reopened, and closes with Escape while focus returns to its opener.
+The actual expanded display cache is an 8-bit 960×1443 JPEG with no HDR/gain-map
+or ICC application segments; the decoder has already converted its samples to
+sRGB. It is not upscaled. A native screenshot records the expanded photo.
+
+Playback remains paused on the same song at 0:02, and the full saved playback
+snapshot still matches 2.0102084 seconds. A final check confirms all collection
+tables, favorites, interface/integration preferences and embedded runtime/model
+hashes remain unchanged. The release's native-verification gate is complete.
+MusicOS is left on the artist page with the photo viewer closed. Passing test logs,
+native screenshots and state evidence are under `out/qa/os-foundation/photo-sdr/`.
+The user's exact offending photos and physical display luminance were not supplied
+or measured; no blanket human HDR-appearance acceptance is claimed.
