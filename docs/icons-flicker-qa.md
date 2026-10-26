@@ -52,3 +52,33 @@ the existing canonical artwork cache. No schema, tag or collection changes are
 introduced. A native regression passes with a deleted explicit override and an
 embedded-cover FLAC: the result is readable, the override is unchanged, the next
 canonical lookup uses the recovered image, and audio bytes are identical.
+
+
+## Delivery — 2026-10-26
+
+The final desktop source is `f135e0f`, mirrored to primary as `98415e2`.
+The locally signed build is installed. Executable SHA-256:
+`cc0c82877c9060e7368b554f03bf021ed095340304c50dfe8bbd83160959faa9`.
+Strict signature verification passes. All eight embedded runtime/model hashes
+match the prior app; OS sources are untouched. Release, previous app and private
+latest-profile checkpoint are retained in
+`releases/desktop-icons-flicker-2026-10-26-final/`.
+
+A fresh paused check on Stateside at 2:14 preceded each clean quit/install.
+The final app launched paused; the user then resumed playback. Playback was left
+running. Six collection tables, 34 favorites, 508 tracks, interface preferences,
+integration configuration and persisted playback fields match the immediate
+checkpoint; persisted position delta is zero (134.166 seconds). Live playback
+progress after the user resumed is intentionally independent of that checkpoint.
+
+Native screenshots from the preceding candidate verify updated Sync on the
+Integrations category and Reset theme control, dedicated Settings/device icons,
+and the stable closed selector surface. These assets/CSS are identical in the
+final package. Final real-library cover recovery remains unverified: the user
+was interacting with the window, and the subsequent read-only computer-use
+capture timed out. No further UI actions were attempted. The native recovery
+regression passes; Junk has no embedded or sibling image available locally and
+may retain its placeholder. Human motion acceptance remains separate.
+
+Logs and screenshots are retained in `out/qa/os-foundation/icons-flicker/`.
+The source Sketch document remains at its original modification time and size.
