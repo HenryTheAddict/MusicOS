@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>CloudError</title>
+    <defs>
+        <path d="M0,0 L32,0 L32,32 L0,32 Z" id="path-1"></path>
+    </defs>
+    <g id="CloudError" stroke="none" fill="none" xlink:href="#path-1">
+
+        <path d="M20,24 L8,24 C5.790861,24 4,22.209139 4,20 C4,17.790861 5.790861,16 8,16 C10.209139,16 12,14.209139 12,12 C12,9.790861 13.790861,8 16,8 L18,8 C20.209139,8 22,9.790861 22,12 L22,13 C22,14.6568542 23.3431458,16 25,16 C26.6568542,16 28,17.3431458 28,19 L28,19.0019531 C28,21.7622982 25.7622982,24 23.0019531,24 L20,24 Z" id="Path" stroke="#000000" stroke-width="2"></path>
+        <line x1="15" y1="16" x2="19" y2="20" id="Path" stroke="#000000" stroke-width="1" stroke-linecap="round"></line>
+        <line x1="19" y1="16" x2="15" y2="20" id="Path" stroke="#000000" stroke-width="1" stroke-linecap="round"></line>
+    </g>
+</svg>

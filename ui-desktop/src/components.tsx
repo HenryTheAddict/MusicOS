@@ -65,21 +65,16 @@ export function Cover({
     null,
   );
   const canonical=portrait?undefined:albumArtwork(trackId);
-  const candidate = canonical!==undefined ? canonical&&!failed.includes(canonical)?canonical:null :
-    songArtwork && extracted && extracted.id===trackId && extracted.path && !failed.includes(extracted.path)
-      ? extracted.path
-      : src && !failed.includes(src)
-      ? src
-      : fallback && !failed.includes(fallback)
-        ? fallback
-        : extracted &&
-            extracted.id === trackId &&
-            extracted.path &&
-            !failed.includes(extracted.path)
-          ? extracted.path
-          : null;
+  const recovered=extracted&&extracted.id===trackId&&extracted.path&&!failed.includes(extracted.path)?extracted.path:null;
+  const candidate=canonical!==undefined
+    ? canonical&&!failed.includes(canonical)?canonical:recovered
+    : songArtwork&&recovered?recovered
+      : src&&!failed.includes(src)?src
+        : fallback&&!failed.includes(fallback)?fallback:recovered;
   useEffect(() => {
-    if ((canonical!==undefined&&canonical!==null) || !native || (!songArtwork && src && !failed.includes(src)) || !trackId || !imageRef.current) return;
+    // A known missing canonical cover must still reach recovery. Its stale src
+    // is not a usable image, and must not block the visible-album extraction.
+    if (!native || !trackId || !imageRef.current || (canonical ? !failed.includes(canonical) : canonical===undefined&&!songArtwork&&src&&!failed.includes(src))) return;
     let gone = false;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -98,7 +93,7 @@ export function Cover({
       gone = true;
       observer.disconnect();
     };
-  }, [src, trackId, epoch, failed, songArtwork]);
+  }, [src, trackId, epoch, failed, songArtwork, canonical]);
   const remote = !!candidate?.startsWith("https://") && native;
   const resolved = remote
     ? cached?.url === candidate
@@ -452,7 +447,7 @@ export function TrackRows({
             <div className="track-actions">{track.audio_quality&&<span className="track-quality" title={`${track.audio_quality.format} · ${track.audio_quality.lossless?'Lossless':'Lossy'}`}><Icon name={track.audio_quality.lossless?'Lossless':'Lossy'}/><span className="sr-only">{track.audio_quality.lossless?'Lossless':'Lossy'}</span></span>}
             <FavoriteButton track={track} bpm={tempos?.get(track.id)} playing={playingId===track.id&&isPlaying} onFavorite={onFavorite}/>
             <Overflow
-              items={[...(playlistActions?.(track,selection?.ids.has(track.id)?[...selection.ids]:[track.id])??[]),...(onEdit?[{label:"Edit metadata",icon:"File",onSelect:()=>onEdit(track,selection?.ids.has(track.id)?[...selection.ids]:[track.id])}]:[]),...(selection?.canRemove?[{label:"Remove from playlist",icon:"Delete",onSelect:()=>selection.remove(selection.ids.has(track.id)?[...selection.ids]:[track.id])}]:[])]}
+              items={[...(playlistActions?.(track,selection?.ids.has(track.id)?[...selection.ids]:[track.id])??[]),...(onEdit?[{label:"Edit metadata",icon:"Metadata",onSelect:()=>onEdit(track,selection?.ids.has(track.id)?[...selection.ids]:[track.id])}]:[]),...(selection?.canRemove?[{label:"Remove from playlist",icon:"Delete",onSelect:()=>selection.remove(selection.ids.has(track.id)?[...selection.ids]:[track.id])}]:[])]}
             />
             </div>
           </div>
@@ -684,5 +679,5 @@ export function QueueRows({tracks,entryIds,arranged=[],pinned=[],current,scale,f
  onPointerDown={e=>{if(!onMove||e.button!==0||e.pointerType==='touch')return;e.preventDefault();e.currentTarget.focus();suppressClick.current=false;drag.current={from:index,to:index,x:e.clientX,startY:e.clientY,y:e.clientY,pointer:e.pointerId,moving:false,entry:entryIds?.[index]};}}
 
  onKeyDown={e=>{if(onMove&&e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')){e.preventDefault();const to=Math.max(0,Math.min(tracks.length-1,index+(e.key==='ArrowUp'?-1:1)));if(to!==index){onMove(index,to);setAnnouncement(`${t.title} moved to position ${to+1}`);requestAnimationFrame(()=>ref.current?.querySelector<HTMLElement>(`[data-queue-index="${to}"] .queue-track`)?.focus());}}}}
- onClick={e=>{if(suppressClick.current){e.preventDefault();suppressClick.current=false;return;}onSelect(index);}}><Cover songArtwork src={t.cover_art_path} trackId={t.id} title={t.album}/><QueueTrackCopy track={t} current={index===current} leadingLabel={index===0?firstLabel:undefined}/><span className="queue-duration">{entryIds&&arranged.includes(entryIds[index])&&<span title="Arranged by DJmode"><Icon name="DJmode"/></span>}{entryIds&&pinned.includes(entryIds[index])&&<span title="Position pinned by your move">⌖</span>}{duration(t.duration)}</span></button><span className="queue-context"><Overflow contextOnly items={[{label:"Play now",icon:"play",onSelect:()=>onSelect(index)},...(onMove&&index>0?[{label:"Play next",icon:"Play Next",onSelect:()=>onMove(index,0)}]:[]),{label:"Show in Finder",icon:"File",disabled:!t.available,onSelect:()=>void call("reveal_track",{trackId:t.id}).catch(error=>setAnnouncement(`Could not show file: ${String(error)}`))},{label:"Remove from Up next",icon:"Song",onSelect:()=>onRemove(index)}]}/></span><button className="queue-remove" aria-label={`Remove ${t.title} from queue`} onClick={()=>onRemove(index)}>×</button></div>;})}</div></div>;
+ onClick={e=>{if(suppressClick.current){e.preventDefault();suppressClick.current=false;return;}onSelect(index);}}><Cover songArtwork src={t.cover_art_path} trackId={t.id} title={t.album}/><QueueTrackCopy track={t} current={index===current} leadingLabel={index===0?firstLabel:undefined}/><span className="queue-duration">{entryIds&&arranged.includes(entryIds[index])&&<span title="Arranged by DJmode"><Icon name="DJmode"/></span>}{entryIds&&pinned.includes(entryIds[index])&&<span title="Position pinned by your move">⌖</span>}{duration(t.duration)}</span></button><span className="queue-context"><Overflow contextOnly items={[{label:"Play now",icon:"play",onSelect:()=>onSelect(index)},...(onMove&&index>0?[{label:"Play next",icon:"Play Next",onSelect:()=>onMove(index,0)}]:[]),{label:"Show in Finder",icon:"Open In Finder",disabled:!t.available,onSelect:()=>void call("reveal_track",{trackId:t.id}).catch(error=>setAnnouncement(`Could not show file: ${String(error)}`))},{label:"Remove from Up next",icon:"Song",onSelect:()=>onRemove(index)}]}/></span><button className="queue-remove" aria-label={`Remove ${t.title} from queue`} onClick={()=>onRemove(index)}>×</button></div>;})}</div></div>;
 }

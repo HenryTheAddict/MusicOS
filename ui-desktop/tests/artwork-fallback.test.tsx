@@ -6,7 +6,7 @@ import {registerAlbumArtwork} from '../src/albumArtwork';
 import type {Library} from '../src/types';
 import {Cover} from '../src/components';
 beforeEach(()=>{HTMLImageElement.prototype.decode=vi.fn().mockResolvedValue(undefined);bridge.call.mockImplementation(async (command:string,args:{path:string})=>command==='portrait_artwork'?'/face.png':`/display${args.path}`);});
-afterEach(()=>{cleanup();vi.unstubAllGlobals();bridge.extract.mockReset();bridge.call.mockReset();});
+afterEach(()=>{cleanup();registerAlbumArtwork({albums:[]} as unknown as Library);vi.unstubAllGlobals();bridge.extract.mockReset();bridge.call.mockReset();});
 test('unreadable saved artwork retries embedded extraction and can reload the repaired cache path',async()=>{
  vi.stubGlobal('IntersectionObserver',class {callback:Function;constructor(callback:Function){this.callback=callback;}observe(){queueMicrotask(()=>this.callback([{isIntersecting:true}]));}disconnect(){}});
  bridge.extract.mockResolvedValue('/cached-cover.png');
@@ -42,4 +42,20 @@ test('artist portraits bypass canonical album artwork and use local face framing
  expect(screen.getByRole('img')).toHaveAttribute('data-artwork-path','/face.png');
  expect(screen.getByRole('img')).toHaveAttribute('data-full-src','/portrait.png');
  registerAlbumArtwork({albums:[]} as unknown as Library);
+});
+
+test('missing canonical artwork recovers despite a stale track source',async()=>{
+ registerAlbumArtwork({albums:[{cover:null,track_ids:[70]}]} as Library);
+ vi.stubGlobal('IntersectionObserver',class {callback:Function;constructor(callback:Function){this.callback=callback;}observe(){queueMicrotask(()=>this.callback([{isIntersecting:true}]));}disconnect(){}});
+ bridge.extract.mockResolvedValue('/recovered-album.png');
+ render(<Cover src="/deleted-cache.png" trackId={70} title="Recover album"/>);
+ await waitFor(()=>expect(bridge.extract).toHaveBeenCalledWith(70,false));
+ await waitFor(()=>expect(screen.getByRole('img')).toHaveAttribute('src','/display/recovered-album.png?musicos-artwork=0'));
+ expect(bridge.extract).toHaveBeenCalledTimes(1);
+});
+test('a valid canonical cover keeps precedence over extraction and stale song art',async()=>{
+ registerAlbumArtwork({albums:[{cover:'/chosen-cover.png',track_ids:[71]}]} as Library);
+ render(<Cover src="/old-song-cover.png" trackId={71} title="Chosen album"/>);
+ await waitFor(()=>expect(screen.getByRole('img')).toHaveAttribute('src','/display/chosen-cover.png'));
+ expect(bridge.extract).not.toHaveBeenCalled();
 });

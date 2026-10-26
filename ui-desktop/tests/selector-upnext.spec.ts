@@ -69,3 +69,15 @@ test('queue previews fit every interface scale and theme, including empty queues
   for(const density of ['Compact','Wide','Standard']){await picker.getByRole('group',{name:'Mini Player size'}).getByRole('button',{name:density,exact:true}).click();await picker.scrollIntoViewIfNeeded();const preview=picker.locator('.mini-preview');expect(await picker.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);const geometry=await preview.evaluate(el=>{const region=el.querySelector('.mini-queue-list')!.getBoundingClientRect(),first=el.querySelector('.mini-queue-view .queue-track-copy,.mini-queue-view .mini-queue-empty')!.getBoundingClientRect();return {top:first.top,bottom:first.bottom,regionTop:region.top,regionBottom:region.bottom};});expect(geometry.top,`${width}/${scale}/${mode}/${source}/${density}`).toBeGreaterThanOrEqual(geometry.regionTop-.5);expect(geometry.bottom).toBeLessThanOrEqual(geometry.regionBottom+1);}
  }
 });
+
+test('closed selector keeps the same paint through the final exit frames',async({page})=>{
+ await hold(page);await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await expect.poll(()=>page.evaluate(()=>document.documentElement.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);
+ const trigger=page.getByRole('button',{name:'Choose section',exact:true});
+ const paint=()=>trigger.evaluate(el=>{const fill=getComputedStyle(el,'::after'),button=getComputedStyle(el);return {content:fill.content,background:fill.backgroundColor,border:fill.borderColor,height:parseFloat(fill.height),buttonFill:button.backgroundColor,transition:button.transitionProperty,headerZ:getComputedStyle(el.closest('.app-header')!).zIndex};});
+ const closed=await paint();expect(closed.content).not.toBe('none');
+ await trigger.click();await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);await finish(page);
+ await page.keyboard.press('Escape');await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);
+ for(const ms of [110,130,139]){await time(page,ms);const p=await paint();expect(p.content).toBe(closed.content);expect(p.background).toBe(closed.background);expect(p.buttonFill).toBe(closed.buttonFill);expect(p.headerZ).toBe(closed.headerZ);expect(p.transition).toBe('none');}
+ await finish(page);await expect(page.locator('.section-dropdown')).toHaveCount(0);expect(await paint()).toEqual(closed);await expect(trigger).toBeFocused();
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));expect(await paint()).toEqual(closed);expect(await trigger.evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
+});

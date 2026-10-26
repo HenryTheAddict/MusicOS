@@ -652,12 +652,12 @@ export default function App() {
    {label:track.favorited?'Unfavorite song':'Favorite song',icon:track.favorited?'hearted':'noheart',onSelect:()=>favorite(track)},
    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
-   {label:native?'Show in Finder':'Show in file manager',icon:'File',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
+   {label:native?'Show in Finder':'Show in file manager',icon:native?'Open In Finder':'Open In Folder',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
    {label:'Show artist',icon:'Artist',onSelect:()=>artistFor(track)},
   ];}
   function actionsForAlbum(a:Album){return [...playbackItems(a.track_ids),...[
         {label:"Add to playlist…",icon:"Playlist",onSelect:()=>setPlaylistTrack({...library.tracks.find(t=>t.id===a.track_ids[0])!,selectionIds:a.track_ids})},
-        {label:"Edit metadata",icon:"File",onSelect:()=>openManagement("review",a.track_ids)},
+        {label:"Edit metadata",icon:"Metadata",onSelect:()=>openManagement("review",a.track_ids)},
         { label: "Play", icon: "play", onSelect: () => playIds(a.track_ids) },
         {
           label: "Shuffle",
@@ -987,7 +987,7 @@ export default function App() {
     {label:'Add to playlist…',icon:'Playlist',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setPlaylistTrack(player.track);})();}},
     {label:'Show artist',icon:'Artist',onSelect:()=>void showPlaying('artist')},
     {label:'Show album',icon:'Album',onSelect:()=>void showPlaying('album')},
-    {label:'Show in Finder',icon:'File',disabled:!player.track.available,onSelect:()=>void call('reveal_track',{trackId:player.track!.id}).catch(e=>setError(errorText(e)))},
+    {label:'Show in Finder',icon:'Open In Finder',disabled:!player.track.available,onSelect:()=>void call('reveal_track',{trackId:player.track!.id}).catch(e=>setError(errorText(e)))},
     {label:'Edit song details',icon:'Song',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');openManagement('review',[player.track!.id]);})();}},
   ] : [];
 
@@ -1019,6 +1019,7 @@ export default function App() {
           onIntent={()=>{void import("./Settings");void import("./Devices");void import("./CollectionManager");}}
           items={(["Library", "Devices", "Settings"] as const).map((label) => ({
             label,
+            icon: label==='Settings'?'Settings':label==='Devices'?'device':undefined,
             onSelect: () => chooseSection(label),
           }))}
         >

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>GoogleDrive</title>
+    <defs>
+        <path d="M0,0 L32,0 L32,32 L0,32 Z" id="path-1"></path>
+    </defs>
+    <g id="GoogleDrive" stroke="none" fill="none" xlink:href="#path-1">
+
+        <line x1="16" y1="23" x2="11" y2="14" id="Path" stroke="#000000" stroke-width="1"></line>
+        <line x1="10" y1="14" x2="22" y2="14" id="Path" stroke="#000000" stroke-width="1"></line>
+        <line x1="16" y1="23" x2="21" y2="14" id="Path" stroke="#000000" stroke-width="1"></line>
+        <path d="M24.8905996,18.3358994 L18.4961509,8.74422632 C17.3086847,6.96302711 14.6913153,6.96302711 13.5038491,8.74422632 L7.10940039,18.3358994 C5.78029093,20.3295636 7.20946512,23 9.60555128,23 L22.3944487,23 C24.7905349,23 26.2197091,20.3295636 24.8905996,18.3358994 Z" id="Path" stroke="#000000" stroke-width="2"></path>
+    </g>
+</svg>
