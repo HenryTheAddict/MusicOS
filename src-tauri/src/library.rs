@@ -558,6 +558,26 @@ pub fn canonical_artwork(database: &std::path::Path, library: &mut Library) -> a
     Ok(())
 }
 
+/// Recover a missing album image without rewriting an explicit artwork choice.
+/// Legacy extraction can return that choice's now-deleted path even after it
+/// rebuilt a local cache. Only publish a readable image to the canonical cache.
+pub fn recover_album_artwork(database:&std::path::Path,album:&Album)->anyhow::Result<Option<String>> {
+    let tracks=musicos_init::database::Db::open(&database.to_string_lossy())?;
+    let cache=musicos_init::database::Connection::open(database)?;
+    for id in &album.track_ids {
+        let cached=musicos_desktop::local::artwork::ensure_artwork(database.to_owned(),*id)?.filter(|path|valid_cover(&cache,path));
+        let recovered=if cached.is_some(){cached}else if let Some(track)=tracks.get_track_by_id(*id)? {
+            crate::desktop_metadata::song_artwork(database,*id,std::path::Path::new(&track.path))?.filter(|path|valid_cover(&cache,path))
+        }else{None};
+        if let Some(path)=recovered {
+            let path=path.to_string_lossy().into_owned();
+            cache.execute("INSERT INTO desktop_album_artwork_v1(album_id,path) VALUES(?,?) ON CONFLICT(album_id) DO UPDATE SET path=excluded.path",rusqlite::params![album.id,path])?;
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)] mod artwork_consistency_tests {
  use super::*;
  #[test] fn validation_survives_connection_restart_and_invalidates_replacements(){
@@ -621,4 +641,22 @@ pub fn infer_release_type(album:&mut Album,total:usize){
 }
 #[cfg(test)]mod release_count_tests{use super::*;
  #[test]fn totals_and_explicit_types_protect_incomplete_albums(){let mut album=group(LibrarySnapshot{tracks:vec![Track{id:1,artist:"A".into(),album:"B".into(),duration:180,..Default::default()}],..Default::default()}).albums.remove(0);infer_release_type(&mut album,12);assert_eq!(album.release_type.as_deref(),Some("album"));album.release_type=None;infer_release_type(&mut album,1);assert_eq!(album.release_type.as_deref(),Some("single"));album.release_type=None;infer_release_type(&mut album,5);assert_eq!(album.release_type.as_deref(),Some("ep"));album.release_type=Some("album".into());infer_release_type(&mut album,1);assert_eq!(album.release_type.as_deref(),Some("album"));}
+}
+
+#[cfg(test)] mod missing_album_recovery_tests {
+ use super::*;
+ use lofty::{file::{AudioFile,TaggedFileExt},config::WriteOptions,picture::{Picture,PictureType},tag::Tag};
+ #[test] fn recover_missing_override_from_embedded_art_without_erasing_choice_or_touching_audio(){
+  let dir=tempfile::tempdir().unwrap();let database=dir.path().join("library.db");let audio=dir.path().join("song.flac");
+  assert!(std::process::Command::new("ffmpeg").args(["-loglevel","error","-f","lavfi","-i","sine=frequency=440:duration=0.1","-y"]).arg(&audio).status().unwrap().success());
+  let png=dir.path().join("picture.png");image::RgbImage::from_pixel(8,8,image::Rgb([220u8,30,20])).save(&png).unwrap();
+  let mut tagged=lofty::read_from_path(&audio).unwrap();if tagged.primary_tag().is_none(){tagged.insert_tag(Tag::new(tagged.primary_tag_type()));}
+  let mut picture=Picture::from_reader(&mut std::fs::File::open(&png).unwrap()).unwrap();picture.set_pic_type(PictureType::CoverFront);tagged.primary_tag_mut().unwrap().push_picture(picture);tagged.save_to_path(&audio,WriteOptions::default()).unwrap();
+  let before=std::fs::read(&audio).unwrap();let db=musicos_init::database::Db::open(&database.to_string_lossy()).unwrap();let id=db.insert_track(&audio.to_string_lossy(),"Song","Artist","Record",1,1,1).unwrap();
+  let c=musicos_init::database::Connection::open(&database).unwrap();c.execute("INSERT INTO track_metadata_overrides(track_id,artwork_path,origin,updated_at) VALUES(?,'/deleted/chosen.png','user',1)",[id]).unwrap();
+  let mut library=group(LibrarySnapshot{tracks:vec![Track{id,path:audio.to_string_lossy().into_owned(),artist:"Artist".into(),album:"Record".into(),..Default::default()}],..Default::default()});canonical_artwork(&database,&mut library).unwrap();assert!(library.albums[0].cover.is_none());
+  let path=recover_album_artwork(&database,&library.albums[0]).unwrap().unwrap();assert!(std::path::Path::new(&path).is_file());assert_eq!(image::open(&path).unwrap().to_rgb8().get_pixel(0,0).0,[220,30,20]);
+  assert_eq!(c.query_row("SELECT artwork_path FROM track_metadata_overrides WHERE track_id=?",[id],|r|r.get::<_,String>(0)).unwrap(),"/deleted/chosen.png");
+  canonical_artwork(&database,&mut library).unwrap();assert_eq!(library.albums[0].cover.as_deref(),Some(path.as_str()));assert_eq!(std::fs::read(&audio).unwrap(),before);
+ }
 }

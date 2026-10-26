@@ -39,3 +39,16 @@ frames, no competing button transition, stable stacking, no remaining menu work,
 opaque pixels over an album, late palette updates, reversal, deferred navigation,
 Escape, focus restoration and Reduced Motion. Native installation and latest
 profile preservation are recorded below when complete.
+
+## Native recovery follow-up
+
+The first installed candidate (`36ad8ad`, primary `83a1b08`) verified the refreshed
+Sync in Settings and the selector surface. Native checking exposed another layer
+of missing-cover recovery: legacy extraction rebuilt local art, then returned the
+now-deleted user override path from the database accessor. The override remains
+intact. Desktop recovery now accepts only a readable image, falls back to the
+same recording's embedded cover when needed, and publishes that fallback through
+the existing canonical artwork cache. No schema, tag or collection changes are
+introduced. A native regression passes with a deleted explicit override and an
+embedded-cover FLAC: the result is readable, the override is unchanged, the next
+canonical lookup uses the recovered image, and audio bytes are identical.

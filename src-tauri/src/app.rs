@@ -1414,12 +1414,10 @@ async fn library_artwork(app: tauri::AppHandle, track_id: i64, per_track: Option
         let grouped=load_library(&app)?;
         let Some(album)=grouped.albums.iter().find(|a|a.track_ids.contains(&track_id)) else{return Ok(None)};
         if let Some(path)=&album.cover {allow_art(&app,path);return Ok(Some(path.clone()));}
-        for id in &album.track_ids {
-            if let Some(path)=musicos_desktop::local::artwork::ensure_artwork(config.db_path.clone(),*id)? {
-                let path=path.to_string_lossy().into_owned();allow_art(&app,&path);
-                let _=app.emit("artwork-found",json!({"track_id":track_id,"path":path}));
-                let _=app.emit("library-changed",json!({"reason":"metadata"}));return Ok(Some(path));
-            }
+        if let Some(path)=library::recover_album_artwork(&config.db_path,album)? {
+            allow_art(&app,&path);
+            let _=app.emit("artwork-found",json!({"track_id":track_id,"path":path}));
+            let _=app.emit("library-changed",json!({"reason":"metadata"}));return Ok(Some(path));
         }
         Ok(None)
     })
