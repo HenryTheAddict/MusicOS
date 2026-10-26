@@ -54,7 +54,7 @@ export function useMenuPresentation(trigger:RefObject<HTMLButtonElement|null>){
    const height=element.getBoundingClientRect().height;
    const above=element.dataset.side==='top';
    const collapsed=above?'inset(100% 0% 0% 0%)':'inset(0% 0% 100% 0%)';
-   const options={duration:140,easing:'cubic-bezier(.2,.75,.2,1)',fill:'both' as FillMode};
+   const options={duration:140,easing:'cubic-bezier(.3,0,.7,1)',fill:'both' as FillMode};
    const backdrop=surface.animate([{height:'0px'},{height:`${height}px`}],options);
    const reveal=items.animate([{clipPath:collapsed},{clipPath:'inset(0% 0% 0% 0%)'}],options);
    backdrop.id='menu-surface';reveal.id='menu-reveal';animations.current=[backdrop,reveal];
