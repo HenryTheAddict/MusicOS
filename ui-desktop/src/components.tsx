@@ -274,7 +274,7 @@ export function Menu({
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
           onInteractOutside={event=>{const target=event.detail.originalEvent.target;if(!open||target instanceof Node&&trigger.current?.contains(target))event.preventDefault();}}
-          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||!menuOwnsFocus(trigger.current)){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
+          onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||!menuOwnsFocus(trigger.current,panel.session)){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
 
         >
           <div className="menu-panel-surface" aria-hidden="true"/><div className="menu-panel-items">

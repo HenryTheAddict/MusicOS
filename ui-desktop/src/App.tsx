@@ -1,3 +1,4 @@
+import {observeInputModality} from './inputModality';
 import {launchPreferences,rememberLaunchAppearance} from './launchTheme';
 import {usePlaylistDrop} from './usePlaylistDrop';
 import {usePlaybackFeed} from './playbackFeed';
@@ -472,6 +473,8 @@ export default function App() {
     }
     void resolve();return ()=>{gone=true;};
   }, [loading,look.source,themeRequest,themeEpoch]);
+  const inputModality=useRef<ReturnType<typeof observeInputModality>|null>(null);
+  useEffect(()=>{const observer=observeInputModality();inputModality.current=observer;return()=>{observer.dispose();inputModality.current=null;};},[]);
   const nativeQueueAction=useRef<()=>void>(()=>{});
   const run = useCallback(async (action: PlaybackAction) => {
     try {
@@ -481,6 +484,13 @@ export default function App() {
     }
   }, []);
   useEffect(() => {
+    const pointerSpace=(e:KeyboardEvent)=>{
+      const target=e.target as HTMLElement;
+      if(e.code!=="Space"||e.defaultPrevented||e.metaKey||e.ctrlKey||e.altKey||!player.track||!inputModality.current?.pointerFocus())return;
+      if(!target.closest("button,[role=button]")||target.closest("dialog,[role=menu],input,textarea,select,[contenteditable=true]")||document.querySelector('[role=menu]:not([inert])'))return;
+      e.preventDefault();e.stopPropagation();if(!e.repeat)void run({type:"toggle"});
+    };
+    window.addEventListener("keydown",pointerSpace,true);
     const listener = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
@@ -520,7 +530,7 @@ export default function App() {
       }
     };
     window.addEventListener("keydown", listener);
-    return () => window.removeEventListener("keydown", listener);
+    return () => {window.removeEventListener("keydown", listener);window.removeEventListener("keydown",pointerSpace,true);};
   }, [run, section, queueOpen, player.track?.id,findRoute,findOpen,miniMode,commandOpen]);
   function changePreferences(next: Preferences) {
     // A deliberate theme choice must not continue the launch interpolation:

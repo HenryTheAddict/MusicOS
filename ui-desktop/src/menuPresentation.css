@@ -40,3 +40,6 @@ button.soft-action:focus-visible{outline:2px solid var(--accent);outline-offset:
 
 .settings .appearance-controls>button.soft-action{background:var(--surface-color);justify-self:start;}
 .settings .appearance-controls>button.soft-action:is(:hover,:focus-visible){background:var(--blob-color);}
+
+/* Programmatic menu return after a pointer click is not Tab navigation. */
+html[data-input-modality=pointer] :is(button,[role=button]):focus-visible{outline:none;}
