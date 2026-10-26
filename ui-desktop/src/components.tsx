@@ -268,7 +268,9 @@ export function Menu({
         <Dropdown.Content
           forceMount
           ref={panel.ref}
-          style={{...inherited,...theme}}
+          // Section chrome follows the live app palette, including artwork that
+          // finishes decoding during the reveal. Item menus keep their owner snapshot.
+          style={selectedLabel?theme:{...inherited,...theme}}
           inert={!open||undefined}
           aria-hidden={!open||undefined}
           data-pointer-menu={point?true:undefined}

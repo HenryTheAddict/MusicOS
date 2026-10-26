@@ -15,6 +15,40 @@ test('reopening or replacing an exiting section menu cancels its pending navigat
  await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await finish(page);await expect(trigger.locator('.section-name')).toHaveText('Library');await page.keyboard.press('Escape');await finish(page);await expect(page.getByRole('button',{name:'MusicOS actions',exact:true})).toBeFocused();
  await page.emulateMedia({reducedMotion:'reduce'});await trigger.click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await expect(page.locator('.section-dropdown')).toHaveCount(0);await expect(trigger.locator('.section-name')).toHaveText('Settings');
 });
+// Check the painted pixel, not only the shell's geometry. The header shell and
+// portaled choices can have correct bounds while artwork paints between them.
+async function opaqueChoicePixel(page:Page){
+ const sample=await page.locator('.section-dropdown>.menu-panel-surface').evaluate(el=>{const r=el.getBoundingClientRect();return {x:Math.ceil(r.x+18),y:Math.ceil(r.y+Math.min(20,r.height/2)),fill:getComputedStyle(el).backgroundColor};});
+ const joinedFill=await page.getByRole('button',{name:'Choose section',exact:true}).evaluate(el=>getComputedStyle(el,'::after').backgroundColor);
+ expect(sample.fill).toBe(joinedFill);
+ const png=await page.screenshot({clip:{x:sample.x,y:sample.y,width:1,height:1},scale:'css'});
+ const colors=await page.evaluate(async({png,fill})=>{
+  const image=new Image();image.src=`data:image/png;base64,${png}`;await image.decode();
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d')!;
+  ctx.drawImage(image,0,0);const actual=[...ctx.getImageData(0,0,1,1).data];ctx.clearRect(0,0,1,1);ctx.fillStyle=fill;ctx.fillRect(0,0,1,1);return {actual,expected:[...ctx.getImageData(0,0,1,1).data]};
+ },{png:png.toString('base64'),fill:sample.fill});
+ expect(colors.expected[3]).toBe(255);
+ expect(Math.max(...colors.actual.map((value,i)=>Math.abs(value-colors.expected[i])))).toBeLessThanOrEqual(2);
+}
+test('section choices paint above album art throughout opening, collapse and reversal',async({page})=>{
+ await hold(page);
+ await page.addInitScript(()=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:125,appearance:{mode:'light',source:'artwork',accent:'#b02020',saturation:100,tint:15}}));});
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ const trigger=page.getByRole('button',{name:'Choose section',exact:true}),menu=page.locator('.section-dropdown');
+ await expect(page.locator('.album-artwork-stage img').first()).toBeVisible();
+ await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);
+ await trigger.click();await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);
+ for(const ms of [35,70,110]){await time(page,ms);await opaqueChoicePixel(page);}
+ await finish(page);await opaqueChoicePixel(page);
+ // A late palette update must color both joined paints together.
+ await page.evaluate(()=>{document.documentElement.style.setProperty('--surface-color','#d39e9a');document.documentElement.style.setProperty('--blob-color','#aa7772');document.documentElement.getAnimations().forEach(a=>a.finish());});
+ await opaqueChoicePixel(page);await page.screenshot({path:'out/persistent-qa/selector-opaque-over-album.png'});
+ await page.keyboard.press('Escape');await expect(menu).toHaveAttribute('inert','');await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);
+ await time(page,70);await opaqueChoicePixel(page);await page.screenshot({path:'out/persistent-qa/selector-opaque-collapse.png'});
+ await trigger.click();await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);await opaqueChoicePixel(page);await finish(page);await opaqueChoicePixel(page);
+ await page.keyboard.press('Escape');await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(a=>a.id==='menu-join').length)).toBe(1);await finish(page);await expect(menu).toHaveCount(0);await expect(trigger).toBeFocused();
+});
 async function seedQueue(page:Page){await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch(),body=await response.text();const seed='let player = { ...emptyPlayback };';expect(body).toContain(seed);await route.fulfill({response,body:body.replace(seed,'let player = {...emptyPlayback,track:tracks[0],queue:new URLSearchParams(location.search).has("emptyQueue")?[tracks[0]]:[tracks[0],tracks[1],tracks[1],tracks[2]],queue_index:0,queue_entry_ids:[71,72,73,74],position:30};')});});}
 async function settings(page:Page){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();}
 test('Up next preview and player share fully readable rows at all preset minimums',async({page})=>{

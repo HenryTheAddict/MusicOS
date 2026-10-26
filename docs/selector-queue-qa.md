@@ -73,3 +73,27 @@ The installed executable matches the recorded signed hash, strict signature
 verification passes, and all eight protected runtime/model hashes are unchanged.
 Release verification is complete. Human motion acceptance, physical touch and
 Windows/Linux remain separate checks.
+
+## Follow-up: opaque choices above album artwork
+
+The first native check missed a compositing failure over album details. The
+header-owned outline remained visible, but page artwork and titles painted
+above its lower fill while the portaled choices stayed in front. The user's
+20:15 screenshot exposed this. Section choices now also paint an opaque backdrop
+inside their own isolated portal. Its measured height and lower corners use the
+existing reveal; its border joins the header contour with no top seam or added
+shadow. The header still owns the one full outline and exterior shadow.
+
+Section colors now inherit the live global palette instead of an opening-time
+snapshot. That keeps both joined paints identical if artwork colors finish
+loading during the reveal. Item-specific action menus retain their palette
+snapshots.
+
+A new regression checks actual painted pixels over an album at intermediate
+opening and closing frames, reversal and completion; it also changes palette
+tokens while open and checks matching header/choice fills. Five focused Chromium
+cases and three WebKit cases pass, including existing geometry, deferred
+navigation, cancellation, keyboard focus and Reduced Motion checks. Early pixel
+checks sampled separate frames during the launch color transition; the test now
+waits for launch color settling and tests a controlled late-palette change.
+Production UI compilation passes. Native delivery and preservation follow below.
