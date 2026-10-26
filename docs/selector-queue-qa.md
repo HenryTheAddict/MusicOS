@@ -97,3 +97,25 @@ navigation, cancellation, keyboard focus and Reduced Motion checks. Early pixel
 checks sampled separate frames during the launch color transition; the test now
 waits for launch color settling and tests a controlled late-palette change.
 Production UI compilation passes. Native delivery and preservation follow below.
+
+
+The follow-up is installed from desktop commit `0ddedb6` (UI-only primary mirror
+`0b6c990`). The packaged app required refreshing its outer development signature;
+strict signature verification then passed before and after installation. Signed
+executable SHA-256:
+`f23170649cce31ab256ee9b05a80f58d86cfd87f2f9aca518b71aa46b73b5eff`.
+All eight embedded runtime/model hashes match the previous app.
+
+A fresh native check confirmed Stateside paused at 2:14 before clean quit.
+The latest profile, SQLite checkpoint, previous app and signed replacement are
+retained in `releases/desktop-selector-opaque-2026-10-25/`. Native screenshots
+`out/qa/os-foundation/selector-opaque/native-before.png` and `native-after.png`
+show the same Fancy That album behind the selector: the repaired panel completely
+covers the album image and title. `native-collapse.png` verifies the clean closed
+state and downward chevron. Playback remains paused at 134.166 seconds.
+
+Final checks match all six collection tables, 34 favorites, 508 tracks, interface
+preferences, integration configuration and playback fields against the immediate
+pre-install checkpoint; position delta is zero. No user settings were changed
+for this follow-up. Theme formulas, photography, OS sources, runtime and models
+were untouched. Release verification is complete.
