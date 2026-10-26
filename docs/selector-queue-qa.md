@@ -62,6 +62,14 @@ Native screenshots verify the single rounded Library surface and exterior
 shadow, its return to the header, section selection and the Wide Up next preview.
 The actual Wide mini-player was checked at 320×120: current cover/title/progress,
 a complete Up next / Romeo row with thumbnail and remove action, and stationary
-transport controls. Playback remains paused at 2:14. Restoring the original
-preset/view and final profile checks is pending a second Mac unlock; the lock
-screen interrupted this last step.
+transport controls. The original Standard preset and artwork view are restored,
+with a final native screenshot saved as `native-restored-standard.png`. Playback
+remains paused at 2:14, with the saved position unchanged at 134.16602 seconds.
+
+Final preservation checks pass: all six collection tables, 34 favorites, 508
+library tracks, interface preferences and integration configuration match the
+immediate pre-install checkpoint. Playback fields and position are unchanged.
+The installed executable matches the recorded signed hash, strict signature
+verification passes, and all eight protected runtime/model hashes are unchanged.
+Release verification is complete. Human motion acceptance, physical touch and
+Windows/Linux remain separate checks.
