@@ -25,3 +25,11 @@ The prior installed-vs-adaptive browser comparison remains approximately 16.7 ms
 The emulator runs without audio output to protect current Mac listening. Physical phone touch, Bluetooth/headset routing, actual Android Auto hardware/certification, OEM battery restrictions and system equalizers remain real-device gates. Windows/Linux are separate desktop gates. The APK is signed with a dedicated update key retained privately outside the repository; distribution is local, not a Play Store publication.
 
 Final app / APK hashes, unchanged protected runtime/model hashes and the private latest-profile checkpoint are recorded in the delivery's release.json. Installation requires a fresh paused/stopped check and preserves the previous app. Until that record says installed/post_load_verified, source/build completion must not be reported as a completed installation.
+
+## Installed native check — October 27, 2026
+
+Installed after a fresh native paused check and a private latest-profile checkpoint. MusicOS restored Kool Nuit at 122.2 seconds, paused. Foreground Home and album pages render with cached artwork; Devices starts with sharing off. Its selection menu contains the complete 13 saved collections and restores focus after Escape. The library retains 508 songs and 35 favorites; manual playlist rows/sequences and all saved preferences match the checkpoint. The original signed app is retained. The background window initially displayed its suspended startup render; bringing it forward resolved this without a production code change.
+
+Signed Mac executable SHA-256: `493901d4871235d159c2da757f7b4d051f52e1e63c4bc1157043e82a23440239`.
+Signed Android APK SHA-256: `e96a749caf2b172fc427106075f47ecf58c34059859c546b7a5b93b4bc38ab6f`.
+All eight protected embedded runtime/model files match the previous installation. The OS checkout remains unchanged. Release files and the complete hash record are in `releases/desktop-android-2026-10-27` in the primary workspace. Physical Android/route/Auto and Windows/Linux gates remain separate.
