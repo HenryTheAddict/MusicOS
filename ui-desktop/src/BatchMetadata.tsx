@@ -41,7 +41,7 @@ export default function BatchMetadata({tracks,albums=[],initialIds=[],onRefresh}
     }catch(e){setError(errorText(e));}finally{setBusy(false);}
   }
   return <section className="batch-metadata" aria-label="Edit library metadata">
-    <header><h2>Edit metadata</h2><p>Choose songs and fields to change. Review before saving; changes stay in MusicOS unless you choose to write file tags.</p></header>
+    <header><h2>Edit metadata</h2><p>Choose songs and fields to change. Review before saving; changes stay in musicOS unless you choose to write file tags.</p></header>
     <div className="metadata-split" data-detail={detail}><aside className="metadata-browser"><div className="size-options" role="group" aria-label="Edit selection"><button aria-pressed={view==='albums'} onClick={()=>setView('albums')}>Albums</button><button aria-pressed={view==='songs'} onClick={()=>setView('songs')}>Songs</button></div><fieldset disabled={busy} className="metadata-selection"><legend>Choose songs</legend>
       <label className="metadata-filter">Find songs<input aria-label="Find songs to edit" value={query} onChange={e=>{setQuery(e.target.value);scroll.current?.scrollTo({top:0});}} placeholder="Title, artist or album"/></label>
       <div className="selection-actions"><button type="button" onClick={()=>setSelected(old=>new Set([...old,...matching.map(t=>t.id)]))}>Select matching songs</button><button type="button" onClick={()=>setSelected(new Set())}>Clear selection</button><output>{selected.size} selected</output></div>

@@ -26,7 +26,7 @@ for(const scale of [80,100,125,150])test(`Now Playing aligns title and cover at 
  if(scale===100){await expect(page.locator('.album-copy h1')).toHaveCSS('opacity','1');await expect(page.locator('.track-table')).toHaveCSS('opacity','1');await page.evaluate(()=>document.fonts.ready);await page.screenshot({path:'out/persistent-qa/now-playing-aligned.png'});}
 });
 test('mini-player tools and transport center their supplied icons in both views',async({page})=>{
- await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});
+ await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});
  for(const mode of ['tall','queue']){
   const mini=page.locator('.mini-player');await expect(mini).toHaveAttribute('data-layout',mode);await mini.getByRole('button',{name:'Pause',exact:true}).click();
   const offsets=await mini.locator('.mini-player-tools>button,.mini-player-transport>button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect(),icon=button.querySelector('.heart-beat,.icon')!.getBoundingClientRect();return {x:(r.left+r.right-icon.left-icon.right)/2,y:(r.top+r.bottom-icon.top-icon.bottom)/2};}));
@@ -36,7 +36,7 @@ test('mini-player tools and transport center their supplied icons in both views'
 });
 
 test('cached mini queue still applies keyboard moves, removal and deck promotion',async({page})=>{
- await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+ await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const mini=page.locator('.mini-player'),rows=mini.locator('.queue-track');const count=await rows.count(),second=await rows.nth(1).locator('strong').textContent();
  await rows.nth(1).focus();await page.keyboard.press('Alt+ArrowUp');await expect(rows.first().locator('strong')).toHaveText(second!);await mini.locator('.queue-row').first().getByRole('button',{name:/Remove .+ from queue/}).click();await expect(rows).toHaveCount(count-1);
  const next=await rows.first().locator('strong').textContent();await mini.getByRole('button',{name:'Next track',exact:true}).click();await expect(mini.locator('.mini-player-copy strong').first()).toHaveText(next!);await expect(rows).toHaveCount(count-2);

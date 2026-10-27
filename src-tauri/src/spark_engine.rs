@@ -34,7 +34,7 @@ pub fn verify_candidate(manifest:&Manifest,evaluation:bool)->Result<()> {
 pub fn read_manifest(dir:&Path,evaluation:bool)->Result<Manifest> {
  let bytes=std::fs::read(dir.join("manifest.json"))?;ensure!(bytes.len()<65536,"Model manifest is too large");
  let manifest:Manifest=serde_json::from_slice(&bytes)?;
- ensure!(manifest.schema==1&&manifest.dimensions==512&&manifest.preprocessing==spark_audio::VERSION&&manifest.runtime=="onnxruntime-1.31.0","This model version needs a newer MusicOS runtime");
+ ensure!(manifest.schema==1&&manifest.dimensions==512&&manifest.preprocessing==spark_audio::VERSION&&manifest.runtime=="onnxruntime-1.31.0","This model version needs a newer musicOS runtime");
  verify_candidate(&manifest,evaluation)?;
  ensure!(manifest.status=="approved"||(evaluation&&manifest.status=="evaluation_candidate"),"Audio model is awaiting listening and packaged-runtime evaluation. Generation is unavailable.");
  ensure!(manifest.files.len()==3&&["audio.onnx","moods.json","preprocessor_config.json"].iter().all(|name|manifest.files.iter().filter(|f|f.name==*name).count()==1),"Incomplete model manifest");

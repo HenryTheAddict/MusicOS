@@ -87,7 +87,7 @@ function EmbeddedDevices({
   return (
     <section className="devices">
       <header className="device-toolbar">
-        <span>MusicOS player</span>
+        <span>musicOS player</span>
         <span className={`connection ${status?.connected ? "connected" : ""}`}>
           {status?.connected ? "Connected" : "Not connected"}
         </span>
@@ -96,7 +96,7 @@ function EmbeddedDevices({
         <aside className="device-list">
           <header className="device-identity">
             <Icon name="device" />
-            <div><h2>MusicOS player</h2><p>{status?.connected ? "Ready for your music" : "Waiting for a connection"}</p></div>
+            <div><h2>musicOS player</h2><p>{status?.connected ? "Ready for your music" : "Waiting for a connection"}</p></div>
           </header>
           <section className="device-settings-panel">
             <h3>Connection</h3>
@@ -109,7 +109,7 @@ function EmbeddedDevices({
           </section>
           <section className="device-settings-panel">
             <h3>Device preview</h3>
-            <p>Try MusicOS without a connected player.</p>
+            <p>Try musicOS without a connected player.</p>
             <button disabled={working} onClick={() => void operate(status?.preview.running ? "preview_stop" : "preview_start")}>
               <Icon name="autostart" />
               {working ? "Working…" : status?.preview.running ? "Stop preview" : "Launch preview"}
@@ -137,7 +137,7 @@ function EmbeddedDevices({
             </div> : <div className="device-empty"><Icon name="sync" /><p>Choose a music folder to review before transferring it to your player.</p><small>Your local library stays in place.</small></div>}
           </section> : <section className="device-transfer">
             <header><h2>Device preview</h2></header>
-            <div className="device-empty"><Icon name="device" /><p>The embedded MusicOS interface runs in its own window.</p><button disabled={working} onClick={() => void operate(status?.preview.running ? "preview_stop" : "preview_start")}>{status?.preview.running ? "Stop preview" : "Launch preview"}</button></div>
+            <div className="device-empty"><Icon name="device" /><p>The embedded musicOS interface runs in its own window.</p><button disabled={working} onClick={() => void operate(status?.preview.running ? "preview_stop" : "preview_start")}>{status?.preview.running ? "Stop preview" : "Launch preview"}</button></div>
           </section>}
           <section className="device-quality"><h2>Transfer format</h2><strong>{plan ? plan.profile.replaceAll("_", " ") : "Choose a folder to review"}</strong><p>{plan ? "Using your saved device quality profile." : "The sync review shows your saved quality profile and transfer size."}</p></section>
         </div>
@@ -164,16 +164,16 @@ export default function Devices({library,collections,onSync,busy}:{library:Libra
   <header><div><h1>Devices</h1><p>Your music on your phone, even offline.</p></div><span className="wifi-state">{status?.running?'Sharing on this network':'Wi-Fi sharing is off'}</span></header>
   <section className="wifi-share"><div><h2>Music to copy</h2><p>Choose songs or a collection. Originals and saved sequences stay on this Mac.</p></div><label>Selection<ThemedChoice label="Music to copy" value={selection} disabled={working} onChange={setSelection} options={[{value:"all",label:"Available library",icon:"Library"},{value:"favorites",label:"Favorites",icon:"hearted"},...collections.map(c=>({value:c.id,label:c.name}))]}/></label>
    <div className="wifi-actions"><span>{new Set(ids).size} songs selected</span><button data-playful className="primary" disabled={working||!ids.length} onClick={()=>void operate('start')}><Icon name="sync"/>{working?'Preparing verified copies…':status?.running?'Update shared music':'Start Wi-Fi sharing'}</button>{(status?.running||working)&&<button onClick={()=>void operate('stop')}>Stop sharing</button>}</div>
-   {status?.running&&<p className="wifi-note">{status.track_count} songs · {size(status.bytes_total)} ready. Keep MusicOS open while the phone copies them.{status.skipped>0?` ${status.skipped} unavailable or unsupported files were skipped.`:''}</p>}
+   {status?.running&&<p className="wifi-note">{status.track_count} songs · {size(status.bytes_total)} ready. Keep musicOS open while the phone copies them.{status.skipped>0?` ${status.skipped} unavailable or unsupported files were skipped.`:''}</p>}
   </section>
-  <section className="wifi-phone"><header><div><h2>Pair your Android phone</h2><p>Connect both devices to the same Wi-Fi, then open MusicOS on Android.</p></div><button data-playful disabled={working||!status?.running} onClick={()=>void operate('pair')}><Icon name="Plus"/>{status?.pairing?'New pairing link':'Create pairing link'}</button></header>
+  <section className="wifi-phone"><header><div><h2>Pair your Android phone</h2><p>Connect both devices to the same Wi-Fi, then open musicOS on Android.</p></div><button data-playful disabled={working||!status?.running} onClick={()=>void operate('pair')}><Icon name="Plus"/>{status?.pairing?'New pairing link':'Create pairing link'}</button></header>
    {status?.pairing&&<div className="wifi-pair"><img alt="Pairing QR code" src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(status.pairing.qr)}`}/><div><strong>Open this link on your phone</strong><p>Scan with your phone’s camera, or copy the link into Devices in the Android app. The link expires after two minutes. Approve the matching request here.</p><button onClick={()=>void navigator.clipboard.writeText(status.pairing!.link).then(()=>setCopied(true)).catch(()=>setError('Could not copy the pairing link. Try scanning the QR code.'))}>{copied?'Copied':'Copy pairing link'}</button></div></div>}
-   {!status?.running&&<p className="wifi-note">Start sharing to pair a phone. Sharing stays off when MusicOS launches.</p>}
+   {!status?.running&&<p className="wifi-note">Start sharing to pair a phone. Sharing stays off when musicOS launches.</p>}
    {status?.pending.map(phone=><article className="wifi-request" key={phone.id}><div><strong>{phone.name}</strong><small>Request {phone.id.slice(0,6)} · compare with the phone</small></div><button disabled={working} className="primary" onClick={()=>void operate('approve',phone.id)}>Approve</button><button disabled={working} onClick={()=>void operate('reject',phone.id)}>Decline</button></article>)}
   </section>
   <section className="wifi-paired"><h2>Paired phones</h2>{status?.peers.length?status.peers.map(phone=><article key={phone.id}><Icon name="device"/><div><strong>{phone.name}</strong><p>{phone.last_sync_at?`${phone.track_count} songs copied · ${new Date(phone.last_sync_at*1000).toLocaleString()}`:'Ready for the first copy. Choose Copy music on the phone.'}</p>{!!phone.bytes_transferred&&status.running&&<small>{size(phone.bytes_transferred)} transferred this session</small>}</div>{forget===phone.id?<div className="wifi-actions"><button onClick={()=>{void operate('revoke',phone.id);setForget(null);}}>Confirm forget</button><button onClick={()=>setForget(null)}>Cancel</button></div>:<button onClick={()=>setForget(phone.id)}>Forget…</button>}</article>):<p className="wifi-note">Your paired phones will appear here. Forgetting a phone revokes its access and keeps its offline copies.</p>}</section>
   {(error||status?.error)&&<p role="alert" className="inline-error">{error||status?.error}</p>}
   <p className="wifi-note">Transfers use an encrypted, pinned connection. Only approved phones can read selected music. Copies are verified before appearing in the phone’s library; interrupted downloads resume. Keep originals in formats your Android device supports.</p>
-  <details open={advanced} onToggle={e=>setAdvanced(e.currentTarget.open)}><summary>Embedded MusicOS player tools</summary>{advanced&&<EmbeddedDevices busy={busy} onSync={onSync}/>}</details>
+  <details open={advanced} onToggle={e=>setAdvanced(e.currentTarget.open)}><summary>Embedded musicOS player tools</summary>{advanced&&<EmbeddedDevices busy={busy} onSync={onSync}/>}</details>
  </section>;
 }

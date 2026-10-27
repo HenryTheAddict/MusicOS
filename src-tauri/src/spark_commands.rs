@@ -41,7 +41,7 @@ pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Resul
  match &request {
   Request::Install{directory}=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first");crate::spark_install::start(directory.into(),setup.dir.clone())?;},
   Request::CancelInstall=>crate::spark_install::cancel(),
-  Request::InstallStaged=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first.");if spark_engine::read_manifest(&setup.dir,setup.evaluation).is_err()&&!crate::spark_install::status().running {let source=setup.candidate_source();ensure!(source.join("manifest.json").is_file(),"The verified model is missing from this app. Reinstall the complete MusicOS package, or choose a verified model folder in Details.");crate::spark_install::start(source,setup.dir.clone())?;}},
+  Request::InstallStaged=>{ensure!(setup.evaluation,"Enable experimental audio Sparklist beta first.");if spark_engine::read_manifest(&setup.dir,setup.evaluation).is_err()&&!crate::spark_install::status().running {let source=setup.candidate_source();ensure!(source.join("manifest.json").is_file(),"The verified model is missing from this app. Reinstall the complete musicOS package, or choose a verified model folder in Details.");crate::spark_install::start(source,setup.dir.clone())?;}},
   Request::RemoveModel=>crate::spark_install::remove(&setup.dir)?,_=>{}
  }
  let manifest=spark_engine::read_manifest(&setup.dir,setup.evaluation);

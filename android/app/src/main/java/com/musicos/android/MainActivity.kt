@@ -312,7 +312,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                 ) {
                     SketchIcon("Album", Modifier.size(26.dp))
                     Text(
-                        "MusicOS",
+                        "musicOS",
                         Modifier.weight(1f).padding(start = 8.dp),
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
@@ -813,7 +813,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
             AlertDialog(
                 { model.message.value = null },
                 confirmButton = { TextButton({ model.message.value = null }) { Text("OK") } },
-                title = { Text("MusicOS") },
+                title = { Text("musicOS") },
                 text = { Text(message!!) },
             )
     }
@@ -1167,7 +1167,7 @@ private fun SettingsPage(
                                 }
                                 .onFailure {
                                     model.message.value =
-                                        "This device has no system equalizer available for MusicOS."
+                                        "This device has no system equalizer available for musicOS."
                                 }
                         },
                         androidx.core.content.ContextCompat.getMainExecutor(context),
@@ -1190,7 +1190,7 @@ private fun SettingsPage(
                         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                 )
             }
-            Text("MusicOS · Figtree · supplied Sketch icons", fontSize = 12.sp)
+            Text("musicOS · Figtree · supplied Sketch icons", fontSize = 12.sp)
         }
     }
 }

@@ -610,9 +610,9 @@ test("SVG playback morph respects reduced motion", async ({ page }) => {
   expect(await pause.locator("path").last().getAttribute("d")).toContain("M21.2,4");
 });
 
-test("MusicOS branding, Figtree parentheses and opt-in Labs", async ({page}) => {
+test("musicOS branding, Figtree parentheses and opt-in Labs", async ({page}) => {
   await start(page);
-  await expect(page.locator(".header-brand")).toContainText("MusicOS");
+  await expect(page.locator(".header-brand")).toContainText("musicOS");
   await page.evaluate(() => document.fonts.ready);
   const metrics=await page.evaluate(() => {
     const canvas=document.createElement("canvas"); const ctx=canvas.getContext("2d")!;
@@ -624,7 +624,7 @@ test("MusicOS branding, Figtree parentheses and opt-in Labs", async ({page}) => 
   expect(metrics.left).toBeLessThan(metrics.space*2);
   await settings(page);
   await page.getByRole("tab",{name:"Integrations",exact:true}).click();
-  await expect(page.getByRole("heading",{name:/MusicOS Labs/})).toBeVisible();
+  await expect(page.getByRole("heading",{name:/musicOS Labs/})).toBeVisible();
   const discord=page.getByRole("switch",{name:"Discord presence",exact:true});
   await expect(discord).not.toBeChecked();
   await expect(page.getByRole("switch",{name:"Last.fm scrobbling",exact:true})).toBeDisabled();

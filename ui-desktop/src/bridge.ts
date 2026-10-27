@@ -179,7 +179,7 @@ export async function call<K extends keyof Commands>(
       task: emptyTask,
     } as Commands[K]["result"];
   if(command==="refresh_library")return emptyLibrary as Commands[K]["result"];
-  throw new Error("Open the MusicOS desktop app to use your library.");
+  throw new Error("Open the musicOS desktop app to use your library.");
 }
 export function errorText(error: unknown) {
   if (error && typeof error === "object" && "message" in error)

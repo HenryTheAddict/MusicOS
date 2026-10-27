@@ -15,9 +15,9 @@ import {Cover,Icon,duration,collectionDuration} from './components';
 import type {Library,SavedCollection,CollectionRequest,Track,SparkState} from './types';
 type Shared={finding?:boolean;audioModel?:SparkState;library:Library;items:SavedCollection[];onChange:(items:SavedCollection[])=>void};
 export async function playlistFile(action:'import'|'export'|'artwork',id?:string){
- if(!native)throw new Error('Open MusicOS desktop to choose a file.');
+ if(!native)throw new Error('Open musicOS desktop to choose a file.');
  const filters=action==='artwork'?[{name:'Artwork',extensions:['png','jpg','jpeg','webp']}]:[{name:'Playlist',extensions:['m3u','m3u8']}];
- const path=action==='export'?await save({filters,defaultPath:'MusicOS playlist.m3u8'}):await open({multiple:false,directory:false,filters});
+ const path=action==='export'?await save({filters,defaultPath:'musicOS playlist.m3u8'}):await open({multiple:false,directory:false,filters});
  if(!path||Array.isArray(path))return null;
  return call('playlist_file',{action,id,path});
 }

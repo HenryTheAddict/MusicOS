@@ -45,7 +45,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
         val builder =
             NotificationCompat.Builder(applicationContext, "offline-sync")
                 .setSmallIcon(android.R.drawable.stat_sys_download)
-                .setContentTitle("MusicOS · Copying for offline listening")
+                .setContentTitle("musicOS · Copying for offline listening")
                 .setContentText(text)
                 .setContentIntent(open)
                 .setOnlyAlertOnce(true)

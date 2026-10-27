@@ -25,7 +25,7 @@ class OfflineSyncTest {
             JSONObject()
                 .put("id", 7)
                 .put("title", "Offline song")
-                .put("artist", "MusicOS")
+                .put("artist", "musicOS")
                 .put("album", "Fixture")
                 .put("album_id", "album")
                 .put("duration_ms", 1000)

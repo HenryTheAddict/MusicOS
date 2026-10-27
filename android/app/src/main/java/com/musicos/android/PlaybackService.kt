@@ -291,7 +291,7 @@ class PlaybackService : MediaLibraryService() {
             session: MediaLibrarySession,
             browser: MediaSession.ControllerInfo,
             params: LibraryParams?,
-        ) = Futures.immediateFuture(LibraryResult.ofItem(folder("root", "MusicOS"), params))
+        ) = Futures.immediateFuture(LibraryResult.ofItem(folder("root", "musicOS"), params))
 
         override fun onGetChildren(
             session: MediaLibrarySession,

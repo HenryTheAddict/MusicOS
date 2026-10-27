@@ -1,5 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
-async function mini(page:Page){await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await expect(page.locator('.mini-player')).toBeVisible();}
+async function mini(page:Page){await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await expect(page.locator('.mini-player')).toBeVisible();}
 test('personal entry has creation, no shortcuts, and More only navigates',async({page})=>{
  await page.goto('/?fixture=1');expect(await page.locator('.sidebar-personal .personal-collection').count()).toBe(0);
  for(const [name,dialog] of [['New playlist','Create playlist'],['New Sparklist','Create Sparklist'],['New Smart playlist','Create Smart playlist']]){

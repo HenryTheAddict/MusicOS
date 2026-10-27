@@ -1,6 +1,6 @@
 # Android offline listening and Wi-Fi transfer
 
-MusicOS Android is a native Android client. It keeps the supplied Sketch icons, Figtree, rounded solid blue surfaces, Home/Search/Library navigation, an acknowledged Play/Pause morph, and a player inside the app. The Mac remains the library source. Copying never starts or pauses Mac playback.
+musicOS Android is a native Android client. It keeps the supplied Sketch icons, Figtree, rounded solid blue surfaces, Home/Search/Library navigation, an acknowledged Play/Pause morph, and a player inside the app. The Mac remains the library source. Copying never starts or pauses Mac playback.
 
 ## Using it
 

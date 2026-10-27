@@ -83,7 +83,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                     }
                     .onFailure {
                         message.value =
-                            "Could not connect to Android playback. Reopen MusicOS to retry."
+                            "Could not connect to Android playback. Reopen musicOS to retry."
                     }
             },
             ContextCompat.getMainExecutor(app),
@@ -234,7 +234,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                 val pending =
                     PairedMac(
                         parsed.server,
-                        "MusicOS",
+                        "musicOS",
                         parsed.host,
                         parsed.port,
                         parsed.fingerprint,
@@ -244,7 +244,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                 val client = WifiClient(pending)
                 val response =
                     client.pair(parsed.ticket, "${Build.MANUFACTURER} ${Build.MODEL}".take(60))
-                val mac = pending.copy(name = response.optString("server_name", "MusicOS"))
+                val mac = pending.copy(name = response.optString("server_name", "musicOS"))
                 pairingStatus.value =
                     "Approve this phone in Devices on ${mac.name}. Request ${mac.clientId.take(6)}."
                 var approved = false

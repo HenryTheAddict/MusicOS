@@ -5,7 +5,7 @@ async function start(page:Page){
  await page.locator('[data-track-id="1"]').hover();await page.locator('[data-track-id="1"] .row-play').click();
 }
 test('mini heart follows playing BPM, and queue retains rows/scroll across animated show/hide',async({page})=>{
- await start(page);await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
+ await start(page);await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
  await page.setViewportSize({width:244,height:320});
  const mini=page.locator('.mini-player'),heart=mini.locator('.mini-favorite');
  await expect(heart).toBeVisible();expect(await heart.evaluate(el=>el.querySelector('svg')!.getBoundingClientRect().width<=el.getBoundingClientRect().width*.6)).toBe(true);await expect(heart).toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');

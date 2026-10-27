@@ -209,10 +209,10 @@ export async function fixtureCall(
 
     case "integration_status": return integrationStatus;
     case "integration_action":
-      if (a.request.action !== "configure") throw new Error("Open MusicOS desktop to connect your account.");
+      if (a.request.action !== "configure") throw new Error("Open musicOS desktop to connect your account.");
       if (a.request.discord_enabled && !/^\d{17,20}$/.test(a.request.discord_client_id)) throw new Error("Enter the Application ID from your Discord developer application.");
       if (a.request.lastfm_enabled) throw new Error("Connect Last.fm before enabling scrobbling.");
-      integrationStatus = { ...integrationStatus, config: { ...integrationStatus.config, ...a.request }, discord: a.request.discord_enabled ? "Browser preview · open MusicOS desktop to connect" : "Off" };
+      integrationStatus = { ...integrationStatus, config: { ...integrationStatus.config, ...a.request }, discord: a.request.discord_enabled ? "Browser preview · open musicOS desktop to connect" : "Off" };
       return { status: integrationStatus, auth_url: null };
     case 'mini_resize':localStorage.setItem('musicos-fixture-window-size',JSON.stringify(a));return undefined;
     case "bootstrap_state":

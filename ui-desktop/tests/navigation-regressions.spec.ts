@@ -6,7 +6,7 @@ test('navigation and context menus animate, while data and theme controls do not
  await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await page.evaluate(()=>{(window as any).navigationMotion=[];});await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='album-detail-reveal'))).toBe(true);
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='navigation-content'&&m.target==='page-content'))).toBe(false);
- await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await expect(page.getByRole('menu',{name:'MusicOS actions',exact:true})).not.toHaveCSS('animation-name','none');await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await expect(page.getByRole('menu',{name:'musicOS actions',exact:true})).not.toHaveCSS('animation-name','none');await page.keyboard.press('Escape');
  await section(page,'Settings');await page.getByRole('tab',{name:'Audio',exact:true}).click();
  const count=()=>page.evaluate(()=>(window as any).navigationMotion.filter((m:any)=>m.animation.id==='content-change').length);const before=await count();expect(before).toBeGreaterThan(0);await page.getByRole('button',{name:'8 bands',exact:true}).click();expect(await count()).toBe(before);
  await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('tab',{name:'Library',exact:true}).click();expect(await count()).toBe(before);

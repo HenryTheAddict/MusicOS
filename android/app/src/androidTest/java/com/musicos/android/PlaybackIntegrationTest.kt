@@ -61,7 +61,7 @@ class PlaybackIntegrationTest {
                 server,
                 1,
                 "Offline fixture",
-                "MusicOS",
+                "musicOS",
                 "Copied over Wi-Fi",
                 "fixture",
                 "Electronic",
@@ -182,7 +182,7 @@ class PlaybackIntegrationTest {
             main { controller.pause() }
             scenario.recreate()
             compose.waitUntil(10000) {
-                compose.onAllNodesWithText("MusicOS").fetchSemanticsNodes().isNotEmpty()
+                compose.onAllNodesWithText("musicOS").fetchSemanticsNodes().isNotEmpty()
             }
             main {
                 assertFalse(controller.isPlaying)

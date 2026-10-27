@@ -618,11 +618,11 @@ export default function App() {
   async function chooseFolder(copy = false) {
     try {
       if (!native)
-        throw Error("Open the MusicOS desktop app to add your music.");
+        throw Error("Open the musicOS desktop app to add your music.");
       const result = await open({
         directory: true,
         multiple: true,
-        title: copy ? "Copy music into MusicOS" : "Add a music folder",
+        title: copy ? "Copy music into musicOS" : "Add a music folder",
       });
       if (!result) return;
       await call("library_task", {
@@ -900,7 +900,7 @@ export default function App() {
           </button>
         }
       >
-        Bring your albums, artists, and favorite songs into MusicOS.
+        Bring your albums, artists, and favorite songs into musicOS.
       </Empty>
     );
   else if(route.view==='playlist') {
@@ -1018,7 +1018,7 @@ export default function App() {
       : route.view
   ) as Scope;
   return (<>
-    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to MusicOS</button>}</div>)}
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
     <KeepView className="main-view" active={miniMode==='normal'}>{miniMode==='normal'&&<div
       className="app-shell adaptive-shell" ref={shell.root} data-layout={shell.layout}
       style={{'--playing-favorite-tone':playingPalette?.accent??'var(--accent)'} as CSSProperties}
@@ -1032,7 +1032,7 @@ export default function App() {
       <header className="app-header" onMouseDown={e=>dragWindow(e,setError)}>
         <div
           className="window-drag-region"
-        ><div className="header-brand"><Icon name="Album"/><span>MusicOS</span></div></div>
+        ><div className="header-brand"><Icon name="Album"/><span>musicOS</span></div></div>
         <div className="section-control">
         <Menu
           label="Choose section"
@@ -1044,10 +1044,10 @@ export default function App() {
             onSelect: () => chooseSection(label),
           }))}
         >
-          <Icon name={section==='Library'?'Library':section==='Settings'?'Settings':'device'}/><span className="section-name">{section}</span>
+          <span className="section-icon-space" aria-hidden="true"/><span className="section-name">{section}</span>
           <span className="chevron" aria-hidden="true"><svg viewBox="0 0 24 12"><path d="M1 1 12 11 23 1" /></svg></span>
         </Menu>
-        <Menu label="MusicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><Icon name="3dots_(nocircle)"/></Menu>
+        <Menu triggerClassName="section-actions-trigger" label="musicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><span className="section-action-glyph"><Icon name={section==='Library'?'Library':section==='Settings'?'Settings':'device'} className="section-category-glyph"/><Icon name="3dots_(nocircle)" className="section-dots-glyph"/></span></Menu>
         </div>
         <div className="header-drag-spacer" />
         <section style={playingStyle} className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
@@ -1297,7 +1297,7 @@ export default function App() {
           )}
         </div>
       </div>
-      {fileDrop&&<div className="file-drop-hint" role="status"><Icon name="Song"/><strong>Copy music into MusicOS</strong><span>Drop songs or folders. Originals stay where they are.</span></div>}
+      {fileDrop&&<div className="file-drop-hint" role="status"><Icon name="Song"/><strong>Copy music into musicOS</strong><span>Drop songs or folders. Originals stay where they are.</span></div>}
       {playlistTrack&&<PlaylistPicker ids={(playlistTrack as Track&{selectionIds?:number[]}).selectionIds} track={playlistTrack} library={library} items={collections} onChange={setCollections} onClose={()=>setPlaylistTrack(null)}/>}
       {deletingCollection&&<CollectionDelete item={deletingCollection} onChange={setCollections} onClose={()=>setDeletingCollection(null)}/>}
       {creatingCollection==='rule'&&<SmartCreate onChange={setCollections} onClose={()=>setCreatingCollection(null)}/>}
@@ -1316,8 +1316,8 @@ export default function App() {
           </p>
           <p>
             {pendingImport.folders
-              ? "Keep music in its current location, or make a copy in your MusicOS library."
-              : "Copy these files into your managed MusicOS library. The originals stay where they are."}
+              ? "Keep music in its current location, or make a copy in your musicOS library."
+              : "Copy these files into your managed musicOS library. The originals stay where they are."}
           </p>
           <div className="tool-actions">
             {pendingImport.folders && (
@@ -1345,7 +1345,7 @@ export default function App() {
                 setPendingImport(null);
               }}
             >
-              Copy into MusicOS
+              Copy into musicOS
             </button>
             <button onClick={() => setPendingImport(null)}>Cancel</button>
           </div>

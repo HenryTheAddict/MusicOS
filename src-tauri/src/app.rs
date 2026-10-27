@@ -1334,7 +1334,7 @@ async fn library_source(app: tauri::AppHandle, id: i64, enabled: bool) -> ApiRes
             .context("Folder no longer exists")?;
         anyhow::ensure!(
             source.kind != "managed",
-            "The managed MusicOS library stays available"
+            "The managed musicOS library stays available"
         );
         LocalLibraryRepository::new(&config.db_path, &config.media_dir)
             .update_source(id, enabled)?;
@@ -1481,7 +1481,7 @@ async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>
     let generation=app.state::<AppState>().wifi.begin();
     let prepare_app=app.clone();
     let share=blocking(move||{let state=prepare_app.state::<AppState>();let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let ids=track_ids.context("Choose music to copy")?;crate::wifi::prepare(&library,collections,&ids,name)}).await?;
-    app.state::<AppState>().wifi.start(share,"MusicOS Mac".into(),generation).await.map_err(Into::into)
+    app.state::<AppState>().wifi.start(share,"musicOS Mac".into(),generation).await.map_err(Into::into)
 }
 #[tauri::command]
 async fn device(
@@ -1721,7 +1721,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("Could not start MusicOS");
+        .expect("Could not start musicOS");
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
             let state=handle.state::<AppState>();

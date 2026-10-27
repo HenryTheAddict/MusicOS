@@ -28,7 +28,7 @@ data class PairLink(
         fun parse(text: String): PairLink {
             val uri = URI(text.trim())
             require(uri.scheme == "musicos" && uri.host == "pair" && uri.rawUserInfo == null) {
-                "Paste the pairing link shown by MusicOS on your Mac"
+                "Paste the pairing link shown by musicOS on your Mac"
             }
             val parts =
                 uri.rawQuery.orEmpty().split("&").associate {
@@ -146,7 +146,7 @@ data class SyncManifest(
     companion object {
         fun parse(j: JSONObject, expectedServer: String): SyncManifest {
             require(j.getInt("version") == 1 && j.getString("server_id") == expectedServer) {
-                "This is a different MusicOS library. Pair it separately."
+                "This is a different musicOS library. Pair it separately."
             }
             val rows = j.getJSONArray("tracks")
             require(rows.length() <= 50000)

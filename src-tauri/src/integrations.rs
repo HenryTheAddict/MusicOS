@@ -234,7 +234,7 @@ impl Worker {
             .json()
             .context("Last.fm returned an unreadable response.")?;
         if let Some(code) = value["error"].as_i64() {
-            bail!("{}",match code { 9=>"Last.fm session expired. Reconnect your account.", 4|10|13|26=>"Last.fm rejected the app credentials. Check your API key and shared secret.",14=>"Authorize MusicOS in your browser, then try again.",15=>"Authorization expired. Start connecting again.",_=>"Last.fm could not complete the request. Try again later." });
+            bail!("{}",match code { 9=>"Last.fm session expired. Reconnect your account.", 4|10|13|26=>"Last.fm rejected the app credentials. Check your API key and shared secret.",14=>"Authorize musicOS in your browser, then try again.",15=>"Authorization expired. Start connecting again.",_=>"Last.fm could not complete the request. Try again later." });
         }
         Ok(value)
     }
@@ -276,7 +276,7 @@ impl Worker {
                     lastfm_username: self.config.lastfm_username.clone(),
                 };
                 persist(&self.directory.join("integrations-v1.json"), &config)
-                    .context("Could not save MusicOS Labs settings.")?;
+                    .context("Could not save musicOS Labs settings.")?;
                 if !discord_enabled || config.discord_client_id != self.config.discord_client_id {
                     self.discord.clear();
                     self.discord = Discord::default();
@@ -311,7 +311,7 @@ impl Worker {
                     bail!("Disconnect the existing Last.fm account before connecting another.");
                 }
                 if api_key.trim().len() != 32 || shared_secret.trim().len() != 32 {
-                    bail!("Enter the 32-character Last.fm API key and shared secret for your MusicOS application.");
+                    bail!("Enter the 32-character Last.fm API key and shared secret for your musicOS application.");
                 }
                 self.credentials = Some(Credentials {
                     api_key: api_key.trim().into(),
@@ -408,7 +408,7 @@ impl Worker {
                     }
                 }
             }
-            self.status.discord_artwork=if !s.is_playing {"Waiting for playback"}else{match album_key.as_ref().and_then(|key|self.covers.get(key)){Some(lookup) if lookup.url.is_some()=>"Album artwork available",Some(lookup) if lookup.pending=>"Looking for album artwork · MusicOS icon fallback",Some(lookup) if lookup.error.is_some()=>"Artwork lookup failed · MusicOS icon fallback",_=>"No matching public cover · MusicOS icon fallback"}}.into();
+            self.status.discord_artwork=if !s.is_playing {"Waiting for playback"}else{match album_key.as_ref().and_then(|key|self.covers.get(key)){Some(lookup) if lookup.url.is_some()=>"Album artwork available",Some(lookup) if lookup.pending=>"Looking for album artwork · musicOS icon fallback",Some(lookup) if lookup.error.is_some()=>"Artwork lookup failed · musicOS icon fallback",_=>"No matching public cover · musicOS icon fallback"}}.into();
             let cover = album_key
                 .as_ref()
                 .and_then(|key| self.covers.get(key))
@@ -442,7 +442,7 @@ impl Worker {
                     }
                     Err(_) => {
                         if cover.is_some()&&self.discord.update(&self.config.discord_client_id,&s,None).is_ok(){
-                            self.discord_key=key;self.status.discord="Sharing your music".into();self.status.discord_rpc="Fallback activity acknowledged · image rendering not verified".into();self.status.discord_artwork="Album image not accepted · MusicOS icon fallback".into();
+                            self.discord_key=key;self.status.discord="Sharing your music".into();self.status.discord_rpc="Fallback activity acknowledged · image rendering not verified".into();self.status.discord_artwork="Album image not accepted · musicOS icon fallback".into();
                             if let Some(lookup)=album_key.as_ref().and_then(|key|self.covers.get_mut(key)){lookup.url=None;lookup.pending=false;lookup.error=Some("Discord did not accept this image".into());lookup.checked=Instant::now();}
                         }else{
                             self.status.discord_rpc="Not acknowledged · check Discord and application assets".into();self.discord=Discord::default();self.status.discord="Open Vesktop with Rich Presence via arRPC enabled, and check your Application ID.".into();self.discord_retry=Instant::now()+Duration::from_secs(13);
@@ -730,7 +730,7 @@ fn discord_activity(s: &LocalPlaybackSnapshot, cover: Option<&str>) -> Value {
     s.track.as_ref().map(|t|{
         let mut activity=json!({"type":2,"details":t.title.chars().take(128).collect::<String>(),"state":format!("{} · {}",t.artist,t.album).chars().take(128).collect::<String>(),"timestamps":{"start":now().saturating_sub(s.position as u64),"end":now().saturating_sub(s.position as u64)+t.duration.max(0) as u64}});
         let cover=cover.filter(|url|url::Url::parse(url).is_ok_and(|u|u.scheme()=="https"&&u.username().is_empty()&&u.password().is_none()&&u.host_str().is_some_and(|host|host.ends_with(".mzstatic.com"))));
-        activity["assets"]=if let Some(url)=cover{json!({"large_image":url,"large_text":t.album.chars().take(128).collect::<String>()})}else{json!({"large_image":"musicos","large_text":"MusicOS"})};
+        activity["assets"]=if let Some(url)=cover{json!({"large_image":url,"large_text":t.album.chars().take(128).collect::<String>()})}else{json!({"large_image":"musicos","large_text":"musicOS"})};
         activity
     }).unwrap_or(Value::Null)
 }

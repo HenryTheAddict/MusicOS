@@ -1,4 +1,4 @@
-# MusicOS
+# musicOS
 
 Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
 
