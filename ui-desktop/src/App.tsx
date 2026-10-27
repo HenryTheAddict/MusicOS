@@ -1,3 +1,4 @@
+import {usePlayfulControls} from './playfulControls';
 import {useShellLayout} from './useShellLayout';
 import {useDestinationNavigation,type Destination} from './useDestinationNavigation';
 import ExpandedPlayer,{type PlayerView} from './ExpandedPlayer';
@@ -131,6 +132,7 @@ function contrastInk(hex:string){
  return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722>.179?'#111820':'#fff';
 }
 export default function App() {
+  usePlayfulControls();
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataIds,setMetadataIds]=useState<number[]>([]);
   function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[]){captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
@@ -1127,7 +1129,7 @@ export default function App() {
 
         </section>
       </header>
-      {compact&&<nav className="bottom-navigation" aria-label="Main navigation">{(['home','search','library'] as Destination[]).map(tab=><button key={tab} aria-current={section==='Library'&&destination===tab?'page':undefined} onClick={()=>chooseDestination(tab)}><Icon name={tab==='home'?'Home':tab==='search'?'search':'Library'}/><span>{tab[0].toUpperCase()+tab.slice(1)}</span></button>)}</nav>}
+      {compact&&<nav className="bottom-navigation" aria-label="Main navigation">{(['home','search','library'] as Destination[]).map(tab=><button data-playful key={tab} aria-current={section==='Library'&&destination===tab?'page':undefined} onClick={()=>chooseDestination(tab)}><Icon name={tab==='home'?'Home':tab==='search'?'search':'Library'}/><span>{tab[0].toUpperCase()+tab.slice(1)}</span></button>)}</nav>}
       <div className={`workspace ${section !== "Library" ? "full-width" : ""}`}>
         {section === "Library" && !compact && (
           <aside className="library-sidebar">
@@ -1242,6 +1244,7 @@ export default function App() {
                 />
               </Suspense></KeepView><KeepView className="search-page-view" active={section==='Library'&&route.view==='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading search"/>}><SuperCommand presentation="page" focusRequest={searchFocus} open recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>chooseDestination(previousDestination.current)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={value=>{if(value==='Settings'||value==='Devices')chooseSection(value);else goScope(value.toLowerCase() as Route['view']);}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense></KeepView><KeepView className="library-view" active={section==='Library'&&route.view!=='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
                 <Devices
+                  library={library} collections={collections}
                   busy={task.running}
                   onSync={(root) => startTask("sync", root)}
                 />

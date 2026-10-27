@@ -61,6 +61,7 @@ pub struct AppState {
     mini_sizes: Mutex<std::collections::HashMap<String, tauri::PhysicalSize<u32>>>,
     mini_menu_size: Mutex<Option<tauri::PhysicalSize<u32>>>,
     player_window_operation: tokio::sync::Mutex<()>,
+    wifi: crate::wifi::Service,
     analysis: crate::analysis::Analysis,
     integrations: IntegrationService,
     config: Mutex<ControlCenterConfig>,
@@ -111,6 +112,7 @@ impl AppState {
             mini_sizes: Mutex::new(Default::default()),
             mini_menu_size: Mutex::new(None),
             player_window_operation: tokio::sync::Mutex::new(()),
+            wifi: Default::default(),
             analysis: Default::default(),
             integrations,
             config: Mutex::new(config),
@@ -1473,6 +1475,15 @@ async fn artwork_palette(app: tauri::AppHandle, path: String) -> ApiResult<provi
     .await
 }
 #[tauri::command]
+async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>,peer_id:Option<String>)->ApiResult<Value>{
+    if action=="status"{return Ok(app.state::<AppState>().wifi.status());}
+    if action!="start"{return app.state::<AppState>().wifi.action(&action,peer_id.as_deref()).map_err(Into::into);}
+    let generation=app.state::<AppState>().wifi.begin();
+    let prepare_app=app.clone();
+    let share=blocking(move||{let state=prepare_app.state::<AppState>();let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let ids=track_ids.context("Choose music to copy")?;crate::wifi::prepare(&library,collections,&ids,name)}).await?;
+    app.state::<AppState>().wifi.start(share,"MusicOS Mac".into(),generation).await.map_err(Into::into)
+}
+#[tauri::command]
 async fn device(
     app: tauri::AppHandle,
     action: String,
@@ -1619,7 +1630,7 @@ pub fn run() {
             audio_analysis, audio_tempos, playlist_file, sparklist,
             bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
-            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
+            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
             let state = AppState::new()?;

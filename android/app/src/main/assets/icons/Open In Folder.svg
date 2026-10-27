@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>Open In Folder</title>
+    <defs>
+        <path d="M0,0 L32,0 L32,32 L0,32 Z" id="path-1"></path>
+    </defs>
+    <g id="Open-In-Folder" stroke="none" fill="none" xlink:href="#path-1">
+
+        <path d="M6,6 L11.1715729,6 C11.7020059,6 12.2107137,6.21071368 12.5857864,6.58578644 L15.4142136,9.41421356 C15.7892863,9.78928632 16.2979941,10 16.8284271,10 L26,10 C27.1045695,10 28,10.8954305 28,12 L28,24 C28,25.1045695 27.1045695,26 26,26 L6,26 C4.8954305,26 4,25.1045695 4,24 L4,10 L4,8 C4,6.8954305 4.8954305,6 6,6 Z" id="Path" stroke="#000000" stroke-width="2"></path>
+    </g>
+</svg>

@@ -47,6 +47,12 @@ On Windows PowerShell:
 .\scripts\check-host.ps1
 ```
 
+## Android offline player
+
+The native Android app copies selected music, artwork and collection sequences from the Mac over encrypted Wi-Fi, then plays independently offline. Mac **Devices** handles sharing and phone approval. The phone provides a background audio session, media notifications, a persistent queue, lock-screen/headset controls and the supplied Sketch/Figtree presentation.
+
+See [Android setup, build and transfer contract](docs/android-offline-sync.md). This is separate from the embedded MusicOS OS image and desktop runtime/model bundle.
+
 ## React desktop app
 
 The default desktop is now React + TypeScript in Tauri 2, backed by the existing

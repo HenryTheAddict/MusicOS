@@ -339,6 +339,13 @@ export async function fixtureCall(
     case "cancel_search":
     case "cancel_task":
       return;
+    case "wifi_sync": {
+      const request=args as {action:string;trackIds?:number[];peerId?:string};
+      if(request.action==='start'){fixtureWifi.running=true;fixtureWifi.selected_ids=request.trackIds??[];fixtureWifi.track_count=fixtureWifi.selected_ids.length;fixtureWifi.bytes_total=fixtureWifi.track_count*5000000;}
+      if(request.action==='stop'){fixtureWifi.running=false;fixtureWifi.pairing=null;}
+      if(request.action==='pair')fixtureWifi.pairing={link:'musicos://pair?fixture=1',qr:'<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="white"/><text x="20" y="110">Fixture pairing</text></svg>',expires_at:Date.now()/1000+120};
+      return {...fixtureWifi};
+    }
     case "device":
       return {
         target: "http://127.0.0.1:18080",
@@ -368,3 +375,5 @@ export async function fixtureCall(
       throw Error(`Fixture command not supported: ${command}`);
   }
 }
+
+const fixtureWifi:import("./Devices").WifiStatus={running:false,track_count:0,bytes_total:0,skipped:0,selected_ids:[],peers:[],pending:[],pairing:null,error:null};

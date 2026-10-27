@@ -1,0 +1,9 @@
+/* Warmth comes from supplied drawings and brief reactions, never enlarged covers. */
+.home-eyebrow{display:flex;align-items:center;gap:.4rem;}
+.home-eyebrow>.icon{width:1.25rem;height:1.25rem;flex:none;}
+.home-create>.sketch-action,.wifi-devices button{transition:background-color 140ms ease-out,color 140ms ease-out;}
+.home-create>.sketch-action:hover,.wifi-devices button:not(.primary):not(:disabled):hover{background:color-mix(in srgb,var(--accent) 15%,var(--control-surface));}
+.home-tabs>button,.home-create>.sketch-action,.wifi-devices button{position:relative;}
+.home-tabs>button:active,.home-create>.sketch-action:active{background:color-mix(in srgb,var(--accent) 22%,var(--control-surface));}
+.home-empty>.icon{width:3rem;height:3rem;color:var(--secondary-ink);}
+@media(prefers-reduced-motion:reduce){.home-create>.sketch-action,.wifi-devices button{transition:none;}}

@@ -1,0 +1,8 @@
+import {test,expect} from '@playwright/test';
+test('Wi-Fi sharing is opt-in, bounded and independent of playback',async({page})=>{
+ await page.setViewportSize({width:480,height:480});await page.goto('/?fixture=1');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Devices',exact:true}).click();await expect(page.getByRole('heading',{name:'Devices',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Create pairing link',exact:true})).toBeDisabled();
+ expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='wifi_sync'&&c.args.action!=='status'))).toEqual([]);
+ await page.getByRole('button',{name:'Start Wi-Fi sharing',exact:true}).click();await expect(page.getByText('Sharing on this network',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Create pairing link',exact:true}).click();await expect(page.getByRole('img',{name:'Pairing QR code'})).toBeVisible();
+ for(const width of [480,720,1280]){await page.setViewportSize({width,height:480});expect(await page.locator('.wifi-devices').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);expect(await page.locator('.page-scroll').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);}
+ await page.screenshot({path:'out/persistent-qa/wifi-devices-1280.png'});await page.getByRole('button',{name:'Stop sharing',exact:true}).click();await expect(page.getByRole('img',{name:'Pairing QR code'})).toHaveCount(0);await expect(page.getByText('Wi-Fi sharing is off',{exact:true})).toBeVisible();expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toEqual([]);
+});

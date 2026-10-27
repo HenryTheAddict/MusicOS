@@ -53,3 +53,5 @@ pub mod file_tags;
 pub mod artwork_renditions;
 
 #[cfg(test)]mod reliability_tests;
+
+pub mod wifi;
