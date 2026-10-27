@@ -2,7 +2,7 @@
 use super::dj_audio::{self, Command, Frame, Schedule, Tail, RATE};
 use anyhow::{Context, Result};
 use musicos_init::{audio::LoopMode, database::Track};
-use rodio::{source::UniformSourceIterator, OutputStream, Sink, Source};
+use rodio::{source::UniformSourceIterator, Source};
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -67,8 +67,7 @@ pub struct Status {
     pub last_error: Option<String>,
 }
 pub struct DesktopPlayer {
-    _stream: Option<OutputStream>,
-    sink: Option<Sink>,
+    output: super::audio_output::AudioOutput,
     control: dj_audio::Control,
     decks: Vec<Deck>,
     errors: Arc<Mutex<Option<String>>>,
@@ -241,25 +240,9 @@ impl DesktopPlayer {
                 worker: Some(worker),
             });
         }
-        let output = (|| -> Result<_> {
-            let (stream, handle) = OutputStream::try_default()?;
-            let sink = Sink::try_new(&handle)?;
-            Ok((stream, sink))
-        })();
-        let (stream, sink) = match output {
-            Ok((stream, sink)) => {
-                sink.append(mixer);
-                (Some(stream), Some(sink))
-            }
-            Err(e) => {
-                *errors.lock().unwrap_or_else(|e| e.into_inner()) =
-                    Some(format!("Audio output unavailable: {e}"));
-                (None, None)
-            }
-        };
+        let output = super::audio_output::AudioOutput::new(mixer);
         Self {
-            _stream: stream,
-            sink,
+            output,
             control,
             decks,
             errors,
@@ -478,6 +461,10 @@ impl DesktopPlayer {
         Ok(())
     }
     pub fn tick(&mut self) {
+        self.output.poll(false);
+        // Output outages must not expire a healthy prepared decoder or advance
+        // the queue while its sample clock is stopped.
+        if !self.output.available(){self.preparing_since=std::time::Instant::now();return;}
         let mixing=self.control.clock.mixing.load(Ordering::Acquire);
         if mixing&&!self.was_mixing {super::dj_diagnostics::record("activated",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),format!("source {:.3}s",self.get_position()));}
         if !self.scheduled_reported && self.control.clock.schedule_id.load(Ordering::Acquire)==self.schedule_id && self.prepared.is_some_and(|(_,d)|self.control.clock.ready[d].load(Ordering::Acquire)) {self.scheduled_reported=true;super::dj_diagnostics::record("accepted",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),format!("mixer acknowledged plan {}, deck ready",self.schedule_id));}
@@ -604,7 +591,7 @@ impl DesktopPlayer {
         self.control.clock.source_frames[self.active].load(Ordering::Acquire) as f32 / RATE as f32
     }
     pub fn is_playing(&self) -> bool {
-        !self.paused && self.current.is_some() && self.sink.is_some()
+        !self.paused && self.current.is_some() && self.output.available()
     }
     pub fn pause(&mut self) {
         self.paused = true;
@@ -614,7 +601,8 @@ impl DesktopPlayer {
         if self.current.is_none() {
             return;
         }
-        self.paused = !self.paused;
+        self.output.poll(true);
+        self.paused = self.output.available() && !self.paused;
         self.command(Command::Pause(self.paused));
     }
     pub fn seek(&mut self, position: f32) {
@@ -816,7 +804,7 @@ impl DesktopPlayer {
             volume: self.volume,
             shuffle: self.shuffle,
             loop_mode: self.repeat,
-            backend: if self.sink.is_some() {
+            backend: if self.output.available() {
                 "MusicOS two-deck"
             } else {
                 "unavailable"
@@ -826,7 +814,7 @@ impl DesktopPlayer {
                 .errors
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .clone(),
+                .clone().or_else(||self.output.error.clone()),
         }
     }
 }
@@ -874,4 +862,25 @@ pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS
  #[test]fn acknowledged_schedule_is_protected_before_controller_poll(){let mut p=pending();p.control.clock.schedule_id.store(42,Ordering::Release);p.control.clock.ready[1].store(true,Ordering::Release);let mut next=p.transition.clone().unwrap();next.request_id=99;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);}
  #[test]fn paused_preparation_keeps_its_deadline_frozen(){let mut p=pending();p.paused=true;p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_some());assert!(p.failed_entries.is_empty());}
  #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
+}
+
+#[cfg(all(test,target_os="macos"))]
+mod output_recovery_tests {
+    use super::*;
+    fn wait(player:&mut DesktopPlayer,condition:impl Fn(&DesktopPlayer)->bool){
+        let until=std::time::Instant::now()+Duration::from_secs(4);
+        while !condition(player){assert!(std::time::Instant::now()<until,"Audio recovery timed out: {:?}",player.get_status().last_error);thread::sleep(Duration::from_millis(20));player.tick();}
+    }
+    #[test]fn reconnect_retains_playhead_duplicate_queue_controls_and_paused_intent(){
+        let temp=tempfile::tempdir().unwrap();let path=temp.path().join("silence.wav");let length=48000_u32*2*2*8;
+        let mut wav=Vec::new();wav.extend(b"RIFF");wav.extend((length+36).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16_u32.to_le_bytes());wav.extend(1_u16.to_le_bytes());wav.extend(2_u16.to_le_bytes());wav.extend(48000_u32.to_le_bytes());wav.extend(192000_u32.to_le_bytes());wav.extend(4_u16.to_le_bytes());wav.extend(16_u16.to_le_bytes());wav.extend(b"data");wav.extend(length.to_le_bytes());wav.resize(44+length as usize,0);std::fs::write(&path,wav).unwrap();
+        let track=Track{id:1,path:path.to_string_lossy().into(),title:"Output recovery".into(),artist:"Fixture".into(),album:"Fixture".into(),track_number:1,duration:8,file_size:length as i64,modified_at:0,indexed_at:0,cover_art_path:None,cover_art_updated_at:None,cover_art_source_modified_at:None,favorited:false,play_count:0,last_played:None,rating:0};
+        let mut player=DesktopPlayer::new();player.set_volume(0.);player.restore_queue_paused(vec![track.clone(),track],1,2.);player.set_shuffle(true);player.pins.insert(player.entry_ids()[0]);
+        let identities=player.entry_ids();let pins=player.pins.clone();
+        wait(&mut player,|p|p.get_position()>=2.);let position=player.get_position();
+        for _ in 0..3{player.output.simulate_disconnect();player.tick();assert!(!player.is_playing());assert_eq!(player.get_position(),position);assert_eq!(player.entry_ids(),identities);}
+        player.play_pause();wait(&mut player,|p|p.get_position()>position+0.1);assert!(player.is_playing());assert_eq!(player.current,Some(1));assert_eq!(player.pins,pins);assert!(player.shuffle);assert_eq!(player.volume,0.);
+        let before=player.get_position();player.output.simulate_disconnect();player.tick();wait(&mut player,|p|p.get_position()>before+0.1);assert!(player.is_playing());assert_eq!(player.entry_ids(),identities);
+        player.pause();thread::sleep(Duration::from_millis(50));player.tick();let paused=player.get_position();player.output.simulate_disconnect();player.tick();thread::sleep(Duration::from_millis(50));player.tick();assert!(!player.is_playing());assert_eq!(player.get_position(),paused);
+    }
 }

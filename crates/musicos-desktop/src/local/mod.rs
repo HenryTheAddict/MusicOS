@@ -1,3 +1,4 @@
+mod audio_output;
 pub mod deck_playback;
 pub mod decoded_audio;
 pub mod dj_audio;
