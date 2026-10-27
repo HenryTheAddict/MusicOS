@@ -65,10 +65,20 @@ export function useMenuPresentation(trigger:RefObject<HTMLButtonElement|null>){
   const reduced=()=>{if(media?.matches)finish();};
   // Scrolling within a panel must not snap its animation. Outside scrolling
   // dismisses through the same exit, including when an exit is already running.
-  const scroll=(event:Event)=>{if(visible.current&&!(event.target instanceof Node&&element.contains(event.target)))setOpen(false);};
+  const anchorBox=trigger.current?.getBoundingClientRect();
+  const scroll=(event:Event)=>{if(!visible.current||event.target instanceof Node&&element.contains(event.target))return;const current=trigger.current?.getBoundingClientRect();
+   // A queued scroll from bringing the trigger into view predates its opening.
+   // Dismiss only when subsequent scrolling actually moves the attachment.
+   if(!anchorBox||!current||Math.abs(current.x-anchorBox.x)>.5||Math.abs(current.y-anchorBox.y)>.5)setOpen(false);
+  };
   window.addEventListener('resize',finish);window.addEventListener('scroll',scroll,true);media?.addEventListener('change',reduced);
   return()=>{window.removeEventListener('resize',finish);window.removeEventListener('scroll',scroll,true);media?.removeEventListener('change',reduced);};
  },[open,element,setOpen,trigger]);
  useLayoutEffect(()=>()=>{afterExit.current=null;trigger.current?.style.removeProperty('--menu-join-height');trigger.current?.style.removeProperty('--menu-shadow-opacity');generation.current++;cancelAnimationFrame(frame.current);animations.current.forEach(animation=>animation.cancel());animations.current=[];},[]);
- return {open,present,session,setOpen,closeThen,ref,content,element};
+ const onEscapeKeyDown=useCallback((event:KeyboardEvent)=>{if(visible.current)return;
+  // An outgoing visual is inert immediately. Radix retains its global layer
+  // until unmount, so hand this Escape to the newly opened modal explicitly.
+  event.preventDefault();const modal=[...document.querySelectorAll<HTMLDialogElement>('dialog[open]:not([inert])')].at(-1);modal?.dispatchEvent(new Event('cancel',{cancelable:true}));
+ },[]);
+ return {open,present,session,setOpen,closeThen,ref,content,element,onEscapeKeyDown};
 }

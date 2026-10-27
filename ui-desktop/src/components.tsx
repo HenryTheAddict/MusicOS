@@ -235,6 +235,8 @@ export function Menu({
   const [inherited,setInherited]=useState<CSSProperties>({});
   const [point,setPoint]=useState<{x:number;y:number}|null>(null);
   const trigger=useRef<HTMLButtonElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
+  const [portalContainer,setPortalContainer]=useState<HTMLElement|undefined>();
+  useLayoutEffect(()=>setPortalContainer(trigger.current?.closest('dialog')??undefined),[]);
   const panel=useMenuPresentation(trigger);
   const {open,present,setOpen,content}=panel;
   const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
@@ -255,11 +257,11 @@ export function Menu({
     <Dropdown.Root modal={false} open={open} onOpenChange={next=>{if(next){setPoint(null);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
-        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${morph==="dots"?"soft-action":""} ${contextOnly?"context-only":""}`} data-panel-present={present||undefined} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
+        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${morph==="dots"?"soft-action":""} ${contextOnly?"context-only":""}`} data-morph={morph} data-panel-present={present||undefined} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
           {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>
-      {present&&<Dropdown.Portal forceMount>
+      {present&&<Dropdown.Portal container={portalContainer} forceMount>
         <Dropdown.Content
           forceMount
           ref={panel.ref}
@@ -273,6 +275,7 @@ export function Menu({
           align={selectedLabel?"end":"start"}
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
+          onEscapeKeyDown={panel.onEscapeKeyDown}
           onInteractOutside={event=>{const target=event.detail.originalEvent.target;if(!open||target instanceof Node&&trigger.current?.contains(target))event.preventDefault();}}
           onCloseAutoFocus={event=>{event.preventDefault();if(didSelect.current||!menuOwnsFocus(trigger.current,panel.session)){didSelect.current=false;contextOpened.current=false;return;}const target=contextOpened.current||contextOnly?origin.current:trigger.current;if(target?.isConnected)target.focus({preventScroll:true});contextOpened.current=false;}}
 

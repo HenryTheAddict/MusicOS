@@ -200,6 +200,7 @@ export type Scope = "albums" | "artists" | "genres" | "songs" | "playlists" | "s
 export type View =
   | Scope
   | "home"
+  | "search"
   | "album"
   | "artist"
   | "genre"

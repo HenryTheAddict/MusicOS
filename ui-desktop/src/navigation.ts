@@ -62,6 +62,7 @@ export function restoreNavigation(raw: string | null): Navigation {
     const state = JSON.parse(raw ?? "null");
     const allowed = [
       "home",
+      "search",
       "albums",
       "artists",
       "genres",

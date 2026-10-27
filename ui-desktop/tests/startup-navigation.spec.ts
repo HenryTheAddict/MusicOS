@@ -16,9 +16,9 @@ test('deferred screens and dialogs open during playback without losing navigatio
  await expect(page.locator('.devices')).toBeVisible();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();
  await page.getByRole('menuitem',{name:'Library',exact:true}).click();
- await page.getByRole('button',{name:'Manage collections',exact:true}).click();
+ await expect(page.locator('.section-name')).toHaveText('Library');await page.getByRole('button',{name:'MusicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Manage collections',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Collections',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Create Sparklist',exact:true}).click();
+ await page.getByRole('button',{name:'Create collection',exact:true}).click();await page.getByRole('menuitem',{name:'New Sparklist',exact:true}).click();
  await expect(page.getByRole('slider',{name:'Sparklist length'})).toBeVisible();
  await page.keyboard.press('Escape');
  await page.keyboard.press('ControlOrMeta+k');

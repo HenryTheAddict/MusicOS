@@ -1,6 +1,6 @@
 {
   "document": "C8FFC865-CF40-43FB-AA71-0B45DBA1EF0C",
-  "exported": "2026-10-25",
+  "exported": "2026-10-26",
   "note": "Exact Sketch icon vectors. Only full-frame white export canvases omitted. Updated non-transport masters and new visible groups refreshed; authored transport and other unchanged assets retained. The first tinySync master is the arrow version; duplicate dots master retained in source document.",
   "icons": [
     {
@@ -408,6 +408,11 @@
       "name": "unPin",
       "layer": "12410ED3-ED47-4577-8409-5CF2699A06EB",
       "file": "unPin.svg"
+    },
+    {
+      "layer": "E4FDE931-A4E1-4E34-B419-3560D9BBEB8C",
+      "name": "Library",
+      "file": "Library.svg"
     }
   ],
   "skipped_empty_masters": [

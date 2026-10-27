@@ -28,6 +28,7 @@ export function solidIcon(svg:string, name:string) {
     result=result.replace(/(<svg\b[^>]*>)/,'$1<defs><linearGradient id="transport-shade" x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="var(--transport-top,var(--icon-fill,currentColor))"/><stop offset="1" stop-color="var(--transport-bottom,var(--icon-fill,currentColor))"/></linearGradient></defs>');
   }
   if(name==='tinyX')result=result.replace(/stroke="#979797"/g,'stroke="var(--icon-stroke,currentColor)"');
+  if(name==='Library')result=result.replace(/fill="#FFFFFF"/g,'fill="var(--icon-surface,var(--control-surface))"');
   return result;
 }
 

@@ -7,7 +7,7 @@ test('only playback and collection controls retain themed shading',()=>{
 
 test('refreshed Sketch masters stay visible and transparent without changing path geometry',async()=>{
  const sources=import.meta.glob('../../assets/icons/ui/*.svg',{query:'?raw',import:'default',eager:true}) as Record<string,string>;
- for(const name of ['sync','tinySync','Album','SmartPlaylist','Metadata','Settings','Open In Finder','Open In Folder','Lyrics','Cloud','Drive','Add_circuled']){
+ for(const name of ['Library','sync','tinySync','Album','SmartPlaylist','Metadata','Settings','Open In Finder','Open In Folder','Lyrics','Cloud','Drive','Add_circuled']){
   const svg=sources[`../../assets/icons/ui/${name}.svg`];expect(svg, name).toBeTruthy();
   const parser=new DOMParser(),before=parser.parseFromString(svg,'image/svg+xml'),after=parser.parseFromString(solidIcon(svg,name),'image/svg+xml');
   expect(before.querySelector('parsererror'),name).toBeNull();expect(before.querySelector('svg')?.getAttribute('viewBox')).toMatch(/^0 0 (32 32|8 8)$/);
@@ -15,4 +15,11 @@ test('refreshed Sketch masters stay visible and transparent without changing pat
   expect([...after.querySelectorAll('path')].map(n=>n.getAttribute('d')),name).toEqual([...before.querySelectorAll('path')].map(n=>n.getAttribute('d')));
  }
  const sync=sources['../../assets/icons/ui/sync.svg'];expect(sync).toContain('C1.57857264,-6.57857264');expect(sync).not.toContain('stroke-width="4"');
+});
+
+test('Library preserves the three overlapping Sketch faces and two-unit strokes',()=>{
+ const sources=import.meta.glob('../../assets/icons/ui/Library.svg',{query:'?raw',import:'default',eager:true}) as Record<string,string>;
+ const svg=new DOMParser().parseFromString(solidIcon(sources['../../assets/icons/ui/Library.svg'],'Library'),'image/svg+xml');
+ expect(svg.querySelectorAll('g > path')).toHaveLength(3);
+ for(const path of svg.querySelectorAll('g > path')){expect(path.getAttribute('stroke-width')).toBe('2');expect(path.getAttribute('fill')).toBe('var(--icon-surface,var(--control-surface))');}
 });

@@ -1,5 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
-async function section(page:Page,name:string){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();}
+async function section(page:Page,name:string){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();await expect(page.locator('.section-name')).toHaveText(name);}
 test('Settings retains drafts, category, DOM and metadata search across navigation and Mini Player',async({page})=>{
  await page.goto('/?fixture=1');await section(page,'Settings');await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();await page.getByRole('tab',{name:'Edit',exact:true}).click();
  await page.getByRole('textbox',{name:'Find songs to edit',exact:true}).fill('Discovery');await page.locator('.batch-metadata .metadata-album-list>button').first().click();

@@ -1,16 +1,21 @@
-import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {useViewActive} from './ViewScope';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,useId} from 'react';
 import {Cover,Icon} from './components';
 import {call,errorText} from './bridge';
 import {trackCredits} from './credits';
 import {searchScore,groupMusicResults} from './commandSearch';
 import type {Album,Artist,Library,SavedCollection,SparkRecommendation} from './types';
 interface Result {group:string;score:number;id:string;title:string;detail:string;icon?:string;cover?:string|null;run:()=>void}
-export default function SuperCommand({open,library,collections,recommendations,isPlaying,hasTrack,onClose,onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue,onCreate}:{open:boolean;library:Library;collections:SavedCollection[];recommendations:(SparkRecommendation&{item:SavedCollection})[];isPlaying:boolean;hasTrack:boolean;onClose:()=>void;onPlay:(id:number)=>void;onAlbum:(album:Album)=>void;onArtist:(artist:Artist)=>void;onCollection:(item:SavedCollection)=>void;onNavigate:(destination:string)=>void;onPlayback:(action:'toggle'|'next'|'previous')=>void;onQueue:()=>void;onCreate:(items:SavedCollection[])=>void}){
- const dialog=useRef<HTMLDialogElement>(null),input=useRef<HTMLInputElement>(null);
+export default function SuperCommand({presentation='dialog',focusRequest=0,open,library,collections,recommendations,isPlaying,hasTrack,onClose,onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue,onCreate}:{presentation?:'dialog'|'page';focusRequest?:number;open:boolean;library:Library;collections:SavedCollection[];recommendations:(SparkRecommendation&{item:SavedCollection})[];isPlaying:boolean;hasTrack:boolean;onClose:()=>void;onPlay:(id:number)=>void;onAlbum:(album:Album)=>void;onArtist:(artist:Artist)=>void;onCollection:(item:SavedCollection)=>void;onNavigate:(destination:string)=>void;onPlayback:(action:'toggle'|'next'|'previous')=>void;onQueue:()=>void;onCreate:(items:SavedCollection[])=>void}){
+ const dialog=useRef<HTMLDialogElement>(null),container=useRef<HTMLElement>(null),input=useRef<HTMLInputElement>(null);
+ const viewActive=useViewActive(),prefix=useId().replace(/[^a-zA-Z0-9]/g,'');
+ const resultsId=`${prefix}-command-results`;
+ const resultId=(index:number)=>`${prefix}-command-${index}`;
  const transition=useRef<Animation|null>(null);
  const handlers=useRef({onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue});handlers.current={onPlay,onAlbum,onArtist,onCollection,onNavigate,onPlayback,onQueue};
  const [query,setQuery]=useState(''),[active,setActive]=useState(0),[creating,setCreating]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
- useEffect(()=>{const opener=document.activeElement as HTMLElement|null;const modal=dialog.current;modal?.showModal();input.current?.focus();return()=>{modal?.close();if(opener?.isConnected)opener.focus();};},[]);
+ useEffect(()=>{if(presentation!=='dialog')return;const opener=document.activeElement as HTMLElement|null;const modal=dialog.current;modal?.showModal();input.current?.focus();return()=>{modal?.close();if(opener?.isConnected)opener.focus({preventScroll:true});};},[presentation]);
+ useEffect(()=>{if(open&&viewActive&&presentation==='page')input.current?.focus({preventScroll:true});},[open,viewActive,presentation,focusRequest]);
  useLayoutEffect(()=>{
   const node=dialog.current;if(!node)return;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -39,14 +44,13 @@ export default function SuperCommand({open,library,collections,recommendations,i
  },[query,library,collections,recommendations,isPlaying,hasTrack]);
  useEffect(()=>setActive(0),[query]);
  useEffect(()=>setActive(index=>Math.max(0,Math.min(index,results.length-1))),[results.length]);
- useEffect(()=>{dialog.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});},[active,results.length]);
- function select(result:Result){if(!open)return;result.run();if(result.id!=='new-playlist')onClose();}
- async function create(){if(busy)return;setBusy(true);setError('');try{onCreate(await call('collections',{request:{action:'create',name:query}}));onClose();}catch(e){setError(errorText(e));}finally{setBusy(false);}}
- return <dialog ref={dialog} className="supercommand" data-open={open} aria-busy={busy} aria-label="SuperCommand" onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget)onClose();}} onKeyDown={e=>{
-  if(!open)return;
-  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setActive(index=>Math.max(0,Math.min(results.length-1,index+(e.key==='ArrowDown'?1:-1))));}
-  if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();if(creating)void create();else if(results[active])select(results[active]);}
- }}><header><Icon name="search"/><input ref={input} role="combobox" aria-label={creating?'Playlist name':'SuperCommand search'} aria-expanded={!creating} aria-controls="supercommand-results" aria-activedescendant={!creating&&results[active]?`command-${active}`:undefined} placeholder={creating?'Name your playlist…':'Search music or type a command…'} value={query} onChange={e=>setQuery(e.target.value)}/><button aria-label="Close SuperCommand" onClick={onClose}>Esc</button></header>
- {creating?<section className="command-create"><h2>Create playlist</h2><p>It will appear in your stuff.</p><button className="primary" disabled={busy||!query.trim()} onClick={()=>void create()}>{busy?'Creating…':'Create playlist'}</button>{error&&<p role="alert">{error}</p>}<button onClick={()=>{setCreating(false);setQuery('');}}>Back to commands</button></section>:<div id="supercommand-results" className="command-results" role="listbox" aria-label="Commands and music">{[...new Set(results.map(result=>result.group))].map(group=><section className="command-group" key={group} role="group" aria-label={group}><h3 aria-hidden="true">{group}</h3>{results.map((result,index)=>result.group===group&&<button key={result.id} id={`command-${index}`} role="option" aria-selected={active===index} onMouseMove={()=>setActive(index)} onClick={()=>select(result)}>{result.cover?<Cover src={result.cover} title={result.title}/>:<Icon name={result.icon??'search'}/>}<span><strong>{result.title}</strong><small>{result.detail}</small></span><kbd>↵</kbd></button>)}</section>)}{!results.length&&<p>No matches. Try an artist, album, song, or command.</p>}</div>}
- <footer><strong>Search MusicOS</strong><span>↑↓ Move · ↵ Select · Esc Close</span></footer></dialog>;
+ useEffect(()=>{if(viewActive)(dialog.current??container.current)?.querySelector('[aria-selected="true"]')?.scrollIntoView({block:'nearest'});},[active,results.length,viewActive]);
+ function select(result:Result){if(!open)return;result.run();if(result.id!=='new-playlist'&&presentation==='dialog')onClose();}
+ async function create(){if(busy)return;setBusy(true);setError('');try{onCreate(await call('collections',{request:{action:'create',name:query}}));if(presentation==='dialog')onClose();else setCreating(false);}catch(e){setError(errorText(e));}finally{setBusy(false);}}
+ const body=<><header><Icon name="search"/><input ref={input} role="combobox" aria-label={creating?'Playlist name':'SuperCommand search'} aria-expanded={!creating} aria-controls={resultsId} aria-activedescendant={!creating&&results[active]?resultId(active):undefined} placeholder={creating?'Name your playlist…':'Search music or type a command…'} value={query} onChange={e=>setQuery(e.target.value)}/><button aria-label="Close SuperCommand" onClick={onClose}>Esc</button></header>
+ {creating?<section className="command-create"><h2>Create playlist</h2><p>It will appear in your stuff.</p><button className="primary" disabled={busy||!query.trim()} onClick={()=>void create()}>{busy?'Creating…':'Create playlist'}</button>{error&&<p role="alert">{error}</p>}<button onClick={()=>{setCreating(false);setQuery('');}}>Back to commands</button></section>:<div id={resultsId} className="command-results" role="listbox" aria-label="Commands and music">{[...new Set(results.map(result=>result.group))].map(group=><section className="command-group" key={group} role="group" aria-label={group}><h3 aria-hidden="true">{group}</h3>{results.map((result,index)=>result.group===group&&<button key={result.id} id={resultId(index)} role="option" aria-selected={active===index} onMouseMove={()=>setActive(index)} onClick={()=>select(result)}>{result.cover?<Cover src={result.cover} title={result.title}/>:<Icon name={result.icon??'search'}/>}<span><strong>{result.title}</strong><small>{result.detail}</small></span><kbd>↵</kbd></button>)}</section>)}{!results.length&&<p>No matches. Try an artist, album, song, or command.</p>}</div>}
+ <footer><strong>Search MusicOS</strong><span>↑↓ Move · ↵ Select · Esc {presentation==='page'?'Back':'Close'}</span></footer></>;
+ const keys=(e:React.KeyboardEvent)=>{if(!open||!viewActive)return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setActive(index=>Math.max(0,Math.min(results.length-1,index+(e.key==='ArrowDown'?1:-1))));}if(e.key==='Enter'&&!e.nativeEvent.isComposing){e.preventDefault();if(creating)void create();else if(results[active])select(results[active]);}if(e.key==='Escape'&&presentation==='page'&&!document.querySelector('[role=menu]:not([inert])')){e.preventDefault();onClose();}};
+ if(presentation==='page')return <section ref={container} className="supercommand command-page" aria-label="Search MusicOS" aria-busy={busy} onKeyDown={keys}>{body}</section>;
+ return <dialog ref={dialog} className="supercommand" data-open={open} aria-busy={busy} aria-label="SuperCommand" onCancel={e=>{e.preventDefault();onClose();}} onClick={e=>{if(e.target===e.currentTarget)onClose();}} onKeyDown={keys}>{body}</dialog>;
 }

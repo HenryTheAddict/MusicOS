@@ -192,7 +192,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
             window.set_resizable(true)?;
             #[cfg(not(target_os = "macos"))]
             window.set_decorations(true)?;
-            window.set_min_size(Some(tauri::LogicalSize::new(720.0, 480.0)))?;
+            window.set_min_size(Some(tauri::LogicalSize::new(480.0, 480.0)))?;
             window.set_size(bounds.size)?;
             window.set_position(bounds.position)?;
             if bounds.maximized { window.maximize()?; }
