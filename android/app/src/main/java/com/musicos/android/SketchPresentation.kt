@@ -283,6 +283,7 @@ fun Artwork(path: String?, modifier: Modifier = Modifier) {
     val colors = LocalMusicColors.current
     val bitmap by
         produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, path) {
+            value = null
             value =
                 withContext(Dispatchers.IO) {
                     runCatching {

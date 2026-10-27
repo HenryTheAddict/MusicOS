@@ -161,6 +161,21 @@ class PlaybackIntegrationTest {
             compose.onNodeWithContentDescription("Up next").performClick()
             compose.onAllNodesWithText("Up next", useUnmergedTree = true).assertCountEquals(2)
             capture("android-queue")
+            val expectedFavorite=!app.repository.song(song.id)!!.favorite
+            app.repository.favorite(song.id)
+            var favoriteAcknowledged = false
+            compose.waitUntil(10000) {
+                main {
+                    favoriteAcknowledged =
+                        (controller.mediaMetadata.userRating as? androidx.media3.common.HeartRating)
+                            ?.isHeart == expectedFavorite
+                }
+                favoriteAcknowledged
+            }
+            main {
+                assertTrue(controller.isPlaying)
+                assertEquals(2, controller.mediaItemCount)
+            }
             scenario.moveToState(Lifecycle.State.CREATED)
             main { assertTrue(controller.isPlaying) }
             scenario.moveToState(Lifecycle.State.RESUMED)

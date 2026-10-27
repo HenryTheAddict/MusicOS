@@ -102,6 +102,24 @@ class PlaybackService : MediaLibraryService() {
             )
         session =
             MediaLibrarySession.Builder(this, player, Callbacks()).setSessionActivity(open).build()
+        scope.launch {
+            repository.snapshots.collect { library ->
+                val item = player.currentMediaItem ?: return@collect
+                val song = library.songs.find { it.id == item.mediaId } ?: return@collect
+                val rating = item.mediaMetadata.userRating as? HeartRating
+                if (rating?.isHeart != song.favorite) {
+                    val metadata =
+                        item.mediaMetadata
+                            .buildUpon()
+                            .setUserRating(HeartRating(song.favorite))
+                            .build()
+                    player.replaceMediaItem(
+                        player.currentMediaItemIndex,
+                        item.buildUpon().setMediaMetadata(metadata).build(),
+                    )
+                }
+            }
+        }
         // Restore metadata and position, paused. A headset/system Play remains an explicit command.
         scope.launch {
             val restore =
