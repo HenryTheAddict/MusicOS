@@ -6,6 +6,9 @@
 .menu-panel>.menu-panel-items{position:relative;max-height:inherit;overflow-y:auto;overscroll-behavior:contain;clip-path:inset(0% 0% 100% 0%);border-radius:inherit;padding:5px;}
 .menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--surface-color);}
 html[data-theme-mode=dark] .menu-panel.dropdown:not(.section-dropdown)>.menu-panel-surface{background:var(--control-surface);}
+/* Portaled choices must paint above the selector's expanding shell (layer 21).
+   A lower portal layer leaves the menu clickable but hides every label. */
+.menu-panel.dropdown{z-index:100;}
 .menu-panel.section-dropdown{position:fixed;}
 /* Paint the choices in their portal as well as the joined header shell.
    A header-owned pseudo-element can composite behind page artwork in WebKit;
