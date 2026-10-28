@@ -20,3 +20,11 @@ The Android player uses the same hierarchy, hides the redundant app header while
 Built on `codex/desktop-heart-preservation`. Primary OS branch remains untouched. Native application signature verified; embedded sidecar/runtime/model hashes must match the installed app before replacement. Installation requires a fresh paused/stopped check, a private profile/library checkpoint, and preservation of the previous app. Signed hashes and post-load status are recorded in `releases/desktop-mobile-player-2026-10-28/release.json` in the primary workspace.
 
 Physical Android touch, real phone font scaling/rotation, Bluetooth/headphone behavior and device-specific system chrome remain hardware acceptance gates. This change does not claim those were validated on a physical phone.
+
+Installed and visually checked on October 28. Native Now playing and Up next were inspected in a narrowed window, then the player was closed and wide desktop presentation restored. Pain remained paused at 28.4 seconds. All three latest profile files and the saved-collection fingerprint match the private pre-install checkpoint; 508 tracks, 35 favorites, two manual playlists/five entries retained. All eight embedded sidecar/runtime/model hashes are unchanged; primary OS repository is clean.
+
+Signed desktop executable SHA-256: `750261b127a06c62cbfc5c97350777d081c8f3371e888d6c730f4ecf116edecb`.
+
+Signed Android APK SHA-256: `bc4708ff59fda4c933d61017e780e2302e6dbeb075efbcc1173d284c6d6a02ab`.
+
+Desktop source commit: `f541247`. Archived delivery: `/Users/henry/Developer/MusicOS/releases/desktop-mobile-player-2026-10-28/`, including the previous app and revised APK. Android presentation was emulator verified; this APK has not been installed on a physical phone. The temporary test emulator was stopped after screenshots were inspected.
