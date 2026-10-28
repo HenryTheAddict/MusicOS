@@ -1,6 +1,6 @@
 import {test,expect,type Page} from '@playwright/test';
 async function paintedText(page:Page,label:string){
- const span=page.getByRole('menuitem',{name:label,exact:true}).locator('span').last();const box=(await span.boundingBox())!;
+ const span=page.getByRole('menuitem',{name:label,exact:true,includeHidden:true}).locator('span').last();const box=(await span.boundingBox())!;
  const ink=await span.evaluate(el=>getComputedStyle(el).color);const png=await page.screenshot({clip:{x:Math.ceil(box.x),y:Math.ceil(box.y),width:Math.max(1,Math.floor(box.width)-1),height:Math.max(1,Math.floor(box.height)-1)},scale:'css'});
  return page.evaluate(async({png,ink})=>{const img=new Image();img.src='data:image/png;base64,'+png;await img.decode();const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d')!;ctx.fillStyle=ink;ctx.fillRect(0,0,1,1);const target=[...ctx.getImageData(0,0,1,1).data];ctx.clearRect(0,0,c.width,c.height);ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,c.width,c.height).data;let painted=0;for(let i=0;i<pixels.length;i+=4){if(Math.max(...target.slice(0,3).map((v,k)=>Math.abs(v-pixels[i+k])))<30)painted++;}return painted;},{png:png.toString('base64'),ink});
 }
