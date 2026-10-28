@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -66,7 +67,8 @@ class WifiClient(private val mac: PairedMac) {
         when (code) {
             401,
             403 -> "This phone is no longer authorized. Pair it again in Devices."
-            409 -> "The music selection changed. Refresh it on the Mac and retry."
+            409,
+            412 -> "The music selection or copy format changed. Retry Copy music on the phone."
             429 -> "Too many pairing attempts. Try again in a minute."
             else -> "The Mac could not finish the transfer (HTTP $code)."
         }
@@ -97,7 +99,20 @@ class WifiClient(private val mac: PairedMac) {
             }
         }
 
-    suspend fun manifest() = SyncManifest.parse(json("manifest"), mac.id)
+    suspend fun manifest(waiting: suspend (String) -> Unit = {}): SyncManifest {
+        while (true) {
+            currentCoroutineContext().ensureActive()
+            try { return SyncManifest.parse(json("manifest"), mac.id) }
+            catch (error: SyncHttpError) {
+                if (error.code != 503) throw error
+                val progress = json("preparation")
+                val done = progress.optInt("completed")
+                val total = progress.optInt("total")
+                waiting("Mac is preparing music · $done of $total songs")
+                delay(1000)
+            }
+        }
+    }
 
     suspend fun pair(ticket: String, name: String) =
         json(
@@ -136,6 +151,7 @@ class WifiClient(private val mac: PairedMac) {
             val call =
                 http.newCall(
                     request(path)
+                        .header("If-Match", "\"$expectedHash\"")
                         .apply { if (offset > 0) header("Range", "bytes=$offset-") }
                         .build()
                 )

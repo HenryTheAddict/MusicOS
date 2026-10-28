@@ -55,8 +55,9 @@ class PlayerPresentationTest {
                 val identity = compose.onNodeWithTag("player-identity").getUnclippedBoundsInRoot()
                 assertEquals((art.right - art.left).value, (art.bottom - art.top).value, 1f)
                 assertTrue(identity.top.value - art.bottom.value < 20f)
-                compose.onNodeWithContentDescription("Volume").assertIsDisplayed()
-                val volume = compose.onNodeWithContentDescription("Volume").getUnclippedBoundsInRoot()
+                compose.onNodeWithContentDescription("Volume controls").performClick()
+                compose.onNodeWithContentDescription("Listening volume").assertIsDisplayed()
+                val volume = compose.onNodeWithContentDescription("Listening volume").getUnclippedBoundsInRoot()
                 assertTrue("Volume is fully inside the player", volume.bottom.value <= (if(small) 480f else 720f))
                 compose.waitUntil(5000) { cover.exists() }
                 compose.waitForIdle()
@@ -64,6 +65,7 @@ class PlayerPresentationTest {
                 val output = File(app.getExternalFilesDir(null), "qa/player-${if(theme) "dark" else "light"}-${if(small) "short" else "tall"}.png")
                 output.parentFile!!.mkdirs()
                 output.outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                compose.onNodeWithContentDescription("Volume controls").performClick()
                 compose.onNodeWithText("Up next").performClick()
                 compose.onAllNodesWithText(song.title).assertCountEquals(2)
                 compose.onNodeWithText("Now playing").performClick()

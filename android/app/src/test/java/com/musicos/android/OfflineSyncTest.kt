@@ -131,6 +131,25 @@ class OfflineSyncTest {
     }
 
     @Test
+    fun preparationWaitsInTheActiveTransferAndPreservesTheVorbisMime() = runBlocking<Unit> {
+        val (server, mac) = tlsServer()
+        try {
+            server.enqueue(MockResponse().setResponseCode(503))
+            server.enqueue(MockResponse().setBody("{\"preparing\":true,\"completed\":42,\"total\":508}"))
+            val ready = manifest()
+            ready.getJSONArray("tracks").getJSONObject(0).put("mime", "audio/ogg")
+            server.enqueue(MockResponse().setBody(ready.toString()))
+            val messages = mutableListOf<String>()
+            val result = WifiClient(mac).manifest { messages.add(it) }
+            assertEquals("audio/ogg", result.tracks.single().mime)
+            assertEquals(listOf("Mac is preparing music · 42 of 508 songs"), messages)
+            assertEquals("/v1/manifest", server.takeRequest().path)
+            assertEquals("/v1/preparation", server.takeRequest().path)
+            assertEquals("/v1/manifest", server.takeRequest().path)
+        } finally { server.shutdown() }
+    }
+
+    @Test
     fun pinnedDownloadResumesAndVerifiesBeforePublishing() =
         runBlocking<Unit> {
             val (server, mac) = tlsServer()
@@ -148,6 +167,7 @@ class OfflineSyncTest {
                 assertEquals("music", target.readText())
                 val request = server.takeRequest()
                 assertEquals("bytes=2-", request.getHeader("Range"))
+                assertEquals("\"${sha256("music".toByteArray())}\"", request.getHeader("If-Match"))
                 assertEquals(
                     "Bearer ${mac.clientId}.${mac.token}",
                     request.getHeader("Authorization"),

@@ -82,6 +82,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun songCount(count: Int) = "$count ${if(count == 1) "song" else "songs"}"
+
 private fun time(ms: Long) = "${ms/60000}:${(ms/1000%60).toString().padStart(2,'0')}"
 
 @Composable
@@ -311,7 +313,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
         Surface(Modifier.fillMaxSize(), color = colors.shell, contentColor = colors.ink) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 8.dp)) {
                 if (!player) Row(
-                    Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SketchIcon("Album", Modifier.size(26.dp))
@@ -319,11 +321,11 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                         "musicOS",
                         Modifier.weight(1f).padding(start = 8.dp),
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp,
+                        fontSize = 18.sp,
                     )
                     Box {
                         TextButton({ tools = true }) {
-                            Text(destination)
+                            Text(destination, color = colors.ink)
                             Spacer(Modifier.width(8.dp))
                             val arrow by
                                 animateFloatAsState(
@@ -507,26 +509,17 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                 } else if (destination == "Home") {
                                     if (playing.song != null)
                                         item {
-                                            Column(
-                                                Modifier.clip(RoundedCornerShape(18.dp))
-                                                    .background(colors.control)
-                                                    .padding(14.dp)
-                                            ) {
-                                                Text("Continue listening", fontSize = 12.sp)
-                                                Text(
-                                                    playing.song!!.title,
-                                                    maxLines = 2,
-                                                    fontWeight = FontWeight.Bold,
-                                                )
-                                                Text(
-                                                    playing.song!!.artist,
-                                                    color = colors.secondary,
-                                                )
-                                                MusicButton(
-                                                    if (playing.playing) "Pause" else "Resume",
-                                                    if (playing.playing) "Pause" else "Play",
-                                                    model::toggle,
-                                                )
+                                            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+                                                .background(colors.control).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Artwork(playing.song!!.artworkFile, Modifier.size(64.dp).clickable { player = true; queue = false })
+                                                Column(Modifier.weight(1f).padding(horizontal = 12.dp).clickable { player = true; queue = false }) {
+                                                    Text("Continue listening", fontSize = 12.sp, color = colors.secondary)
+                                                    Text(playing.song!!.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                                                    Text(playing.song!!.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = colors.secondary)
+                                                }
+                                                IconButton(model::toggle, Modifier.size(48.dp).semantics { contentDescription = if(playing.playing) "Pause saved song" else "Resume saved song" }) {
+                                                    PlayPauseIcon(playing.playing, Modifier.size(34.dp))
+                                                }
                                             }
                                         }
                                     item {
@@ -534,17 +527,21 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                             "Collections",
                                             style = MaterialTheme.typography.titleLarge,
                                         )
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
+                                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
                                             item {
-                                                MusicButton("Favorites", "Heart") {
-                                                    setDetail("favorites")
+                                                Column(Modifier.width(112.dp).clickable { setDetail("favorites") }) {
+                                                    Box(Modifier.size(112.dp).clip(RoundedCornerShape(16.dp)).background(colors.control), contentAlignment = Alignment.Center) {
+                                                        SketchIcon("Heart-Filled", Modifier.size(32.dp), colors.accent)
+                                                    }
+                                                    Text("Favorites", Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                                    Text(songCount(library.songs.count { it.favorite }), fontSize = 12.sp, color = colors.secondary)
                                                 }
                                             }
                                             items(library.collections, key = { it.id }) { c ->
-                                                MusicButton(c.name) {
-                                                    setDetail("collection:${c.id}")
+                                                Column(Modifier.width(112.dp).clickable { setDetail("collection:${c.id}") }) {
+                                                    Artwork(c.songIds.firstNotNullOfOrNull { id -> library.songs.find { it.id == id }?.artworkFile }, Modifier.size(112.dp))
+                                                    Text(c.name, Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    Text(songCount(c.songIds.size), fontSize = 12.sp, color = colors.secondary)
                                                 }
                                             }
                                         }
@@ -585,26 +582,25 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                     }
                                 } else {
                                     item {
-                                        LazyRow(
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            items(
-                                                listOf(
-                                                    "Albums",
-                                                    "Artists",
-                                                    "Songs",
-                                                    "Collections",
-                                                    "Favorites",
-                                                    "Genres",
-                                                )
-                                            ) { name ->
-                                                FilterChip(
-                                                    category == name,
-                                                    { category = name },
-                                                    label = { Text(name) },
-                                                )
+                                        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            listOf("Albums", "Artists", "Songs").forEach { name ->
+                                                TextButton({ category = name }, Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
+                                                    colors = ButtonDefaults.textButtonColors(containerColor = if(category == name) colors.control else androidx.compose.ui.graphics.Color.Transparent)) {
+                                                    Text(name, color = colors.ink, fontWeight = if(category == name) FontWeight.Bold else FontWeight.Normal)
+                                                }
+                                            }
+                                            var more by remember { mutableStateOf(false) }
+                                            Box {
+                                                IconButton({ more = true }, Modifier.size(48.dp).semantics { contentDescription = "More library views" }) { SketchIcon("More", Modifier.size(22.dp)) }
+                                                DropdownMenu(more, { more = false }) {
+                                                    listOf("Collections", "Favorites", "Genres").forEach { name ->
+                                                        DropdownMenuItem({ Text(name) }, { category = name; more = false })
+                                                    }
+                                                }
                                             }
                                         }
+                                        if(category !in listOf("Albums", "Artists", "Songs")) Text(category, Modifier.padding(bottom = 8.dp), fontWeight = FontWeight.SemiBold)
+
                                     }
                                     when (category) {
                                         "Songs",
@@ -642,6 +638,20 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                                     }
                                                     .entries
                                                     .toList()
+                                            if (category == "Albums") {
+                                                items(groups.chunked(2), key = { it.first().key }) { pair ->
+                                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                        pair.forEach { (_, songs) ->
+                                                            Column(Modifier.weight(1f).padding(bottom = 8.dp).clickable { setDetail("album:${songs.first().albumId}") }) {
+                                                                Artwork(songs.first().artworkFile, Modifier.fillMaxWidth())
+                                                                Text(songs.first().album, Modifier.padding(top = 6.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                                                                Text(songs.first().artist, fontSize = 12.sp, color = colors.secondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                            }
+                                                        }
+                                                        if(pair.size == 1) Spacer(Modifier.weight(1f))
+                                                    }
+                                                }
+                                            } else
                                             items(groups, key = { it.key }) { (key, songs) ->
                                                 Row(
                                                     Modifier.fillMaxWidth()
@@ -769,6 +779,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                         .forEach { (name, icon) ->
                             val reaction = remember(name) { Animatable(0f) }
                             val reactions = rememberCoroutineScope()
+                            val interaction = remember(name) { MutableInteractionSource() }
                             Column(
                                 Modifier.weight(1f)
                                     .clip(RoundedCornerShape(16.dp))
@@ -776,7 +787,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                         if (destination == name) colors.control else colors.shell
                                     )
                                     .testTag("nav-$name")
-                                    .clickable {
+                                    .clickable(interactionSource = interaction, indication = null) {
                                         destination = name
                                         player = false
                                         if (android.animation.ValueAnimator.areAnimatorsEnabled())
@@ -832,6 +843,7 @@ internal fun PlayerPage(
     onClose: () -> Unit,
 ) {
     val colors = LocalMusicColors.current
+    var volumeOpen by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(12.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.clip(RoundedCornerShape(14.dp)).background(colors.control).padding(2.dp)) {
@@ -903,25 +915,28 @@ internal fun PlayerPage(
         } else {
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 val short = maxHeight < 500.dp
-                val artSize = if (short) 96.dp else (maxHeight - 340.dp).coerceIn(96.dp, 320.dp).coerceAtMost(maxWidth - 24.dp)
-                Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(if (short) 8.dp else 12.dp)) {
+                Column(Modifier.widthIn(max = 420.dp).fillMaxWidth()
+                    .then(if(short) Modifier.verticalScroll(rememberScrollState()) else Modifier.fillMaxHeight())
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (short) 6.dp else 12.dp, Alignment.CenterVertically)) {
                     if (short) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Artwork(state.song?.artworkFile, Modifier.size(artSize).testTag("player-artwork"))
-                        PlayerIdentity(model, state, Modifier.weight(1f))
+                        Artwork(state.song?.artworkFile, Modifier.size(80.dp).testTag("player-artwork"))
+                        PlayerIdentity(model, state, Modifier.weight(1f), compact = true)
                     } else {
-                        Artwork(state.song?.artworkFile, Modifier.size(artSize).align(Alignment.CenterHorizontally).testTag("player-artwork"))
+                        Box(Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Artwork(state.song?.artworkFile, Modifier.heightIn(max = 300.dp).fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true).testTag("player-artwork"))
+                        }
                         PlayerIdentity(model, state, Modifier.fillMaxWidth())
                     }
                     PlayerSeek(model, state)
                     Transport(model, state, true)
-                    Row(Modifier.widthIn(max = 300.dp).fillMaxWidth().align(Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("Volume", fontSize = 12.sp, color = colors.secondary)
-                        PlayerSlider(state.volume, model::volume, Modifier.weight(1f), "Volume")
-                        Text("${(state.volume * 100).toInt()}%", fontSize = 12.sp, color = colors.secondary)
+                    Row(Modifier.widthIn(max = 300.dp).fillMaxWidth().align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
+                        TextButton({ volumeOpen = !volumeOpen }, Modifier.heightIn(min = 48.dp)
+                            .semantics { contentDescription = "Volume controls" }) {
+                            Text(if(volumeOpen) "Volume" else "Volume · ${(state.volume * 100).toInt()}%", color = colors.secondary, fontSize = 12.sp)
+                        }
+                        if (volumeOpen) PlayerSlider(state.volume, model::volume, Modifier.weight(1f), "Listening volume")
                     }
                     if (state.error != null) Text(state.error, color = MaterialTheme.colorScheme.error)
                 }
@@ -935,12 +950,12 @@ internal fun PlayerPage(
 }
 
 @Composable
-private fun PlayerIdentity(model: PhoneModel, state: Playing, modifier: Modifier) {
+private fun PlayerIdentity(model: PhoneModel, state: Playing, modifier: Modifier, compact: Boolean = false) {
     val colors = LocalMusicColors.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).testTag("player-identity")) {
-            Text(state.song?.title ?: "Nothing playing", fontSize = 24.sp, color = colors.ink,
-                lineHeight = 28.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(state.song?.title ?: "Nothing playing", fontSize = if(compact) 20.sp else 22.sp, color = colors.ink,
+                lineHeight = if(compact) 24.sp else 26.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(state.song?.let { "${it.artist} · ${it.album}" } ?: "Choose music in Library",
                 fontSize = 14.sp, color = colors.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }

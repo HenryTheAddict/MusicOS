@@ -78,16 +78,20 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                         )
                 setForeground(notification("Connecting to ${mac.name}", 0, 0))
                 var client = WifiClient(mac)
+                val waiting: suspend (String) -> Unit = { message ->
+                    setProgress(workDataOf("message" to message))
+                    setForeground(notification(message, 0, 0))
+                }
                 val manifest =
                     try {
-                        client.manifest()
+                        client.manifest(waiting)
                     } catch (first: IOException) {
                         val found = MacDiscovery(applicationContext).find(mac.id, mac.fingerprint)
                         if (found == null) throw first
                         mac = mac.copy(host = found.host, port = found.port)
                         SecurePairingStore(applicationContext).put(mac)
                         client = WifiClient(mac)
-                        client.manifest()
+                        client.manifest(waiting)
                     }
                 val needed =
                     manifest.tracks
@@ -121,6 +125,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                                         "done" to before + written,
                                         "total" to manifest.bytes,
                                         "song" to song.title,
+                                        "message" to "Copying ${index + 1} of ${manifest.tracks.size} · ${song.title}",
                                         "count" to index,
                                         "songs" to manifest.tracks.size,
                                     )
@@ -148,6 +153,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                             "done" to completeBytes,
                             "total" to manifest.bytes,
                             "song" to song.title,
+                                        "message" to "Copying ${index + 1} of ${manifest.tracks.size} · ${song.title}",
                             "count" to index + 1,
                             "songs" to manifest.tracks.size,
                         )

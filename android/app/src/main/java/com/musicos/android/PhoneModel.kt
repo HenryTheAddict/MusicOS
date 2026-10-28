@@ -275,6 +275,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
         val request =
             OneTimeWorkRequestBuilder<SyncWorker>()
                 .setInputData(workDataOf("server" to mac.id))
+                .setExpedited(androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(
                     Constraints.Builder()
                         .setRequiredNetworkType(NetworkType.UNMETERED)

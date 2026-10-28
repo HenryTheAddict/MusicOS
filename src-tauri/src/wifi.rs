@@ -1,4 +1,6 @@
 //! Opt-in, pinned-TLS offline transfer. This is separate from the embedded OS API.
+mod media;
+pub use media::CopyFormat;
 use anyhow::{bail, ensure, Context, Result};
 use axum::{
     body::{Body, Bytes},
@@ -175,8 +177,9 @@ pub struct Manifest {
     pub tracks: Vec<Track>,
     pub collections: Vec<Collection>,
     pub bytes_total: u64,
+    pub copy_format: CopyFormat,
 }
-#[derive(Clone)]
+#[derive(Clone,Serialize,Deserialize)]
 struct File {
     path: PathBuf,
     size: u64,
@@ -192,6 +195,7 @@ pub struct Share {
     art: BTreeMap<String, File>,
     pub skipped: usize,
     pub display_name: String,
+    pub format: CopyFormat,
 }
 fn file(path: &FsPath, mime: String) -> Result<File> {
     let path = fs::canonicalize(path)?;
@@ -233,9 +237,11 @@ fn mime(path: &FsPath) -> Option<&'static str> {
 }
 pub fn prepare(
     library: &crate::library::Library,
-    collections: Vec<crate::collections::Collection>,
-    ids: &[i64],
-    display_name: String,
+    collections: Vec<crate::collections::Collection>, ids:&[i64], display_name:String,
+) -> Result<Share> { prepare_with(library,collections,ids,display_name,CopyFormat::Original,&home(),&||true,&|_,_,_|{}) }
+pub fn prepare_with(
+    library:&crate::library::Library, collections:Vec<crate::collections::Collection>, ids:&[i64], display_name:String,
+    format:CopyFormat, folder:&FsPath, current:&dyn Fn()->bool, progress:&dyn Fn(usize,usize,&str),
 ) -> Result<Share> {
     ensure!(
         !ids.is_empty() && ids.len() <= 50000,
@@ -243,11 +249,14 @@ pub fn prepare(
     );
     let selected: HashSet<_> = ids.iter().copied().collect();
     let mut share = Share {
-        display_name,
+        display_name, format,
         ..Default::default()
     };
     let mut art_cache = HashMap::<PathBuf, Option<String>>::new();
-    for track in library.tracks.iter().filter(|t| selected.contains(&t.id)) {
+    let mut cache=media::Cache::at(folder.to_path_buf());
+    let albums:HashMap<_,_>=library.albums.iter().flat_map(|a|a.track_ids.iter().map(move |id|(*id,a.id.clone()))).collect();
+    for (index,track) in library.tracks.iter().filter(|t| selected.contains(&t.id)).enumerate() {
+        ensure!(current(),"Sharing preparation was cancelled");progress(index,selected.len(),&track.title);
         let path = FsPath::new(&track.path);
         if !track.available || !path.is_file() {
             share.skipped += 1;
@@ -257,27 +266,14 @@ pub fn prepare(
             share.skipped += 1;
             continue;
         };
-        let media = file(path, mime.into())?;
+        let media = cache.audio(path,mime,format,current)?;
         let artwork_sha256 = track.cover_art_path.as_ref().and_then(|path| {
             if let Some(value) = art_cache.get(path) {
                 return value.clone();
             }
             let result = (|| -> Result<String> {
-                let image = image::open(path)?.thumbnail(768, 768).to_rgb8();
-                let mut bytes = Vec::new();
-                image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 85)
-                    .encode_image(&image)?;
-                let sha = digest(&bytes);
-                let folder = home().join("artwork");
-                fs::create_dir_all(&folder)?;
-                let target = folder.join(format!("{sha}.jpg"));
-                if !target.exists() {
-                    fs::write(&target, &bytes)?;
-                }
-                share
-                    .art
-                    .insert(sha.clone(), file(&target, "image/jpeg".into())?);
-                Ok(sha)
+                let file=cache.artwork(path,current)?;let sha=file.sha256.clone();
+                share.art.insert(sha.clone(),file);Ok(sha)
             })();
             let value = result.ok();
             art_cache.insert(path.clone(), value.clone());
@@ -288,12 +284,7 @@ pub fn prepare(
             title: track.title.clone(),
             artist: track.artist.clone(),
             album: track.album.clone(),
-            album_id: library
-                .albums
-                .iter()
-                .find(|a| a.track_ids.contains(&track.id))
-                .map(|a| a.id.clone())
-                .unwrap_or_else(|| format!("album/{}", digest(track.album.as_bytes()))),
+            album_id: albums.get(&track.id).cloned().unwrap_or_else(||format!("album/{}",digest(track.album.as_bytes()))),
             genre: track.genre.clone(),
             year: track.year,
             track_number: track.track_number,
@@ -306,7 +297,10 @@ pub fn prepare(
             artwork_sha256,
         });
         share.files.insert(track.id.to_string(), media);
+        if format!=CopyFormat::Original||index%25==24 { cache.persist()?; }
+        progress(index+1,selected.len(),&track.title);
     }
+    cache.persist()?;
     ensure!(
         !share.tracks.is_empty(),
         "No available audio files in this selection"
@@ -335,7 +329,11 @@ pub struct Service {
     generation: AtomicU64,
     operation: tokio::sync::Mutex<()>,
     folder: PathBuf,
+    preparation: Arc<Mutex<Preparation>>,
+    cache_operation:Mutex<()>,
 }
+#[derive(Default,Clone,Serialize)]
+struct Preparation { preparing:bool, completed:usize, total:usize, current:String, error:Option<String>, format:CopyFormat }
 impl Default for Service {
     fn default() -> Self {
         Self::at(home())
@@ -358,6 +356,7 @@ struct Hub {
     addresses: Vec<String>,
     transferred: Mutex<HashMap<String, u64>>,
     mdns: Mutex<Option<mdns_sd::ServiceDaemon>>,
+    preparation: Arc<Mutex<Preparation>>,
 }
 impl Drop for Service {
     fn drop(&mut self) {
@@ -387,7 +386,7 @@ impl Hub {
             revision: String::new(),
             tracks: share.tracks.clone(),
             collections: share.collections.clone(),
-            bytes_total: share.tracks.iter().map(|t| t.size).sum(),
+            bytes_total: share.tracks.iter().map(|t| t.size).sum(),copy_format:share.format,
         };
         manifest.revision = digest(&serde_json::to_vec(&manifest).unwrap_or_default());
         manifest
@@ -435,7 +434,7 @@ impl Hub {
                 .unwrap_or_default();
             json!({"link":link,"qr":qr,"expires_at":t.expires_at})
         });
-        json!({"running":self.running.load(Ordering::Relaxed),"server_id":self.identity.id,"name":self.name,"port":self.port,"addresses":self.addresses,"selected_ids":share.tracks.iter().map(|t|t.id).collect::<Vec<_>>(),"track_count":share.tracks.len(),"bytes_total":share.tracks.iter().map(|t|t.size).sum::<u64>(),"skipped":share.skipped,"peers":peers,"pending":pending.iter().map(|p|json!({"id":p.id,"name":p.name,"created_at":p.created_at})).collect::<Vec<_>>(),"pairing":pairing,"error":*lock(&self.error)})
+        json!({"running":self.running.load(Ordering::Relaxed),"server_id":self.identity.id,"name":self.name,"port":self.port,"addresses":self.addresses,"selected_ids":share.tracks.iter().map(|t|t.id).collect::<Vec<_>>(),"track_count":share.tracks.len(),"bytes_total":share.tracks.iter().map(|t|t.size).sum::<u64>(),"skipped":share.skipped,"peers":peers,"pending":pending.iter().map(|p|json!({"id":p.id,"name":p.name,"created_at":p.created_at})).collect::<Vec<_>>(),"pairing":pairing,"error":*lock(&self.error),"format":share.format,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
     }
 }
 impl Service {
@@ -444,7 +443,7 @@ impl Service {
             hub: Mutex::new(None),
             generation: AtomicU64::new(0),
             operation: tokio::sync::Mutex::new(()),
-            folder,
+            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),
         }
     }
     pub fn begin(&self) -> u64 {
@@ -453,6 +452,21 @@ impl Service {
     pub fn current(&self, id: u64) -> bool {
         self.generation.load(Ordering::SeqCst) == id
     }
+    pub fn begin_preparation(&self,format:CopyFormat,total:usize)->u64 {
+        let _active=lock(&self.hub);let mut preparation=lock(&self.preparation);let generation=self.begin();*preparation=Preparation{preparing:true,total,format,..Default::default()};generation
+    }
+    pub fn fail(&self,generation:u64,message:String) {let mut p=lock(&self.preparation);if self.current(generation){p.preparing=false;p.current.clear();p.error=Some(message);}}
+    pub fn progress(&self,generation:u64,completed:usize,total:usize,current:&str) {
+        let mut p=lock(&self.preparation);if self.current(generation) {p.completed=completed;p.total=total;p.current=current.into();}
+    }
+    pub fn finish(&self,generation:u64,result:Result<Share>)->Result<()> {
+        let active=lock(&self.hub);ensure!(self.current(generation),"Sharing preparation was cancelled");
+        let hub=active.as_ref().context("Sharing stopped")?;
+        match result {Ok(share)=>{*write(&hub.share)=share;let mut p=lock(&self.preparation);p.preparing=false;p.completed=p.total;p.current.clear();p.error=None;},Err(error)=>{let mut p=lock(&self.preparation);p.preparing=false;p.current.clear();p.error=Some(error.to_string());}}
+        Ok(())
+    }
+    pub fn prepare_guard(&self)->std::sync::MutexGuard<'_,()> {lock(&self.cache_operation)}
+    pub fn cache_folder(&self)->PathBuf {self.folder.clone()}
     pub fn status(&self) -> Value {
         if let Some(hub) = lock(&self.hub).as_ref() {
             return hub.status();
@@ -461,7 +475,7 @@ impl Service {
             .ok()
             .and_then(|v| serde_json::from_slice::<Trust>(&v).ok())
             .unwrap_or_default();
-        json!({"running":false,"peers":trust.peers.iter().map(|p|json!({"id":p.id,"name":p.name,"last_sync_at":p.last_sync_at,"track_count":p.track_count})).collect::<Vec<_>>(),"pending":[],"selected_ids":[],"track_count":0,"bytes_total":0,"skipped":0,"pairing":null,"error":null})
+        json!({"running":false,"peers":trust.peers.iter().map(|p|json!({"id":p.id,"name":p.name,"last_sync_at":p.last_sync_at,"track_count":p.track_count})).collect::<Vec<_>>(),"pending":[],"selected_ids":[],"track_count":0,"bytes_total":0,"skipped":0,"pairing":null,"error":null,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
     }
     pub async fn start(&self, share: Share, name: String, generation: u64) -> Result<Value> {
         let _operation = self.operation.lock().await;
@@ -474,7 +488,7 @@ impl Service {
             .filter(|h| h.running.load(Ordering::Relaxed))
             .cloned()
         {
-            *write(&hub.share) = share;
+            if !share.tracks.is_empty()||!lock(&self.preparation).preparing {*write(&hub.share)=share;}
             return Ok(hub.status());
         }
         let folder = self.folder.clone();
@@ -524,7 +538,7 @@ impl Service {
             port,
             addresses,
             transferred: Mutex::new(HashMap::new()),
-            mdns: Mutex::new(None),
+            mdns: Mutex::new(None), preparation:self.preparation.clone(),
         });
         let props = HashMap::from([
             ("id".to_owned(), hub.identity.id.clone()),
@@ -558,6 +572,7 @@ impl Service {
             .route("/v1/pair", post(pair))
             .route("/v1/pair/status", get(pair_status))
             .route("/v1/manifest", get(manifest))
+            .route("/v1/preparation", get(preparation))
             .route("/v1/tracks/{id}", get(audio))
             .route("/v1/artwork/{id}", get(artwork))
             .route("/v1/sync-complete", post(complete))
@@ -603,7 +618,7 @@ impl Service {
     pub fn action(&self, action: &str, id: Option<&str>) -> Result<Value> {
         let hub = lock(&self.hub).clone();
         if action == "stop" {
-            self.begin();
+            self.begin();*lock(&self.preparation)=Preparation::default();
             if let Some(hub) = hub {
                 hub.stop();
             }
@@ -775,12 +790,18 @@ async fn pair_status(
         Err((StatusCode::UNAUTHORIZED, "Pairing was declined or expired"))
     }
 }
+async fn preparation(State(hub):State<Arc<Hub>>,headers:HeaderMap)->Result<Json<Value>,HttpError> {
+    hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED,"Pair this phone first"))?;
+    Ok(Json(json!(*lock(&hub.preparation))))
+}
 async fn manifest(
     State(hub): State<Arc<Hub>>,
     headers: HeaderMap,
 ) -> Result<Json<Manifest>, HttpError> {
     hub.authorized(&headers)
         .ok_or((StatusCode::UNAUTHORIZED, "Pair this phone first"))?;
+    if lock(&hub.preparation).preparing {return Err((StatusCode::SERVICE_UNAVAILABLE,"The Mac is preparing your music. Keep sharing open."));}
+    if lock(&hub.preparation).error.is_some() {return Err((StatusCode::CONFLICT,"Preparation failed. Check Devices on the Mac."));}
     Ok(Json(hub.manifest()))
 }
 /// A single bounded HTTP range; malformed/multipart requests never expand a transfer.
@@ -823,6 +844,7 @@ async fn transfer(
         .cloned()
     }
     .ok_or((StatusCode::NOT_FOUND, "This file is not shared"))?;
+    if let Some(expected)=headers.get(header::IF_MATCH).and_then(|v|v.to_str().ok()) {if expected!=format!("\"{}\"",file.sha256) {return Err((StatusCode::PRECONDITION_FAILED,"The copy format or selection changed. Refresh the phone's sync."));}}
     let mut input = tokio::fs::File::open(&file.path)
         .await
         .map_err(|_| (StatusCode::NOT_FOUND, "The file is unavailable"))?;
@@ -961,6 +983,19 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn pairing_is_available_during_preparation_and_stale_completion_cannot_publish() {
+        let root=tempfile::tempdir().unwrap();let service=Service::at(root.path().join("identity"));let generation=service.begin_preparation(CopyFormat::Vorbis256,508);
+        let started=std::time::Instant::now();service.start(Share::default(),"Test Mac".into(),generation).await.unwrap();assert!(started.elapsed()<std::time::Duration::from_secs(2));
+        let hub=lock(&service.hub).as_ref().unwrap().clone();let cert=reqwest::Certificate::from_der(&STANDARD.decode(&hub.identity.certificate).unwrap()).unwrap();let client=reqwest::Client::builder().add_root_certificate(cert).build().unwrap();let base=format!("https://localhost:{}/v1",hub.port);
+        let ticket=random();*lock(&hub.ticket)=Some(Ticket{secret:ticket.clone(),expires_at:now()+120});let id=random();let token=random();let auth=format!("{id}.{token}");
+        assert_eq!(client.post(format!("{base}/pair")).json(&json!({"ticket":ticket,"client_id":id,"client_name":"Phone","client_token":token})).send().await.unwrap().status(),200);
+        service.action("approve",Some(&id)).unwrap();service.progress(generation,42,508,"Fixture song");
+        assert_eq!(client.get(format!("{base}/manifest")).bearer_auth(&auth).send().await.unwrap().status(),503);
+        let progress:Value=client.get(format!("{base}/preparation")).bearer_auth(&auth).send().await.unwrap().json().await.unwrap();assert_eq!(progress["completed"],42);assert!(!progress.to_string().contains(&ticket));assert!(!progress.to_string().contains(&token));
+        service.finish(generation,Ok(fixture_share(root.path()))).unwrap();assert_eq!(client.get(format!("{base}/manifest")).bearer_auth(&auth).send().await.unwrap().status(),200);
+        let old=service.begin_preparation(CopyFormat::Original,1);service.action("stop",None).unwrap();assert!(service.finish(old,Ok(fixture_share(root.path()))).is_err());assert_eq!(service.status()["running"],false);assert_eq!(service.status()["preparation"]["preparing"],false);
+    }
+    #[tokio::test]
     async fn tls_pair_approval_ranges_revision_and_revocation() {
         let root = tempfile::tempdir().unwrap();
         let service = Service::at(root.path().join("identity"));
@@ -1027,6 +1062,7 @@ mod tests {
             401
         );
         service.action("approve", Some(&id)).unwrap();
+        assert_eq!(client.get(format!("{base}/tracks/7")).bearer_auth(&auth).header(header::IF_MATCH,"\"wrong-version\"").send().await.unwrap().status(),412);
         let manifest: Value = client
             .get(format!("{base}/manifest"))
             .bearer_auth(&auth)

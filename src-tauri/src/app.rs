@@ -1475,13 +1475,22 @@ async fn artwork_palette(app: tauri::AppHandle, path: String) -> ApiResult<provi
     .await
 }
 #[tauri::command]
-async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>,peer_id:Option<String>)->ApiResult<Value>{
+async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>,peer_id:Option<String>,copy_format:Option<crate::wifi::CopyFormat>)->ApiResult<Value>{
     if action=="status"{return Ok(app.state::<AppState>().wifi.status());}
     if action!="start"{return app.state::<AppState>().wifi.action(&action,peer_id.as_deref()).map_err(Into::into);}
-    let generation=app.state::<AppState>().wifi.begin();
-    let prepare_app=app.clone();
-    let share=blocking(move||{let state=prepare_app.state::<AppState>();let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let ids=track_ids.context("Choose music to copy")?;crate::wifi::prepare(&library,collections,&ids,name)}).await?;
-    app.state::<AppState>().wifi.start(share,"musicOS Mac".into(),generation).await.map_err(Into::into)
+    let ids=track_ids.context("Choose music to copy")?;if ids.is_empty()||ids.len()>50000{return Err(anyhow::anyhow!("Choose between 1 and 50,000 songs").into());}
+    let format=copy_format.unwrap_or_default();let generation=app.state::<AppState>().wifi.begin_preparation(format,ids.len());
+    // Open the opt-in listener before hashing/conversion; pairing is independent of preparation.
+    let mut empty=crate::wifi::Share::default();empty.format=format;
+    let status=match app.state::<AppState>().wifi.start(empty,"musicOS Mac".into(),generation).await {Ok(status)=>status,Err(error)=>{app.state::<AppState>().wifi.fail(generation,error.to_string());return Err(error.into());}};
+    tauri::async_runtime::spawn(async move {
+        let prepare_app=app.clone();
+        let result=blocking(move||{let state=prepare_app.state::<AppState>();let _cache=state.wifi.prepare_guard();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();
+            crate::wifi::prepare_with(&library,collections,&ids,name,format,&state.wifi.cache_folder(),&||state.wifi.current(generation),&|done,total,title|state.wifi.progress(generation,done,total,title))
+        }).await.map_err(|e|anyhow::anyhow!(e.message));
+        let _=app.state::<AppState>().wifi.finish(generation,result);
+    });
+    Ok(status)
 }
 #[tauri::command]
 async fn device(
