@@ -30,3 +30,11 @@ Supplied screenshots and current-run evidence are in `out/sync-vorbis-2026-10-28
 The isolated desktop branch is `codex/desktop-heart-preservation`; OS work remains in the primary repository. Delivery requires a fresh paused/stopped check, a latest-profile/library checkpoint, previous-app preservation, a verified native signature and matching eight protected embedded sidecar/runtime/model hashes. Signed build hashes and post-load state are recorded in `/Users/henry/Developer/MusicOS/releases/desktop-wifi-vorbis-2026-10-28/release.json`.
 
 Physical Android Wi-Fi transfer speed, OEM battery restrictions, real touch/font scaling and hardware audio routes remain physical-device gates. Emulator decoding and TLS fixture tests do not establish those outcomes.
+
+## Prepared delivery status
+
+Source commit `9518c8c`. Signed desktop executable SHA-256: `daf2b88506fe06cccd576be2f8bc6bb854c8a752a5aac190f649adf317bd2210`. Signed Android APK SHA-256: `8585dd5a60ac465a0d0701400414dc14ab3de3facebea4fddfd191626d816c00`. All eight protected embedded hashes match the currently installed desktop app.
+
+The connected Samsung's personal-profile musicOS app was updated in place after observing stopped playback and no active copy service. Its previous APK was preserved; old/new signing certificates match, installation used `-r --user 0`, and pulling the installed APK confirmed the exact signed-release hash. The private secondary phone profile was not accessed. Physical phone UI/audio/Wi-Fi operation remains unverified; no test fixtures were installed in its library.
+
+Desktop replacement is pending the user's pause: the final native check showed ongoing playback. No Mac playback command, app replacement, profile restore or library rollback was performed. The new app, APK and setup notes are archived under `/Users/henry/Developer/MusicOS/releases/desktop-wifi-vorbis-2026-10-28/`; `release.json` currently records desktop `installed: false`. The primary OS repository remains clean. The temporary emulator was stopped after its tests.
