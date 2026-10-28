@@ -21,6 +21,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -121,12 +123,9 @@ private fun Transport(model: PhoneModel, state: Playing, large: Boolean = false)
         horizontalArrangement = Arrangement.Center,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        IconButton({ state.song?.let { model.repository.favorite(it.id) } }, Modifier.size(48.dp)) {
-            SketchIcon(
-                if (state.song?.favorite == true) "Heart-Filled" else "Heart",
-                Modifier.size(20.dp),
-                LocalMusicColors.current.accent,
-            )
+        IconButton(model::shuffle, Modifier.size(48.dp).semantics { contentDescription = "Shuffle" }) {
+            SketchIcon(if (state.shuffle) "ShuffleON" else "ShuffleOFF", Modifier.size(22.dp),
+                if (state.shuffle) LocalMusicColors.current.accent else LocalMusicColors.current.secondary)
         }
         IconAction("Previous", "Previous", model::previous)
         IconButton(
@@ -138,13 +137,18 @@ private fun Transport(model: PhoneModel, state: Playing, large: Boolean = false)
             PlayPauseIcon(state.playing, Modifier.size(if (large) 44.dp else 32.dp))
         }
         IconAction("Next", "Next", model::next)
-        IconButton(model::shuffle, Modifier.size(48.dp)) {
-            SketchIcon(
-                "Shuffle",
-                color =
-                    if (state.shuffle) LocalMusicColors.current.accent
-                    else LocalMusicColors.current.secondary,
-            )
+        IconButton(model::repeat, Modifier.size(48.dp).semantics {
+            contentDescription = when (state.repeat) {
+                Player.REPEAT_MODE_ONE -> "Repeat one"
+                Player.REPEAT_MODE_ALL -> "Repeat all"
+                else -> "Repeat off"
+            }
+        }) {
+            SketchIcon(when (state.repeat) {
+                Player.REPEAT_MODE_ONE -> "RepeatONE"
+                Player.REPEAT_MODE_ALL -> "RepeatON"
+                else -> "RepeatOFF"
+            }, Modifier.size(22.dp), LocalMusicColors.current.secondary)
         }
     }
 }
@@ -304,9 +308,9 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
         val libraryScroll = rememberLazyListState()
         val searchScroll = rememberLazyListState()
         val detailScroll = rememberLazyListState()
-        Surface(Modifier.fillMaxSize(), color = colors.shell) {
+        Surface(Modifier.fillMaxSize(), color = colors.shell, contentColor = colors.ink) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 8.dp)) {
-                Row(
+                if (!player) Row(
                     Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -820,7 +824,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
 }
 
 @Composable
-private fun PlayerPage(
+internal fun PlayerPage(
     model: PhoneModel,
     state: Playing,
     queue: Boolean,
@@ -829,12 +833,20 @@ private fun PlayerPage(
 ) {
     val colors = LocalMusicColors.current
     Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClose) { Text("⌄ Close") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.clip(RoundedCornerShape(14.dp)).background(colors.control).padding(2.dp)) {
+                listOf(false to "Now playing", true to "Up next").forEach { (value, label) ->
+                    TextButton({ onQueue(value) }, Modifier.heightIn(min = 48.dp), shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.textButtonColors(containerColor = if (queue == value) colors.surface else androidx.compose.ui.graphics.Color.Transparent)) {
+                        Text(label, color = if (queue == value) colors.ink else colors.secondary,
+                            fontWeight = if (queue == value) FontWeight.SemiBold else FontWeight.Normal)
+                    }
+                }
+            }
             Spacer(Modifier.weight(1f))
-            FilterChip(!queue, { onQueue(false) }, label = { Text("Now playing") })
-            Spacer(Modifier.width(6.dp))
-            FilterChip(queue, { onQueue(true) }, label = { Text("Up next") })
+            IconButton(onClose, Modifier.size(48.dp).semantics { contentDescription = "Close player" }) {
+                SketchIcon("Back", Modifier.size(20.dp).graphicsLayer { rotationZ = -90f }, colors.secondary)
+            }
         }
         if (queue) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -889,59 +901,80 @@ private fun PlayerPage(
                 }
             }
         } else {
-            LazyColumn(
-                Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                contentPadding = PaddingValues(bottom = 12.dp),
-            ) {
-                item {
-                    Artwork(
-                        state.song?.artworkFile,
-                        Modifier.widthIn(max = 300.dp).fillMaxWidth(.8f).padding(vertical = 12.dp),
-                    )
-                    Text(
-                        state.song?.title ?: "Nothing playing",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    Text(state.song?.artist.orEmpty(), color = colors.secondary)
-                    Text(state.song?.album.orEmpty(), fontSize = 12.sp, color = colors.secondary)
-                    var seeking by remember { mutableStateOf<Float?>(null) }
-                    Slider(
-                        seeking ?: state.position.toFloat(),
-                        { seeking = it },
-                        onValueChangeFinished = {
-                            seeking?.let { model.seek(it.toLong()) }
-                            seeking = null
-                        },
-                        valueRange = 0f..state.duration.toFloat().coerceAtLeast(1f),
-                    )
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(time(state.position), fontSize = 12.sp)
-                        Text(time(state.duration), fontSize = 12.sp)
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                val short = maxHeight < 500.dp
+                val artSize = if (short) 96.dp else (maxHeight - 340.dp).coerceIn(96.dp, 320.dp).coerceAtMost(maxWidth - 24.dp)
+                Column(Modifier.widthIn(max = 420.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (short) 8.dp else 12.dp)) {
+                    if (short) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Artwork(state.song?.artworkFile, Modifier.size(artSize).testTag("player-artwork"))
+                        PlayerIdentity(model, state, Modifier.weight(1f))
+                    } else {
+                        Artwork(state.song?.artworkFile, Modifier.size(artSize).align(Alignment.CenterHorizontally).testTag("player-artwork"))
+                        PlayerIdentity(model, state, Modifier.fillMaxWidth())
                     }
-                    if (state.error != null)
-                        Text(state.error, color = MaterialTheme.colorScheme.error)
+                    PlayerSeek(model, state)
                     Transport(model, state, true)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Volume", fontSize = 12.sp)
-                        Slider(state.volume, model::volume, Modifier.weight(1f))
-                        Text("${(state.volume*100).toInt()}%", fontSize = 12.sp)
+                    Row(Modifier.widthIn(max = 300.dp).fillMaxWidth().align(Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Volume", fontSize = 12.sp, color = colors.secondary)
+                        PlayerSlider(state.volume, model::volume, Modifier.weight(1f), "Volume")
+                        Text("${(state.volume * 100).toInt()}%", fontSize = 12.sp, color = colors.secondary)
                     }
-                    MusicButton(
-                        when (state.repeat) {
-                            Player.REPEAT_MODE_ONE -> "Repeat one"
-                            Player.REPEAT_MODE_ALL -> "Repeat all"
-                            else -> "Repeat off"
-                        },
-                        "Repeat",
-                        model::repeat,
-                    )
+                    if (state.error != null) Text(state.error, color = MaterialTheme.colorScheme.error)
                 }
             }
         }
-        if (queue) Transport(model, state)
+        if (queue) {
+            PlayerSeek(model, state)
+            Transport(model, state)
+        }
     }
+}
+
+@Composable
+private fun PlayerIdentity(model: PhoneModel, state: Playing, modifier: Modifier) {
+    val colors = LocalMusicColors.current
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).testTag("player-identity")) {
+            Text(state.song?.title ?: "Nothing playing", fontSize = 24.sp, color = colors.ink,
+                lineHeight = 28.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(state.song?.let { "${it.artist} · ${it.album}" } ?: "Choose music in Library",
+                fontSize = 14.sp, color = colors.secondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton({ state.song?.let { model.repository.favorite(it.id) } },
+            Modifier.size(48.dp).semantics { contentDescription = "Favorite playing song" }, enabled = state.song != null) {
+            SketchIcon(if (state.song?.favorite == true) "Heart-Filled" else "Heart", Modifier.size(20.dp), colors.accent)
+        }
+    }
+}
+
+@Composable
+private fun PlayerSeek(model: PhoneModel, state: Playing) {
+    var seeking by remember(state.song?.id) { mutableStateOf<Float?>(null) }
+    Column(Modifier.fillMaxWidth()) {
+        PlayerSlider(seeking ?: state.position.toFloat(), { seeking = it }, Modifier.fillMaxWidth(),
+            "Playback position", 0f..state.duration.toFloat().coerceAtLeast(1f), {
+                seeking?.let { model.seek(it.toLong()) }
+                seeking = null
+            })
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(time(state.position), fontSize = 12.sp, color = LocalMusicColors.current.secondary)
+            Text(time(state.duration), fontSize = 12.sp, color = LocalMusicColors.current.secondary)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlayerSlider(value: Float, change: (Float) -> Unit, modifier: Modifier, label: String,
+    range: ClosedFloatingPointRange<Float> = 0f..1f, finished: (() -> Unit)? = null) {
+    Slider(value, change, modifier.heightIn(min = 48.dp).semantics { contentDescription = label },
+        valueRange = range, onValueChangeFinished = finished,
+        thumb = { Box(Modifier.size(12.dp).clip(RoundedCornerShape(6.dp)).background(LocalMusicColors.current.accent)) },
+        track = { state -> SliderDefaults.Track(state, Modifier.height(3.dp), thumbTrackGapSize = 0.dp, drawStopIndicator = null) })
 }
 
 @Composable
