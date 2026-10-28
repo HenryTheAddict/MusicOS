@@ -13,4 +13,38 @@ pub fn apply(path:&Path,library:&crate::library::Library,request:Request)->Resul
  let (count,history_id)=crate::file_tags::apply(path,&changes,&reviews,request.write_files.unwrap_or(false))?;Ok(json!({"count":count,"history_id":history_id}))}
 #[cfg(test)]mod tests{use super::*;
  #[test]fn selected_fields_and_album_art_are_one_stale_checked_undoable_change(){let temp=tempfile::tempdir().unwrap();let path=temp.path().join("db");let db=Db::open(&path.to_string_lossy()).unwrap();let a=db.insert_track("/a.flac","A","Artist","Record",1,2,1).unwrap();let b=db.insert_track("/b.flac","B","Artist","Record",2,2,1).unwrap();let art=temp.path().join("new.png");image::RgbaImage::new(30,30).save(&art).unwrap();let token=serde_json::to_string(&json!({"title":"Corrected","artist":"Wrong artist","album":"Record","confidence":0.9,"artwork_path":art,"track_number":1})).unwrap();let c=Connection::open(&path).unwrap();c.execute("INSERT INTO metadata_enrichment_status(track_id,state,candidate_json,checked_at) VALUES(?,'review',?,1)",rusqlite::params![a,token]).unwrap();let library=crate::library::group(musicos_desktop::models::LibrarySnapshot{tracks:db.get_tracks().unwrap().into_iter().map(musicos_desktop::local::library::track_from_init).collect(),..Default::default()});let album=list(&path,&library,"").unwrap()["albums"][0].clone();let request=||Request{action:"apply".into(),album_id:album["album_id"].as_str().map(str::to_owned),token:album["token"].as_str().map(str::to_owned),rows:Some(vec![Selection{track_id:a,fields:vec!["title".into(),"artwork".into()]}]),..Default::default()};let result=apply(&path,&library,request()).unwrap();assert_eq!(result["count"],2);assert_eq!(db.get_track_by_id(a).unwrap().unwrap().artist,"Artist");assert_eq!(db.get_track_by_id(a).unwrap().unwrap().title,"Corrected");assert_eq!(db.get_track_by_id(b).unwrap().unwrap().cover_art_path.as_deref(),Some(art.to_str().unwrap()));assert!(apply(&path,&library,request()).is_err());db.undo_metadata_change(result["history_id"].as_i64().unwrap()).unwrap();assert_eq!(db.get_track_by_id(a).unwrap().unwrap().title,"A");assert!(db.get_track_by_id(b).unwrap().unwrap().cover_art_path.is_none());}
+ #[test]
+ fn cover_only_preserves_album_identity_and_tags_in_library_and_original_files(){
+  use lofty::{file::TaggedFileExt,tag::Accessor};
+  for write_files in [false,true]{
+   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("db");let db=Db::open(&path.to_string_lossy()).unwrap();
+   let art=temp.path().join("new.png");image::RgbaImage::new(30,30).save(&art).unwrap();
+   let mut ids=Vec::new();let mut originals=Vec::new();
+   for n in 1..=2{
+    let audio=temp.path().join(format!("{n}.flac"));
+    assert!(std::process::Command::new("/opt/homebrew/bin/ffmpeg").args(["-v","error","-f","lavfi","-i","sine=frequency=440:duration=0.1","-metadata","title=Original","-metadata","artist=Artist","-metadata","album=Record","-metadata","album_artist=Artist","-metadata","date=2000","-metadata","track=1","-metadata","disc=1","-metadata","genre=Rock"]).arg(&audio).status().unwrap().success());
+    let id=db.insert_track(&audio.to_string_lossy(),"Original","Artist","Record",n,2,1).unwrap();ids.push(id);originals.push(std::fs::read(audio).unwrap());
+   }
+   let outside=db.insert_track("/other.flac","Other song","Artist","Other album",1,2,1).unwrap();let outside_before=db.metadata_values(outside).unwrap();
+   let group=||crate::library::group(musicos_desktop::models::LibrarySnapshot{tracks:db.get_tracks().unwrap().into_iter().map(musicos_desktop::local::library::track_from_init).collect(),..Default::default()});
+   let library=group();let album=list(&path,&library,"").unwrap();assert_eq!(album["albums"].as_array().unwrap().len(),0);
+   let token=serde_json::to_string(&json!({"title":"Wrong title","artist":"Wrong artist","album":"Different edition","album_artist":"Wrong album artist","year":2025,"disc_number":9,"track_number":99,"artwork_path":art})).unwrap();
+   let c=Connection::open(&path).unwrap();for id in &ids{c.execute("INSERT INTO metadata_enrichment_status(track_id,state,candidate_json,checked_at) VALUES(?,'review',?,1)",rusqlite::params![id,token]).unwrap();}
+   let album=list(&path,&library,"").unwrap()["albums"][0].clone();let before=ids.iter().map(|id|db.metadata_values(*id).unwrap()).collect::<Vec<_>>();
+   let request=||Request{action:"apply".into(),album_id:album["album_id"].as_str().map(str::to_owned),token:album["token"].as_str().map(str::to_owned),rows:Some(vec![Selection{track_id:ids[0],fields:vec!["artwork".into()]}]),write_files:Some(write_files),..Default::default()};
+   let result=apply(&path,&library,request()).unwrap();assert_eq!(result["count"],2);assert!(apply(&path,&library,request()).is_err());
+   let after=group();assert_eq!(library.albums.iter().map(|a|(&a.id,&a.track_ids)).collect::<Vec<_>>(),after.albums.iter().map(|a|(&a.id,&a.track_ids)).collect::<Vec<_>>());
+   for (index,id) in ids.iter().enumerate(){
+    let track=db.metadata_values(*id).unwrap();for key in ["title","artist","album","album_artist","year","genre","disc_number","track_number"]{assert_eq!(before[index][key],track[key],"{key} changed in a cover-only update");}
+    assert_eq!(track["cover_art_path"],art.to_str().unwrap());
+    let audio=temp.path().join(format!("{}.flac",index+1));let tagged=lofty::read_from_path(&audio).unwrap();let tag=tagged.primary_tag().unwrap();
+    assert_eq!(tag.title().as_deref(),Some("Original"));assert_eq!(tag.artist().as_deref(),Some("Artist"));assert_eq!(tag.album().as_deref(),Some("Record"));assert_eq!(tag.year(),Some(2000));assert_eq!(tag.track(),Some(1));assert_eq!(tag.disk(),Some(1));assert_eq!(tag.genre().as_deref(),Some("Rock"));
+    if write_files{assert_eq!(tag.pictures().len(),1);}else{assert_eq!(std::fs::read(audio).unwrap(),originals[index]);}
+   }
+   assert_eq!(db.metadata_values(outside).unwrap(),outside_before);
+   crate::file_tags::undo(&path,result["history_id"].as_i64().unwrap()).unwrap();
+   for (index,id) in ids.iter().enumerate(){assert!(db.get_track_by_id(*id).unwrap().unwrap().cover_art_path.is_none());assert_eq!(std::fs::read(temp.path().join(format!("{}.flac",index+1))).unwrap(),originals[index]);}
+  }
+ }
+
 }

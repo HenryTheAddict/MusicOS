@@ -23,8 +23,8 @@ test('setup reports actionable states separately from recommendation quality',()
 test('album comparison applies only changed fields with the reviewed album token',async()=>{
  const album={album_id:'album-1',title:'Studio',artist:'Artist',token:'version-1',rows:[{track_id:1,current:{title:'Song',artist:'Artist',album:'Studio',year:2020,revision:7},candidate_token:'candidate-1',candidate:{title:'Song',artist:'Artist',album:'Live',year:2020,confidence:.8}}]};
  bridge.call.mockResolvedValue({albums:[album],items:[],total:0});const refresh=vi.fn().mockResolvedValue(undefined);render(<MetadataWorkspace library={{tracks:[],albums:[],sources:[]} as unknown as Library} busy={false} onTask={()=>{}} onRefresh={refresh}/>);
- fireEvent.click(await screen.findByRole('button',{name:/Studio/}));expect(screen.getByRole('checkbox',{name:'Apply album'})).toBeChecked();expect(screen.queryByRole('checkbox',{name:'Apply title for Song'})).toBeNull();fireEvent.click(screen.getByRole('checkbox',{name:'Show unchanged track fields'}));expect(screen.getByRole('checkbox',{name:'Apply title for Song'})).toBeDisabled();
- fireEvent.click(screen.getByRole('button',{name:'Review changes'}));fireEvent.click(screen.getByRole('button',{name:'Apply reviewed changes'}));
+ fireEvent.click(await screen.findByRole('button',{name:/Studio/}));expect(screen.getByRole('checkbox',{name:'Apply album'})).not.toBeChecked();fireEvent.click(screen.getByRole('checkbox',{name:'Apply album'}));expect(screen.queryByRole('checkbox',{name:'Apply title for Song'})).toBeNull();fireEvent.click(screen.getByRole('checkbox',{name:'Show unchanged track fields'}));expect(screen.getByRole('checkbox',{name:'Apply title for Song'})).toBeDisabled();
+ fireEvent.click(screen.getByRole('button',{name:'Review selected details'}));fireEvent.click(screen.getByRole('button',{name:'Apply reviewed details'}));
  await waitFor(()=>expect(bridge.call).toHaveBeenCalledWith('album_metadata',{request:{action:'apply',album_id:'album-1',token:'version-1',rows:[{track_id:1,fields:['album']}],write_files:false}}));expect(refresh).toHaveBeenCalled();
 });
 

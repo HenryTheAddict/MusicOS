@@ -11,11 +11,32 @@ test('one manager separates saved collection types, searches and preserves Smart
 });
 test('album suggestions are reviewed field by field and Undo is available',async({page})=>{
  await page.goto('/?fixture=1');await metadata(page);await expect(page.getByRole('tab',{name:'Review',exact:true})).toHaveAttribute('aria-selected','true');await page.locator('.album-metadata .metadata-album-list button').first().click();
- await expect(page.getByRole('checkbox',{name:'Apply album',exact:true})).toBeChecked();await page.getByRole('checkbox',{name:'Show unchanged track fields',exact:true}).check();await expect(page.getByRole('checkbox',{name:/^Apply title for/}).first()).toBeDisabled();await page.getByRole('checkbox',{name:'Apply year',exact:true}).uncheck();
- await page.getByRole('button',{name:'Review changes',exact:true}).click();await page.getByRole('button',{name:'Apply reviewed changes',exact:true}).click();
- await expect(page.getByRole('status').filter({hasText:'songs updated'})).toBeVisible();
+ await expect(page.getByRole('checkbox',{name:'Apply album',exact:true})).not.toBeChecked();await page.getByRole('checkbox',{name:'Apply album',exact:true}).check();await page.getByRole('checkbox',{name:'Show unchanged track fields',exact:true}).check();await expect(page.getByRole('checkbox',{name:/^Apply title for/}).first()).toBeDisabled();await expect(page.getByRole('checkbox',{name:'Apply year',exact:true})).not.toBeChecked();
+ await page.getByRole('button',{name:'Review selected details',exact:true}).click();await page.getByRole('button',{name:'Apply reviewed details',exact:true}).click();
+ await expect(page.getByRole('status').filter({hasText:'Selected details updated'})).toBeVisible();
  const apply=await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').at(-1).args.request);expect(apply.write_files).toBe(false);expect(apply.rows.every((row:any)=>row.fields.includes('album')&&!row.fields.includes('year')&&!row.fields.includes('title'))).toBe(true);
  await page.getByRole('tab',{name:'History',exact:true}).click();await page.getByRole('button',{name:'Undo',exact:true}).first().click();await expect(page.getByRole('button',{name:'Undone',exact:true}).first()).toBeDisabled();await page.getByRole('tab',{name:'Review',exact:true}).click();await page.locator('.metadata-review-filters>details>summary').click();await page.getByRole('button',{name:'Artist profiles',exact:true}).click();await expect(page.getByRole('button',{name:'Retry available lookups'})).toBeVisible();
+});
+test('cover-only action leaves checked album details untouched',async({page})=>{
+ await page.goto('/?fixture=1');await metadata(page);await page.locator('.metadata-album-list button').first().click();
+ await expect(page.getByRole('button',{name:'Review selected details',exact:true})).toBeDisabled();
+ await page.getByRole('checkbox',{name:'Apply album',exact:true}).check();await page.getByRole('checkbox',{name:'Apply year',exact:true}).check();
+ await page.getByRole('button',{name:'Update cover only',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Only the cover changes'})).toBeVisible();
+ await page.screenshot({path:'out/rebuild-qa/cover-only-confirmation.png'});
+ await page.getByRole('button',{name:'Confirm cover update',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Song and album details unchanged'})).toBeVisible();
+ const result=await page.evaluate(async()=>{const {fixtureCall}=await import('/src/fixtures.ts' as string);const history=await fixtureCall('metadata_workspace',{request:{action:'history'}});return history.history[0];});
+ expect(result.changes).toHaveLength(12);for(const change of result.changes){for(const key of ['title','artist','album','year','track_number','disc_number'])expect(change.after[key]).toBe(change.before[key]);}
+ const request=await page.evaluate(()=>(window as any).__musicosCalls.findLast((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').args.request);expect(request.rows).toEqual([{track_id:1,fields:['artwork']}]);expect(request.write_files).toBe(false);
+});
+test('cover confirmation fits narrow and wide windows at every interface scale',async({page})=>{
+ test.setTimeout(90000);
+ for(const width of [480,1280])for(const scale of [80,100,125,150]){
+  await page.setViewportSize({width,height:480});await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();
+  await metadata(page);await page.locator('.metadata-album-list button').first().click();await page.getByRole('button',{name:'Update cover only',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Confirm cover update',exact:true})).toBeVisible();await expect(page.locator('.metadata-action-footer')).toHaveCount(0);
+  expect(await page.locator('.album-metadata').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+  if(scale===100)await page.screenshot({path:`out/rebuild-qa/cover-only-${width}.png`});
+ }
 });
 test('management screens fit compact and wide windows, scales and palettes',async({page})=>{
  test.setTimeout(300000);page.setDefaultTimeout(5000);

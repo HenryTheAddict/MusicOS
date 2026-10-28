@@ -205,3 +205,5 @@
 .collection-hub button{transition:background-color 140ms ease-out,color 140ms ease-out;}
 @media(max-width:800px){.collection-hub-list .hub-collection-open{flex-basis:8rem;}.hub-collection-actions:has(.hub-delete-review){flex-basis:100%;}.collection-hub>header .hub-create{width:auto;}}
 @media(prefers-reduced-motion:reduce){.collection-hub button{transition:none;}}
+
+.album-cover-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0 1.25rem}.album-art-review>p{max-width:48rem}.album-art-review h3{margin-bottom:.35rem}
