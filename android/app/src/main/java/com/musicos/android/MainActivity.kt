@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private fun songCount(count: Int) = "$count ${if(count == 1) "song" else "songs"}"
+internal fun songCount(count: Int) = "$count ${if(count == 1) "song" else "songs"}"
 
 private fun time(ms: Long) = "${ms/60000}:${(ms/1000%60).toString().padStart(2,'0')}"
 

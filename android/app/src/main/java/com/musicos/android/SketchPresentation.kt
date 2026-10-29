@@ -185,12 +185,7 @@ fun SketchIcon(
                         context.assets.open("icons/$assetName.svg").bufferedReader().use {
                             it.readText()
                         }
-                    source =
-                        source
-                            .replace(Regex("<use[^>]+fill=\"#FFFFFF\"[^>]*/?>"), "")
-                            .replace("#000000", color.hex())
-                            .replace("#3B3B3B", color.hex())
-                            .replace("#FFFFFF", surface.hex())
+                    source = themedSketchSvg(source, color.hex(), surface.hex())
                     SVG.getFromString(source)
                         .apply {
                             documentWidth = 32f
@@ -212,6 +207,12 @@ fun SketchIcon(
         }
     }
 }
+
+internal fun themedSketchSvg(source: String, ink: String, surface: String): String = source
+    .replace(Regex("""<use\b(?=[^>]*\bfill="#FFFFFF")[^>]*(?:/\s*>|>\s*</use>)""", RegexOption.IGNORE_CASE), "")
+    .replace("#000000", ink)
+    .replace("#3B3B3B", ink)
+    .replace("#FFFFFF", surface)
 
 @Composable
 fun PlayPauseIcon(playing: Boolean, modifier: Modifier = Modifier.size(32.dp)) {
@@ -341,7 +342,7 @@ fun BeatingHeart(favorite: Boolean, playing: Boolean, modifier: Modifier = Modif
         if (playing && android.animation.ValueAnimator.areAnimatorsEnabled()) {
             owner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
                 try {
-                    while (true) {
+                    while (android.animation.ValueAnimator.areAnimatorsEnabled()) {
                         pulse.animateTo(1.09f, tween(100))
                         pulse.animateTo(1f, tween(220))
                         kotlinx.coroutines.delay(513)

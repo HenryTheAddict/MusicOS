@@ -41,3 +41,11 @@ This is browser-fixture pacing, not native display FPS. It establishes eliminati
 - Physical Android Wi-Fi, Bluetooth/headset, lock screen/OEM background behavior remain device acceptance gates; no physical phone was connected.
 
 Delivery hash, signing, latest-profile checkpoint and native smoke results are recorded in the release manifest after installation. Installation requires a fresh visible paused/stopped check, preserving the exact current playback and latest profile.
+
+## Native delivery
+
+Installed and visually checked on the Mac after a fresh visible Play/paused check. Like me remained paused at 225.95862 seconds; Apollo XXI was restored after checking Home, Standard mini artwork/queue and Library settings. Drop target is OfflineMusic (547 songs), rather than managed media (3). No real import, metadata apply, sharing or playback command was invoked. Native Escape could not be confirmed through accessibility input; return through the mini-player menu worked and browser keyboard regressions passed.
+
+All three profile files compare exactly with the immediate pre-install checkpoint. Track rows, manual playlist rows/entries, overrides and metadata history compare exactly; 550 songs, 36 favorites, 2 manual playlists/5 entries and 13 saved collections retained. Eight embedded runtime/model/sidecar hashes match. Previous app and latest private profile checkpoint preserved. Signed desktop executable SHA-256: `651b0bdce432e93e85336e14d3f5659d2172697876f9d531fc2ac8d55085985d`. Full hashes and Android APK/signing details are in `releases/desktop-companion-2026-10-29/release.json` in the primary workspace.
+
+A final native Android pixel test caught and repaired removal of paired `<use></use>` export backgrounds: the old loader removed only the opening tag, leaving invalid SVG. The repaired loader handles both paired and self-closing wrappers without changing supplied paths. Phone, Download and Downloaded now have verified nontransparent strokes and transparent corners. Physical Android remains unverified; the signed update is provided as an APK.

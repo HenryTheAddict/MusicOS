@@ -78,7 +78,7 @@ internal fun DevicesPage(model: PhoneModel, link: String, onLink: (String) -> Un
             Surface(color = colors.control, shape = RoundedCornerShape(20.dp)) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SketchIcon("Phone", Modifier.size(32.dp))
-                    Column(Modifier.weight(1f)) { Text("On this phone", fontWeight = FontWeight.Bold); Text("${library.songs.count { it.available }} songs ready offline", fontSize = 13.sp, color = colors.secondary) }
+                    Column(Modifier.weight(1f)) { Text("On this phone", fontWeight = FontWeight.Bold); Text("${songCount(library.songs.count { it.available })} ready offline", fontSize = 13.sp, color = colors.secondary) }
                     SketchIcon("Downloaded", Modifier.size(26.dp))
                 }
             }
@@ -130,7 +130,7 @@ private fun PairedMacCard(model: PhoneModel, mac: PairedMac, offline: Int, netwo
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SketchIcon("device", Modifier.size(28.dp))
-                Column(Modifier.weight(1f)) { Text(mac.name, fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 2); Text("Paired · $offline songs on this phone", color = colors.secondary, fontSize = 12.sp) }
+                Column(Modifier.weight(1f)) { Text(mac.name, fontWeight = FontWeight.Bold, fontSize = 20.sp, maxLines = 2); Text("Paired · ${songCount(offline)} on this phone", color = colors.secondary, fontSize = 12.sp) }
             }
             if(info != null) {
                 Text(when(info.state) {

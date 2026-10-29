@@ -92,4 +92,19 @@ class CompanionPresentationTest {
             if(android.os.Build.VERSION.SDK_INT >= 34) assertFalse(player.hasGainmap())
         } finally { file.delete() }
     }
+
+    @Test fun exportedSketchIconsRenderStrokesWithoutExportBackground() {
+        val app = ApplicationProvider.getApplicationContext<MusicOSApp>()
+        for (name in listOf("Phone", "Download", "Downloaded")) {
+            val source = app.assets.open("icons/$name.svg").bufferedReader().use { it.readText() }
+            val svg = com.caverock.androidsvg.SVG.getFromString(themedSketchSvg(source, "#12202a", "#a6d7e8"))
+            svg.documentWidth = 32f; svg.documentHeight = 32f
+            val image = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(image).drawPicture(svg.renderToPicture())
+            val pixels = IntArray(1024); image.getPixels(pixels, 0, 32, 0, 0, 32, 32)
+            assertTrue("$name contains visible supplied strokes", pixels.count { android.graphics.Color.alpha(it) > 0 } > 80)
+            assertEquals("No white export background", 0, android.graphics.Color.alpha(image.getPixel(0, 0)))
+            image.recycle()
+        }
+    }
 }
