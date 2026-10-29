@@ -154,3 +154,22 @@
 .section-actions-trigger:focus-visible{outline:2px solid var(--accent);outline-offset:-3px;}
 @media(hover:none){.section-actions-trigger .section-category-glyph{opacity:0;}.section-actions-trigger .section-dots-glyph{opacity:1;transform:none;}}
 @media(prefers-reduced-motion:reduce){.section-action-glyph>.icon{transition:none;transform:none!important;}}
+/* Square desktop windows keep desktop navigation; the shell tightens before
+   it adopts the phone composition. The player node never moves by animation. */
+@media (max-width:1120px){
+ .adaptive-shell[data-layout=wide]{grid-template-columns:132px clamp(160px,10rem,216px) minmax(0,1fr);column-gap:.375rem;}
+ .adaptive-shell[data-layout=wide] .workspace:not(.full-width){grid-template-columns:10rem minmax(0,1fr);}
+ .adaptive-shell[data-layout=wide] .header-brand{font-size:1rem;gap:.375rem;}
+ .adaptive-shell[data-layout=wide] .section-name{font-size:1.125rem;}
+ .adaptive-shell[data-layout=wide] .header-brand>span{display:none;}
+ .adaptive-shell[data-layout=wide] .now-playing{margin-right:.5rem;gap:.375rem;}
+ .adaptive-shell[data-layout=wide] .now-playing .audio-quality{display:none;}
+ .adaptive-shell[data-layout=wide] .now-playing .mini-controls{display:flex;width:28px;flex:none;}
+ .adaptive-shell[data-layout=wide] .now-playing .mini-controls>:not(:first-child){display:none;}
+ .adaptive-shell[data-layout=wide] .now-playing .mini-controls>.icon-button{width:28px;height:44px;}
+ .adaptive-shell[data-layout=wide] .transport{gap:0;}
+ .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button{width:32px;height:44px;padding:0;}
+ .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button .icon{width:28px;height:28px;}
+ .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button:nth-child(2){width:36px;}
+ .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button:nth-child(2) .icon{width:32px;height:32px;}
+}

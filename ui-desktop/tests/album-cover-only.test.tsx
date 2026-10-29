@@ -10,7 +10,7 @@ const albums=[1,2].map(id=>({album_id:String(id),title:`Record ${id}`,artist:'Ar
 afterEach(()=>{cleanup();invalidateDisplay();mocks.call.mockReset();});
 function setup(){mocks.call.mockImplementation(async(command,args)=>command==='album_metadata'?(args.request.action==='list'?{albums}:{count:1,history_id:1}):{files:{backup_bytes:123,files:[{path:'song.flac',format:'FLAC'}],supported_fields:['Front artwork']}});render(<AlbumMetadata busy={false} onTask={()=>{}} onRefresh={async()=>{}}/>);return userEvent.setup();}
 test('cover action ignores checked metadata and clears the prior album result',async()=>{
- const user=setup();await user.click(await screen.findByRole('button',{name:/Record 1.*Artist/}));
+ const user=setup();await screen.findByRole('button',{name:/Record 1.*Artist/});await waitFor(()=>expect(screen.getByRole('button',{name:/Record 1.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 1.*Artist/}));
  await expect(screen.getByRole('checkbox',{name:'Apply album'})).not.toBeChecked();
  expect(screen.getByRole('button',{name:'Review selected details'})).toBeDisabled();
  await user.click(screen.getByRole('checkbox',{name:'Apply album'}));
@@ -20,18 +20,18 @@ test('cover action ignores checked metadata and clears the prior album result',a
  await user.click(screen.getByRole('button',{name:'Confirm cover update'}));
  await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('album_metadata',{request:{action:'apply',album_id:'1',token:'token-1',rows:[{track_id:1,fields:['artwork']}],write_files:false}}));
  expect(await screen.findByText(/Cover updated for Record 1/)).toHaveTextContent('Cover updated for Record 1 (1 song). Song and album details unchanged.');
- await waitFor(()=>expect(screen.getByRole('button',{name:/Record 2.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 2.*Artist/}));
+ await waitFor(()=>expect(mocks.call.mock.calls.filter(([command,args])=>command==='album_metadata'&&args.request.action==='list').length).toBeGreaterThanOrEqual(2));await waitFor(()=>expect(screen.getByRole('button',{name:/Record 2.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 2.*Artist/}));
  expect(screen.queryByText(/Cover updated for Record 1/)).toBeNull();expect(screen.getByRole('checkbox',{name:'Apply album'})).not.toBeChecked();
  expect(document.querySelector('.album-review-heading')).toHaveTextContent('Artist · 1 song');
 });
 test('cover file-write preflight stays opt-in and metadata action excludes artwork',async()=>{
- const user=setup();await user.click(await screen.findByRole('button',{name:/Record 1.*Artist/}));
+ const user=setup();await screen.findByRole('button',{name:/Record 1.*Artist/});await waitFor(()=>expect(screen.getByRole('button',{name:/Record 1.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 1.*Artist/}));
  await user.click(screen.getByRole('button',{name:'Update cover only'}));
  await user.click(screen.getByRole('checkbox',{name:'Also write to music files'}));
  await waitFor(()=>expect(screen.getByRole('button',{name:'Confirm cover update'})).toBeEnabled());
  await user.click(screen.getByRole('button',{name:'Confirm cover update'}));
  const cover=mocks.call.mock.calls.find(([command,args])=>command==='album_metadata'&&args.request.action==='apply');expect(cover?.[1].request.write_files).toBe(true);expect(cover?.[1].request.rows[0].fields).toEqual(['artwork']);
- await waitFor(()=>expect(screen.getByRole('button',{name:/Record 2.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 2.*Artist/}));
+ await waitFor(()=>expect(mocks.call.mock.calls.filter(([command,args])=>command==='album_metadata'&&args.request.action==='list').length).toBeGreaterThanOrEqual(2));await waitFor(()=>expect(screen.getByRole('button',{name:/Record 2.*Artist/})).toBeEnabled());await user.click(screen.getByRole('button',{name:/Record 2.*Artist/}));
  await user.click(screen.getByRole('checkbox',{name:'Apply album'}));
  await user.click(screen.getByRole('button',{name:'Review selected details'}));
  await user.click(screen.getByRole('button',{name:'Apply reviewed details'}));

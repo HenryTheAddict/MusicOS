@@ -1801,11 +1801,11 @@ button, input { line-height: 1.2; }
 }
 
 @media (max-width:800px) {
-  .app-shell:is([data-size="125"], [data-size="150"]) .app-header {
+  .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .app-header {
     display: grid; grid-template-columns: 114px minmax(0,1fr); gap: .375rem .5rem;
     height: auto; padding: .4375rem .75rem;
   }
-  .app-shell:is([data-size="125"], [data-size="150"]) .window-drag-region { width: 100%; min-height: 3rem; }
-  .app-shell:is([data-size="125"], [data-size="150"]) .section-control > .menu-trigger:first-child { justify-self: end; width: min(100%, 13.875rem); }
-  .app-shell:is([data-size="125"], [data-size="150"]) .now-playing { grid-column: 1/-1; width: 100%; min-width: 0; }
+  .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .window-drag-region { width: 100%; min-height: 3rem; }
+  .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .section-control > .menu-trigger:first-child { justify-self: end; width: min(100%, 13.875rem); }
+  .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .now-playing { grid-column: 1/-1; width: 100%; min-width: 0; }
 }

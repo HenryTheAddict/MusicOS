@@ -3,6 +3,7 @@ const hearts=new Map<HTMLElement,boolean>();
 let observer:IntersectionObserver|undefined;
 function updateVisibility(){for(const [heart,visible] of hearts)heart.dataset.pulsing=String(visible&&!document.hidden);}
 export function watchHeart(heart:HTMLElement){
+ if(typeof IntersectionObserver==='undefined'){heart.dataset.pulsing='false';return()=>{delete heart.dataset.pulsing;};}
  if(!observer){
   observer=new IntersectionObserver(entries=>{for(const entry of entries)if(hearts.has(entry.target as HTMLElement))hearts.set(entry.target as HTMLElement,entry.isIntersecting);updateVisibility();});
   document.addEventListener('visibilitychange',updateVisibility);

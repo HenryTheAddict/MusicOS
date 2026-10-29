@@ -1,3 +1,4 @@
+import {dropImportSource} from './importDestination';
 import {usePlayfulControls} from './playfulControls';
 import {useShellLayout} from './useShellLayout';
 import {useDestinationNavigation,type Destination} from './useDestinationNavigation';
@@ -151,6 +152,7 @@ export default function App() {
 
   const [library, setRawLibrary] = useState<Library>(emptyLibrary);
   const setLibrary:typeof setRawLibrary=next=>setRawLibrary(old=>{const value=typeof next==='function'?next(old):next;registerAlbumArtwork(value);return value;});
+  const dropTarget=useRef(dropImportSource(library));dropTarget.current=dropImportSource(library);
   const tracksById=useMemo(()=>new Map(library.tracks.map(t=>[t.id,t])),[library.tracks]);
   const librarySummary=useMemo(()=>({favorites:library.tracks.filter(t=>t.favorited).length,duration:library.tracks.reduce((sum,t)=>sum+t.duration,0)}),[library.tracks]);
   const dropNotice=usePlaylistDrop(collections,library.tracks,setCollections,setCollectionError);
@@ -163,6 +165,8 @@ export default function App() {
   const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
   useNativeChrome(miniMode==='normal');
   const [rawPlayer, setPlayer] = usePlaybackFeed(emptyPlayback);
+  const activitySong=useRef(rawPlayer.track?.id);
+  useEffect(()=>{if(activitySong.current!==rawPlayer.track?.id){activitySong.current=rawPlayer.track?.id;invalidateDisplay('home_activity');}},[rawPlayer.track?.id]);
   const presentedQueue=useMemo(()=>rawPlayer.queue.map(t=>tracksById.get(t.id)??t),[rawPlayer.queue,tracksById]);
   const player=useMemo(()=>({...rawPlayer,track:rawPlayer.track?(tracksById.get(rawPlayer.track.id)??rawPlayer.track):null,queue:presentedQueue}),[rawPlayer,tracksById,presentedQueue]);
   const [task, setTask] = useState<Task>(emptyTask);
@@ -312,7 +316,12 @@ export default function App() {
           setPlayer((old) => mergePlaybackUpdate(old,update)),
         ),
         subscribe<Task>("task", setTask),
-        subscribe<LibraryChanged | null>("library-changed", (change) => {if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));void refresh();}),
+        subscribe<LibraryChanged | null>("library-changed", (change) => {
+          if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();
+          window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));
+          if(change?.reason==='favorites'&&change.favorite_updates?.length){const updates=new Map(change.favorite_updates.map(update=>[update.track_id,update.favorited]));setLibrary(old=>({...old,tracks:old.tracks.map(track=>updates.has(track.id)?{...track,favorited:updates.get(track.id)!}:track)}));}
+          else if(change?.reason!=="analysis")void refresh();
+        }),
         subscribe("native-open-queue",()=>nativeQueueAction.current()),
         subscribe<string>("native-playback-error",setError),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
@@ -347,7 +356,7 @@ export default function App() {
               const paths = e.payload.paths;
               if (!paths.length) return;
               void call("inspect_import", { paths })
-                .then(() => call("library_task", {request:{kind:"copy",paths}}))
+                .then(() => call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path}}))
                 .catch((e) => setError(errorText(e)));
             }
           },
@@ -409,17 +418,16 @@ export default function App() {
     const started=artistCompletions.current.get(name)??0;
     let request=profileCache.get(name);
     if(!request){request=call("artist_info",{name,refresh:false});profileCache.set(name,request);request.catch(()=>profileCache.delete(name));}
-    setArtistLoading(old=>new Set(old).add(name));
     let pending=false;
-    try {const info=await request;pending=info.lookup_status==='loading'&&started===(artistCompletions.current.get(name)??0);
-    if(info.portrait&&started===(artistCompletions.current.get(name)??0))setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===name&&a.portrait!==info.portrait?{...a,portrait:info.portrait}:a)}));
+    try {const info=await request;pending=info.lookup_status==='loading'&&started===(artistCompletions.current.get(name)??0);if(pending)setArtistLoading(old=>old.has(name)?old:new Set(old).add(name));
+    if(info.portrait&&started===(artistCompletions.current.get(name)??0))setLibrary(old=>old.artists.some(a=>a.name===name&&a.portrait!==info.portrait)?({...old,artists:old.artists.map(a=>a.name===name?{...a,portrait:info.portrait}:a)}):old);
     return info;
-    }finally{if(!pending)setArtistLoading(old=>{const next=new Set(old);next.delete(name);return next;});}
+    }finally{if(!pending)setArtistLoading(old=>{if(!old.has(name))return old;const next=new Set(old);next.delete(name);return next;});}
   },[]);
   useEffect(()=>{
     let gone=false;setArtistInfo(null);
     const names=route.view==='artist'&&artist?[artist.name]:route.view==='album'&&album?library.artists.filter(a=>a.album_ids.includes(album.id)).map(a=>a.name):[];
-    void (async()=>{for(const name of names){if(gone)return;try{if(route.view==='artist')profileCache.delete(name);const info=route.view==='artist'?await call('artist_info',{name,refresh:true}):await enrichArtist(name);if(!gone&&route.view==='artist')setArtistInfo(info);}catch(e){if(!gone&&route.view==='artist')setArtistInfo(null);}}})();
+    void (async()=>{for(const name of names){if(gone)return;try{const info=await enrichArtist(name);if(!gone&&route.view==='artist')setArtistInfo(info);}catch(e){if(!gone&&route.view==='artist')setArtistInfo(null);}}})();
     return()=>{gone=true;};
   },[route.view,route.id,artist?.name,album?.id,enrichArtist]);
   useEffect(()=>{
@@ -427,7 +435,7 @@ export default function App() {
     let gone=false;
     const pending:string[]=[];let running=false;
     const pump=async()=>{if(running)return;running=true;while(pending.length&&!gone){try{await enrichArtist(pending.shift()!);}catch{}}running=false;};
-    const observer=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;observer.unobserve(entry.target);const name=entry.target.getAttribute('data-artist-name');if(name&&!gone&&!pending.includes(name)){pending.push(name);setArtistLoading(old=>new Set(old).add(name));}}void pump();},{root:scrollRef.current,rootMargin:'100px'});
+    const observer=new IntersectionObserver(entries=>{for(const entry of entries){if(!entry.isIntersecting)continue;observer.unobserve(entry.target);const name=entry.target.getAttribute('data-artist-name');if(name&&!gone&&!pending.includes(name)){pending.push(name);}}void pump();},{root:scrollRef.current,rootMargin:'100px'});
     const observed=new WeakSet<Element>();
     const scan=()=>document.querySelectorAll('[data-artist-name]').forEach(el=>{if(!observed.has(el)){observed.add(el);observer.observe(el);}});
     scan();const mutations=new MutationObserver(scan);if(scrollRef.current)mutations.observe(scrollRef.current,{childList:true,subtree:true});
@@ -1297,7 +1305,7 @@ export default function App() {
           )}
         </div>
       </div>
-      {fileDrop&&<div className="file-drop-hint" role="status"><Icon name="Song"/><strong>Copy music into musicOS</strong><span>Drop songs or folders. Originals stay where they are.</span></div>}
+      {fileDrop&&<div className="file-drop-hint" role="status"><Icon name="Song"/><strong>Copy music into {dropTarget.current?.display_name??'musicOS'}</strong><span>Drop songs or folders. Originals stay where they are.</span></div>}
       {playlistTrack&&<PlaylistPicker ids={(playlistTrack as Track&{selectionIds?:number[]}).selectionIds} track={playlistTrack} library={library} items={collections} onChange={setCollections} onClose={()=>setPlaylistTrack(null)}/>}
       {deletingCollection&&<CollectionDelete item={deletingCollection} onChange={setCollections} onClose={()=>setDeletingCollection(null)}/>}
       {creatingCollection==='rule'&&<SmartCreate onChange={setCollections} onClose={()=>setCreatingCollection(null)}/>}

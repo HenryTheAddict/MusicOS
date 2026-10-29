@@ -490,10 +490,10 @@ html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-
 /* Clipped depth paint never enlarges the native scrolling extent. */
 .depth-clip{position:absolute;inset:0;overflow:clip;pointer-events:none;z-index:3;}
 .audio-panel .queue-track{touch-action:pan-y;}@media(max-width:800px){
- .app-shell .app-header{display:grid;grid-template-columns:114px minmax(0,1fr);height:auto;gap:.375rem .5rem;padding:.4375rem .75rem;}
- .app-shell .section-control>.menu-trigger:first-child{justify-self:end;width:min(100%,13.875rem);}
- .app-shell .now-playing{grid-column:1/-1;width:100%;min-width:0;}
- .app-shell .window-drag-region{width:100%;min-height:3rem;}
+ .app-shell:not(.adaptive-shell) .app-header{display:grid;grid-template-columns:114px minmax(0,1fr);height:auto;gap:.375rem .5rem;padding:.4375rem .75rem;}
+ .app-shell:not(.adaptive-shell) .section-control>.menu-trigger:first-child{justify-self:end;width:min(100%,13.875rem);}
+ .app-shell:not(.adaptive-shell) .now-playing{grid-column:1/-1;width:100%;min-width:0;}
+ .app-shell:not(.adaptive-shell) .window-drag-region{width:100%;min-height:3rem;}
 }@media(max-width:600px){
  .workspace{grid-template-columns:7.5rem minmax(0,1fr);}
  .library-sidebar nav button{gap:.25rem;font-size:.75rem;padding:.375rem;}

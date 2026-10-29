@@ -39,7 +39,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
             PendingIntent.getActivity(
                 applicationContext,
                 0,
-                Intent(applicationContext, MainActivity::class.java),
+                Intent(applicationContext, MainActivity::class.java).putExtra("open_devices", true),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
         val builder =
@@ -76,6 +76,9 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                         ?: return@withContext Result.failure(
                             workDataOf("error" to "Pair this Mac again")
                         )
+                val connectivity = applicationContext.getSystemService(android.net.ConnectivityManager::class.java)
+                val localNetwork = connectivity.allNetworks.any { network -> connectivity.getNetworkCapabilities(network)?.let { it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) || it.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) } == true }
+                require(localNetwork) { "Join the same Wi-Fi as your Mac, then tap Copy music again." }
                 setForeground(notification("Connecting to ${mac.name}", 0, 0))
                 var client = WifiClient(mac)
                 val waiting: suspend (String) -> Unit = { message ->
@@ -96,7 +99,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                 val needed =
                     manifest.tracks
                         .filter {
-                            !WifiClient.verified(repository.objectFile(it.hash), it.hash, it.size)
+                            repository.objectFile(it.hash).let { file -> !file.isFile || file.length() != it.size }
                         }
                         .sumOf { it.size }
                 require(
@@ -108,6 +111,8 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                 var completeBytes = 0L
                 val files = mutableMapOf<String, java.io.File>()
                 val art = mutableMapOf<String, java.io.File>()
+                var published = 0
+                var lastPublished = android.os.SystemClock.elapsedRealtime()
                 for ((index, song) in manifest.tracks.withIndex()) {
                     val before = completeBytes
                     val target =
@@ -147,6 +152,12 @@ class SyncWorker(context: Context, parameters: WorkerParameters) :
                                     null,
                                 ) {}
                         }
+                    }
+                    val publishNow = android.os.SystemClock.elapsedRealtime()
+                    if (files.size - published >= 8 || publishNow - lastPublished >= 2000) {
+                        repository.import(manifest.copy(tracks = manifest.tracks.filter { files.containsKey(it.id) }, collections = emptyList()), files, art)
+                        published = files.size
+                        lastPublished = publishNow
                     }
                     setProgress(
                         workDataOf(

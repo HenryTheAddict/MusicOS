@@ -464,9 +464,8 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
         }
     }
     for a in &mut result.artists {
-        if state.startup_ready.load(Ordering::Relaxed) && providers::cached_artist_info(&a.name).is_none_or(|p|p.artist_mbid.is_none()||p.portrait.as_ref().is_none_or(|path|!Path::new(path).is_file())) && providers::artist_due(&a.name) {
-            queue_artist(app, &a.name);
-        }
+        // Opening Library reads cached portraits. Only visible artist requests
+        // schedule provider work; a library refresh is not an enrichment job.
         a.portrait = providers::cached_artist_info(&a.name).and_then(|info| info.portrait);
         if let Some(p) = &a.portrait {
             allow_art(app, p)
@@ -1034,9 +1033,14 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 }
             }
             if kind == "copy" {
+                let target=if let Some(root)=request.root.as_deref(){
+                    let target=root.canonicalize().context("The drop destination is unavailable. Check Music folders.")?;
+                    let known=repo.snapshot(&LibraryQuery::default())?.sources.into_iter().any(|source|source.enabled&&source.available&&source.path.canonicalize().is_ok_and(|p|p==target));
+                    anyhow::ensure!(known,"Choose an available Music folder before copying dropped music.");target
+                }else{config.media_dir.clone()};
                 let p = musicos_desktop::library_import::import_managed_library(
                     &request.paths,
-                    &config.media_dir,
+                    &target,
                     &state.cancel,
                     |p| {
                         emit_task(
@@ -1232,7 +1236,7 @@ async fn toggle_favorite(app: tauri::AppHandle, track_id: i64) -> ApiResult<bool
         let config = app.state::<AppState>().config();
         let db = musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;
         let value = db.toggle_favorite(track_id)?;
-        let _ = app.emit("library-changed",json!({"reason":"favorites","track_ids":[track_id]}));
+        let _ = app.emit("library-changed",json!({"reason":"favorites","track_ids":[track_id],"favorite_updates":[{"track_id":track_id,"favorited":value}]}));
         Ok(value)
     })
     .await
@@ -1272,7 +1276,7 @@ async fn artist_info(
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .contains(&name);
-        if refresh.unwrap_or(false) || providers::cached_artist_info(&name).is_none() {
+        if refresh.unwrap_or(false) || providers::cached_artist_info(&name).is_none() || providers::artist_due(&name) {
             queue_artist(&app, &name);
         }
         let info = providers::cached_artist_info(&name).unwrap_or_else(|| providers::ArtistInfo {

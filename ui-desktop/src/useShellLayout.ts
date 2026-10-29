@@ -1,6 +1,6 @@
 import {useLayoutEffect,useRef,useState} from 'react';
 export type ShellLayout='wide'|'compact';
-export function shellLayout(width:number,fontSize:number):ShellLayout{return width/fontSize<56?'compact':'wide';}
+export function shellLayout(width:number,fontSize:number):ShellLayout{return width<Math.min(720,40*fontSize)?'compact':'wide';}
 /** One scale-aware measurement owns all shell presentation decisions. */
 export function useShellLayout(scale:number,enabled=true){
  const root=useRef<HTMLDivElement>(null);

@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -278,7 +279,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                 .setExpedited(androidx.work.OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(
                     Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.UNMETERED)
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
                         .setRequiresStorageNotLow(true)
                         .build()
                 )
@@ -288,13 +289,20 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                     java.util.concurrent.TimeUnit.SECONDS,
                 )
                 .build()
-        work.enqueueUniqueWork("offline-${mac.id}", ExistingWorkPolicy.REPLACE, request)
-        jobs.value = jobs.value + (mac.id to request.id)
-        jobSettings.edit().putString(mac.id, request.id.toString()).apply()
+        jobs.update { it + (mac.id to request.id) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                work.enqueueUniqueWork("offline-${mac.id}", ExistingWorkPolicy.KEEP, request).result.get()
+                val active = work.getWorkInfosForUniqueWork("offline-${mac.id}").get().firstOrNull { !it.state.isFinished }?.id ?: request.id
+                jobs.update { it + (mac.id to active) }
+                jobSettings.edit().putString(mac.id, active.toString()).apply()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled
+            } catch (_: Exception) { message.value = "Couldn’t start copying. Your offline music is safe. Try again." }
+        }
     }
 
     fun cancel(mac: PairedMac) {
-        jobs.value[mac.id]?.let { work.cancelWorkById(it) }
+        work.cancelUniqueWork("offline-${mac.id}")
     }
 
     fun forget(mac: PairedMac) {

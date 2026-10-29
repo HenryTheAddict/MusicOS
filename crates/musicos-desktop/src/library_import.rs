@@ -96,6 +96,11 @@ fn import_one(
     index: &mut BTreeMap<String, String>,
 ) -> Result<ImportOutcome> {
     let hash = sha256_file(source)?;
+    // Dropping a file already in the destination must not rewrite its bytes,
+    // timestamps or tags, even when this folder has no import index yet.
+    if let (Ok(path),Ok(root))=(source.canonicalize(),media_dir.canonicalize()){
+        if let Ok(relative)=path.strip_prefix(root){index.insert(hash,relative.to_string_lossy().into_owned());return Ok(ImportOutcome::Duplicate);}
+    }
     if let Some(relative) = index.get(&hash) {
         if media_dir.join(relative).is_file() {
             return Ok(ImportOutcome::Duplicate);
@@ -270,4 +275,11 @@ mod tests {
         assert_eq!(first.imported, 1);
         assert_eq!(second.duplicates, 1);
     }
+    #[test]
+    fn dropping_an_existing_destination_file_keeps_original_and_timestamp() {
+        let temp=tempfile::tempdir().unwrap();let file=temp.path().join("Artist/Album/Song.flac");fs::create_dir_all(file.parent().unwrap()).unwrap();fs::write(&file,b"original audio").unwrap();
+        let modified=fs::metadata(&file).unwrap().modified().unwrap();let before=fs::read(&file).unwrap();
+        let result=import_managed_library(&[file.clone()],temp.path(),&AtomicBool::new(false),|_|{}).unwrap();assert_eq!(result.duplicates,1);assert_eq!(result.imported,0);assert_eq!(fs::read(&file).unwrap(),before);assert_eq!(fs::metadata(&file).unwrap().modified().unwrap(),modified);
+    }
+
 }

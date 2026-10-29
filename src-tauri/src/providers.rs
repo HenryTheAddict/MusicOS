@@ -555,6 +555,10 @@ static ARTIST_ATTEMPTS: OnceLock<Mutex<std::collections::HashMap<String, (Instan
     OnceLock::new();
 fn artist_lookup_key(name:&str)->String{cached_artist_info(name).and_then(|p|p.artist_mbid).map(|id|format!("mbid:{id}")).unwrap_or_else(||crate::library::artist_name_key(name))}
 pub fn artist_due(name: &str) -> bool {
+    if cached_artist_info(name).is_some_and(|p|p.artist_mbid.is_some()&&p.biography.is_some()&&p.portrait.as_ref().is_some_and(|path|Path::new(path).is_file())) {
+        let path=cache_path(&format!("artist-lookup-v3:{}",crate::library::artist_name_key(name)));
+        if std::fs::metadata(path).ok().and_then(|m|m.modified().ok()).and_then(|at|at.elapsed().ok()).is_some_and(|age|age<Duration::from_secs(86400)){return false;}
+    }
     let key=artist_lookup_key(name);
     if std::fs::read(cache_path(&format!("artist-status-v2:{key}")))
         .or_else(|_|std::fs::read(cache_path(&format!("artist-status-v1:{name}"))))
@@ -619,12 +623,14 @@ pub fn revalidate_artist(db: &Path, name: &str, cancel: &AtomicBool) -> Result<A
             ),
         );
     let failed = result.is_err();
+    let complete=result.as_ref().is_ok_and(|p|p.artist_mbid.is_some()&&p.biography.is_some()&&p.portrait.as_ref().is_some_and(|path|Path::new(path).is_file()));
     let wait = if failed {
         match failures {
             0 => 60,
             1 => 240,
             _ => 960,
         }
+    } else if complete { 86400
     } else {
         60
     };

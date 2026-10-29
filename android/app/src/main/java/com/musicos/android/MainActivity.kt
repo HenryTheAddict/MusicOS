@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun readIntent(value: Intent?) {
-        incoming.value = value?.data?.toString().orEmpty()
+        incoming.value = if(value?.getBooleanExtra("open_devices", false)==true) "musicos://devices" else value?.data?.toString().orEmpty()
         voice.value =
             if (value?.action == android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
                 value.getStringExtra(android.app.SearchManager.QUERY).orEmpty()
@@ -189,7 +189,7 @@ private fun SongRow(song: Song, onPlay: () -> Unit, model: PhoneModel, index: In
         Text(time(song.duration), fontSize = 11.sp, color = colors.secondary)
         Box {
             IconButton({ menu = true }) { SketchIcon("More", Modifier.size(22.dp)) }
-            DropdownMenu(menu, { menu = false }) {
+            MusicMenu(menu, { menu = false }) {
                 DropdownMenuItem(
                     { Text(if (song.favorite) "Remove favorite" else "Favorite") },
                     {
@@ -236,10 +236,11 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                 }
         }
     }
-    MusicTheme(dark) {
+    var colorSource by rememberSaveable { mutableStateOf(preferences.getString("colors", "blue") ?: "blue") }
+    val playing by model.playing.collectAsStateWithLifecycle()
+    MusicTheme(dark, playing.song?.artworkFile?.takeIf { colorSource == "artwork" }) {
         val colors = LocalMusicColors.current
         val library by model.library.collectAsStateWithLifecycle()
-        val playing by model.playing.collectAsStateWithLifecycle()
         val message by model.message.collectAsStateWithLifecycle()
         var destination by rememberSaveable { mutableStateOf("Home") }
         var tools by remember { mutableStateOf(false) }
@@ -270,6 +271,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
             }
         }
         LaunchedEffect(incoming) {
+            if (incoming == "musicos://devices") { destination = "Devices"; player = false }
             if (incoming.startsWith("musicos://pair")) {
                 link = incoming
                 destination = "Devices"
@@ -324,7 +326,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                         fontSize = 18.sp,
                     )
                     Box {
-                        TextButton({ tools = true }) {
+                        FilledTonalButton({ tools = true }, shape = RoundedCornerShape(14.dp), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(destination, color = colors.ink)
                             Spacer(Modifier.width(8.dp))
                             val arrow by
@@ -338,7 +340,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                 Modifier.size(16.dp).graphicsLayer { rotationZ = arrow },
                             )
                         }
-                        DropdownMenu(tools, { tools = false }) {
+                        MusicMenu(tools, { tools = false }) {
                             listOf("Home", "Search", "Library", "Devices", "Settings").forEach {
                                 name ->
                                 DropdownMenuItem(
@@ -372,6 +374,8 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                     preferences.edit().putString("theme", it).apply()
                                 },
                                 { destination = "Devices" },
+                                colorSource,
+                                { colorSource = it; preferences.edit().putString("colors", it).apply() },
                             )
                         detail != null -> {
                             val songs =
@@ -413,7 +417,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                 contentPadding = PaddingValues(bottom = 16.dp),
                             ) {
                                 item {
-                                    TextButton({ setDetail(null) }) { Text("‹ Back") }
+                                    FilledTonalButton({ setDetail(null) }, shape = RoundedCornerShape(12.dp)) { SketchIcon("Back", Modifier.size(18.dp)); Text("Back") }
                                     if (detail.startsWith("album:"))
                                         Artwork(
                                             songs.firstOrNull()?.artworkFile,
@@ -488,6 +492,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                         style = MaterialTheme.typography.headlineLarge,
                                         fontWeight = FontWeight.Bold,
                                     )
+                                    if(destination == "Home" && library.songs.isNotEmpty()) Text("${songCount(library.songs.count { it.available })} ready offline", fontSize = 13.sp, color = colors.secondary)
                                 }
                                 if (library.songs.isEmpty()) {
                                     item {
@@ -513,7 +518,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                                 .background(colors.control).padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Artwork(playing.song!!.artworkFile, Modifier.size(64.dp).clickable { player = true; queue = false })
                                                 Column(Modifier.weight(1f).padding(horizontal = 12.dp).clickable { player = true; queue = false }) {
-                                                    Text("Continue listening", fontSize = 12.sp, color = colors.secondary)
+                                                    Text(if(playing.playing) "Now playing" else "Continue listening", fontSize = 12.sp, color = colors.secondary)
                                                     Text(playing.song!!.title, maxLines = 2, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
                                                     Text(playing.song!!.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 13.sp, color = colors.secondary)
                                                 }
@@ -523,10 +528,10 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                             }
                                         }
                                     item {
-                                        Text(
-                                            "Collections",
-                                            style = MaterialTheme.typography.titleLarge,
-                                        )
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Collections", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                            DeviceButton("All") { destination = "Library"; category = "Collections" }
+                                        }
                                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
                                             item {
                                                 Column(Modifier.width(112.dp).clickable { setDetail("favorites") }) {
@@ -540,14 +545,17 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                             items(library.collections, key = { it.id }) { c ->
                                                 Column(Modifier.width(112.dp).clickable { setDetail("collection:${c.id}") }) {
                                                     Artwork(c.songIds.firstNotNullOfOrNull { id -> library.songs.find { it.id == id }?.artworkFile }, Modifier.size(112.dp))
-                                                    Text(c.name, Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                    Text(c.name, Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                                     Text(songCount(c.songIds.size), fontSize = 12.sp, color = colors.secondary)
                                                 }
                                             }
                                         }
                                     }
                                     item {
-                                        Text("Albums", style = MaterialTheme.typography.titleLarge)
+                                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Albums", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                            DeviceButton("All albums") { destination = "Library"; category = "Albums" }
+                                        }
                                         LazyRow(
                                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
@@ -575,9 +583,12 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                         }
                                     }
                                     item {
-                                        Text("Songs", style = MaterialTheme.typography.titleLarge)
+                                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Songs", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                                            DeviceButton("All songs") { destination = "Library"; category = "Songs" }
+                                        }
                                     }
-                                    items(library.songs.take(30), key = { it.id }) { song ->
+                                    items(library.songs.take(6), key = { it.id }) { song ->
                                         SongRow(song, { model.play(listOf(song)) }, model)
                                     }
                                 } else {
@@ -592,7 +603,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                             var more by remember { mutableStateOf(false) }
                                             Box {
                                                 IconButton({ more = true }, Modifier.size(48.dp).semantics { contentDescription = "More library views" }) { SketchIcon("More", Modifier.size(22.dp)) }
-                                                DropdownMenu(more, { more = false }) {
+                                                MusicMenu(more, { more = false }) {
                                                     listOf("Collections", "Favorites", "Genres").forEach { name ->
                                                         DropdownMenuItem({ Text(name) }, { category = name; more = false })
                                                     }
@@ -745,11 +756,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                     else "Favorite"
                             },
                         ) {
-                            SketchIcon(
-                                if (playing.song?.favorite == true) "Heart-Filled" else "Heart",
-                                Modifier.size(16.dp),
-                                colors.accent,
-                            )
+                            BeatingHeart(playing.song?.favorite == true, playing.playing, Modifier.size(16.dp))
                         }
                         IconButton(
                             model::toggle,
@@ -932,8 +939,8 @@ internal fun PlayerPage(
                     PlayerSeek(model, state)
                     Transport(model, state, true)
                     Row(Modifier.widthIn(max = 300.dp).fillMaxWidth().align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically) {
-                        TextButton({ volumeOpen = !volumeOpen }, Modifier.heightIn(min = 48.dp)
-                            .semantics { contentDescription = "Volume controls" }) {
+                        FilledTonalButton({ volumeOpen = !volumeOpen }, Modifier.heightIn(min = 48.dp)
+                            .semantics { contentDescription = "Volume controls" }, shape = RoundedCornerShape(14.dp)) {
                             Text(if(volumeOpen) "Volume" else "Volume · ${(state.volume * 100).toInt()}%", color = colors.secondary, fontSize = 12.sp)
                         }
                         if (volumeOpen) PlayerSlider(state.volume, model::volume, Modifier.weight(1f), "Listening volume")
@@ -961,7 +968,7 @@ private fun PlayerIdentity(model: PhoneModel, state: Playing, modifier: Modifier
         }
         IconButton({ state.song?.let { model.repository.favorite(it.id) } },
             Modifier.size(48.dp).semantics { contentDescription = "Favorite playing song" }, enabled = state.song != null) {
-            SketchIcon(if (state.song?.favorite == true) "Heart-Filled" else "Heart", Modifier.size(20.dp), colors.accent)
+            BeatingHeart(state.song?.favorite == true, state.playing, Modifier.size(20.dp))
         }
     }
 }
@@ -993,154 +1000,13 @@ private fun PlayerSlider(value: Float, change: (Float) -> Unit, modifier: Modifi
 }
 
 @Composable
-private fun DevicesPage(model: PhoneModel, link: String, onLink: (String) -> Unit) {
-    val macs by model.macs.collectAsStateWithLifecycle()
-    val pairing by model.pairing.collectAsStateWithLifecycle()
-    val status by model.pairingStatus.collectAsStateWithLifecycle()
-    val jobs by model.jobs.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val permission =
-        rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _
-            ->
-            val action = pending
-            pending = null
-            if (
-                Build.VERSION.SDK_INT < 37 ||
-                    androidx.core.content.ContextCompat.checkSelfPermission(
-                        context,
-                        "android.permission.ACCESS_LOCAL_NETWORK",
-                    ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            )
-                action?.invoke()
-            else
-                model.message.value =
-                    "Local network access is needed to connect to the Mac. Enable it in Android Settings to retry."
-        }
-    fun network(action: () -> Unit) {
-        val permissions =
-            buildList {
-                    if (Build.VERSION.SDK_INT >= 37) add("android.permission.ACCESS_LOCAL_NETWORK")
-                    if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
-                }
-                .filter {
-                    androidx.core.content.ContextCompat.checkSelfPermission(context, it) !=
-                        android.content.pm.PackageManager.PERMISSION_GRANTED
-                }
-        if (permissions.isEmpty()) action()
-        else {
-            pending = action
-            permission.launch(permissions.toTypedArray())
-        }
-    }
-    LazyColumn(
-        Modifier.fillMaxSize().padding(horizontal = 14.dp),
-        contentPadding = PaddingValues(vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item {
-            Text(
-                "Devices",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Copy from your Mac over Wi-Fi. Your songs keep playing when the Mac is offline.",
-                color = LocalMusicColors.current.secondary,
-            )
-        }
-        item {
-            Column(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(LocalMusicColors.current.control)
-                    .padding(14.dp)
-            ) {
-                Text("Pair a Mac", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "On the Mac, open Devices, choose music, then create a pairing link. Paste or open that link here.",
-                    fontSize = 13.sp,
-                )
-                OutlinedTextField(
-                    link,
-                    onLink,
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    label = { Text("Pairing link") },
-                    maxLines = 4,
-                    enabled = !pairing,
-                )
-                Button({ network { model.pair(link) } }, enabled = !pairing && link.isNotBlank()) {
-                    Text(if (pairing) "Waiting for approval…" else "Connect to Mac")
-                }
-                if (status.isNotBlank())
-                    Text(status, Modifier.padding(top = 8.dp), fontSize = 13.sp)
-            }
-        }
-        items(macs, key = { it.id }) { mac ->
-            Column(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(LocalMusicColors.current.control.copy(alpha = .5f))
-                    .padding(14.dp)
-            ) {
-                Text(mac.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("Paired · offline copies stay on this phone", fontSize = 12.sp)
-                Row {
-                    MusicButton("Copy music", "sync") { network { model.sync(mac) } }
-                    TextButton({ model.forget(mac) }) { Text("Forget") }
-                }
-                val id = jobs[mac.id]
-                if (id != null) {
-                    val info by
-                        model.work
-                            .getWorkInfoByIdFlow(id)
-                            .collectAsStateWithLifecycle(initialValue = null)
-                    val job = info
-                    if (job != null) {
-                        val done = job.progress.getLong("done", 0)
-                        val total = job.progress.getLong("total", 0)
-                        Text(
-                            when (job.state) {
-                                WorkInfo.State.SUCCEEDED -> "Offline music is ready"
-                                WorkInfo.State.FAILED ->
-                                    job.outputData.getString("error")
-                                        ?: "Copy failed. Retry while the Mac is sharing."
-                                WorkInfo.State.CANCELLED -> "Stopped. Finished copies are kept."
-                                WorkInfo.State.ENQUEUED ->
-                                    "Waiting for unmetered Wi-Fi or retrying connection…"
-                                else -> job.progress.getString("message") ?: "Preparing copies…"
-                            },
-                            fontSize = 13.sp,
-                        )
-                        if (!job.state.isFinished) {
-                            if (total > 0)
-                                LinearProgressIndicator(
-                                    progress = { done.toFloat() / total },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            else LinearProgressIndicator(Modifier.fillMaxWidth())
-                            TextButton({ model.cancel(mac) }) { Text("Stop copying") }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Text(
-                "Music is copied without changing the files on your Mac. New syncs keep existing offline copies and preserve favorites changed on this phone. No cloud account is required.",
-                fontSize = 12.sp,
-                color = LocalMusicColors.current.secondary,
-            )
-        }
-    }
-}
-
-@Composable
 private fun SettingsPage(
     model: PhoneModel,
     theme: String,
     onTheme: (String) -> Unit,
     onDevices: () -> Unit,
+    colorSource: String,
+    onColorSource: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1163,6 +1029,15 @@ private fun SettingsPage(
                         label = { Text(value.replaceFirstChar { it.uppercase() }) },
                         modifier = Modifier.padding(end = 6.dp),
                     )
+                }
+            }
+        }
+        item {
+            Text("Colors", style = MaterialTheme.typography.titleLarge)
+            Text("Keep the musicOS blue or follow your current artwork.", fontSize = 13.sp, color = LocalMusicColors.current.secondary)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("blue" to "musicOS blue", "artwork" to "From artwork").forEach { (value,label) ->
+                    FilterChip(colorSource == value, { onColorSource(value) }, label = { Text(label) }, shape = RoundedCornerShape(12.dp))
                 }
             }
         }

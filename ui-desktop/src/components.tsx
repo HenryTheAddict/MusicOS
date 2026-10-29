@@ -549,20 +549,15 @@ export function CollectionGrid({
 }) {
   const element = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(500);
-  const [settledWidth, setSettledWidth] = useState(500);
   const [margin, setMargin] = useState(0);
   useLayoutEffect(() => {
     if (!element.current) return;
     const node = element.current;
-    let settle: ReturnType<typeof setTimeout>;
-    let first = true,lastWidth=-1,sizeFrame=0;
+    let lastWidth=-1,sizeFrame=0;
     const readSize = () => {
       const next = node.clientWidth;
       if(next<=0)return; // A retained, hidden Library has no layout to measure.
-      if(next!==lastWidth){lastWidth=next;setWidth(next);clearTimeout(settle);
-        if (first) { setSettledWidth(next); first = false; }
-        else settle = setTimeout(() => setSettledWidth(next), 140);
-      }
+      if(next!==lastWidth){lastWidth=next;setWidth(next);}
       if (scrollRef.current)
         {const nextMargin=node.getBoundingClientRect().top-scrollRef.current.getBoundingClientRect().top+scrollRef.current.scrollTop;
          setMargin(current=>Math.abs(current-nextMargin)>.25?nextMargin:current);}
@@ -574,18 +569,16 @@ export function CollectionGrid({
     window.visualViewport?.addEventListener("resize",queueSize);
     readSize();
     observer.observe(node);
-    return () => { observer.disconnect();clearTimeout(settle);cancelAnimationFrame(sizeFrame);window.removeEventListener("resize",queueSize);window.visualViewport?.removeEventListener("resize",queueSize); };
+    return () => { observer.disconnect();cancelAnimationFrame(sizeFrame);window.removeEventListener("resize",queueSize);window.visualViewport?.removeEventListener("resize",queueSize); };
   }, [scrollRef]);
   // Work in interface units, then apply the same geometry to both render paths.
   // Covers fill each row, growing up to 160 units before adding a column. Narrow
   // columns borrow from the gap first to keep artwork and text comfortably sized.
   const available = width / scale;
-  const settledAvailable = settledWidth / scale;
-  const settledGap = Math.min(42, Math.max(12, (settledAvailable - 240) * 0.18));
   const preferredGap = Math.min(42, Math.max(12, (available - 240) * 0.18));
   const columns = Math.max(1, Math.min(
-    Math.ceil((settledAvailable + settledGap) / (160 + settledGap)),
-    Math.floor((settledAvailable + 12) / (104 + 12)),
+    Math.ceil((available + preferredGap) / (160 + preferredGap)),
+    Math.floor((available + 12) / (104 + 12)),
   ));
   const gap = (columns > 1
     ? Math.max(12, Math.min(preferredGap, (available - columns * 104) / (columns - 1)))

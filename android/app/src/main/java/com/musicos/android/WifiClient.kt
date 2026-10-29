@@ -143,7 +143,7 @@ class WifiClient(private val mac: PairedMac) {
         progress: suspend (Long) -> Unit,
     ): File =
         withContext(Dispatchers.IO) {
-            if (target.isFile && verified(target, expectedHash, expectedSize))
+            if (target.isFile && CopyVerification.verified(target, expectedHash, expectedSize))
                 return@withContext target
             val partial = File(target.path + ".partial")
             if (expectedSize != null && partial.length() > expectedSize) partial.delete()
@@ -199,6 +199,7 @@ class WifiClient(private val mac: PairedMac) {
                 throw IOException(
                     "Could not save offline music; the verified download was retained"
                 )
+            CopyVerification.remember(target, expectedHash)
             target
         }
 

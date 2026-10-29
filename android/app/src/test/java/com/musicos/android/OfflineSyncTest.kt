@@ -210,4 +210,24 @@ class OfflineSyncTest {
                 server.shutdown()
             }
         }
+    @Test fun cachedCopiesInvalidateAfterMutationAndReplacement() {
+        val context = ApplicationProvider.getApplicationContext<MusicOSApp>()
+        val file = File(context.cacheDir, "verified-copy-test.audio"); file.writeText("music")
+        val hash = sha256(file.readBytes())
+        assertTrue(CopyVerification.verified(file, hash, 5))
+        assertTrue(CopyVerification.verified(file, hash, 5))
+        file.writeText("other")
+        assertFalse(CopyVerification.verified(file, hash, 5))
+        file.delete(); file.writeText("music"); assertTrue(CopyVerification.verified(file, hash, 5))
+        file.delete(); File(file.path + ".verified").delete()
+    }
+    @Test fun artworkThemeKeepsPrimaryAndSelectedLabelsReadable() {
+        for(dark in listOf(false,true)) for(seed in listOf(0xffff0000.toInt(),0xff00ff00.toInt(),0xff0000ff.toInt(),0xffffff00.toInt(),0xffff00ff.toInt())) {
+            val colors = companionColors(seed,dark)
+            fun argb(c:androidx.compose.ui.graphics.Color) = android.graphics.Color.argb((c.alpha*255).toInt(),(c.red*255).toInt(),(c.green*255).toInt(),(c.blue*255).toInt())
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(argb(colors.ink),argb(colors.surface))>=4.5)
+            assertTrue(androidx.core.graphics.ColorUtils.calculateContrast(argb(colors.accentInk),argb(colors.accent))>=4.5)
+        }
+    }
+
 }

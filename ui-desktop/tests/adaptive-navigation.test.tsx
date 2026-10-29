@@ -37,6 +37,6 @@ it('reconciles removed metadata groups in inactive stacks and restores Search de
  act(()=>result.current.switchDestination('search'));
  expect(result.current.navigation.current).toMatchObject({view:'search',scroll:120});
 });
-it('uses the same exact effective-width boundary at all four scales',()=>{
- for(const percent of [80,100,125,150]){const font=16*percent/100;expect(shellLayout(56*font-.01,font)).toBe('compact');expect(shellLayout(56*font,font)).toBe('wide');expect(shellLayout(56*font+.01,font)).toBe('wide');}
+it('keeps square desktop windows wide and uses a bounded scale-aware phone threshold',()=>{
+ for(const percent of [80,100,125,150]){const font=16*percent/100;const boundary=Math.min(720,40*font);expect(shellLayout(boundary-.01,font)).toBe('compact');expect(shellLayout(boundary,font)).toBe('wide');expect(shellLayout(720,font)).toBe('wide');}
 });
