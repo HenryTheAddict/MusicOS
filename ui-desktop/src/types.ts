@@ -127,6 +127,7 @@ export interface Bootstrap {
   task: Task;
 }
 export interface ArtistInfo {
+  identity_albums?: string[];
   lookup_status?:string;
   biography: string | null;
   portrait: string | null;

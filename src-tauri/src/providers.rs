@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context,Result};
 use musicos_desktop::storage::{atomic_write_json, desktop_data_dir};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -283,6 +283,9 @@ pub struct ArtistInfo {
     pub verified_names:Vec<String>,
     #[serde(default)]
     pub lookup_status: String,
+    /// Exact local album titles that disambiguated this artist identity.
+    #[serde(default)]
+    pub identity_albums: Vec<String>,
     pub biography: Option<String>,
     pub source_url: Option<String>,
     pub portrait: Option<String>,
@@ -294,36 +297,102 @@ pub struct ArtistInfo {
     #[serde(default)]
     pub portrait_license: Option<String>,
 }
-fn artist_matches(a:&Value,name:&str)->bool{
+fn artist_name_matches(a:&Value,name:&str)->bool{
  let key=crate::library::artist_name_key(name);
- (a["name"].as_str().is_some_and(|n|crate::library::artist_name_key(n)==key)
- ||a["aliases"].as_array().is_some_and(|aliases|aliases.iter().any(|v|v["name"].as_str().is_some_and(|n|crate::library::artist_name_key(n)==key))))&&a["score"].as_u64().unwrap_or(0)>=95
+ a["name"].as_str().is_some_and(|n|crate::library::artist_name_key(n)==key)
+ ||a["aliases"].as_array().is_some_and(|aliases|aliases.iter().any(|v|v["name"].as_str().is_some_and(|n|crate::library::artist_name_key(n)==key)))
 }
-pub fn fetch_artist_info(_db: &Path, name: &str, cancel: &AtomicBool) -> Result<ArtistInfo> {
+fn artist_matches(a:&Value,name:&str)->bool{artist_name_matches(a,name)&&a["score"].as_u64().unwrap_or(0)>=95}
+fn local_artist_albums(path:&Path,name:&str)->Result<Vec<String>>{
+ let db=musicos_init::database::Db::open(&path.to_string_lossy())?;
+ let key=crate::library::artist_name_key(name);let mut counts=std::collections::BTreeMap::<String,usize>::new();
+ for track in db.get_tracks()?{
+  if crate::library::split_artist_credits(&track.artist).iter().any(|credit|crate::library::artist_name_key(credit)==key)&&!track.album.trim().is_empty(){*counts.entry(track.album).or_default()+=1;}
+ }
+ let mut albums=counts.into_iter().collect::<Vec<_>>();albums.sort_by(|a,b|b.1.cmp(&a.1).then_with(||a.0.cmp(&b.0)));Ok(albums.into_iter().take(3).map(|(title,_)|title).collect())
+}
+fn resolve_artist_from_albums(name:&str,candidates:&[&Value],albums:&[String],mut lookup:impl FnMut(&str)->Result<Value>)->Result<Option<(String,Vec<String>)>>{
+ let ids=candidates.iter().filter_map(|a|a["id"].as_str()).collect::<std::collections::BTreeSet<_>>();
+ let mut evidence=std::collections::BTreeMap::<String,std::collections::BTreeSet<String>>::new();
+ for title in albums{
+  let response=lookup(title)?;
+  let groups=response["release-groups"].as_array().context("Missing release-group results")?;
+  // A truncated answer cannot establish a unique identity.
+  if response["count"].as_u64().is_some_and(|count|count>groups.len() as u64){return Ok(None);}
+  for group in groups{
+   if !group["title"].as_str().is_some_and(|t|crate::library::artist_name_key(t)==crate::library::artist_name_key(title)){continue;}
+   for credit in group["artist-credit"].as_array().into_iter().flatten(){
+    let artist=&credit["artist"];
+    if artist_name_matches(artist,name){if let Some(id)=artist["id"].as_str().filter(|id|ids.contains(id)){evidence.entry(id.into()).or_default().insert(title.clone());}}
+   }
+  }
+ }
+ if evidence.len()!=1{return Ok(None);}
+ let (id,albums)=evidence.into_iter().next().unwrap();Ok(Some((id,albums.into_iter().collect())))
+}
+fn artist_discography(id:&str,mut page:impl FnMut(&str,usize)->Result<Value>)->Result<Vec<Value>>{
+ let mut groups=Vec::new();let mut expected=None;
+ loop{
+  let response=page(id,groups.len())?;
+  let count=response["release-group-count"].as_u64().context("Missing discography total")? as usize;
+  anyhow::ensure!(count<=500&&expected.is_none_or(|old|old==count),"Discography is incomplete or changed during lookup");expected=Some(count);
+  let rows=response["release-groups"].as_array().context("Missing discography results")?;
+  anyhow::ensure!(!rows.is_empty()||groups.len()==count,"Incomplete discography page");groups.extend(rows.iter().cloned());
+  anyhow::ensure!(groups.len()<=count,"Invalid discography page");if groups.len()==count{return Ok(groups);}
+ }
+}
+pub fn fetch_artist_info(db: &Path, name: &str, cancel: &AtomicBool) -> Result<ArtistInfo> {
     let path = cache_path(&format!("artist-info-v2:{name}"));
     let mut info = ArtistInfo::default();
     let query = format!("artist:\"{}\"", name.replace(['"', '\\'], " "));
     let results = cached_json(
         "https://musicbrainz.org/ws/2/artist/",
-        &[("query", &query), ("fmt", "json"), ("limit", "5")],
+        &[("query", &query), ("fmt", "json"), ("limit", "25")],
         "musicbrainz",
     )?;
     let matches: Vec<_> = results["artists"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|a|artist_matches(a,name))
+        .filter(|a|artist_name_matches(a,name))
         .collect();
-    if matches.len() != 1 {
-        // A failed or ambiguous revalidation cannot erase a verified cached profile.
-        if let Some(cached)=cached_artist_info(name){if cached.artist_mbid.is_some(){return Ok(cached);}}
-        info.lookup_status="unavailable".into();save_artist(&path,&info)?;return Ok(info);
-    }
-    let Some(id) = matches[0]["id"].as_str() else {
+    // Search score is relevance, not proof that identically named people are the same artist.
+    let resolved=if matches.len()==1&&artist_matches(matches[0],name){matches[0]["id"].as_str().map(|id|(id.to_owned(),Vec::new()))}else{
+        let albums=local_artist_albums(db,name)?;
+        let result=(||->Result<_>{
+            if albums.is_empty()||matches.is_empty(){return Ok(None);}
+            anyhow::ensure!(matches.len()<=8,"Too many artists share this name to identify safely");
+            let mut groups=Vec::new();
+            for artist in &matches{
+                let id=artist["id"].as_str().context("Missing artist identity")?;
+                groups.extend(artist_discography(id,|id,offset|{
+                    anyhow::ensure!(!cancel.load(Ordering::Relaxed),"Artist lookup cancelled");
+                    cached_json("https://musicbrainz.org/ws/2/release-group",&[("artist",id),("fmt","json"),("inc","artist-credits"),("limit","100"),("offset",&offset.to_string())],"musicbrainz")
+                })?);
+            }
+            let response=serde_json::json!({"count":groups.len(),"release-groups":groups});
+            resolve_artist_from_albums(name,&matches,&albums,|_|Ok(response.clone()))
+        })();
+        match result{
+            Ok(resolved)=>resolved,
+            Err(error)=>{
+                if let Some(cached)=cached_artist_info(name).filter(|p|!p.identity_albums.is_empty()&&p.identity_albums.iter().all(|title|albums.contains(title))){return Ok(cached);}
+                // Keep old image files on disk, but stop publishing an unverified same-name profile.
+                info.lookup_status="unavailable".into();save_artist(&path,&info)?;
+                save_artist(&cache_path(&format!("artist-lookup-v3:{}",crate::library::artist_name_key(name))),&info)?;
+                return Err(error);
+            }
+        }
+    };
+    let Some((id,matched_albums))=resolved else{
+        // An ambiguous name must not keep displaying an old name-only guess.
+        info.lookup_status="unavailable".into();save_artist(&path,&info)?;
+        save_artist(&cache_path(&format!("artist-lookup-v3:{}",crate::library::artist_name_key(name))),&info)?;
         return Ok(info);
     };
-    info.artist_mbid = Some(id.into());
-    info.verified_names=vec![name.into()];if let Some(primary)=matches[0]["name"].as_str(){if primary!=name{info.verified_names.push(primary.into());}}
+    info.identity_albums=matched_albums;
+    info.artist_mbid = Some(id.clone());
+    info.verified_names=vec![name.into()];if let Some(primary)=matches.iter().find(|a|a["id"].as_str()==Some(&id)).and_then(|a|a["name"].as_str()){if primary!=name{info.verified_names.push(primary.into());}}
     if cancel.load(Ordering::Relaxed) {
         return Ok(info);
     }
@@ -1100,4 +1169,33 @@ mod album_description_tests {
 #[cfg(test)]mod artist_identity_tests{use super::*;
  #[test]fn accents_require_a_verified_alias(){let mut value=serde_json::json!({"name":"Beyoncé","score":100});assert!(!artist_matches(&value,"Beyonce"));value["aliases"]=serde_json::json!([{"name":"Beyonce"}]);assert!(artist_matches(&value,"Beyonce"));value["score"]=serde_json::json!(80);assert!(!artist_matches(&value,"Beyonce"));}
  #[test]fn typography_and_whitespace_are_equivalent(){assert_eq!(crate::library::artist_name_key(" Eazy‐E  "),crate::library::artist_name_key("eazy-e"));assert_ne!(crate::library::artist_name_key("Beyoncé"),crate::library::artist_name_key("Beyonce"));}
+ #[test]fn album_credits_disambiguate_same_names_despite_search_score(){
+  let results=serde_json::json!([
+   {"id":"jazz","name":"Steve Lacy","score":100},
+   {"id":"soul","name":"Steve Lacy","score":85}
+  ]);let candidates=results.as_array().unwrap().iter().filter(|a|artist_name_matches(a,"Steve Lacy")).collect::<Vec<_>>();assert_eq!(candidates.len(),2);
+  let albums=vec!["Apollo XXI".into(),"Gemini Rights".into()];
+  let resolved=resolve_artist_from_albums("Steve Lacy",&candidates,&albums,|title|Ok(serde_json::json!({"count":1,"release-groups":[{"title":title,"artist-credit":[{"artist":{"name":"Steve Lacy","id":"soul"}}]}]}))).unwrap().unwrap();
+  assert_eq!(resolved.0,"soul");assert_eq!(resolved.1,albums);
+ }
+ #[test]fn conflicting_missing_partial_and_offline_discography_never_choose_a_name_winner(){
+  let values=serde_json::json!([{"id":"one","name":"Shared Name","score":100},{"id":"two","name":"Shared Name","score":85}]);let candidates=values.as_array().unwrap().iter().collect::<Vec<_>>();let albums=vec!["First".into(),"Second".into()];
+  assert!(resolve_artist_from_albums("Shared Name",&candidates,&albums,|title|Ok(serde_json::json!({"count":1,"release-groups":[{"title":title,"artist-credit":[{"artist":{"name":"Shared Name","id":if title=="First"{"one"}else{"two"}}}]}]}))).unwrap().is_none());
+  for response in [serde_json::json!({"count":0,"release-groups":[]}),serde_json::json!({"count":99,"release-groups":[]}),serde_json::json!({"count":1,"release-groups":[{"title":"Wrong album","artist-credit":[{"artist":{"name":"Shared Name","id":"one"}}]}]})]{assert!(resolve_artist_from_albums("Shared Name",&candidates,&albums,|_|Ok(response.clone())).unwrap().is_none());}
+  assert!(resolve_artist_from_albums("Shared Name",&candidates,&albums,|_|anyhow::bail!("offline")).is_err());
+ }
+ #[test]fn album_context_uses_only_this_artists_local_music(){
+  let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("db");let db=musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();db.insert_track("/one","Song","Steve Lacy","Apollo XXI",1,1,1).unwrap();db.insert_track("/two","Song","Other Artist","Wrong album",1,1,1).unwrap();db.insert_track("/three","Song","Steve Lacy & Fousheé","Gemini Rights",1,1,1).unwrap();assert_eq!(local_artist_albums(&path,"Steve Lacy").unwrap(),vec!["Apollo XXI","Gemini Rights"]);
+ }
+ #[test]fn discography_pages_advance_by_received_rows_and_reject_incomplete_results(){
+  let mut offsets=Vec::new();let rows=artist_discography("artist",|id,offset|{assert_eq!(id,"artist");offsets.push(offset);Ok(serde_json::json!({"release-group-count":3,"release-groups":if offset==0{serde_json::json!([{"title":"One"},{"title":"Two"}])}else{serde_json::json!([{"title":"Three"}])}}))}).unwrap();assert_eq!(offsets,vec![0,2]);assert_eq!(rows.len(),3);
+  assert!(artist_discography("artist",|_,_|Ok(serde_json::json!({"release-group-count":3,"release-groups":[]}))).is_err());
+  assert!(artist_discography("artist",|_,_|Ok(serde_json::json!({"release-group-count":501,"release-groups":[]}))).is_err());
+ }
+ #[test]#[ignore="Requires explicit database, artist, and network; writes only the selected profile cache"]
+ fn live_artist_context_repair(){
+  let path=std::env::var("MUSICOS_ARTIST_REPAIR_DB").expect("Provide the explicit database path");let name=std::env::var("MUSICOS_ARTIST_REPAIR_NAME").expect("Provide the artist name");
+  let info=fetch_artist_info(Path::new(&path),&name,&AtomicBool::new(false)).unwrap();assert!(info.artist_mbid.is_some());assert!(!info.identity_albums.is_empty());assert!(info.biography.is_some());println!("{}",serde_json::json!({"artist_mbid":info.artist_mbid,"source_url":info.source_url,"identity_albums":info.identity_albums,"portrait_available":info.portrait.is_some()}));
+ }
+
 }
