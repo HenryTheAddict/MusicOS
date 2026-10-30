@@ -523,6 +523,10 @@ fn lookup_using(c:&Connection,track:&musicos_init::database::Track,retry:bool,se
     lookup_impl(c,track,retry,search,false,base,lock)
 }
 fn lookup_impl(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool,exact_search:bool,base:&str,lock:&Mutex<Gate>)->Result<Response>{
+    // Find reuses successful provider versions; Other versions explicitly refreshes.
+    // Local user edits are never replaced by merely opening these candidates.
+    if exact_search {if let Some(items)=cached(c,track,false)?.filter(|items|!items.is_empty()){let mut r=response(c,track.id,None,None,"choose")?;r.candidates=items;return Ok(r);}}
+
     if !search {let local=local(c,track)?;if local.document.is_some(){return Ok(local);}if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
     let mut gate=lock.lock().unwrap_or_else(|e|e.into_inner());
     if !search {if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
@@ -1129,6 +1133,7 @@ mod recovery_tests {
         let found=lookup_using(&c,&track,true,false,&base,&gate).unwrap();assert_eq!(found.state,"ready");assert_eq!(found.document.unwrap().lines[0].text,"My original test words");worker.join().unwrap();
         // The server is gone: reopening must use the successful cache.
         assert_eq!(lookup_using(&c,&track,false,false,&base,&gate).unwrap().state,"ready");
+        let choices=lookup_impl(&c,&track,true,true,true,&base,&gate).unwrap();assert_eq!(choices.state,"choose");assert_eq!(choices.candidates.len(),1);assert!(choices.document.is_none());
         assert_eq!(retry_seconds(Some("8"),429,SystemTime::now()),8);assert_eq!(retry_seconds(None,503,SystemTime::now()),2);
     }
     #[test]
