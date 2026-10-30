@@ -143,8 +143,9 @@ type Commands = {
   };
   cancel_task: { args: undefined; result: void };
   album_metadata:{args:{request:{action:string;search?:string;album_id?:string;token?:string;rows?:{track_id:number;fields:string[]}[];write_files?:boolean}};result:{albums?:import('./types').AlbumReview[];count?:number;history_id?:number}};
-  metadata_files:{args:{action:string;ids?:number[];id?:string;writeFiles?:boolean};result:{values?:Record<string,unknown>[];files?:{backup_bytes:number;files:{path:string;format?:string;error?:string}[];supported_fields:string[]};jobs?:{id:string;history_id?:number;state:string;bytes:number;files:number}[]}};
+  metadata_files:{args:{action:string;ids?:number[];id?:string;writeFiles?:boolean};result:{values?:Record<string,unknown>[];files?:{backup_bytes:number;files:{path:string;format?:string;error?:string}[];supported_fields:string[]};jobs?:{plain_lyrics?:boolean;id:string;history_id?:number;state:string;bytes:number;files:number}[]}};
   metadata_workspace:{args:{request:import("./types").MetadataWorkspaceRequest};result:import("./types").MetadataWorkspace};
+  lyrics:{args:{request:import("./lyrics").LyricRequest};result:import("./lyrics").LyricResponse};
   metadata_review: {
     args: { trackId?: number; accept?: boolean };
     result: Review[];

@@ -1,40 +1,30 @@
 import {useEffect,useRef,type RefObject} from 'react';
+import {listen} from '@tauri-apps/api/event';
+import {native} from './bridge';
+// History retains bounded inert markup, never live page components or subscriptions.
+function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:${r.id??''}:${r.search??''}`;}catch{return raw}}
+const snapshots=new Map<string,{html:string;scroll:number;theme:string}>();let total=0;
+export function captureBackPage(root:HTMLElement|null,key:string){if(!root)return;key=locationKey(key);const copy=root.cloneNode(true) as HTMLElement;copy.querySelectorAll('dialog,[role=menu],.album-cover-transfer,[hidden]').forEach(n=>n.remove());copy.querySelectorAll<HTMLElement>('*').forEach(n=>{n.style.setProperty('animation','none','important');n.style.setProperty('transition','none','important');});const sourceImages=root.querySelectorAll<HTMLImageElement>('img');copy.querySelectorAll<HTMLImageElement>('img').forEach((image,i)=>{const source=sourceImages[i];if(source?.complete&&source.naturalWidth){image.src=source.currentSrc;image.removeAttribute('srcset');}else image.remove();});const ids=new Map<string,string>(),prefix=`back-${Math.random().toString(36).slice(2)}-`;copy.querySelectorAll('[id]').forEach(n=>{const id=n.id;ids.set(id,prefix+id);n.id=prefix+id;});copy.querySelectorAll('*').forEach(n=>{for(const key of n.getAttributeNames()){if(key==='id')continue;const value=n.getAttribute(key)!;let next=value.replace(/url\(#([^)]+)\)/g,(_,id)=>`url(#${ids.get(id)??id})`);if(next.startsWith('#')&&ids.has(next.slice(1)))next='#'+ids.get(next.slice(1));if(next!==value)n.setAttribute(key,next);}});copy.removeAttribute('id');copy.querySelectorAll('input,textarea,select,button,a').forEach(n=>{n.setAttribute('tabindex','-1');});const css=getComputedStyle(root.closest('.app')??root);let theme='';for(let i=0;i<css.length;i++){const k=css[i];if(k.startsWith('--'))theme+=`${k}:${css.getPropertyValue(k)};`;}
+ const html=copy.outerHTML;total-=snapshots.get(key)?.html.length??0;snapshots.delete(key);snapshots.set(key,{html,scroll:root.scrollTop,theme});total+=html.length;while(snapshots.size>8||total>4_000_000){const first=snapshots.keys().next().value!;total-=snapshots.get(first)!.html.length;snapshots.delete(first);}}
 export const backSwipeThreshold=110;
 export function acceptsBackAxis(x:number,y:number){return x< -10&&Math.abs(x)>Math.abs(y)*1.8;}
-export function consumesHorizontalScroll(target:Element|null,root:Element){
- for(let node=target;node&&node!==root;node=node.parentElement){
-  if(node.matches('input,textarea,select,[contenteditable=true],[role=slider],dialog,[role=menu],.queue-scroll,.mini-queue-list'))return true;
-  const style=getComputedStyle(node);if(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+2)return true;
- }
- return false;
-}
-/** A finite, axis-locked trackpad gesture. No wheel handler is installed in Mini Player. */
-export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:()=>void){
- const latest=useRef({enabled,canBack,onBack});latest.current={enabled,canBack,onBack};
- const cue=useRef<HTMLDivElement>(null);
- useEffect(()=>{
-  const host=root.current;if(!host||!enabled)return;
-  let x=0,y=0,axis:'pending'|'horizontal'|'ignored'='pending',last=0,locked=false,timer=0,frame=0,amount=0;
-  const paint=()=>{frame=0;const node=cue.current;if(!node)return;const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;node.style.opacity=amount>0?'1':'0';node.style.transform=reduced?'none':`translateX(${Math.round(-34+Math.min(1,amount)*42)}px)`;node.dataset.ready=String(amount>=1);};
-  const draw=(next:number)=>{amount=next;if(!frame)frame=requestAnimationFrame(paint);};
-  const reset=()=>{x=0;y=0;axis='pending';locked=false;draw(0);};
-  const settle=()=>{timer=0;const complete=axis==='horizontal'&&-x>=backSwipeThreshold;draw(0);if(complete&&!locked&&latest.current.enabled&&latest.current.canBack&&!document.querySelector('dialog[open],[role=menu],.audio-panel')){locked=true;latest.current.onBack();}x=0;y=0;axis='pending';};
-  const wheel=(event:WheelEvent)=>{
-   if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.deltaMode!==0||!latest.current.enabled||!latest.current.canBack||document.querySelector('dialog[open],[role=menu],.audio-panel'))return;
-   const now=performance.now();if(now-last>260)reset();last=now;clearTimeout(timer);timer=window.setTimeout(settle,130);
-   if(locked||axis==='ignored')return;
-   if(consumesHorizontalScroll(event.target as Element,host)){axis='ignored';return;}
-   x+=event.deltaX;y+=event.deltaY;
-   if(axis==='pending'){
-    if(Math.abs(x)<12&&Math.abs(y)<12)return;
-    if(!acceptsBackAxis(x,y)){axis='ignored';return;}axis='horizontal';
-   }
-   if(Math.abs(y)>Math.abs(x)*.8||x>0){axis='ignored';draw(0);return;}
-   event.preventDefault();draw(Math.min(1.15,Math.max(0,-x/backSwipeThreshold)));
-  };
-  const cancel=()=>{clearTimeout(timer);locked=true;draw(0);};
-  host.addEventListener('wheel',wheel,{passive:false});window.addEventListener('resize',cancel);window.addEventListener('blur',cancel);window.addEventListener('pointerdown',cancel);window.addEventListener('musicos-navigation-start',cancel);
-  return()=>{host.removeEventListener('wheel',wheel);window.removeEventListener('resize',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('pointerdown',cancel);window.removeEventListener('musicos-navigation-start',cancel);clearTimeout(timer);cancelAnimationFrame(frame);if(cue.current){cue.current.style.opacity='0';cue.current.style.transform='none';}};
- },[root,enabled]);
- return cue;
+export function consumesHorizontalScroll(target:Element|null,root:Element){for(let node=target;node&&node!==root;node=node.parentElement){if(node.matches('input,textarea,select,[contenteditable=true],[role=slider],dialog,[role=menu],.queue-scroll,.mini-queue-list'))return true;const style=getComputedStyle(node);if(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+2)return true;}return false;}
+export function shouldCommitSwipe(distance:number,width:number,velocity:number){return distance>=width*.25||(distance>=60&&velocity>=.55);}
+export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:()=>void,previousKey=''){
+ const latest=useRef({enabled,canBack,onBack,previousKey});latest.current={enabled,canBack,onBack,previousKey};const cue=useRef<HTMLDivElement>(null),prepared=useRef<{key:string;node:HTMLDivElement;scroll:number}|null>(null);
+ useEffect(()=>{const key=locationKey(previousKey);prepared.current=null;let cancelled=false;const prepare=()=>{const saved=snapshots.get(key);if(!saved||cancelled)return;const node=document.createElement('div');node.className='back-page-preview';node.inert=true;node.setAttribute('aria-hidden','true');node.style.cssText=saved.theme;node.innerHTML=saved.html;prepared.current={key,node,scroll:saved.scroll};};const job=window.setTimeout(prepare,0);return()=>{cancelled=true;clearTimeout(job);};},[previousKey]);
+ useEffect(()=>{const host=root.current;if(!host||!enabled)return;const page=host.querySelector<HTMLElement>('.page-scroll');if(!page)return;const media=matchMedia('(prefers-reduced-motion: reduce)');let x=0,y=0,last=0,sample=0,velocity=0,width=0,axis:'pending'|'horizontal'|'ignored'='pending',locked=false,timer=0,frame=0,amount=0,overlay:HTMLDivElement|null=null,animation:Animation|null=null,nativePhases=false,disposed=false,unlisten:(()=>void)|undefined;const inertBefore=page.inert;
+ const blocked=()=>!latest.current.enabled||!latest.current.canBack||!!document.querySelector('dialog[open],[role=menu]:not([inert]),.audio-panel');
+ const clear=()=>{animation?.cancel();animation=null;overlay?.remove();overlay=null;page.style.removeProperty('transform');page.style.removeProperty('will-change');page.inert=inertBefore;delete page.dataset.swiping;};
+ const paint=()=>{frame=0;if(!media.matches)page.style.transform=`translate3d(${Math.max(0,Math.min(width,-amount))}px,0,0)`;};
+ const reset=()=>{clearTimeout(timer);cancelAnimationFrame(frame);clear();x=0;y=0;axis='pending';locked=false;velocity=0;sample=0;amount=0;};
+ const cancel=()=>{clearTimeout(timer);cancelAnimationFrame(frame);clear();locked=true;axis='ignored';};
+ const finish=(commit:boolean)=>{clearTimeout(timer);timer=0;if(axis!=='horizontal'||locked)return;locked=true;commit=commit&&!blocked();const distance=Math.min(width,Math.max(0,-x));const done=()=>{if(disposed)return;if(commit){document.documentElement.dataset.swipeNavigation='true';latest.current.onBack();requestAnimationFrame(()=>requestAnimationFrame(()=>{clear();delete document.documentElement.dataset.swipeNavigation;}));}else clear();};if(media.matches){done();return;}const end=commit?width:0;animation=page.animate([{transform:`translate3d(${distance}px,0,0)`},{transform:`translate3d(${end}px,0,0)`}],{duration:commit?Math.max(70,180*(1-distance/width)):140,easing:'cubic-bezier(.2,.75,.2,1)',fill:'forwards'});animation.id='interactive-back-finish';void animation.finished.then(done).catch(()=>{});};
+ const beginPreview=()=>{const rect=page.getBoundingClientRect();width=rect.width;const key=locationKey(latest.current.previousKey),cached=prepared.current,saved=snapshots.get(key);if(saved&&!media.matches){overlay=cached?.key===key?cached.node:document.createElement('div');if(!cached||cached.key!==key){overlay.className='back-page-preview';overlay.inert=true;overlay.setAttribute('aria-hidden','true');overlay.style.cssText=saved.theme;overlay.innerHTML=saved.html;}Object.assign(overlay.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});const node=overlay.firstElementChild as HTMLElement;Object.assign(node.style,{width:'100%',height:'100%',transform:'none',margin:'0'});node.inert=true;document.body.append(overlay);node.scrollTop=saved.scroll;}page.dataset.swiping='true';page.inert=true;page.style.willChange='transform';page.getAnimations({subtree:true}).filter(a=>a.id.includes('reveal')||a.id.includes('navigation')).forEach(a=>a.cancel());};
+ const wheel=(event:WheelEvent)=>{if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.deltaMode!==0||blocked())return;const now=performance.now();if(now-last>280)reset();const dt=now-(sample||now-16);last=now;sample=now;if(locked||axis==='ignored')return;if(consumesHorizontalScroll(event.target as Element,host)){axis='ignored';return;}x+=event.deltaX;y+=event.deltaY;velocity=Math.max(0,-event.deltaX/Math.max(1,dt));if(axis==='pending'){if(Math.abs(x)<12&&Math.abs(y)<12)return;if(!acceptsBackAxis(x,y)){axis='ignored';return;}axis='horizontal';beginPreview();}if(Math.abs(y)>Math.abs(x)*.8||x>0){finish(false);return;}event.preventDefault();amount=x;if(!frame)frame=requestAnimationFrame(paint);clearTimeout(timer);if(!nativePhases)timer=window.setTimeout(()=>finish(shouldCommitSwipe(-x,width,velocity)),70);};
+ const phase=(value:number)=>{nativePhases=true;if(value===1){const now=performance.now();if(now-last>50||locked||axis==='ignored')reset();last=now;}else if(value===2)finish(shouldCommitSwipe(-x,width,velocity));else if(value===3)finish(false);else if(value===4){if(axis==='horizontal'&&!locked)finish(shouldCommitSwipe(-x,width,velocity));locked=true;}};
+ if(native)void listen<number>('trackpad-phase',event=>phase(event.payload)).then(off=>{if(disposed)off();else unlisten=off;});const testPhase=(event:Event)=>phase((event as CustomEvent<number>).detail);window.addEventListener('musicos-trackpad-phase',testPhase);
+ host.addEventListener('wheel',wheel,{passive:false});window.addEventListener('resize',cancel);window.addEventListener('blur',cancel);window.addEventListener('pointerdown',cancel);const navigation=()=>{if(!document.documentElement.dataset.swipeNavigation)cancel();};window.addEventListener('musicos-navigation-start',navigation);media.addEventListener('change',cancel);
+ return()=>{disposed=true;unlisten?.();host.removeEventListener('wheel',wheel);window.removeEventListener('resize',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('pointerdown',cancel);window.removeEventListener('musicos-navigation-start',navigation);window.removeEventListener('musicos-trackpad-phase',testPhase);media.removeEventListener('change',cancel);clearTimeout(timer);cancelAnimationFrame(frame);clear();delete document.documentElement.dataset.swipeNavigation;};
+ },[root,enabled]);return cue;
 }

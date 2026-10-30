@@ -1124,7 +1124,9 @@ async fn metadata_edit(
     .await
 }
 #[tauri::command]
-async fn metadata_files(app:tauri::AppHandle,action:String,ids:Option<Vec<i64>>,id:Option<String>,write_files:Option<bool>)->ApiResult<Value>{blocking(move||{let config=app.state::<AppState>().config();match action.as_str(){"inspect"=>{let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let ids=ids.context("Choose songs")?;let values=ids.iter().map(|id|database.metadata_values(*id)).collect::<Result<Vec<_>>>()?;let files=if write_files.unwrap_or(false){crate::file_tags::preflight(&config.db_path,&ids)?}else{Value::Null};Ok(json!({"values":values,"files":files}))},"status"=>crate::file_tags::status(&config.db_path),"recover"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before retrying file recovery");crate::file_tags::recover(&config.db_path)?;crate::file_organization::recover(&config.db_path)?;crate::source_forget::recover(&config.db_path)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));crate::file_tags::status(&config.db_path)},"remove"=>{crate::file_tags::remove_backup(&config.db_path,&id.context("Choose a backup")?)?;crate::file_tags::status(&config.db_path)},_=>anyhow::bail!("Unknown backup action")}}).await}
+async fn lyrics(app:tauri::AppHandle,request:crate::lyrics::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let _guard=if request.action=="write_tags"{let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before writing music files");Some(guard)}else{None};crate::lyrics::execute(&state.config().db_path,request)}).await}
+#[tauri::command]
+async fn metadata_files(app:tauri::AppHandle,action:String,ids:Option<Vec<i64>>,id:Option<String>,write_files:Option<bool>)->ApiResult<Value>{blocking(move||{let config=app.state::<AppState>().config();match action.as_str(){"inspect"=>{let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let ids=ids.context("Choose songs")?;let values=ids.iter().map(|id|database.metadata_values(*id)).collect::<Result<Vec<_>>>()?;let files=if write_files.unwrap_or(false){crate::file_tags::preflight(&config.db_path,&ids)?}else{Value::Null};Ok(json!({"values":values,"files":files}))},"status"=>crate::file_tags::status(&config.db_path),"undo_lyrics"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before restoring music files");crate::file_tags::undo_plain_lyrics(&config.db_path,&id.context("Choose a file change")?)?;crate::file_tags::status(&config.db_path)},"recover"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before retrying file recovery");crate::file_tags::recover(&config.db_path)?;crate::file_organization::recover(&config.db_path)?;crate::source_forget::recover(&config.db_path)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));crate::file_tags::status(&config.db_path)},"remove"=>{crate::file_tags::remove_backup(&config.db_path,&id.context("Choose a backup")?)?;crate::file_tags::status(&config.db_path)},_=>anyhow::bail!("Unknown backup action")}}).await}
 #[tauri::command]
 async fn album_metadata(app:tauri::AppHandle,request:crate::album_metadata::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let config=state.config();let cached=if request.action=="list"{state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner()).clone()}else{None};let library=if let Some(value)=cached{value}else{load_library(&app)?};if request.action=="list"{let result=crate::album_metadata::list(&config.db_path,&library,request.search.as_deref().unwrap_or(""))?;for album in result["albums"].as_array().unwrap(){if let Some(path)=album["cover"].as_str(){allow_art(&app,path);}for row in album["rows"].as_array().unwrap(){if let Some(path)=row["candidate"]["artwork_path"].as_str(){allow_art(&app,path);}}}Ok(result)}else{anyhow::ensure!(request.action=="apply","Unknown album review action");let guard=request.write_files.unwrap_or(false).then(||state.playback.lock().unwrap_or_else(|e|e.into_inner()));if let Some(service)=&guard{anyhow::ensure!(!service.snapshot().is_playing,"Pause playback before writing music files");}let result=crate::album_metadata::apply(&config.db_path,&library,request)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));Ok(result)}}).await}
 #[tauri::command]
@@ -1609,6 +1611,7 @@ fn open_provider(url: String) -> ApiResult<()> {
             || host.ends_with(".wikipedia.org")
             || host == "commons.wikimedia.org"
             || host == "musicbrainz.org"
+            || (host == "lrclib.net" && u.path().starts_with("/api/get/"))
             || (host == "huggingface.co" && u.path().starts_with("/apple/coreml-depth-anything-v2-small"))
             || host == "www.last.fm"
             || host == "last.fm"
@@ -1642,7 +1645,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             audio_analysis, audio_tempos, playlist_file, sparklist,
             bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
-            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
+            cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
@@ -1658,7 +1661,9 @@ pub fn run() {
             window.set_background_color(Some(if dark {tauri::window::Color(40,44,63,255)}else{tauri::window::Color(0,186,255,255)}))?;
             #[cfg(target_os="macos")]
             if let Some(window)=app.get_webview_window("main") {
-                let _=window.with_webview(|view| {
+                let swipe_app=app.handle().clone();
+                let _=window.with_webview(move |view| {
+                    crate::trackpad_phase::install(&swipe_app,view.inner().cast());
                     let enabled=unsafe{musicos_desktop::local::decoded_audio::apple::prefer_native_refresh(view.inner().cast())};
                     eprintln!("artwork rendering: native refresh preference {}",if enabled{"applied"}else{"unavailable; platform pacing retained"});
                 });
@@ -1744,7 +1749,7 @@ pub fn run() {
             if let Err(error)=storage::save_config(&config) {eprintln!("Could not save playback session: {error:#}");}
             drop(config);
             #[cfg(target_os="macos")]
-            crate::system_media::shutdown();
+            {crate::system_media::shutdown();crate::trackpad_phase::shutdown();}
             crate::spark_install::cancel();
             handle.state::<AppState>().integrations.shutdown();
             let _ = handle.state::<AppState>().analysis.control("cancel");

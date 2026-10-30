@@ -156,6 +156,7 @@ let integrationStatus = {
 };
 let fixtureModelStarted=0,fixtureModelInstalled=false;
 let player: Playback = { ...emptyPlayback };
+if(new URLSearchParams(location.search).has('lyrics'))player={...player,track:tracks[0],queue:tracks.slice(0,2),queue_index:0,position:5,is_playing:false};
 let preferences:Preferences={...defaultPreferences,display_name:"Henry",onboarding_version:1,...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
 let savedCollections: import("./types").SavedCollection[]=JSON.parse(localStorage.getItem("musicos-fixture-collections")??"[]");
 let metadataSuggestions=tracks.slice(0,3).map(t=>({track_id:t.id,current_title:t.title,current_artist:t.artist,current_album:t.album,current_year:t.year,current_artwork:t.cover_art_path,revision:1,candidate_token:String(t.id),candidate:{title:t.title,artist:t.artist,album:`${t.album} (Deluxe)`,year:2012,confidence:.82,recording_mbid:'example-recording',release_mbid:'example-release',artwork_path:t.cover_art_path}}));
@@ -168,6 +169,7 @@ export async function fixtureCall(
   const diagnostics=window as typeof window & {__musicosCalls?:{command:string;at:number;args:unknown}[]};
   (diagnostics.__musicosCalls??=[]).push({command,at:performance.now(),args});
   switch (command) {
+    case 'lyrics':return (await import('./lyricsFixture')).lyricsFixture(a.request);
     case 'metadata_status': return {cached:8,checking:a.retry?2:0,unavailable:2,retryable:a.retry?0:2};
     case 'sparklist': {
       if(new URLSearchParams(location.search).has('sparkSetup')){

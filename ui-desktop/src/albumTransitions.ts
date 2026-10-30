@@ -43,7 +43,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const departingToolbar=toolbarExit;toolbarExit=null;
   if(!ready||!page||!location.startsWith('Library:')){origin=null;departingToolbar?.remove();return;}
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
-  if(motion.matches){origin=null;departingToolbar?.remove();return;}
+  if(motion.matches||document.documentElement.dataset.swipeNavigation){origin=null;departingToolbar?.remove();return;}
   const animations:Animation[]=[],disposers:(()=>void)[]=[];let frame=0,removed=false;
   const cancel=()=>{if(removed)return;removed=true;cancelAnimationFrame(frame);animations.forEach(animation=>animation.cancel());disposers.forEach(dispose=>dispose());};
   const changed=()=>{if(motion.matches)cancel();};motion.addEventListener('change',changed);

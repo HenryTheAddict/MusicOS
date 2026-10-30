@@ -1,4 +1,5 @@
-import {useBackSwipe} from './useBackSwipe';
+import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
+import {captureBackPage,useBackSwipe} from './useBackSwipe';
 import Onboarding from './Onboarding';
 import {product} from './product';
 import {dropImportSource} from './importDestination';
@@ -139,7 +140,7 @@ export default function App() {
   usePlayfulControls();
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataIds,setMetadataIds]=useState<number[]>([]);
-  function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[]){captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
+  function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[],lyrics=false){if(!lyrics)clearLyricEditorRequest();captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
   const [collections,setCollections]=useState<SavedCollection[]>([]);
   const [rowSelection,setRowSelection]=useState<Set<number>>(new Set());
   const rowAnchor=useRef(0);
@@ -287,11 +288,12 @@ export default function App() {
   const scale = preferences.interface_percent / 100;
   const shell=useShellLayout(scale,miniMode==='normal');
   const compact=shell.compact;
+  const [lyricPreview,setLyricPreview]=useState<Track|null>(null);
   const [expandedOpen,setExpandedOpen]=useState(false),[playerView,setPlayerView]=useState<PlayerView>('playing');
   const expandedPresent=usePanelPresence(expandedOpen);
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen,navigation.history.length>0,goBack);
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen,navigation.history.length>0,()=>goBack(true),navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
-  function openPlayer(view:PlayerView='playing'){playerOpener.current=document.querySelector<HTMLElement>(view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
+  function openPlayer(view:PlayerView='playing',preview:Track|null=null){setLyricPreview(preview);playerOpener.current=document.querySelector<HTMLElement>(view==='lyrics'?'.now-playing-title-action':view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
   function chooseDestination(next:Destination){if(section==='Library'&&destination===next)return;window.dispatchEvent(new Event('musicos-navigation-start'));captureScroll();if(next==='search'&&destination!=='search')previousDestination.current=destination;setSection('Library');switchDestination(next);}
   function openSearch(){if(compact||route.view==='search'){chooseDestination('search');if(route.view!=='search')navigateScope('search');setSearchFocus(value=>value+1);setCommandOpen(false);}else setCommandOpen(value=>!value);}
   const mounted = useRef(true);
@@ -509,6 +511,7 @@ export default function App() {
       setError(errorText(e));
     }
   }, []);
+  const runImmersive=useCallback(async(action:PlaybackAction)=>{setPlayer(await call('playback',{action}));},[]);
   useEffect(() => {
     const pointerSpace=(e:KeyboardEvent)=>{
       const target=e.target as HTMLElement;
@@ -596,9 +599,9 @@ export default function App() {
         patch: { scroll: scrollRef.current.scrollTop },
       });
   }
-  function goBack() {
-    if(section==='Library'&&route.view==='album')captureAlbumReturn(scrollRef.current);
-    else if(section==='Library'&&route.view==='artist')captureArtistReturn(scrollRef.current);
+  function goBack(interactive=false) {
+    if(!interactive&&section==='Library'&&route.view==='album')captureAlbumReturn(scrollRef.current);
+    else if(!interactive&&section==='Library'&&route.view==='artist')captureArtistReturn(scrollRef.current);
     window.dispatchEvent(new Event("musicos-navigation-start"));
     captureScroll();
     dispatch({ type: "back" });
@@ -609,6 +612,7 @@ export default function App() {
     setSection(next);
   }
   function openRoute(next: Route) {
+    captureBackPage(scrollRef.current,JSON.stringify({...route,scroll:0}));
     window.dispatchEvent(new Event("musicos-navigation-start"));
     if(section==='Library'&&['album','artist'].includes(next.view))captureLibraryToolbar(scrollRef.current);
     captureScroll();
@@ -700,6 +704,7 @@ export default function App() {
   function actionsForTrack(track:Track,ids=[track.id]){return [...playbackItems(ids),
    {label:track.favorited?'Unfavorite song':'Favorite song',icon:track.favorited?'hearted':'noheart',onSelect:()=>favorite(track)},
    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})},
+   {label:'Lyrics',icon:'Lyrics',onSelect:()=>openPlayer('lyrics',track.id===player.track?.id?null:track)},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
    {label:native?'Show in Finder':'Show in file manager',icon:native?'Open In Finder':'Open In Folder',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
    {label:'Show artist',icon:'Artist',onSelect:()=>artistFor(track)},
@@ -1033,6 +1038,7 @@ export default function App() {
   async function showQueue(){if(miniMode!=='normal')await changeMini('normal');if(compact||expandedOpen)openPlayer('queue');else setQueueOpen(true);}
   nativeQueueAction.current=()=>void showQueue();
   const nowActions = player.track ? [
+    {label:'Lyrics',icon:'Lyrics',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');openPlayer('lyrics');})();}},
     {label:player.track.favorited?'Unfavorite song':'Favorite song',icon:player.track.favorited?'hearted':'noheart',onSelect:()=>favorite(player.track!)},
     {label:'Add to playlist…',icon:'Playlist',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setExpandedOpen(false);setPlaylistTrack(player.track);})();}},
     {label:'Show artist',icon:'Artist',onSelect:()=>void showPlaying('artist')},
@@ -1105,8 +1111,8 @@ export default function App() {
           </button>
           <div className="now-playing-info">
             <strong className="now-playing-title" title={player.track?.title}>
-              <button className="now-playing-title-action" disabled={!compact} aria-label="Open player details" onClick={()=>openPlayer()}><OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/></button>
-              {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
+              <button className="now-playing-title-action" disabled={!player.track} aria-label="Open lyrics" onClick={()=>openPlayer('lyrics')}><OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/></button>
+              {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:loading?"":"Your next favorite is waiting."}</span>
             <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
@@ -1166,7 +1172,7 @@ export default function App() {
             <div className="sidebar-body">
             <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}><Icon name="Home"/><span>{personalName(preferences.display_name,!loading)}</span></button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'SmartPlaylist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
             <div className="sidebar-search-slot" data-back={navigation.history.length>0}>
-              <button className={`sidebar-navigation ${navigation.history.length?'sidebar-back':'search sidebar-search'}`} aria-label={navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search music and commands'} aria-keyshortcuts={navigation.history.length?undefined:'Meta+K Control+K'} onClick={navigation.history.length?goBack:()=>setCommandOpen(true)}><span className="sidebar-nav-glyph" aria-hidden="true"><span className="sidebar-glyph-search"><Icon name="search"/></span><span className="sidebar-glyph-back"><Icon name="Back"/></span></span><span className="sidebar-nav-label">{navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search'}</span>{!navigation.history.length&&<kbd>⌘ K</kbd>}</button>
+              <button className={`sidebar-navigation ${navigation.history.length?'sidebar-back':'search sidebar-search'}`} aria-label={navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search music and commands'} aria-keyshortcuts={navigation.history.length?undefined:'Meta+K Control+K'} onClick={navigation.history.length?()=>goBack():()=>setCommandOpen(true)}><span className="sidebar-nav-glyph" aria-hidden="true"><span className="sidebar-glyph-search"><Icon name="search"/></span><span className="sidebar-glyph-back"><Icon name="Back"/></span></span><span className="sidebar-nav-label">{navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search'}</span>{!navigation.history.length&&<kbd>⌘ K</kbd>}</button>
               <button className="command-shortcut" aria-label="Open SuperCommand" aria-hidden={!navigation.history.length} inert={!navigation.history.length} tabIndex={navigation.history.length?0:-1} title="SuperCommand (⌘K / Ctrl+K)" onClick={()=>setCommandOpen(true)}><Icon name="search"/></button>
             </div>
             <nav aria-label="Library">
@@ -1209,7 +1215,7 @@ export default function App() {
         )}
         <div className="content-column">
           {compact&&section==='Library'&&<div className="compact-library-controls">
-            {navigation.history.length>0&&<IconButton name="Back" label="Back" onClick={goBack}/>}
+            {navigation.history.length>0&&<IconButton name="Back" label="Back" onClick={()=>goBack()}/>}
             {destination==='library'?<nav aria-label="Library categories">{(['albums','artists','songs'] as Scope[]).map(view=><button key={view} aria-current={displayScope===view?'page':undefined} onClick={()=>goScope(view)}>{view[0].toUpperCase()+view.slice(1)}</button>)}<Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')}]}>More</Menu></nav>:<span className="compact-destination-name">{destination==='home'?personalName(preferences.display_name,!loading):'Search'}</span>}
             <Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'SmartPlaylist',onSelect:()=>createCollection('rule')}]}>+</Menu>
           </div>}
@@ -1385,7 +1391,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&!expandedPresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {expandedPresent&&<ExpandedPlayer layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={setPlayerView} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={run} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
+      {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={setPlayerView} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (

@@ -12,7 +12,7 @@ export function useContentFade(root:RefObject<HTMLElement|null>,location:string,
  const reversal=useRef<{opacity:string;transform:string}|null>(null);
  useLayoutEffect(()=>{
   const node=selector?root.current?.querySelector<HTMLElement>(selector):root.current;
-  if(!ready||!node||node.closest('[hidden]')||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  if(document.documentElement.dataset.swipeNavigation||!ready||!node||node.closest('[hidden]')||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
   let cancel:(()=>void)|undefined,observer:MutationObserver|undefined;
   const enter=()=>{
    // A first lazy visit should reveal the actual page, rather than spend its

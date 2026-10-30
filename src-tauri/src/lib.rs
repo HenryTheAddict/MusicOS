@@ -56,3 +56,7 @@ pub mod artwork_renditions;
 #[cfg(test)]mod reliability_tests;
 
 pub mod wifi;
+
+pub mod lyrics;
+
+#[cfg(target_os="macos")]mod trackpad_phase;
