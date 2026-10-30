@@ -19,3 +19,12 @@ Work stays on `codex/desktop-heart-preservation`. The primary OS checkout is unc
 - Existing mini-player geometry and photo rendering were retained in this pass.
 
 The release manifest records signed hashes, unchanged embedded runtime/model hashes, the immediate pre-install private profile/SQLite checkpoint, and native post-load checks. Replacement is allowed only after a fresh paused/stopped check; current playback and newer listening activity must be preserved.
+
+## Installed delivery
+
+- Installed after a fresh native paused check. Flower In A Hurricane [from GTAVI] remained paused at 188.97064 seconds after loading. Existing profile skipped first-run setup; General reopened the welcome flow with the saved name, Light mode and artwork colors. Native Escape dismissed it without changing preferences.
+- Current album detail was restored. A generated native horizontal scroll did not trigger Back, so the real two-finger trackpad feel is still a hardware acceptance gate; the deliberate horizontal/reversal/cancellation WebKit regressions passed.
+- Immediate checkpoint verification found unchanged profile settings, integration settings, tracks, metadata and collections: 550 tracks, 37 favorites, 2 manual playlists with 6 entries. Eight embedded runtime/model/sidecar files match the previous app. The primary OS checkout remains untouched.
+- Desktop executable SHA-256: `ae841e91f66ea91bc361e48dc00a61c1689cf0dbe2551d92012fcc09f467a5e5`.
+- Signed Android APK SHA-256: `63def2e2dc2362bbe2c35a74dc6d202895dba41835a613f2dd0f804495ad0158`. Existing signing identity retained; no physical phone was connected or updated.
+- Archive, previous app, signed APK, configuration snapshot and release manifest: `/Users/henry/Developer/MusicOS/releases/desktop-onboarding-2026-10-29/`.
