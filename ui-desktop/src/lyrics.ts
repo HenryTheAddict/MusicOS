@@ -16,8 +16,24 @@ export function useLyrics(trackId:number|undefined,active:boolean,online=true){c
  async function select(id:number){if(!result||!trackId)return;const revision=++generation.current;setBusy(true);try{const selected=await lyricCall({action:'select',trackId,revision:result.revision,candidateId:id});if(revision!==generation.current)return;setResult(selected);window.dispatchEvent(new CustomEvent('musicos-lyrics-changed',{detail:trackId}));}catch(e){if(revision===generation.current)setError(errorText(e));}finally{if(revision===generation.current)setBusy(false);}}
  return {result,busy,error,find,select};
 }
-export function lyricIndex(doc:LyricDocument,position:number){const ms=position*1000-doc.metadata.offset_ms;let low=0,high=doc.lines.length;while(low<high){const mid=(low+high)>>>1;if(doc.lines[mid].start_ms<=ms)low=mid+1;else high=mid;}return low-1;}
+export function lyricIndex(doc:LyricDocument,position:number){const ms=position*1000-doc.metadata.offset_ms;let low=0,high=doc.lines.length;while(low<high){const mid=(low+high)>>>1;if(doc.lines[mid].start_ms<=ms)low=mid+1;else high=mid;}while(low>0&&!visibleLyricLine(doc,low-1))low--;return low-1;}
 export function changeLyricLine(line:LyricLine,text:string){return text===line.text?line:{...line,text,words:[]};}
+export function lyricText(doc:LyricDocument){return doc.lines.length?doc.lines.map(line=>line.text).join('\n'):doc.plain;}
+/** Keep exact unchanged prefixes/suffixes and their imported word timestamps.
+ * Inserted lines share the preceding time until the author stamps them. */
+export function editLyricText(doc:LyricDocument,text:string):LyricDocument{
+ if(text===lyricText(doc))return doc;
+ if(!doc.lines.length)return {...doc,plain:text};
+ const words=text.split('\n'),old=doc.lines;let head=0,tail=0;
+ while(head<Math.min(words.length,old.length)&&words[head]===old[head].text)head++;
+ while(tail<Math.min(words.length-head,old.length-head)&&words[words.length-1-tail]===old[old.length-1-tail].text)tail++;
+ const lines=old.slice(0,head),end=old.length-tail;
+ for(let i=head;i<words.length-tail;i++)lines.push(i<end?changeLyricLine(old[i],words[i]):{text:words[i],start_ms:lines.at(-1)?.start_ms??0});
+ lines.push(...old.slice(end));
+ return {...doc,plain:text,lines};
+}
+/** Empty duplicate LRC cues are formatting, not an instrumental break. */
+export function visibleLyricLine(doc:LyricDocument,index:number){const line=doc.lines[index];return !!line.text.trim()||!(doc.lines[index+1]?.start_ms===line.start_ms||doc.lines[index-1]?.start_ms===line.start_ms);}
 export function formatStamp(ms:number){return `${Math.floor(ms/60000)}:${((ms%60000)/1000).toFixed(3).padStart(6,'0')}`;}
 export function parseStamp(value:string){const m=/^(\d+):(\d{1,2}(?:\.\d{1,3})?)$/.exec(value);return m&&Number(m[2])<60?Math.round((Number(m[1])*60+Number(m[2]))*1000):null;}
 

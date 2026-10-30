@@ -127,8 +127,8 @@
 
 /* Narrow Settings categories remain readable at every interface scale. */
 .adaptive-shell[data-layout=compact] .settings-layout{grid-template-columns:minmax(0,1fr);gap:.75rem;}
-.adaptive-shell[data-layout=compact] .settings .settings-tabs{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.125rem;}
-.adaptive-shell[data-layout=compact] .settings .settings-tabs [role=tab]{width:100%;min-width:0;justify-content:flex-start;padding:.5rem;font-size:.8125rem;}
+.adaptive-shell[data-layout=compact] .settings .settings-tabs{position:static;display:flex;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;gap:.125rem;}
+.adaptive-shell[data-layout=compact] .settings .settings-tabs [role=tab]{flex:0 0 auto;width:auto;min-width:0;justify-content:flex-start;padding:.5rem;font-size:.8125rem;}
 .adaptive-shell[data-layout=compact] .settings-chevron{display:none;}
 
 .adaptive-shell[data-layout=compact] .now-playing-info{position:relative;padding-right:44px;}

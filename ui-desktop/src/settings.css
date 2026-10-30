@@ -201,3 +201,32 @@
 .settings .depth-model-details p{margin:.5rem 0;}
 
 .settings-subpage-placeholder{min-height:9rem;border-radius:1rem;background:var(--control-surface);}
+
+/* Category and row spacing are owned here rather than inherited tile margins. */
+.settings .settings-panel{display:flex;flex-direction:column;gap:.875rem;}
+.settings .settings-panel>div:not([hidden]){min-width:0;}
+.settings .settings-tabs [role=tab]{min-height:44px;border:0;}
+.app-shell .settings .settings-tabs [role=tab][aria-selected=true],.app-shell[data-theme-mode=dark] .settings .settings-tabs [role=tab][aria-selected=true]{background:var(--accent);color:var(--accent-ink);font-weight:650;}
+.settings .setting-inline,.settings .settings-choice-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;}
+.settings .setting-inline .settings-summary{flex:1;min-width:12rem;}
+.settings .setting-inline .size-options,.settings .settings-choice-row .size-options{margin:0;flex:none;}
+.settings .settings-choice-row{padding:.5rem 0;min-height:44px;font-size:.8125rem;border-bottom:1px solid var(--control-border);}
+.settings .settings-tile>.themed-switch{padding:.625rem 0;}
+.settings .settings-tile.dj-settings>h2{margin-bottom:.25rem;}
+.settings .settings-playback-details{margin-top:.5rem;}
+@container settings (max-width:46rem){
+ .settings .settings-tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;border-radius:.875rem;padding:.25rem;scroll-padding:.25rem;}
+ .settings .settings-tabs [role=tab]{flex:0 0 auto;gap:.375rem;padding:.5rem .625rem;}
+}
+@container settings (max-width:28rem){
+ .settings .setting-inline{align-items:flex-start;flex-direction:column;}
+ .settings .settings-choice-row{align-items:flex-start;flex-direction:column;gap:.375rem;}
+ .settings .settings-tile{padding:.875rem;}
+}
+.settings .lyric-settings-back{display:none;}
+@container settings (max-width:46rem){
+ .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading{margin-bottom:.625rem;}
+ .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading>h1{display:none;}
+ .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .lyric-settings-back{display:inline-flex;align-items:center;gap:.375rem;min-height:2.5rem;padding:.5rem .75rem;border-radius:.75rem;background:var(--control-surface);border:1px solid var(--control-border);font-size:.8125rem;}
+ .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) :is(.settings-tabs,.settings-category-heading,.library-settings-nav){display:none;}
+}
