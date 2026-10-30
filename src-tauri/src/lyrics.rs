@@ -299,6 +299,32 @@ fn signature(track: &musicos_init::database::Track) -> String {
         track.title, track.artist, track.album, track.duration
     )
 }
+fn describe(mut doc: Document, track: &musicos_init::database::Track) -> Document {
+    if doc.metadata.title.is_empty() {
+        doc.metadata.title = track.title.clone();
+    }
+    if doc.metadata.artist.is_empty() {
+        doc.metadata.artist = track.artist.clone();
+    }
+    if doc.metadata.album.is_empty() {
+        doc.metadata.album = track.album.clone();
+    }
+    if doc.metadata.duration_ms.is_none() {
+        doc.metadata.duration_ms = Some(i64::from(track.duration) * 1000);
+    }
+    doc
+}
+fn embedded(text: &str) -> Result<Document> {
+    // Lyrics tags commonly contain LRC despite being named "unsynchronized" by the container.
+    // Explicit plain-text imports remain literal; only this read-only tag adapter detects timing.
+    let timed = text.lines().any(|line| {
+        line.trim_start()
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once(']'))
+            .is_some_and(|(stamp, _)| timestamp(stamp).is_some())
+    });
+    parse(text, if timed { "lrc" } else { "plain" })
+}
 fn local(c: &Connection, track: &musicos_init::database::Track) -> Result<Response> {
     let (_, doc, source) = current(c, track.id)?;
     if let Some(doc) = doc {
@@ -316,7 +342,7 @@ fn local(c: &Connection, track: &musicos_init::database::Track) -> Result<Respon
         if p.is_file() {
             let meta = p.metadata()?;
             ensure!(meta.len() <= 2_000_000, "Local lyrics exceed 2 MB");
-            let doc = parse(&std::fs::read_to_string(&p)?, ext)?;
+            let doc = describe(parse(&std::fs::read_to_string(&p)?, ext)?, track);
             return response(
                 c,
                 track.id,
@@ -340,7 +366,7 @@ fn local(c: &Connection, track: &musicos_init::database::Track) -> Result<Respon
                 return response(
                     c,
                     track.id,
-                    Some(parse(text, "plain")?),
+                    Some(describe(embedded(text)?, track)),
                     Some(Source {
                         kind: "embedded".into(),
                         label: "Embedded lyrics".into(),
@@ -689,7 +715,10 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
             } else {
                 req.text.context("Paste lyrics")?
             };
-            let d = parse(&text, req.format.as_deref().unwrap_or("plain"))?;
+            let d = describe(
+                parse(&text, req.format.as_deref().unwrap_or("plain"))?,
+                &track,
+            );
             response(&c, id, Some(d), None, "draft")?
         }
         "select" => {
@@ -1053,5 +1082,73 @@ mod live_test {
             "LRCLIB did not return a usable record: {}",
             r["state"]
         );
+    }
+}
+#[cfg(test)]
+mod embedded_tests {
+    use super::*;
+    #[test]
+    fn embedded_timestamps_are_live_but_explicit_plain_import_stays_literal() {
+        let text = "[00:00.00]First line\n[00:05.50]\n[00:05.50]Second line";
+        let doc = embedded(text).unwrap();
+        assert_eq!(doc.lines.len(), 3);
+        assert_eq!(doc.lines[2].start_ms, 5500);
+        assert_eq!(doc.lines[2].text, "Second line");
+        assert!(!doc.plain.contains("[00:"));
+        assert_eq!(parse(text, "plain").unwrap().plain, text);
+        assert_eq!(
+            embedded("[Verse 1]\nWords without timing")
+                .unwrap()
+                .lines
+                .len(),
+            0
+        );
+    }
+    #[test]
+    fn container_lyrics_retain_local_precedence_and_export_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let audio = tmp.path().join("song.flac");
+        assert!(std::process::Command::new("/opt/homebrew/bin/ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=0.2",
+                "-c:a",
+                "flac",
+                "-metadata",
+                "lyrics=[00:00.10]My test words"
+            ])
+            .arg(&audio)
+            .status()
+            .unwrap()
+            .success());
+        let path = tmp.path().join("library.db");
+        let database = musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();
+        let id = database
+            .insert_track(
+                &audio.to_string_lossy(),
+                "My song",
+                "My artist",
+                "My album",
+                20,
+                1,
+                1,
+            )
+            .unwrap();
+        let r = execute(
+            &path,
+            Request {
+                action: "load".into(),
+                track_id: Some(id),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(r["source"]["kind"], "embedded");
+        assert_eq!(r["document"]["lines"][0]["start_ms"], 100);
+        assert_eq!(r["document"]["metadata"]["title"], "My song");
     }
 }
