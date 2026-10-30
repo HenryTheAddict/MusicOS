@@ -71,7 +71,7 @@
 .lyric-line-number{font-size:.625rem;color:var(--secondary-ink);font-variant-numeric:tabular-nums;text-align:center;}
 .lyric-timing-rows input{min-height:2.5rem;font-size:.8125rem;}
 .lyric-timing-rows input:first-of-type{font-variant-numeric:tabular-nums;}
-.lyric-timing-empty{padding:1.25rem .5rem;text-align:center;color:var(--secondary-ink);}
+.lyric-timing-empty{padding:1.25rem 0;text-align:left;color:var(--secondary-ink);}
 .lyric-timing-empty>.icon{width:2rem;height:2rem;}.lyric-timing-empty h3{font-size:1rem;color:var(--ink);margin:.75rem 0 .375rem;}.lyric-timing-empty p{font-size:.75rem;line-height:1.5;}
 .lyric-inspector .lyric-save-footer{justify-content:flex-end;gap:.5rem;padding:.75rem 0;margin-top:.75rem;}
 .lyric-save-footer>span{margin-right:auto;font-size:.6875rem;color:var(--secondary-ink);}
