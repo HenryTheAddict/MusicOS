@@ -62,3 +62,9 @@ test('off-screen and Reduced Motion hearts stay still; refreshed or invalid BPM 
 test('the small heartbeat has two visible peaks while preserving its cached BPM',async({page})=>{
  await start(page);await playRow(page,1);const h=page.locator('.now-playing-title .track-favorite');await expect(h).toHaveAttribute('title','120 BPM · Beating with the song');await expect(h).toHaveAttribute('data-pulsing','true');const peaks=await h.locator('.heart-beat').evaluate(el=>{const a=el.getAnimations()[0];a.pause();const sample=(time:number)=>{a.currentTime=time;return new DOMMatrix(getComputedStyle(el).transform).a;};return[sample(50),sample(95),sample(145),sample(250)];});expect(peaks[0]).toBeGreaterThan(1.2);expect(peaks[1]).toBeLessThan(1);expect(peaks[2]).toBeGreaterThan(1.1);expect(peaks[3]).toBeCloseTo(1,2);
 });
+
+test('visible hearts share playback phase after seeking and have no invented tempo',async({page})=>{
+ await start(page);await playRow(page,1);const seek=page.getByRole('slider',{name:'Playback position',exact:true});await seek.focus();await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight');
+ await expect.poll(()=>page.evaluate(async()=>{const modulePath='/src/playbackFeed.ts';const {currentPlaybackClock,clockPosition}=await import(/* @vite-ignore */ modulePath);const clock=currentPlaybackClock(),period=500,target=(clockPosition(clock)*1000+50)%period;return [...document.querySelectorAll<HTMLElement>('[data-heart-track="1"][data-pulsing=true] .heart-beat')].map(el=>{const a=el.getAnimations()[0],phase=Number(a?.currentTime??0)%period,drift=Math.abs(phase-target);return Math.min(drift,period-drift);}).every(d=>d<45);})).toBe(true);
+ await playRow(page,3);await expect(page.locator('.now-playing-title .track-favorite')).toHaveAttribute('data-tempo-source','unknown');await expect(page.locator('.now-playing-title .heart-beat')).toHaveCSS('animation-name','none');
+});

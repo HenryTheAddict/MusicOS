@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {beatOffsets} from './heartVisibility';
 import {call} from './bridge';
 
 // Tempo-only responses keep beat arrays and analysis diagnostics off the animation path.
@@ -16,7 +17,7 @@ export default function useAnalyzedTempos(enabled:boolean,libraryIdentity:string
     const status=await call('audio_tempos');
     if(!alive)return;
     failures=0;
-    const next=new Map<number,number>();
+    const next=new Map<number,number>();beatOffsets.clear();for(const feature of status.tempos)if(Number.isFinite(feature.beat_offset))beatOffsets.set(feature.track_id,feature.beat_offset!);
     for(const feature of status.tempos)if(Number.isFinite(feature.bpm)&&feature.bpm>=20&&feature.bpm<=400)next.set(feature.track_id,feature.bpm);
     setTempos(old=>old.size===next.size&&[...next].every(([id,bpm])=>old.get(id)===bpm)?old:next);
     if(status.running)timer=setTimeout(()=>void update(),5000);

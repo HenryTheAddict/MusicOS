@@ -719,3 +719,9 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
  --icon-fill:var(--transport-fill,var(--ink));
  --icon-stroke:var(--transport-stroke,color-mix(in srgb,var(--ink) 58%,var(--surface-color)));
 }
+
+/* The quiet rail and vivid played edge remain distinct on artwork surfaces. */
+.playback-progress .progress-rail{background:color-mix(in srgb,var(--ink) 23%,var(--surface-color));}
+.playback-progress .progress-rail>span{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 82%,var(--ink)),var(--accent) 65%,color-mix(in srgb,var(--accent) 78%,var(--ink)));}
+.playback-progress .playback-time{color:var(--ink);font-variant-numeric:tabular-nums;}
+.playback-progress .playback-time>span{color:var(--secondary-ink,var(--ink));opacity:1;}

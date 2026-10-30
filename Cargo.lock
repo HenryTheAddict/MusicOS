@@ -5331,6 +5331,7 @@ dependencies = [
  "block2",
  "cc",
  "fs2",
+ "httpdate",
  "if-addrs",
  "image 0.24.9",
  "keyring",

@@ -85,6 +85,10 @@ pub struct Response {
     pub state: String,
     pub message: Option<String>,
     pub candidates: Vec<Candidate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after_seconds: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_status: Option<u16>,
 }
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -291,6 +295,8 @@ fn response(
         state: state.into(),
         message: None,
         candidates: vec![],
+        retry_after_seconds: None,
+        provider_status: None,
     })
 }
 fn signature(track: &musicos_init::database::Track) -> String {
@@ -471,13 +477,11 @@ struct Record {
     lyricsfile: Option<String>,
 }
 fn candidate(r: Record) -> Result<Candidate> {
-    let mut d = if let Some(yaml) = r.lyricsfile.filter(|s| !s.is_empty()) {
-        parse(&yaml, "lyricsfile")?
-    } else if let Some(lrc) = r.synced_lyrics.filter(|s| !s.is_empty()) {
-        parse(&lrc, "lrc")?
-    } else {
-        parse(r.plain_lyrics.as_deref().unwrap_or(""), "plain")?
-    };
+    let mut d = r.lyricsfile.as_deref().filter(|s| !s.trim().is_empty())
+        .and_then(|text| parse(text, "lyricsfile").ok())
+        .filter(|d| d.metadata.instrumental || !d.lines.is_empty() || !d.plain.trim().is_empty())
+        .or_else(|| r.synced_lyrics.as_deref().filter(|s| !s.trim().is_empty()).and_then(|text| parse(text,"lrc").ok()))
+        .unwrap_or(parse(r.plain_lyrics.as_deref().unwrap_or(""),"plain")?);
     d.metadata.title = r.track_name.clone();
     d.metadata.artist = r.artist_name.clone();
     d.metadata.album = r.album_name.clone();
@@ -497,135 +501,68 @@ fn candidate(r: Record) -> Result<Candidate> {
         document: d,
     })
 }
-struct Gate {
-    next: Instant,
-}
+struct Gate { next: Instant, status: Option<u16> }
 fn gate() -> &'static Mutex<Gate> {
     static GATE: OnceLock<Mutex<Gate>> = OnceLock::new();
-    GATE.get_or_init(|| {
-        Mutex::new(Gate {
-            next: Instant::now(),
-        })
-    })
+    GATE.get_or_init(|| Mutex::new(Gate { next: Instant::now(), status: None }))
 }
-fn lookup(
-    c: &Connection,
-    track: &musicos_init::database::Track,
-    retry: bool,
-    search: bool,
-) -> Result<Response> {
-    if !search {
-        let local = local(c, track)?;
-        if local.document.is_some() {
-            return Ok(local);
-        }
-        if let Some(items) = cached(c, track, retry)? {
-            return rank(c, track, items);
-        }
-    }
-    let mut gate = gate().lock().unwrap_or_else(|e| e.into_inner());
-    if !search {
-        if let Some(items) = cached(c, track, retry)? {
-            return rank(c, track, items);
-        }
-    }
-    if gate.next > Instant::now() {
-        let delay = gate.next.saturating_duration_since(Instant::now());
-        if delay <= Duration::from_millis(500) {
-            std::thread::sleep(delay);
-        } else {
-            let mut r = response(c, track.id, None, None, "retry_later")?;
-            r.message = Some(format!(
-                "Lyrics service is resting. Try again in {} seconds.",
-                delay.as_secs() + 1
-            ));
-            return Ok(r);
-        }
-    }
-    let client = reqwest::blocking::Client::builder()
-        .user_agent(crate::product::provider_user_agent())
-        .timeout(Duration::from_secs(12))
-        .build()?;
-    let url = if search {
-        "https://lrclib.net/api/search"
-    } else {
-        "https://lrclib.net/api/get"
-    };
-    let mut query = vec![
-        ("track_name", track.title.clone()),
-        ("artist_name", track.artist.clone()),
-        ("album_name", track.album.clone()),
-    ];
-    if !search && track.duration > 0 && track.duration <= 3600 {
-        query.push(("duration", track.duration.to_string()));
-    }
-    let result = client.get(url).query(&query).send();
-    gate.next = Instant::now() + Duration::from_millis(300);
-    let mut http = match result {
-        Ok(v) => v,
-        Err(_) => {
-            let mut r = response(c, track.id, None, None, "offline")?;
-            r.message = Some("Couldn’t reach LRCLIB. Local lyrics remain available.".into());
-            return Ok(r);
-        }
-    };
-    let mut search = search;
-    if http.status() == 404 && !search {
-        std::thread::sleep(Duration::from_millis(300));
-        query.retain(|(key, _)| *key != "duration");
-        http = match client
-            .get("https://lrclib.net/api/search")
-            .query(&query)
-            .send()
-        {
-            Ok(value) => value,
-            Err(_) => return response(c, track.id, None, None, "offline"),
-        };
-        search = true;
-        gate.next = Instant::now() + Duration::from_millis(300);
-    }
-    if http.status() == 429 || http.status() == 503 {
-        let seconds = http
-            .headers()
-            .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(30)
-            .clamp(1, 86400);
-        let jitter = rand::random::<u64>() % (seconds / 4 + 1);
-        gate.next = Instant::now() + Duration::from_secs(seconds + jitter);
-        return response(c, track.id, None, None, "retry_later");
-    }
-    let items = if http.status() == 404 {
-        vec![]
-    } else {
-        ensure!(
-            http.status().is_success(),
-            "LRCLIB returned {}. Try again later.",
-            http.status()
-        );
-        ensure!(
-            http.content_length().is_none_or(|n| n <= 4_000_000),
-            "Lyrics response is too large"
-        );
-        use std::io::Read;
-        let mut bytes = Vec::new();
-        http.take(4_000_001).read_to_end(&mut bytes)?;
-        ensure!(bytes.len() <= 4_000_000, "Lyrics response is too large");
-        let records: Vec<Record> = if search {
-            serde_json::from_slice(&bytes)?
-        } else {
-            vec![serde_json::from_slice(&bytes)?]
-        };
-        records
-            .into_iter()
-            .take(20)
-            .map(candidate)
-            .collect::<Result<Vec<_>>>()?
-    };
-    c.execute("INSERT INTO cache VALUES(?,?,?) ON CONFLICT(signature) DO UPDATE SET checked=excluded.checked,payload=excluded.payload",params![signature(track),now(),serde_json::to_string(&items)?])?;
-    rank(c, track, items)
+fn retry_seconds(value:Option<&str>,status:u16,at:SystemTime)->u64 {
+    value.and_then(|value|value.parse::<u64>().ok().or_else(||httpdate::parse_http_date(value).ok().map(|date|date.duration_since(at).unwrap_or_default().as_secs().saturating_add(1))))
+        .unwrap_or(if status==503 {2}else{30}).clamp(1,86400)
 }
+fn resting(c:&Connection,track:&musicos_init::database::Track,gate:&Gate)->Result<Response>{
+    let seconds=gate.next.saturating_duration_since(Instant::now()).as_secs()+1;
+    let mut r=response(c,track.id,None,None,"retry_later")?;
+    r.retry_after_seconds=Some(seconds);r.provider_status=gate.status;
+    r.message=Some(format!("LRCLIB is temporarily busy. Retry will be available in {seconds} seconds."));Ok(r)
+}
+fn lookup(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool)->Result<Response>{
+    lookup_using(c,track,retry,search,"https://lrclib.net",gate())
+}
+fn lookup_using(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool,base:&str,lock:&Mutex<Gate>)->Result<Response>{
+    if !search {let local=local(c,track)?;if local.document.is_some(){return Ok(local);}if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
+    let mut gate=lock.lock().unwrap_or_else(|e|e.into_inner());
+    if !search {if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
+    let client=reqwest::blocking::Client::builder().user_agent(crate::product::provider_user_agent()).timeout(Duration::from_secs(12)).build()?;
+    let mut queries=vec![];
+    if !search {
+        let mut signature=vec![("track_name",track.title.clone()),("artist_name",track.artist.clone()),("album_name",track.album.clone())];
+        if track.duration>0&&track.duration<=3600 {signature.push(("duration",track.duration.to_string()));}
+        queries.push(("get",signature));
+    }
+    // Album labels and contributor strings vary between editions. Broader results
+    // remain choices; only the complete original signature can auto-match.
+    queries.push(("search",vec![("track_name",track.title.clone()),("artist_name",track.artist.clone())]));
+    queries.push(("search",vec![("track_name",track.title.clone())]));
+    for (endpoint,query) in queries {
+        if gate.next>Instant::now(){let delay=gate.next.saturating_duration_since(Instant::now());if delay<=Duration::from_millis(500){std::thread::sleep(delay);}else{return resting(c,track,&gate);}}
+        let result=client.get(format!("{base}/api/{endpoint}")).header(reqwest::header::ACCEPT,"application/json").query(&query).send();
+        gate.next=Instant::now()+Duration::from_millis(300);gate.status=None;
+        let http=match result{Ok(http)=>http,Err(_)=>{let mut r=response(c,track.id,None,None,"offline")?;r.message=Some("Couldn’t reach LRCLIB. Check your connection, then Retry. Local lyrics remain available.".into());return Ok(r);}};
+        let status=http.status().as_u16();
+        if status==429||status==503 {
+            let seconds=retry_seconds(http.headers().get("retry-after").and_then(|v|v.to_str().ok()),status,SystemTime::now());
+            let jitter=rand::random::<u64>()%(seconds*250+1);
+            gate.next=Instant::now()+Duration::from_millis(seconds*1000+jitter);gate.status=Some(status);
+            return resting(c,track,&gate);
+        }
+        if status==404 {continue;}
+        if !http.status().is_success(){let mut r=response(c,track.id,None,None,"provider_error")?;r.provider_status=Some(status);r.message=Some(format!("LRCLIB returned HTTP {status}. Retry or add a local lyric file."));return Ok(r);}
+        ensure!(http.content_length().is_none_or(|n|n<=4_000_000),"Lyrics response is too large");
+        use std::io::Read;let mut bytes=Vec::new();http.take(4_000_001).read_to_end(&mut bytes)?;ensure!(bytes.len()<=4_000_000,"Lyrics response is too large");
+        let value:serde_json::Value=match serde_json::from_slice(&bytes){Ok(value)=>value,Err(_)=>{let mut r=response(c,track.id,None,None,"provider_error")?;r.provider_status=Some(status);r.message=Some("LRCLIB returned an unreadable response. Retry or import lyrics.".into());return Ok(r);}};
+        let records=if endpoint=="get"{vec![value]}else{value.as_array().cloned().context("LRCLIB returned an invalid search response")?};
+        let had_records=!records.is_empty();
+        let items:Vec<Candidate>=records.into_iter().take(20).filter_map(|value|serde_json::from_value::<Record>(value).ok().and_then(|record|candidate(record).ok())).filter(|c|c.document.metadata.instrumental||!c.document.lines.is_empty()||!c.document.plain.trim().is_empty()).collect();
+        if items.is_empty(){if had_records {let mut r=response(c,track.id,None,None,"provider_error")?;r.message=Some("These LRCLIB versions contain no readable lyrics. Try another version or import a lyric file.".into());return Ok(r);}continue;}
+        c.execute("INSERT INTO cache VALUES(?,?,?) ON CONFLICT(signature) DO UPDATE SET checked=excluded.checked,payload=excluded.payload",params![signature(track),now(),serde_json::to_string(&items)?])?;
+        if search {let mut r=response(c,track.id,None,None,"choose")?;r.candidates=items;return Ok(r);}
+        return rank(c,track,items);
+    }
+    c.execute("INSERT INTO cache VALUES(?,?,?) ON CONFLICT(signature) DO UPDATE SET checked=excluded.checked,payload=excluded.payload",params![signature(track),now(),"[]"])?;
+    rank(c,track,vec![])
+}
+
 fn save(
     c: &mut Connection,
     id: i64,
@@ -1150,5 +1087,51 @@ mod embedded_tests {
         assert_eq!(r["source"]["kind"], "embedded");
         assert_eq!(r["document"]["lines"][0]["start_ms"], 100);
         assert_eq!(r["document"]["metadata"]["title"], "My song");
+    }
+}
+
+#[cfg(test)]
+mod transport_contract {
+    use super::*;
+    #[test]
+    #[ignore = "Explicit native LRCLIB transport check"]
+    fn helmet_native_transport() {
+        let client=reqwest::blocking::Client::builder().user_agent(crate::product::provider_user_agent()).timeout(Duration::from_secs(15)).build().unwrap();
+        let response=client.get("https://lrclib.net/api/get").query(&[("track_name","Helmet"),("artist_name","Steve Lacy"),("album_name","Gemini Rights"),("duration","201")]).send().unwrap();
+        let status=response.status();
+        println!("native transport: status={status} version={:?} retry={:?} type={:?}",response.version(),response.headers().get("retry-after"),response.headers().get("content-type"));
+        if !status.is_success(){let body=response.text().unwrap_or_default();panic!("LRCLIB {status}: {}",body.chars().take(300).collect::<String>());}
+        let record:Record=response.json().unwrap();let c=candidate(record).unwrap();assert!(!c.document.lines.is_empty());assert!(c.title.eq_ignore_ascii_case("Helmet"));
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+    use std::{io::{Read,Write},net::TcpListener};
+    #[test]
+    fn overload_recovers_then_broadens_without_losing_edition_identity_or_poisoning_cache(){
+        let listener=TcpListener::bind("127.0.0.1:0").unwrap();let base=format!("http://{}",listener.local_addr().unwrap());
+        let worker=std::thread::spawn(move||{
+            for (expected,status,extra,body) in [
+                ("/api/get?","503 Service Unavailable","Retry-After: 1\r\n","busy".to_string()),
+                ("/api/get?","404 Not Found","","{}".to_string()),
+                ("/api/search?","200 OK","",serde_json::json!([{"id":42,"trackName":"Title","artistName":"Artist","albumName":"Album","duration":180.,"lyricsfile":"invalid document","syncedLyrics":"[00:01.00]My original test words"}]).to_string())
+            ] {let(mut stream,_)=listener.accept().unwrap();let mut buffer=[0;8192];let count=stream.read(&mut buffer).unwrap();let request=String::from_utf8_lossy(&buffer[..count]);assert!(request.starts_with(&format!("GET {expected}")));assert!(request.to_lowercase().contains("user-agent: musicos"));if expected.contains("search"){assert!(!request.contains("album_name="));}write!(stream,"HTTP/1.1 {status}\r\n{extra}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();}
+        });
+        let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("library.db");let db=musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();let id=db.insert_track("/absent.flac","Title","Artist","Album",180,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();let c=store(&path).unwrap();let gate=Mutex::new(Gate{next:Instant::now(),status:None});
+        let busy=lookup_using(&c,&track,false,false,&base,&gate).unwrap();assert_eq!(busy.state,"retry_later");assert_eq!(busy.provider_status,Some(503));assert!(busy.retry_after_seconds.unwrap()>=1);assert!(cached(&c,&track,false).unwrap().is_none());
+        let still_busy=lookup_using(&c,&track,true,false,&base,&gate).unwrap();assert_eq!(still_busy.state,"retry_later");gate.lock().unwrap().next=Instant::now();
+        let found=lookup_using(&c,&track,true,false,&base,&gate).unwrap();assert_eq!(found.state,"ready");assert_eq!(found.document.unwrap().lines[0].text,"My original test words");worker.join().unwrap();
+        // The server is gone: reopening must use the successful cache.
+        assert_eq!(lookup_using(&c,&track,false,false,&base,&gate).unwrap().state,"ready");
+        assert_eq!(retry_seconds(Some("8"),429,SystemTime::now()),8);assert_eq!(retry_seconds(None,503,SystemTime::now()),2);
+    }
+    #[test]
+    #[ignore="Explicit full native LRCLIB lookup and cache check"]
+    fn native_lookup_and_offline_cache(){
+        let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("library.db");let db=musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();let id=db.insert_track("/absent.flac","Helmet","Steve Lacy","Gemini Rights",201,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();let c=store(&path).unwrap();let gate=Mutex::new(Gate{next:Instant::now(),status:None});
+        let mut found=lookup_using(&c,&track,false,false,"https://lrclib.net",&gate).unwrap();for _ in 0..2{if found.state!="retry_later"{break;}std::thread::sleep(gate.lock().unwrap().next.saturating_duration_since(Instant::now()).min(Duration::from_secs(15)));found=lookup_using(&c,&track,true,false,"https://lrclib.net",&gate).unwrap();}
+        println!("Full lookup: state={}, timed={}, candidates={}",found.state,found.document.as_ref().is_some_and(|d|!d.lines.is_empty()),found.candidates.len());assert_eq!(found.state,"ready");assert!(!found.document.unwrap().lines.is_empty());assert_eq!(lookup_using(&c,&track,false,false,"http://127.0.0.1:1",&gate).unwrap().state,"ready");
     }
 }

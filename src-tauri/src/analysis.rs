@@ -78,20 +78,22 @@ fn cached_mode(db: &Path, id: i64, path: &str,current:bool) -> Option<Features> 
 }
 pub fn cached_many(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,false)}
 /// Heart motion needs tempo, not each song's full beat/structure payload.
-pub fn cached_tempos(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32)>> {
+pub fn cached_rhythms(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32,Option<f32>)>> {
     let connection=cache(db)?;
-    let mut statement=connection.prepare("SELECT track_id,identity,json_extract(result,'$.bpm') FROM desktop_dsp_v1 WHERE json_valid(result)")?;
-    let rows=statement.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<f32>>(2)?)))?;
+    let mut statement=connection.prepare("SELECT track_id,identity,json_extract(result,'$.bpm'),CASE WHEN json_extract(result,'$.structure.beat_confidence')>=0.5 THEN json_extract(result,'$.structure.beats[0]') END FROM desktop_dsp_v1 WHERE json_valid(result)")?;
+    let rows=statement.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<f32>>(2)?,r.get::<_,Option<f32>>(3)?)))?;
     let paths=tracks.iter().copied().collect::<std::collections::HashMap<_,_>>();
     let mut tempos=Vec::new();
     for row in rows {
-        let (id,signature,bpm)=row?;
+        let (id,signature,bpm,offset)=row?;
         if let Some(bpm)=bpm.filter(|b|b.is_finite()&&(20.0..=400.0).contains(b)) {
-            if paths.get(&id).is_some_and(|path|identity(Path::new(path)).is_ok_and(|current|current==signature)) {tempos.push((id,bpm));}
+            if paths.get(&id).is_some_and(|path|identity(Path::new(path)).is_ok_and(|current|current==signature)) {tempos.push((id,bpm,offset.filter(|v|v.is_finite()&&*v>=0.)));}
         }
     }
     Ok(tempos)
 }
+#[cfg(test)]
+pub fn cached_tempos(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32)>>{Ok(cached_rhythms(db,tracks)?.into_iter().map(|(id,bpm,_)|(id,bpm)).collect())}
 pub fn cached_many_current(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,true)}
 fn cached_many_mode(db: &Path, tracks: &[(i64, &str)],current:bool) -> Vec<Option<Features>> {
     let read = (|| -> Result<std::collections::HashMap<i64, (String, String, Features)>> {

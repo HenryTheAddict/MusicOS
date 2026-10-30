@@ -816,7 +816,7 @@ async fn sparklist(
 }
 #[tauri::command]
 async fn audio_tempos(app:tauri::AppHandle)->ApiResult<Value>{
- blocking(move||{let state=app.state::<AppState>();let config=state.config();let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let tracks=database.get_tracks()?;let tempos=crate::analysis::cached_tempos(&config.db_path,&tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>())?;Ok(json!({"running":state.analysis.progress().running,"tempos":tempos.into_iter().map(|(track_id,bpm)|json!({"track_id":track_id,"bpm":bpm})).collect::<Vec<_>>()}))}).await
+ blocking(move||{let state=app.state::<AppState>();let config=state.config();let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let tracks=database.get_tracks()?;let tempos=crate::analysis::cached_rhythms(&config.db_path,&tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>())?;Ok(json!({"running":state.analysis.progress().running,"tempos":tempos.into_iter().map(|(track_id,bpm,beat_offset)|json!({"track_id":track_id,"bpm":bpm,"beat_offset":beat_offset})).collect::<Vec<_>>()}))}).await
 }
 #[tauri::command]
 async fn audio_analysis(

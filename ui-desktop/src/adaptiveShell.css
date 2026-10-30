@@ -175,5 +175,5 @@
 }
 
 .back-swipe-cue{display:none;}
-.back-page-preview{position:fixed;z-index:10;pointer-events:none;overflow:hidden;border-radius:var(--page-radius,1rem);background:var(--surface-color);contain:strict;}
-.page-scroll[data-swiping=true]{position:relative;z-index:11;background:var(--surface-color);box-shadow:-6px 0 18px #0002;overflow-x:clip;}
+.back-page-preview{position:absolute;z-index:1;pointer-events:none;overflow:hidden;border-radius:var(--page-radius,1rem);background:var(--surface-color);contain:strict;}
+.page-frame .page-scroll[data-swiping=true]{position:relative;z-index:2;background:var(--surface-color);box-shadow:-6px 0 18px #0002;overflow-x:clip;}
