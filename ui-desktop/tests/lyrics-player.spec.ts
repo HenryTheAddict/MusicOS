@@ -44,3 +44,8 @@ test('the first lyric is centered during an intro before its first timestamp',as
  await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-line')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.42);})).toBeLessThan(.05);
  expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toHaveLength(0);
 });
+
+test('editor Find uses the exact-first path and keeps broader versions explicit',async({page})=>{
+ await page.goto('/?fixture=1&lyrics=1');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await page.getByRole('button',{name:'Edit lyrics',exact:true}).click();const editor=page.getByRole('region',{name:'Edit lyrics',exact:true});const before=await editor.getByRole('textbox',{name:'Plain lyrics',exact:true}).inputValue();await editor.getByRole('button',{name:'Find lyrics',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='lyrics').at(-1)?.args.request.action)).toBe('find');await expect(editor.getByRole('textbox',{name:'Plain lyrics',exact:true})).toHaveValue(before);await expect(editor.getByRole('button',{name:'Review lyrics',exact:true})).toBeDisabled();await editor.getByRole('button',{name:'More actions',exact:true}).click();await expect(page.getByRole('menuitem',{name:'Other versions',exact:true})).toBeVisible();
+});

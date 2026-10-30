@@ -520,12 +520,15 @@ fn lookup(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:b
     lookup_using(c,track,retry,search,"https://lrclib.net",gate())
 }
 fn lookup_using(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool,base:&str,lock:&Mutex<Gate>)->Result<Response>{
+    lookup_impl(c,track,retry,search,false,base,lock)
+}
+fn lookup_impl(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool,exact_search:bool,base:&str,lock:&Mutex<Gate>)->Result<Response>{
     if !search {let local=local(c,track)?;if local.document.is_some(){return Ok(local);}if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
     let mut gate=lock.lock().unwrap_or_else(|e|e.into_inner());
     if !search {if let Some(items)=cached(c,track,retry)?{return rank(c,track,items);}}
     let client=reqwest::blocking::Client::builder().user_agent(crate::product::provider_user_agent()).timeout(Duration::from_secs(12)).build()?;
     let mut queries=vec![];
-    if !search {
+    if !search || exact_search {
         let mut signature=vec![("track_name",track.title.clone()),("artist_name",track.artist.clone()),("album_name",track.album.clone())];
         if track.duration>0&&track.duration<=3600 {signature.push(("duration",track.duration.to_string()));}
         queries.push(("get",signature));
@@ -635,6 +638,7 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
                 r
             }
         }
+        "find" => lookup_impl(&c,&track,req.retry.unwrap_or(false),true,true,"https://lrclib.net",gate())?,
         "lookup" | "search" => lookup(
             &c,
             &track,
@@ -1132,6 +1136,6 @@ mod recovery_tests {
     fn native_lookup_and_offline_cache(){
         let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("library.db");let db=musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();let id=db.insert_track("/absent.flac","Helmet","Steve Lacy","Gemini Rights",201,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();let c=store(&path).unwrap();let gate=Mutex::new(Gate{next:Instant::now(),status:None});
         let mut found=lookup_using(&c,&track,false,false,"https://lrclib.net",&gate).unwrap();for _ in 0..2{if found.state!="retry_later"{break;}std::thread::sleep(gate.lock().unwrap().next.saturating_duration_since(Instant::now()).min(Duration::from_secs(15)));found=lookup_using(&c,&track,true,false,"https://lrclib.net",&gate).unwrap();}
-        println!("Full lookup: state={}, timed={}, candidates={}",found.state,found.document.as_ref().is_some_and(|d|!d.lines.is_empty()),found.candidates.len());assert_eq!(found.state,"ready");assert!(!found.document.unwrap().lines.is_empty());assert_eq!(lookup_using(&c,&track,false,false,"http://127.0.0.1:1",&gate).unwrap().state,"ready");
+        println!("Full lookup: state={}, timed={}, candidates={}",found.state,found.document.as_ref().is_some_and(|d|!d.lines.is_empty()),found.candidates.len());assert_eq!(found.state,"ready");assert!(!found.document.unwrap().lines.is_empty());let choices=lookup_impl(&c,&track,true,true,true,"https://lrclib.net",&gate).unwrap();println!("Editor find: state={}, candidates={}",choices.state,choices.candidates.len());assert_eq!(choices.state,"choose");assert!(choices.document.is_none());assert!(!choices.candidates.is_empty());assert_eq!(lookup_using(&c,&track,false,false,"http://127.0.0.1:1",&gate).unwrap().state,"ready");
     }
 }
