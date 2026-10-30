@@ -5,7 +5,7 @@ Desktop source: isolated `codex/desktop-heart-preservation` branch. Android, OS 
 ## Behavior
 
 - Lyrics: shared client identification, sequential 300 ms request spacing, status-first errors and Retry-After with jitter. Short HTTP 503 backoffs recover at most twice while the view is active. HTTP 429 stays explicitly retryable after the required delay. Successful results remain available offline; errors never become cached misses. Exact title/artist/album/duration matching still controls automatic selection. Broader searches omit the album restriction and present unmatched editions as choices. An invalid optional LyricsFile falls back to valid LRC/plain text.
-- Composition: the artwork, song identification, progress and transport form one centered group. Retry explanation and actions stay together. Low-height wide layouts use a smaller bounded cover. Active lyrics follow through one interruptible 180 ms scroll; manual scrolling cancels it.
+- Composition: the artwork, song identification, progress and transport form one centered group. Retry explanation and actions stay together. Low-height wide layouts use a smaller bounded cover. Active lyrics follow through one interruptible 180 ms scroll; intros center the first visible line before its first timestamp, including delayed document arrival; manual scrolling cancels it.
 - Visuals: the scene can use the cached palette of the actual cover even with a blue app theme. Three flowing forms retain a stable contrast veil. Photo decoding remains SDR. The softened canvas is clipped locally. Pause has a finite 180 ms settle; closing releases frames and subscriptions. No Motion button.
 - Progress: theme-colored gradient distinguishes the played edge from a quiet rail; time labels use readable theme ink. Seek behavior and targets are unchanged.
 - Heart: valid cached BPM sets the period, reliable cached beat evidence supplies an offset, and the shared acknowledged source clock sets phase and playback rate. Seek, speed, repeat and newly visible copies reconcile without a new frame loop. Unknown tempo stays still instead of inventing 72 BPM. Offscreen, paused and Reduced Motion hearts remain still.
@@ -15,7 +15,7 @@ Desktop source: isolated `codex/desktop-heart-preservation` branch. Android, OS 
 
 - UI unit suite: 182 passed.
 - Native unit suite: 187 passed, five intentional external/physical fixtures ignored.
-- Focused WebKit interaction suite: 15 passed, including gesture tracking/reversal, momentum, nested controls, Reduced Motion, lyric seeking/editor state, and heartbeat phase after seek.
+- Focused WebKit interaction suite: 16 passed, including gesture tracking/reversal, momentum, nested controls, Reduced Motion, lyric seeking/editor state, and heartbeat phase after seek.
 - Live full native LRCLIB lookup: Helmet / Steve Lacy / Gemini Rights returned ready with timed lyrics; reopening succeeds with an unreachable provider using its successful cache. Before this build, the installed app also successfully loaded Static, confirming the reported failure is intermittent rather than a universally broken transport.
 - Deterministic native mock: overload, Retry-After blocking, recovery, exact miss followed by broader search, malformed optional LyricsFile fallback and offline cache reuse passed. Frontend tests cover finite retries and cancellation when the view closes.
 - Layout matrix covers 480×480, 720×480 and 1280×800, four interface scales, Light/Dark artwork, blue and extreme custom themes. Results and screenshots are in `out/lyrics-view-2026-10-30/`.

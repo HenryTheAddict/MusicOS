@@ -38,3 +38,9 @@ test('small-window lyric editing gives space to the text and keeps library navig
 test('desktop lyric management at 125 percent removes repeated topic navigation',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:125})));await page.goto('/?fixture=1&lyrics=1');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await page.getByRole('button',{name:'Edit lyrics',exact:true}).click();await expect(page.getByRole('textbox',{name:'Plain lyrics',exact:true})).toBeVisible();await expect(page.locator('.settings-category-heading')).not.toBeVisible();await expect(page.getByRole('group',{name:'Library management',exact:true})).not.toBeVisible();await expect(page.getByRole('tab',{name:'Lyrics',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Library settings',exact:true})).toBeVisible();await page.getByRole('button',{name:'Library settings',exact:true}).click();await expect(page.getByRole('group',{name:'Library management',exact:true})).toBeVisible();
 });
+
+test('the first lyric is centered during an intro before its first timestamp',async({page})=>{
+ await page.goto('/?fixture=1&lyrics=1&lyricsCase=intro');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await expect(page.locator('.lyric-line')).toHaveCount(4);
+ await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-line')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.42);})).toBeLessThan(.05);
+ expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toHaveLength(0);
+});
