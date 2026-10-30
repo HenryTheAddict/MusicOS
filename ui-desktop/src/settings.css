@@ -230,3 +230,8 @@
  .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .lyric-settings-back{display:inline-flex;align-items:center;gap:.375rem;min-height:2.5rem;padding:.5rem .75rem;border-radius:.75rem;background:var(--control-surface);border:1px solid var(--control-border);font-size:.8125rem;}
  .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) :is(.settings-tabs,.settings-category-heading,.library-settings-nav){display:none;}
 }
+/* The lyric workspace owns its context; avoid a second topic header above it. */
+.settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.75rem;}
+.settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .lyric-settings-back{display:inline-flex;align-items:center;gap:.375rem;min-height:2.5rem;padding:.5rem .75rem;border-radius:.75rem;background:var(--control-surface);border:1px solid var(--control-border);font-size:.8125rem;}
+.settings .lyric-settings-back>.icon{width:1.125rem;height:1.125rem;}
+.settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .settings-category-heading,.settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .settings-panel>div:not([hidden])>.library-settings-nav{display:none;}
