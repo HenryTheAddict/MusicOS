@@ -78,6 +78,7 @@ export interface Preferences {
   library_filters?:LibraryFilters;
   version: number;
   display_name: string;
+  onboarding_version?:number;
   interface_percent: 80 | 100 | 125 | 150;
   coverflow_colors: boolean;
   artwork_parallax?:boolean;

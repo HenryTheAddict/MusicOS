@@ -220,8 +220,12 @@ private fun SongRow(song: Song, onPlay: () -> Unit, model: PhoneModel, index: In
 private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = viewModel()) {
     val context = LocalContext.current
     val preferences = remember { context.getSharedPreferences("appearance-v1", 0) }
+    val product=remember { PhoneProduct.load(context) }
+    var welcome by rememberSaveable { mutableStateOf(false) }
+    var welcomeVersion by remember { mutableIntStateOf(preferences.getInt("onboarding_version",0)) }
+    val legacySetup=remember { preferences.contains("theme")||preferences.contains("colors") }
     var theme by rememberSaveable {
-        mutableStateOf(preferences.getString("theme", "system") ?: "system")
+        mutableStateOf(preferences.getString("theme", product.mode) ?: product.mode)
     }
     val dark = theme == "dark" || theme == "system" && isSystemInDarkTheme()
     SideEffect {
@@ -236,11 +240,15 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                 }
         }
     }
-    var colorSource by rememberSaveable { mutableStateOf(preferences.getString("colors", "blue") ?: "blue") }
+    var colorSource by rememberSaveable { mutableStateOf(preferences.getString("colors", product.colors) ?: product.colors) }
     val playing by model.playing.collectAsStateWithLifecycle()
     MusicTheme(dark, playing.song?.artworkFile?.takeIf { colorSource == "artwork" }) {
         val colors = LocalMusicColors.current
         val library by model.library.collectAsStateWithLifecycle()
+        val pairingsReady by model.pairingsReady.collectAsStateWithLifecycle()
+        val macs by model.macs.collectAsStateWithLifecycle()
+        val existingSetup=legacySetup||library.songs.isNotEmpty()||macs.isNotEmpty()||incoming.isNotBlank()||voice.isNotBlank()
+        LaunchedEffect(library.ready,pairingsReady,existingSetup) {if(library.ready&&pairingsReady&&existingSetup&&welcomeVersion<product.onboardingVersion){preferences.edit().putInt("onboarding_version",product.onboardingVersion).apply();welcomeVersion=product.onboardingVersion}}
         val message by model.message.collectAsStateWithLifecycle()
         var destination by rememberSaveable { mutableStateOf("Home") }
         var tools by remember { mutableStateOf(false) }
@@ -313,14 +321,19 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
         val searchScroll = rememberLazyListState()
         val detailScroll = rememberLazyListState()
         Surface(Modifier.fillMaxSize(), color = colors.shell, contentColor = colors.ink) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 8.dp)) {
+            if(!library.ready||!pairingsReady) {Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){SketchIcon("Album",Modifier.size(48.dp))}} else if(welcome || library.ready&&pairingsReady&&!existingSetup&&welcomeVersion<product.onboardingVersion) {
+                PhoneOnboarding(theme,colorSource,revisiting=welcome) { selectedMode,selectedColors,pair ->
+                    val saved=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {preferences.edit().putString("theme",selectedMode).putString("colors",selectedColors).putInt("onboarding_version",product.onboardingVersion).commit()}
+                    if(saved){theme=selectedMode;colorSource=selectedColors;welcomeVersion=product.onboardingVersion;destination=if(pair)"Devices" else if(welcome)"Settings" else "Home";welcome=false};saved
+                }
+            } else Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 8.dp)) {
                 if (!player) Row(
                     Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     SketchIcon("Album", Modifier.size(26.dp))
                     Text(
-                        "musicOS",
+                        product.name,
                         Modifier.weight(1f).padding(start = 8.dp),
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
@@ -376,6 +389,7 @@ private fun MusicApp(incoming: String, voice: String = "", model: PhoneModel = v
                                 { destination = "Devices" },
                                 colorSource,
                                 { colorSource = it; preferences.edit().putString("colors", it).apply() },
+                                { welcome=true },
                             )
                         detail != null -> {
                             val songs =
@@ -1007,6 +1021,7 @@ private fun SettingsPage(
     onDevices: () -> Unit,
     colorSource: String,
     onColorSource: (String) -> Unit,
+    onSetup: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -1113,7 +1128,8 @@ private fun SettingsPage(
                         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                 )
             }
-            Text("musicOS · Figtree · supplied Sketch icons", fontSize = 12.sp)
+            MusicButton("Open welcome setup", "Album", onSetup)
+            Text("${PhoneProduct.load(context).name} · ${PhoneProduct.load(context).version} · Figtree · supplied Sketch icons", fontSize = 12.sp)
         }
     }
 }

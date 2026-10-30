@@ -72,11 +72,17 @@ pub fn load_config() -> Result<ControlCenterConfig> {
         }
     }
 
-    let mut config = migrate_electron_config()?.unwrap_or_default();
+    let mut config = migrate_electron_config()?.unwrap_or_else(fresh_config);
     apply_env_overrides(&mut config);
     normalize_persisted_paths(&mut config);
     save_config(&config)?;
     Ok(config)
+}
+
+fn fresh_config() -> ControlCenterConfig {
+    let storage:serde_json::Value=serde_json::from_str(include_str!("../../../product.config.json")).expect("Validated product configuration");
+    let storage=&storage["storage"];let data=desktop_data_dir();
+    ControlCenterConfig {media_dir:data.join(storage["mediaDirectory"].as_str().unwrap()),db_path:data.join(storage["databaseFile"].as_str().unwrap()),sync_dir:data.join(storage["syncDirectory"].as_str().unwrap()),..Default::default()}
 }
 
 pub fn save_config(config: &ControlCenterConfig) -> Result<()> {
@@ -115,11 +121,10 @@ fn apply_env_overrides(config: &mut ControlCenterConfig) {
 }
 
 fn normalize_persisted_paths(config: &mut ControlCenterConfig) {
-    let data_dir = desktop_data_dir();
-    config.sync_dir = resolve_persisted_path(&config.sync_dir, data_dir.join("Sync"));
-    config.media_dir = resolve_persisted_path(&config.media_dir, data_dir.join("MusicOS Media"));
-    config.db_path =
-        resolve_persisted_path(&config.db_path, data_dir.join("desktop-media.sqlite3"));
+    let defaults = fresh_config();
+    config.sync_dir = resolve_persisted_path(&config.sync_dir, defaults.sync_dir);
+    config.media_dir = resolve_persisted_path(&config.media_dir, defaults.media_dir);
+    config.db_path = resolve_persisted_path(&config.db_path, defaults.db_path);
 }
 
 fn resolve_persisted_path(path: &Path, fallback: PathBuf) -> PathBuf {
@@ -237,6 +242,9 @@ pub fn atomic_write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_install_uses_profile_paths_instead_of_the_launch_folder(){let config=fresh_config();let data=desktop_data_dir();assert!(config.media_dir.starts_with(&data));assert!(config.db_path.starts_with(&data));assert!(config.sync_dir.starts_with(&data));assert!(config.media_dir.is_absolute());}
 
     #[test]
     fn atomic_json_round_trip() {

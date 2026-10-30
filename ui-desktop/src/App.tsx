@@ -1,3 +1,6 @@
+import {useBackSwipe} from './useBackSwipe';
+import Onboarding from './Onboarding';
+import {product} from './product';
 import {dropImportSource} from './importDestination';
 import {usePlayfulControls} from './playfulControls';
 import {useShellLayout} from './useShellLayout';
@@ -171,6 +174,9 @@ export default function App() {
   const player=useMemo(()=>({...rawPlayer,track:rawPlayer.track?(tracksById.get(rawPlayer.track.id)??rawPlayer.track):null,queue:presentedQueue}),[rawPlayer,tracksById,presentedQueue]);
   const [task, setTask] = useState<Task>(emptyTask);
   const [loading, setLoading] = useState(true);
+  const [onboardingOpen,setOnboardingOpen]=useState(false);
+  const onboardingDecided=useRef(false),bootstrapSucceeded=useRef(false),librarySucceeded=useRef(false);
+  useEffect(()=>{if(loading||onboardingDecided.current||!bootstrapSucceeded.current||!librarySucceeded.current)return;onboardingDecided.current=true;if((preferences.onboarding_version??1)<product.onboarding.version&&library.tracks.length===0&&!player.is_playing)setOnboardingOpen(true);},[loading,preferences.onboarding_version,library.tracks.length,player.is_playing]);
   const tempoIdentity=useMemo(()=>library.tracks.map(track=>`${track.id}:${track.path}`).join('\n'),[library.tracks]);
   const tempos=useAnalyzedTempos(!loading,tempoIdentity,player.track?.id);
   const [error, setError] = useState("");
@@ -277,11 +283,13 @@ export default function App() {
   usePageEntrance(scrollRef, `${section}:${route.view}:${route.id ?? ""}:${destination}`, !loading&&miniMode==='normal');
   const savePending = useRef<Preferences|null>(null);
   const savingPreferences=useRef(false);
+  const savePromise=useRef<Promise<boolean>>(Promise.resolve(true));
   const scale = preferences.interface_percent / 100;
   const shell=useShellLayout(scale,miniMode==='normal');
   const compact=shell.compact;
   const [expandedOpen,setExpandedOpen]=useState(false),[playerView,setPlayerView]=useState<PlayerView>('playing');
   const expandedPresent=usePanelPresence(expandedOpen);
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen,navigation.history.length>0,goBack);
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
   function openPlayer(view:PlayerView='playing'){playerOpener.current=document.querySelector<HTMLElement>(view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
   function chooseDestination(next:Destination){if(section==='Library'&&destination===next)return;window.dispatchEvent(new Event('musicos-navigation-start'));captureScroll();if(next==='search'&&destination!=='search')previousDestination.current=destination;setSection('Library');switchDestination(next);}
@@ -303,10 +311,10 @@ export default function App() {
     let cleanups: (() => void)[] = [];
     let gone = false;
     const lightweight=call("bootstrap_state").then(data=>{
-      if(gone)return;savedSparkBeta.current=data.preferences.sparklist_beta;setPreferences(data.preferences);setPlayer(data.playback);setTask(data.task);
+      if(gone)return;bootstrapSucceeded.current=!data.preference_error;savedSparkBeta.current=data.preferences.sparklist_beta;setPreferences(data.preferences);setPlayer(data.playback);setTask(data.task);
       if(data.preference_error)setSaveError(data.preference_error);
     });
-    const libraryLoad=call("refresh_library").then(data=>{if(!gone)setLibrary(data);});
+    const libraryLoad=call("refresh_library").then(data=>{if(!gone){librarySucceeded.current=true;setLibrary(data);}});
     void Promise.all([lightweight,libraryLoad]).then(()=>{
       if(!gone)void call("collections",{}).then(setCollections).catch(e=>setCollectionError(errorText(e)));
     }).catch(e=>{if(!gone)setError(errorText(e));}).finally(()=>{if(!gone)setLoading(false);});
@@ -510,7 +518,7 @@ export default function App() {
     };
     window.addEventListener("keydown",pointerSpace,true);
     const listener = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      if (e.defaultPrevented||document.querySelector(".onboarding[open]")) return;
       const target = e.target as HTMLElement;
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){
         e.preventDefault();if(!document.querySelector('dialog[open]'))openSearch();return;
@@ -560,12 +568,25 @@ export default function App() {
     setPreferences(next);
     setSaveError("");
     savePending.current=next;
-    if(savingPreferences.current)return;
+    if(savingPreferences.current)return savePromise.current;
     savingPreferences.current=true;
-    void (async()=>{
-      try {while(savePending.current){const latest=savePending.current;savePending.current=null;try {await call("save_preferences",{preferences:latest});if(savedSparkBeta.current!==latest.sparklist_beta){savedSparkBeta.current=latest.sparklist_beta;invalidateDisplay('sparklist');}if(mounted.current)setSaveError("");}catch(e){if(mounted.current)setSaveError(`Could not save settings. ${errorText(e)}`);}}}
+    savePromise.current=(async()=>{
+      let success=true;
+      try {while(savePending.current){const latest=savePending.current;savePending.current=null;try {await call("save_preferences",{preferences:latest});if(savedSparkBeta.current!==latest.sparklist_beta){savedSparkBeta.current=latest.sparklist_beta;invalidateDisplay('sparklist');}if(mounted.current)setSaveError("");}catch(e){success=false;if(mounted.current)setSaveError(`Could not save settings. ${errorText(e)}`);}}}
       finally {savingPreferences.current=false;}
+      return success;
     })();
+    return savePromise.current;
+  }
+  async function setupImport(){
+    if(!native)throw Error('Open the desktop app to choose music folders. You can still explore first.');
+    const selected=await open({directory:true,multiple:true,title:'Choose music folders'});
+    if(!selected)return [];const paths=typeof selected==='string'?[selected]:selected;
+    await call('library_task',{request:{kind:'reference',paths}});return paths;
+  }
+  async function finishSetup(next:Preferences,devices:boolean){
+    const saved=await changePreferences(next);if(!saved)return false;
+    setOnboardingOpen(false);if(devices)setSection('Devices');return true;
   }
   function captureScroll() {
     if(section==='Settings'&&scrollRef.current)settingsScroll.current.set(settingsKey.current,scrollRef.current.scrollTop);
@@ -1034,13 +1055,14 @@ export default function App() {
       data-adaptive={!!palette}
       data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}
     >
+      <div ref={backSwipeCue} className="back-swipe-cue" aria-hidden="true"><Icon name="Back"/></div>
       <a className="skip-link" href="#library-content">
         Skip to content
       </a>
       <header className="app-header" onMouseDown={e=>dragWindow(e,setError)}>
         <div
           className="window-drag-region"
-        ><div className="header-brand"><Icon name="Album"/><span>musicOS</span></div></div>
+        ><div className="header-brand"><Icon name="Album"/><span>{product.name}</span></div></div>
         <div className="section-control">
         <Menu
           label="Choose section"
@@ -1235,6 +1257,7 @@ export default function App() {
             <div className="page-content">
               <KeepView active={section === "Settings"}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading settings" aria-busy="true"/>}>
                 <Settings
+                  onSetup={()=>setOnboardingOpen(true)}
                   preferences={preferences}
                   onChange={changePreferences}
                   error={saveError}
@@ -1384,6 +1407,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div>}</KeepView></>
+    </div>}</KeepView>{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
   );
 }

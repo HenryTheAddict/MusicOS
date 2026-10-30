@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "name": "musicOS",
+  "version": "0.1.0",
+  "repositoryUrl": "https://github.com/HenryTheAddict/MusicOS",
+  "defaults": {
+    "libraryLabel": "Your library",
+    "interfacePercent": 100,
+    "miniPlayerDensity": "standard",
+    "appearance": { "mode": "system", "source": "blue", "accent": "#0064df", "saturation": 100, "tint": 15 }
+  },
+  "storage": { "mediaDirectory": "MusicOS Media", "databaseFile": "desktop-media.sqlite3", "syncDirectory": "Sync" },
+  "onboarding": { "version": 1, "desktopTitle": "Your music, at home.", "phoneTitle": "Your music, to go." }
+}

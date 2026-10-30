@@ -21,6 +21,7 @@ import "./miniPresetPicker.css";
 import "./menuPresentation.css";
 import "./adaptiveShell.css";
 import "./playfulControls.css";
+import "./onboarding.css";
 prepareLaunchTheme();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

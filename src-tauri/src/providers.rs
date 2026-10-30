@@ -11,10 +11,10 @@ use std::{
     },
     time::{Duration, Instant, SystemTime},
 };
-const UA: &str = "MusicOS/0.1 (https://github.com/HenryTheAddict/MusicOS)";
+
 fn client() -> Result<reqwest::blocking::Client> {
     Ok(reqwest::blocking::Client::builder()
-        .user_agent(UA)
+        .user_agent(crate::product::provider_user_agent())
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(5))
         .build()?)
@@ -119,7 +119,7 @@ async fn catalog_json(
     }
     *last = Some(Instant::now());
     let client = reqwest::Client::builder()
-        .user_agent(UA)
+        .user_agent(crate::product::provider_user_agent())
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(5))
         .build()?;

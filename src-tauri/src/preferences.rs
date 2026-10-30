@@ -9,12 +9,13 @@ impl Default for LibraryFilters {fn default()->Self{Self{sort:"recent".into(),ge
 #[derive(Debug,Clone,Serialize,Deserialize,PartialEq)]
 #[serde(default)]
 pub struct Appearance {pub mode:String,pub source:String,pub accent:String,pub saturation:u16,pub tint:u16}
-impl Default for Appearance{fn default()->Self{Self{mode:"system".into(),source:"blue".into(),accent:"#0064df".into(),saturation:100,tint:15}}}
+impl Default for Appearance{fn default()->Self{Self{mode:crate::product::config().defaults.appearance.mode.clone(),source:crate::product::config().defaults.appearance.source.clone(),accent:crate::product::config().defaults.appearance.accent.clone(),saturation:crate::product::config().defaults.appearance.saturation,tint:crate::product::config().defaults.appearance.tint}}}
 impl Appearance{fn normalize(mut self)->Self{if !["system","light","dark"].contains(&self.mode.as_str()){self.mode="system".into();}if !["artwork","blue","custom"].contains(&self.source.as_str()){self.source="blue".into();}if self.accent.len()!=7||!self.accent.starts_with('#')||!self.accent[1..].bytes().all(|c|c.is_ascii_hexdigit()){self.accent="#0064df".into();}self.saturation=self.saturation.min(150);self.tint=self.tint.min(40);self}}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Preferences {
     pub version: u32,
+    pub onboarding_version: u32,
     pub mini_player_view: String,
     pub mini_player_density: String,
     pub now_playing_artwork_action: String,
@@ -37,11 +38,12 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             version: 1,
+            onboarding_version: 0,
             mini_player_view: "artwork".into(),
-            mini_player_density: "standard".into(),
+            mini_player_density: crate::product::config().defaults.mini_player_density.clone(),
             now_playing_artwork_action: "album".into(),
             display_name: String::new(),
-            interface_percent: 100,
+            interface_percent: crate::product::config().defaults.interface_percent,
             coverflow_colors: false,
             appearance:Default::default(),
             artists_album_only:false,
@@ -105,6 +107,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         // Parse fields independently: one invalid field must not discard valid siblings.
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
+            p.onboarding_version=v.get("onboarding_version").and_then(|n|n.as_u64()).unwrap_or(crate::product::config().onboarding.version as u64).min(crate::product::config().onboarding.version as u64) as u32;
             if let Some(s)=v["mini_player_density"].as_str(){p.mini_player_density=s.into();}
             if let Some(s)=v["mini_player_view"].as_str(){p.mini_player_view=s.into();}
             if let Some(s)=v["now_playing_artwork_action"].as_str(){p.now_playing_artwork_action=s.into();}
@@ -157,7 +160,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
             }
         }
     }
-    if legacy.is_some_and(|p|p.exists()){p.appearance.mode="light".into();p.appearance.source=if p.coverflow_colors{"artwork"}else{"blue"}.into();}
+    if legacy.is_some_and(|p|p.exists()){p.onboarding_version=crate::product::config().onboarding.version;p.appearance.mode="light".into();p.appearance.source=if p.coverflow_colors{"artwork"}else{"blue"}.into();}
     p.normalize()
 }
 pub fn path() -> std::path::PathBuf {
@@ -271,3 +274,5 @@ mod density_tests {
  use super::*;
  #[test]fn compact_density_round_trips_without_inventing_a_name(){let root=tempfile::tempdir().unwrap();let path=root.path().join("prefs.json");let initial=load_from(&path,None);assert!(initial.display_name.is_empty());assert_eq!(initial.mini_player_density,"standard");std::fs::write(&path,r#"{"mini_player_density":"compact","display_name":"Zoë","mini_player_view":"queue"}"#).unwrap();let value=load_from(&path,None);assert_eq!(value.mini_player_density,"compact");assert_eq!(value.display_name,"Zoë");assert_eq!(value.mini_player_view,"queue");atomic_write_json(&path,&value).unwrap();assert_eq!(load_from(&path,None),value);std::fs::write(&path,r#"{"mini_player_density":"slim"}"#).unwrap();assert_eq!(load_from(&path,None).mini_player_density,"standard");}
 }
+
+#[cfg(test)]mod onboarding_tests {use super::*;#[test]fn only_genuinely_new_profiles_need_setup(){let root=tempfile::tempdir().unwrap();let path=root.path().join("interface.json");assert_eq!(load_from(&path,None).onboarding_version,0);std::fs::write(&path,r#"{"display_name":"Zoë","appearance":{"mode":"dark"}}"#).unwrap();let existing=load_from(&path,None);assert_eq!(existing.onboarding_version,crate::product::config().onboarding.version);assert_eq!(existing.display_name,"Zoë");std::fs::write(&path,r#"{"onboarding_version":0,"display_name":""}"#).unwrap();let mut pending=load_from(&path,None);assert_eq!(pending.onboarding_version,0);pending.onboarding_version=crate::product::config().onboarding.version;atomic_write_json(&path,&pending).unwrap();assert_eq!(load_from(&path,None).onboarding_version,pending.onboarding_version);}}

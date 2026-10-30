@@ -1,5 +1,6 @@
+import {product} from './product';
 import type {Appearance,Palette,Preferences} from './types';
-export const defaultAppearance:Appearance={mode:'system',source:'blue',accent:'#0064df',saturation:100,tint:15};
+export const defaultAppearance:Appearance={...product.defaults.appearance};
 export function appearance(p:Preferences):Appearance{return p.appearance??{...defaultAppearance,mode:'light',source:p.coverflow_colors?'artwork':'blue'};}
 const rgb=(hex:string)=>[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16));
 const hex=(values:number[])=>'#'+values.map(v=>Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');

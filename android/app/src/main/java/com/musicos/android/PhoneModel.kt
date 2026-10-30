@@ -49,6 +49,8 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
     val playing = playback.asStateFlow()
     private val paired = MutableStateFlow<List<PairedMac>>(emptyList())
     val macs = paired.asStateFlow()
+    private val pairingsLoaded=MutableStateFlow(false)
+    val pairingsReady=pairingsLoaded.asStateFlow()
     val message = MutableStateFlow<String?>(null)
     val pairing = MutableStateFlow(false)
     val pairingStatus = MutableStateFlow("")
@@ -106,6 +108,7 @@ class PhoneModel(app: Application) : AndroidViewModel(app) {
                     message.value =
                         "Android could not unlock the saved pairings. Your offline music is safe; pair the Mac again."
                 }
+            pairingsLoaded.value=true
         }
         viewModelScope.launch { library.collect { acknowledge(true) } }
     }

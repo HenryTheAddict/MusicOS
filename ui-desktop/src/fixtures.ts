@@ -156,7 +156,7 @@ let integrationStatus = {
 };
 let fixtureModelStarted=0,fixtureModelInstalled=false;
 let player: Playback = { ...emptyPlayback };
-let preferences:Preferences={...defaultPreferences,display_name:"Henry",...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
+let preferences:Preferences={...defaultPreferences,display_name:"Henry",onboarding_version:1,...(JSON.parse(localStorage.getItem("musicos-fixture-preferences")??"null")??{})};
 let savedCollections: import("./types").SavedCollection[]=JSON.parse(localStorage.getItem("musicos-fixture-collections")??"[]");
 let metadataSuggestions=tracks.slice(0,3).map(t=>({track_id:t.id,current_title:t.title,current_artist:t.artist,current_album:t.album,current_year:t.year,current_artwork:t.cover_art_path,revision:1,candidate_token:String(t.id),candidate:{title:t.title,artist:t.artist,album:`${t.album} (Deluxe)`,year:2012,confidence:.82,recording_mbid:'example-recording',release_mbid:'example-release',artwork_path:t.cover_art_path}}));
 let metadataHistory:import('./types').MetadataHistory[]=[];
@@ -216,14 +216,16 @@ export async function fixtureCall(
       return { status: integrationStatus, auth_url: null };
     case 'mini_resize':localStorage.setItem('musicos-fixture-window-size',JSON.stringify(a));return undefined;
     case "bootstrap_state":
+      if(new URLSearchParams(location.search).has("newUser")&&!localStorage.getItem("musicos-fixture-setup-version"))preferences={...preferences,display_name:"",onboarding_version:Number(localStorage.getItem("musicos-fixture-setup-version")??0)};
       return {preferences,playback:player,task:emptyTask};
     case "library_ready":return undefined;
     case "bootstrap":
       return { library, preferences, playback: player, task: emptyTask };
     case "refresh_library":
-      return library;
+      return new URLSearchParams(location.search).has("newUser")?{tracks:[],albums:[],artists:[],genres:[],sources:[]}:library;
     case "save_preferences":
       preferences = a.preferences;
+      if(preferences.onboarding_version)localStorage.setItem("musicos-fixture-setup-version",String(preferences.onboarding_version));
       localStorage.setItem(
         "musicos-fixture-preferences",
         JSON.stringify(preferences),

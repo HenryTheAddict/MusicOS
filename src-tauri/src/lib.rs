@@ -1,3 +1,4 @@
+mod product;
 mod desktop_metadata;
 pub mod app;
 pub mod library;

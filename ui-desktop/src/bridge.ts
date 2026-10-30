@@ -1,3 +1,4 @@
+import {product} from './product';
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
@@ -70,7 +71,10 @@ export const emptyLibrary: Library = {
 export const defaultPreferences: Preferences = {
   version: 1,
   display_name: "",
-  interface_percent: 100,
+  interface_percent: product.defaults.interfacePercent,
+  mini_player_density:product.defaults.miniPlayerDensity,
+  appearance:product.defaults.appearance,
+  onboarding_version:0,
   coverflow_colors: false,
 };
 export const emptyPlayback: Playback = {

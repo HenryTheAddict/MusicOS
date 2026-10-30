@@ -1,10 +1,25 @@
+import groovy.json.JsonSlurper
 import java.io.File
 import java.util.Properties
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+val product = JsonSlurper().parse(rootProject.file("../product.config.json")) as Map<*,*>
+abstract class ProductAssets: DefaultTask() {
+    @get:InputFile abstract val configuration: RegularFileProperty
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+    @TaskAction fun generate() { val folder=outputDirectory.get().asFile;folder.mkdirs();configuration.get().asFile.copyTo(File(folder,"product.config.json"),overwrite=true) }
+}
+val productAssets=tasks.register<ProductAssets>("prepareProductAssets") { configuration.set(rootProject.file("../product.config.json")); outputDirectory.set(layout.buildDirectory.dir("generated/product-assets")) }
+androidComponents.onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(productAssets,ProductAssets::outputDirectory) }
 
 android {
     namespace = "com.musicos.android"
@@ -14,10 +29,11 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = product["version"] as String
+        resValue("string", "app_name", product["name"] as String)
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; resValues = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
