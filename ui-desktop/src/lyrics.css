@@ -177,3 +177,6 @@
 .lyrics-pane[data-following=true] .lyric-line[data-current=true]{opacity:1;}
 .lyrics-pane[data-following=false] .lyric-line{opacity:1;}
 .lyrics-pane[data-following=false] .lyrics-lines{mask-image:linear-gradient(transparent,#000 5%,#000 95%,transparent)!important;}
+.lyrics-retry{display:inline-flex;align-self:flex-start;align-items:center;justify-content:center;gap:.4rem;min-height:36px;padding:.5rem .75rem;border:1px solid var(--control-border);border-radius:.7rem;background:var(--control-surface);color:var(--ink);font:inherit;font-size:.875rem;}
+.lyrics-retry>.icon{width:1rem;height:1rem;}.lyrics-retry:disabled{opacity:.6;}.lyrics-retry:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.lyrics-empty:has(.lyrics-retry){min-height:0;max-height:100%;overflow:auto;justify-content:safe center;scrollbar-width:none;gap:.5rem;}.lyrics-empty:has(.lyrics-retry)::-webkit-scrollbar{display:none;}

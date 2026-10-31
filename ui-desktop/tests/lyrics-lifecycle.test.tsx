@@ -1,25 +1,45 @@
 import {act,render,renderHook,waitFor} from '@testing-library/react';
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
-import {useLyrics,type LyricResponse} from '../src/lyrics';
+import {useLyrics,clearLyricSession,type LyricResponse} from '../src/lyrics';
 import {LiquidScene} from '../src/LyricsView';
 import {usePlaybackFeed} from '../src/playbackFeed';
 const call=vi.hoisted(()=>vi.fn());vi.mock('../src/bridge',()=>({call,native:false,errorText:String}));
 const ready=(id:number):LyricResponse=>({track_id:id,revision:0,state:'ready',source:null,candidates:[],document:{version:'1.0',metadata:{title:String(id),artist:'',album:'',offset_ms:0,instrumental:false},lines:[],plain:`Song ${id}`}});
-beforeEach(()=>{call.mockReset();vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});afterEach(()=>vi.restoreAllMocks());
+beforeEach(()=>{call.mockReset();clearLyricSession();vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));});afterEach(()=>vi.restoreAllMocks());
 it('late lookup never replaces another song and cached load does not trigger lookup',async()=>{let resolve!:(r:LyricResponse)=>void;call.mockImplementation((_command,args)=>_command!=='lyrics'?Promise.resolve(null):args.request.trackId===1?args.request.action==='load'?Promise.resolve({...ready(1),document:null,state:'missing'}):new Promise<LyricResponse>(r=>resolve=r):Promise.resolve(ready(2)));const {result,rerender}=renderHook(({id})=>useLyrics(id,true),{initialProps:{id:1}});await waitFor(()=>expect(resolve).toBeDefined());rerender({id:2});await waitFor(()=>expect(result.current.result?.track_id).toBe(2));await act(async()=>resolve(ready(1)));expect(result.current.result?.track_id).toBe(2);expect(call.mock.calls.filter(([,a])=>a?.request?.trackId===2&&a.request.action==='lookup')).toHaveLength(0);});
 it('liquid renderer settles while paused and releases every frame on close',()=>{const queued=new Map<number,FrameRequestCallback>();let serial=0;vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{queued.set(++serial,cb);return serial;});vi.stubGlobal('cancelAnimationFrame',(id:number)=>queued.delete(id));const {unmount}=render(<LiquidScene active moving playing={false}/>);for(let i=0;i<20;i++){const jobs=[...queued];queued.clear();for(const[,job]of jobs)job(i*16);}expect(queued.size).toBe(0);unmount();expect(queued.size).toBe(0);vi.unstubAllGlobals();});
 it('hidden lyric view does no provider work',()=>{renderHook(()=>useLyrics(1,false));expect(call).not.toHaveBeenCalled();});
 
 it('live drawing uses a fixed surface and releases its queued frame',()=>{const queued=new Map<number,FrameRequestCallback>();let serial=0;vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{queued.set(++serial,cb);return serial;});vi.stubGlobal('cancelAnimationFrame',(id:number)=>queued.delete(id));vi.stubGlobal('Path2D',class{});const gradient={addColorStop:vi.fn()},ctx={clearRect:vi.fn(),save:vi.fn(),translate:vi.fn(),rotate:vi.fn(),scale:vi.fn(),createRadialGradient:()=>gradient,fillRect:vi.fn(),fill:vi.fn(),restore:vi.fn(),stroke:vi.fn()};vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(ctx as any);const initial={track:null,queue:[],queue_index:null,is_playing:false,position:0,volume:1,shuffle:false,repeat:'none',backend:'fixture'} as any;const feed=renderHook(()=>usePlaybackFeed(initial));act(()=>feed.result.current[1](initial));const scene=render(<LiquidScene active moving playing/>);const early=[...queued];queued.clear();early.forEach(([,job])=>job(0));expect(queued.size).toBe(0);act(()=>feed.result.current[1]({...initial,track:{id:1},is_playing:true,audio_levels:[1,.5,.2]}));expect(queued.size).toBe(1);for(let i=0;i<4;i++){const jobs=[...queued];queued.clear();jobs.forEach(([,job])=>job(i*16));}expect(ctx.fill).toHaveBeenCalled();expect(scene.container.querySelector('canvas')).toHaveAttribute('width','640');expect(queued.size).toBe(1);scene.unmount();expect(queued.size).toBe(0);act(()=>feed.result.current[1](initial));feed.unmount();vi.unstubAllGlobals();});
 
-it('short LRCLIB overload retries finitely, honors delay, and stops when hidden',async()=>{
+it('LRCLIB overload waits for explicit retry and honors its delay',async()=>{
  vi.useFakeTimers();let attempts=0;call.mockImplementation((_command,args)=>Promise.resolve(args.request.action==='load'?{...ready(5),document:null,state:'missing'}:++attempts<2?{...ready(5),document:null,state:'retry_later',retry_after_seconds:2,provider_status:503}:ready(5)));
  const hook=renderHook(({active})=>useLyrics(5,active),{initialProps:{active:true}});
  await act(async()=>{});expect(attempts).toBe(1);expect(hook.result.current.retryIn).toBe(2);
  await act(async()=>{vi.advanceTimersByTime(1900);});expect(attempts).toBe(1);
- await act(async()=>{vi.advanceTimersByTime(101);});expect(attempts).toBe(2);expect(hook.result.current.result?.document).not.toBeNull();
+ await act(async()=>{vi.advanceTimersByTime(101);});expect(attempts).toBe(1);await act(async()=>{await hook.result.current.find();});expect(attempts).toBe(2);expect(hook.result.current.result?.document).not.toBeNull();
  await act(async()=>{vi.advanceTimersByTime(30000);});expect(attempts).toBe(2);hook.unmount();vi.useRealTimers();
 });
 it('closing during provider backoff cancels recovery and never starts a hidden lookup',async()=>{
  vi.useFakeTimers();call.mockImplementation((_command,args)=>Promise.resolve({...ready(6),document:null,state:args.request.action==='load'?'missing':'retry_later',retry_after_seconds:2,provider_status:503}));const hook=renderHook(({active})=>useLyrics(6,active),{initialProps:{active:true}});await act(async()=>{});expect(call).toHaveBeenCalledTimes(2);hook.rerender({active:false});await act(async()=>{vi.advanceTimersByTime(30000);});expect(call).toHaveBeenCalledTimes(2);hook.unmount();vi.useRealTimers();
+});
+
+it('reopening a failed song retains its state without restarting lookup or countdown',async()=>{
+ vi.useFakeTimers();let lookups=0;call.mockImplementation((_c,a)=>Promise.resolve(a.request.action==='load'?{...ready(15),document:null,state:'missing'}:(lookups++,{...ready(15),document:null,state:'retry_later',retry_after_seconds:2,provider_status:503})));
+ const hook=renderHook(({active})=>useLyrics(15,active),{initialProps:{active:true}});await act(async()=>{});expect(lookups).toBe(1);hook.rerender({active:false});await act(async()=>{vi.advanceTimersByTime(5000);});hook.rerender({active:true});await act(async()=>{});expect(hook.result.current.busy).toBe(false);expect(hook.result.current.result?.state).toBe('retry_later');expect(hook.result.current.retryIn).toBe(0);expect(lookups).toBe(1);hook.unmount();vi.useRealTimers();
+});
+it('shared sessions coalesce surfaces and cached local lyrics still work during provider cooldown',async()=>{
+ let lookups=0;call.mockImplementation((_c,a)=>Promise.resolve(a.request.trackId===22?ready(22):a.request.action==='load'?{...ready(a.request.trackId),document:null,state:'missing'}:(lookups++,{...ready(a.request.trackId),document:null,state:'retry_later',retry_after_seconds:2,provider_status:503})));
+ const a=renderHook(()=>useLyrics(21,true)),b=renderHook(()=>useLyrics(21,true));await waitFor(()=>expect(a.result.current.result?.state).toBe('retry_later'));await waitFor(()=>expect(b.result.current.result?.state).toBe('retry_later'));expect(lookups).toBe(1);expect(call.mock.calls.filter(([,args])=>args.request.action==='load'&&args.request.trackId===21)).toHaveLength(1);
+ const local=renderHook(()=>useLyrics(22,true));await waitFor(()=>expect(local.result.current.result?.document).not.toBeNull());const next=renderHook(()=>useLyrics(23,true));await waitFor(()=>expect(next.result.current.result?.state).toBe('retry_later'));expect(lookups).toBe(1);a.unmount();b.unmount();local.unmount();next.unmount();
+});
+it('lyric edits invalidate retained results even while the player is closed',async()=>{
+ let text='Old';call.mockImplementation((_c,a)=>Promise.resolve({...ready(a.request.trackId),document:{...ready(a.request.trackId).document!,plain:text}}));const a=renderHook(()=>useLyrics(31,true));await waitFor(()=>expect(a.result.current.result?.document?.plain).toBe('Old'));a.unmount();text='Edited';window.dispatchEvent(new CustomEvent('musicos-lyrics-changed',{detail:31}));const b=renderHook(()=>useLyrics(31,true));await waitFor(()=>expect(b.result.current.result?.document?.plain).toBe('Edited'));b.unmount();
+});
+it('metadata identity changes refresh once while ordinary re-renders do not',async()=>{
+ call.mockImplementation((_c,a)=>Promise.resolve(ready(a.request.trackId)));const hook=renderHook(({identity})=>useLyrics(41,true,true,identity),{initialProps:{identity:'record-a'}});await waitFor(()=>expect(hook.result.current.result?.document).not.toBeNull());const count=call.mock.calls.length;hook.rerender({identity:'record-a'});expect(call).toHaveBeenCalledTimes(count);hook.rerender({identity:'record-b'});await waitFor(()=>expect(call.mock.calls.length).toBe(count+1));hook.unmount();
+});
+
+it('late reads from old metadata cannot coalesce into a changed recording identity',async()=>{
+ const pending:((r:LyricResponse)=>void)[]=[];call.mockImplementation(()=>new Promise<LyricResponse>(resolve=>pending.push(resolve)));const hook=renderHook(({identity})=>useLyrics(51,true,true,identity),{initialProps:{identity:'old'}});await waitFor(()=>expect(pending).toHaveLength(1));hook.rerender({identity:'new'});await waitFor(()=>expect(pending).toHaveLength(2));await act(async()=>pending[1]({...ready(51),document:{...ready(51).document!,plain:'New recording'}}));await act(async()=>pending[0](ready(51)));expect(hook.result.current.result?.document?.plain).toBe('New recording');hook.unmount();
 });
