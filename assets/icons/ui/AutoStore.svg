@@ -9,6 +9,7 @@
         </linearGradient>
     </defs>
     <g id="AutoStore" stroke="none" fill="none" xlink:href="#path-1">
+
         <ellipse id="Oval" stroke="url(#linearGradient-2)" stroke-width="2" cx="16" cy="23" rx="7" ry="3"></ellipse>
         <ellipse id="Oval" stroke="url(#linearGradient-2)" stroke-width="2" cx="16" cy="9" rx="7" ry="3"></ellipse>
         <rect id="Rectangle" fill="#000000" fill-rule="evenodd" x="8" y="9" width="2" height="14"></rect>

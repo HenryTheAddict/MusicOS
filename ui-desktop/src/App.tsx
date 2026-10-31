@@ -141,6 +141,7 @@ export default function App() {
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataIds,setMetadataIds]=useState<number[]>([]);
   function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[],lyrics=false){if(!lyrics)clearLyricEditorRequest();captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
+  useEffect(()=>{const edit=(event:Event)=>{const id=(event as CustomEvent<number>).detail;setExpandedOpen(false);setQueueOpen(false);requestLyricEditor(id);if(miniMode!=='normal')void changeMini('normal');openManagement('review',[id],true);};window.addEventListener('musicos-open-lyric-editor',edit);return()=>window.removeEventListener('musicos-open-lyric-editor',edit);});
   const [collections,setCollections]=useState<SavedCollection[]>([]);
   const [rowSelection,setRowSelection]=useState<Set<number>>(new Set());
   const rowAnchor=useRef(0);
@@ -507,11 +508,12 @@ export default function App() {
   const run = useCallback(async (action: PlaybackAction) => {
     try {
       setPlayer(await call("playback", { action }));
+      if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));
     } catch (e) {
       setError(errorText(e));
     }
   }, []);
-  const runImmersive=useCallback(async(action:PlaybackAction)=>{setPlayer(await call('playback',{action}));},[]);
+  const runImmersive=useCallback(async(action:PlaybackAction)=>{setPlayer(await call('playback',{action}));if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));},[]);
   useEffect(() => {
     const pointerSpace=(e:KeyboardEvent)=>{
       const target=e.target as HTMLElement;
@@ -1117,7 +1119,7 @@ export default function App() {
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:loading?"":"Your next favorite is waiting."}</span>
             <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}
-              seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}})); }} />
+              seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
           </div>
           <div className="mini-controls">
             <IconButton name="queue" label="Open Up next" pressed={queueOpen} onClick={() => compact?openPlayer('queue'):setQueueOpen(!queueOpen)} />

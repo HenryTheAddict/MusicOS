@@ -1,0 +1,7 @@
+import {afterEach,expect,test,vi} from 'vitest';
+import {menuDotsMorph} from '../src/menuDotsMorph';
+afterEach(()=>vi.restoreAllMocks());
+test('dots reverse from their displayed state into normalized supplied close geometry and finish without work',()=>{
+ let now=0,serial=0;const frames=new Map<number,FrameRequestCallback>();vi.spyOn(performance,'now').mockImplementation(()=>now);vi.spyOn(window,'requestAnimationFrame').mockImplementation(cb=>{frames.set(++serial,cb);return serial;});vi.spyOn(window,'cancelAnimationFrame').mockImplementation(id=>{frames.delete(id);});const step=(t:number)=>{now=t;const work=[...frames.values()];frames.clear();work.forEach(cb=>cb(t));};
+ const host=document.createElement('i');const close='<svg viewBox="-2 -2 12 12"><path></path></svg>',dots='<svg viewBox="0 0 32 32"><circle></circle></svg>';let stop=menuDotsMorph(host,true,close);step(60);const progress=Number(host.dataset.dotsProgress);stop();stop=menuDotsMorph(host,false,dots);expect(Number(host.dataset.dotsProgress)).toBe(progress);step(200);expect(host.innerHTML).toBe(dots);expect(frames.size).toBe(0);stop();menuDotsMorph(host,true,close);step(339);const d=host.querySelector('path')!.getAttribute('d')!;expect(d).toContain('M8.');expect(Number(host.querySelector('path')!.getAttribute('stroke-width'))).toBeCloseTo(8/3,2);step(340);expect(host.innerHTML).toBe(close);expect(frames.size).toBe(0);
+});

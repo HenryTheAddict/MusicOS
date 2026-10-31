@@ -174,7 +174,7 @@ export function IconButton({
       title={label}
       aria-label={label}
       aria-pressed={pressed}
-      onClick={onClick}
+      onClick={e=>{if((name==='next'||name==='prev')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const glyph=e.currentTarget.querySelector<HTMLElement>('.icon');if(glyph){const from=getComputedStyle(glyph).transform;glyph.getAnimations().filter(a=>a.id==='transport-skip').forEach(a=>a.cancel());const direction=name==='next'?1:-1;const a=glyph.animate([{transform:from},{transform:`translateX(${direction*4}px)`,offset:.45},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'});a.id='transport-skip';}}onClick();}}
       disabled={disabled}
     >
       <Icon name={name} className="control-glyph" />
@@ -241,7 +241,7 @@ export function Menu({
   useLayoutEffect(()=>setPortalContainer(trigger.current?.closest('dialog')??undefined),[]);
   const panel=useMenuPresentation(trigger);
   const {open,present,setOpen,content}=panel;
-  const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
+  const ownerTheme=()=>{const node=trigger.current;if(!node)return;origin.current=node.closest<HTMLElement>('.lyrics-pane')??node.closest<HTMLElement>('[data-action-surface],.track-row,.queue-row,.collection-card')?.querySelector<HTMLElement>('button:not(.context-only)')??node;const style=getComputedStyle(node),values:Record<string,string>={};for(const key of ['--surface-color','--control-surface','--control-border','--ink','--secondary-ink','--accent','--accent-ink','--collection-hue-1','--collection-hue-2'])values[key]=style.getPropertyValue(key);setInherited(values as CSSProperties);};
   const group=(item:MenuItem)=>item.group??(/delete|remove|forget/i.test(item.label)?'danger':/^(play|shuffle|add to queue)/i.test(item.label)?'playback':'organize');
   const currentItems=selectedLabel?items.filter(item=>item.label!==selectedLabel):[...items].sort((a,b)=>['playback','organize','danger'].indexOf(group(a))-['playback','organize','danger'].indexOf(group(b)));
   const retainedItems=useRef(currentItems);

@@ -8,7 +8,7 @@ import { playPauseMorph } from "./playPauseMorph";
 const exports = import.meta.glob("../../assets/icons/ui/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const icons = Object.fromEntries(Object.entries(exports).map(([path, svg]) => [path.split("/").at(-1)!.replace(/\.svg$/, ""), svg.slice(svg.indexOf("<svg"))]));
 icons.menuPlus = icons.Plus;
-icons.controlClose='<svg viewBox="0 0 32 32"><path d="M9 9L23 23M23 9L9 23" fill="none" stroke="var(--icon-stroke,currentColor)" stroke-width="2.333333" stroke-linecap="round"/></svg>';
+icons.controlClose=icons.tinyX.replace('viewBox="0 0 8 8"','viewBox="-2 -2 12 12"').replace(/#979797/g,'var(--icon-stroke,currentColor)');
 icons.menuDotsClose=icons.controlClose;
 icons.menuClose=icons.menuPlus.replace('<g ', '<g transform="rotate(45 16 16)" ');
 icons.rowLevels = '<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g fill="var(--icon-fill,currentColor)" stroke="var(--icon-stroke,currentColor)" stroke-width="1.5"><rect x="5" y="6" width="5" height="20" rx="2"/><rect x="13.5" y="6" width="5" height="20" rx="2"/><rect x="22" y="6" width="5" height="20" rx="2"/></g></svg>';

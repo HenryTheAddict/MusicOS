@@ -1,425 +1,672 @@
 {
   "document": "C8FFC865-CF40-43FB-AA71-0B45DBA1EF0C",
-  "exported": "2026-10-26",
-  "note": "Exact Sketch icon vectors. Only full-frame white export canvases omitted. Updated non-transport masters and new visible groups refreshed; authored transport and other unchanged assets retained. The first tinySync master is the arrow version; duplicate dots master retained in source document.",
   "icons": [
     {
       "layer": "B42A2BE6-3468-456D-953D-D7E4C45B90FE",
       "name": "3dots(incircle)",
-      "file": "3dots(incircle).svg"
+      "file": "3dots(incircle).svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8fef974eb4f732975048bdc619ae987b9bfeae8ebf1c4063e239803680754cc1"
     },
     {
       "layer": "C86EB348-5282-4627-B9CF-383468AA216E",
       "name": "3dots_(nocircle)",
-      "file": "3dots_(nocircle).svg"
+      "file": "3dots_(nocircle).svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "0de53fd2d891aba20147d3750953be2aff7950bc2b390748b2488002203a86ad"
     },
     {
       "layer": "D7D6ABA3-3F42-4F0D-A1C7-25C5CA31864D",
       "name": "Add to queue",
-      "file": "Add to queue.svg"
+      "file": "Add to queue.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "755621df9463ee8ce92fb3d34e6da9cde9ea1e5fa4fba5d9c0a44f16146b4fe9"
     },
     {
       "layer": "BDDBDFFD-20A8-46FB-A4CF-BA0679E7DD28",
       "name": "Add_circuled",
-      "file": "Add_circuled.svg"
+      "file": "Add_circuled.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "a2dc8763f1ba86f56bd19d081d60438dc7b4cdda2df746f42d3f0d66fc7509a5"
     },
     {
       "layer": "18818C22-B9F3-40A1-9CF0-6F251778DF9B",
       "name": "Album",
-      "file": "Album.svg"
+      "file": "Album.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "d941fff16c3d5190b51e6551a2d3c2cc76e91d88552bfd582bfda56e6446185d"
     },
     {
       "layer": "E9C0CCA9-07F7-4E99-B091-ED6FBB5FBFEB",
       "name": "AlbumFill",
-      "file": "AlbumFill.svg"
+      "file": "AlbumFill.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "d68c96456f73cb976f99f136d4c442c6c7cfdaec34ea1ac147824de7fdfb3aee"
     },
     {
       "layer": "6A418AC7-181E-427B-8BCF-2B2602EE78B8",
       "name": "Artist",
-      "file": "Artist.svg"
+      "file": "Artist.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "c216e05545660436880cacda1a53a20ed80c33b371c98cd3baa5608f3d2163ec"
     },
     {
       "layer": "6364C93E-0776-4B31-B7FD-F010B3BA7120",
       "name": "AudioBot",
-      "file": "AudioBot.svg"
+      "file": "AudioBot.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "780f678187c4c42d9e979c150b05cb9be489816396371af88fde269b54673138"
     },
     {
       "layer": "F537E008-84AB-4A52-9DEA-5EFFF2016D40",
       "name": "AutoStore",
-      "file": "AutoStore.svg"
+      "file": "AutoStore.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "deea934219a16c7d3ef700d5683bb962d13f576c1448d545c927dd974050315b"
     },
     {
       "layer": "B18B4298-B4E4-49E8-97BC-F137A9F58D28",
       "name": "Back",
-      "file": "Back.svg"
+      "file": "Back.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b741cd6821eb00c416e8943fc97ce9ed5f11bdefd5776bd351ba7eb457d5de8a"
     },
     {
       "name": "CloseMiniplayer",
       "layer": "1E1C1642-0433-4F9D-B05C-14DF26E95D09",
-      "file": "CloseMiniplayer.svg"
+      "file": "CloseMiniplayer.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b676c58db7e8a1e278e53a02b5a427a490587ab1eb23b74ce4e29ad32ec33f5b"
     },
     {
       "layer": "5649EEEB-CFD7-43AD-9593-94D4F48E55CB",
       "name": "Cloud",
-      "file": "Cloud.svg"
+      "file": "Cloud.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "afaac805c27e0c649306d9885de73fecea8d600851e1bcd0676f592fc8a5e9b7"
     },
     {
       "layer": "E46BAA91-3FAC-4A38-89B9-85F19BAD18A2",
       "name": "CloudError",
-      "file": "CloudError.svg"
+      "file": "CloudError.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "31834499c89a3721474769517b0f0ce85b26c085b2e9c475b4b9e21f48308a61"
     },
     {
       "layer": "4C64C275-BE84-4925-825E-06EB1EFFE18A",
       "name": "CollectionShuffle",
       "file": "CollectionShuffle.svg",
-      "note": "Exact collection-row button, including white-to-green smoothed background; exported 2026-10-10."
+      "note": "Exact collection-row button, including white-to-green smoothed background; exported 2026-10-10.",
+      "width": 32,
+      "height": 32,
+      "sha256": "7953ee5cc24e7f482b8f8137ddee4e444d0a49698faa4066ad52f25e96cddf0d"
     },
     {
       "layer": "3544FF5A-1EE7-4104-9F2A-A384E09B3150",
       "name": "Coverflow",
-      "file": "Coverflow.svg"
+      "file": "Coverflow.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "582f83239b8101b198b893e95fa8d4bffeeece159336f65f56ff4062853033c1"
     },
     {
       "layer": "08B27673-4268-4F3E-8061-3267A4559072",
       "name": "DJmode",
-      "file": "DJmode.svg"
+      "file": "DJmode.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "16ef1ff61209443ac598d1e4c4b5c39091d717c607629f9d7617c61ad7bc3ae7"
     },
     {
       "name": "Dark Mode",
       "layer": "069E211A-AFAF-4CD9-AE1F-19B78282C965",
-      "file": "Dark Mode.svg"
+      "file": "Dark Mode.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "3bd570ecdd4e63121c373344570b9678893355d1e84edf92690206c4b4a2a401"
     },
     {
       "layer": "E9E3BAF2-0800-4FD5-B319-7300D1F21893",
       "name": "Delete",
-      "file": "Delete.svg"
+      "file": "Delete.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "4b3d54a3fee8ce77307c78804a4ee0d6c59c6b9b725b1438f66ea0e25e210aa4"
     },
     {
       "layer": "F3077D8B-2CD7-462F-BA0B-3846143468A3",
       "name": "Discord",
-      "file": "Discord.svg"
+      "file": "Discord.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "fc3a7c12c52ffcf00e26fc791a398e211e61129d15670ec3bb670b9b73a80d43"
     },
     {
       "layer": "FD87FEEC-A1B0-40AE-A9DA-78FF46070190",
       "name": "Drive",
-      "file": "Drive.svg"
+      "file": "Drive.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "6a68c0083b1451941c99b58f1a66fc18dba66f86a7e4b48305a001152d44b492"
     },
     {
       "layer": "0C5B3B68-9184-4519-8492-A0C40A2C95F0",
       "name": "DriveError",
-      "file": "DriveError.svg"
+      "file": "DriveError.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "952015d5b6a71635792aaa50c8df1c091e7f69481f4122eacd90c189023ce691"
     },
     {
       "layer": "A3E0C3CC-D52B-46C7-A301-254BE2942F29",
       "name": "Enter",
-      "file": "Enter.svg"
+      "file": "Enter.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "0fd9299bbb1dd09c5165dc7d96cd29d86905a5b9f427f41e3a9bce7d992de606"
     },
     {
       "layer": "0CDFFEED-1F7D-4DA0-A20B-5DF122B8588E",
       "name": "File",
-      "file": "File.svg"
+      "file": "File.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "06a0f8e94d0ad253c79d82edd7e66d19e5dbc7ab9d823fedae6afd69db6ce55c"
     },
     {
       "layer": "9276F1B7-BB23-43A9-A59F-0769CA403A54",
       "name": "Genre",
-      "file": "Genre.svg"
+      "file": "Genre.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "0dd741f84559ec2741cf8b11a942af95f106a17273e2e94325441fdb506b497c"
     },
     {
       "layer": "D570B258-4DD6-4322-A972-D4C167DF81DA",
       "name": "GoogleDrive",
-      "file": "GoogleDrive.svg"
+      "file": "GoogleDrive.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "a86b9eeedc09f858f47f176cac7c25e951554535a2beb25026a7307e55aa6fb0"
     },
     {
       "layer": "729AEEEA-4A7A-44AF-99FF-2126C28822F8",
       "name": "GoogleDriveWithDrive",
-      "file": "GoogleDriveWithDrive.svg"
+      "file": "GoogleDriveWithDrive.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "bd9e03cfbc348de93efcfa5e644aa746b806919f01976743824efc8483f2c756"
     },
     {
       "layer": "36210BD9-D100-414C-8B9D-7BE39C8B7467",
       "name": "Home",
-      "file": "Home.svg"
+      "file": "Home.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "76994d1db70209f912465359a5125d059f7f4097e05f033d5141d3ec627a00dc"
     },
     {
       "layer": "06FD80D0-D611-461C-A0DB-CE2B428A9B23",
       "name": "LastFM",
-      "file": "LastFM.svg"
+      "file": "LastFM.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "07c23c11e2b7b73236bafcf01ad972b9a15373713cbed5f6caa95784c98c1f9e"
     },
     {
       "name": "Light mode",
       "layer": "7C653DDA-9314-4973-B263-04C54C4EBC33",
-      "file": "Light mode.svg"
+      "file": "Light mode.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "be6ac18947a162e1c6f54c18846e83e6215aea6999c0b735409dd865b23e4427"
     },
     {
       "layer": "E14A582F-DE90-4363-BDE8-0657B6A4BE22",
       "name": "Lossless",
-      "file": "Lossless.svg"
+      "file": "Lossless.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "0c04f47b344415077d2f09f532fd3ab8fb1cc7d644d0b17517cf301d99c61764"
     },
     {
       "layer": "AE74D1E4-F51F-4AC9-A269-37A7BD56EFD2",
       "name": "Lossy",
-      "file": "Lossy.svg"
+      "file": "Lossy.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "33a8cfeea369d8e4ebe1e65c6359fba475841d1921a8f62d8e80818a30dff7e9"
     },
     {
       "layer": "BEBD0B05-CBAD-4D25-BC69-2E617EBE88B3",
       "name": "Lyrics",
-      "file": "Lyrics.svg"
+      "file": "Lyrics.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "315146b89446a5be151b4b2dbac4ba5c6f92e991f7a31dabd956f17526ab9442"
     },
     {
       "layer": "F1B5CCDF-1E5A-4AAB-B94E-3214B92E1842",
       "name": "Metadata",
-      "file": "Metadata.svg"
+      "file": "Metadata.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "2eb6343d9e726795ab00a6c1091ae1777a468a31123d49a418d27724c79fe346"
     },
     {
       "layer": "6928FB71-75D7-44F5-930E-46A41D99C425",
       "name": "Net404",
-      "file": "Net404.svg"
+      "file": "Net404.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "241b7e7bf9ce45b21c5723877a8427a761d8c3722d41e0696b053edfb4fa6216"
     },
     {
       "layer": "F88CE1E6-3093-48FA-A377-150450718BD3",
       "name": "NetSearch",
-      "file": "NetSearch.svg"
+      "file": "NetSearch.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "7ec2302f59ab612f074bd0c7a248d505b57fc9c2395316f6b5f12098c4654ca8"
     },
     {
       "layer": "E03A9B3B-69BF-4565-A82F-576C447A66AE",
       "name": "Open In Finder",
-      "file": "Open In Finder.svg"
+      "file": "Open In Finder.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "09e10e0cf1d2b4325cc0f385d84213baef47afb89e6717d357af60fd77145e60"
     },
     {
       "layer": "530E75F3-7D45-426D-A94F-DB8FE3C128CD",
       "name": "Open In Folder",
-      "file": "Open In Folder.svg"
+      "file": "Open In Folder.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "a3ac7d938abb5a49ab645a7e7cc97a0f590dd4a24022d8bbc13edfdd35e6a4fc"
     },
     {
       "layer": "8F4D63BA-626E-487E-9E4B-85A383E9BF1E",
       "name": "Petal",
-      "file": "Petal.svg"
+      "file": "Petal.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "293b22e4ade92fb638008d1fa953222e174a2a80731a6ad6c3c9ce2d3f1c6f13"
     },
     {
       "name": "Pin",
       "layer": "67796EA7-CF22-4970-8CC3-AC15F64B7B66",
-      "file": "Pin.svg"
+      "file": "Pin.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "df161705ede9087423d8749f455177c629bfb54ca8d33a17e5adb73cac1db6c0"
     },
     {
       "layer": "AE12EA91-1E86-4CFA-9C52-6EBD4847EE0E",
       "name": "Play Next",
-      "file": "Play Next.svg"
+      "file": "Play Next.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "17c66a0d8b440115b9ccf15c8c9c6a58551b87b5c0840b469fa3957bc75b4e42"
     },
     {
       "layer": "D1659373-9FC5-494A-89C8-2585B63E4BCC",
       "name": "Playlist",
-      "file": "Playlist.svg"
+      "file": "Playlist.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "e72c494d4762e3cd71ce83dfc535004de6f1aace623d0b3a4c1d3b5b4532002e"
     },
     {
       "layer": "E3288150-4BDB-4DBF-98AC-27730D3D06EC",
       "name": "Plus",
-      "file": "Plus.svg"
+      "file": "Plus.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "4bbf2ca9e0c25ac5c521e5b7030c65772a41947308dedc04fc0538b9f7ddc25c"
     },
     {
       "layer": "09E06B76-6FDD-448B-A7D0-5B18C83EABA7",
       "name": "RepeatOFF",
-      "file": "RepeatOFF.svg"
+      "file": "RepeatOFF.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "f65dfd8c9a91b7232a3bf8a1b2d0bfb199ad07102ad64b52fc7374b58eb6d6ea"
     },
     {
       "layer": "812D99CD-03C2-4BF2-B914-FEAB5B9FE96B",
       "name": "RepeatON",
-      "file": "RepeatON.svg"
+      "file": "RepeatON.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "d97af7da6ff56deac18a67f24a1b5d01294c1cc9cfb3a5433dc2a7943e7811bb"
     },
     {
       "layer": "1064F50F-4C6D-403C-A1BB-36DAD701E562",
       "name": "RepeatONE",
-      "file": "RepeatONE.svg"
+      "file": "RepeatONE.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "bcb162cf4fadfebc0d8d6aed13f70270ee46675b07bc52383d3882924ad32a6e"
     },
     {
       "layer": "B09B450E-551F-4401-91B6-641A7BCEBEF9",
       "name": "Settings",
-      "file": "Settings.svg"
+      "file": "Settings.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "a7b908b9c4436fae0252d316246851bf750d1fefbb7815328b59aa23971456a6"
     },
     {
       "layer": "60167733-AFC5-451F-B855-152EC721B35D",
       "name": "ShuffleOFF",
-      "file": "ShuffleOFF.svg"
+      "file": "ShuffleOFF.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8aa6f153ad53bbb3667594892a8cae94ee4b80a690018b0fc9d3612949f7df18"
     },
     {
       "layer": "2B06EC3C-B6F3-4F50-A2A1-57182D06BC3D",
       "name": "ShuffleON",
-      "file": "ShuffleON.svg"
+      "file": "ShuffleON.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b00e2dcf536c55da7560d703301b0b6cd55db67050c39d5d0d6da9d81e7a3662"
     },
     {
       "layer": "91F91CA3-D368-472D-B852-642327AC86FF",
       "name": "ShufflePlay",
-      "file": "ShufflePlay.svg"
+      "file": "ShufflePlay.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "2512edec1022dbb4b02e00ac90c856095b084704616e4b2cf05ced350c147a60"
     },
     {
       "layer": "60EF5EBC-841C-4BA0-8194-A4E3F511879A",
       "name": "SmartPlaylist",
-      "file": "SmartPlaylist.svg"
+      "file": "SmartPlaylist.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "f6e775297dcfd7318746f6182778ce14dc3a431969b7414df0f6d811f396d3f0"
     },
     {
       "layer": "5E3A8274-CDB5-440A-813D-F104E2F2DB44",
       "name": "Song",
-      "file": "Song.svg"
+      "file": "Song.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8779b26f3e9135c14f99b3620f7b28453e23b53a4733dd2d3710c11c15a81fb3"
     },
     {
       "layer": "89EBD48D-546A-4FAC-9757-007FF246268E",
       "name": "Sparklist",
-      "file": "Sparklist.svg"
+      "file": "Sparklist.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "575659c1339c72538c81e4688dbba9cc6e37bb5e094a4f9e4bca71b8ec51cb1c"
     },
     {
       "layer": "2576034D-D69E-48FD-BE93-D0DABF6359EB",
       "name": "Storage",
-      "file": "Storage.svg"
+      "file": "Storage.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "ce793e71acb7d5072ea7f6c23b87e85689438002d960da139286bd7dab3a40e8"
     },
     {
       "name": "System",
       "layer": "5F8D0989-4C89-4F36-8264-4BCEF9F95661",
-      "file": "System.svg"
+      "file": "System.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "cc60d1cb387e509248e6f9aefca8c21bb61f619c143e1f40960a94b4b2eda521"
     },
     {
       "layer": "833DD92A-9EC3-447D-B566-0402F40460C6",
       "name": "autostart",
-      "file": "autostart.svg"
+      "file": "autostart.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "e7924f6b8a45ad690a69de3d900884ca7f219596c45df86fe599859e962749c0"
     },
     {
       "layer": "824CE03C-B3C0-4D53-9900-865FCAA4F109",
       "name": "depth",
-      "file": "depth.svg"
+      "file": "depth.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "7bd0f68483c618225ad04109e0962db0030159eeda5b29b7bdc87890df9a3c12"
     },
     {
       "layer": "F3E641F8-065E-4FBE-96D6-E9E3EE37A772",
       "name": "device",
-      "file": "device.svg"
+      "file": "device.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8bed4bc933aab1f4f637e73d207113059ed6eecbcb745896724dedd9a9e00c9c"
     },
     {
       "layer": "66F378A6-9ABD-46FD-8FEB-AAF3A1524619",
       "name": "filter",
-      "file": "filter.svg"
+      "file": "filter.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "bc50f430e685fef0785ccdfcc901a348bbaf4ec280d90bee6f3c05e81fe445e3"
     },
     {
       "layer": "8B72C22E-F415-4CE2-97D7-10655869F9FA",
       "name": "hearted",
-      "file": "hearted.svg"
+      "file": "hearted.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "9f5db18d906582c129d2a61f71f42ed254d2095b05d64e9ff3cede0ca1c73534"
     },
     {
       "layer": "9944F1F5-2758-4225-ACBA-5923FFCBBDFD",
       "name": "next",
-      "file": "next.svg"
+      "file": "next.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "d638a51ffab1565d2044898e585fb6222d391d59ec36f0a02617d4858f7b6ae2"
     },
     {
       "layer": "F6313413-4BBE-416D-9D83-EE20CEEBD127",
       "name": "noARTIST",
-      "file": "noARTIST.svg"
+      "file": "noARTIST.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "6cf605bccf431b8decb6abfceb0751ea108e363d962082db1270507ab33ceffd"
     },
     {
       "layer": "355EEF46-D20A-43F3-835F-FC17446491C4",
       "name": "noCOVER",
-      "file": "noCOVER.svg"
+      "file": "noCOVER.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "4a9b42920b2e5905b5037c69aa9ae8800d2a6e73b76d03010d79c8e22bee0605"
     },
     {
       "layer": "8BF69762-D37D-43EE-A0AC-ED48A84F0872",
       "name": "noheart",
-      "file": "noheart.svg"
+      "file": "noheart.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "cf0bda42605619e720d2f1c312a55d379b57d1046d1b8d29c253c0b3fef383af"
     },
     {
       "layer": "F554B191-DD62-47DB-BA88-5F5DEB71A57D",
       "name": "notFOUND",
-      "file": "notFOUND.svg"
+      "file": "notFOUND.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b3a9b7998e97d3c1ba7228820cd74491bad8ee86d5ffcb403a1b1a7f2750dd00"
     },
     {
       "name": "openMiniplayer",
       "layer": "9C5AEE7B-CDCB-40F5-90CB-1E71F140070B",
-      "file": "openMiniplayer.svg"
+      "file": "openMiniplayer.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "1df82ab7d9f2513cd64803ab69705cdcae6449e41a8c2c9f7bf9c6d2be8d7242"
     },
     {
       "layer": "0DAD3F26-044F-4D01-B041-A147873EE115",
       "name": "pause",
-      "file": "pause.svg"
+      "file": "pause.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "ad764971b6529a0776c43f77afe23236fc389d2560c5fb1e4d3753a7a2c61e9c"
     },
     {
       "layer": "113BAD19-2B6D-465E-960D-7DFB8BD7516B",
       "name": "play",
-      "file": "play.svg"
+      "file": "play.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "23772f710fbc24293a9d8659b47423c4f61c3e5990a84fbb329eb3b6884313b4"
     },
     {
       "layer": "8FD0BE37-080B-4178-B7A2-BFBE59E6E46C",
       "name": "prev",
-      "file": "prev.svg"
+      "file": "prev.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "38ef2f1a43995fcd66a45cfaedf966b280197f7117487fe6ef9993c36b6c2996"
     },
     {
       "layer": "3AD4CDD1-A4AD-49DA-A185-FEB16967E948",
       "name": "queue",
-      "file": "queue.svg"
-    },
-    {
-      "layer": "41EF710F-2872-4566-A108-72B5A38737F9",
-      "name": "search",
-      "file": "search.svg"
-    },
-    {
-      "layer": "D54B7D59-B50D-46B2-9FE9-F09D75244E90",
-      "name": "sync",
-      "file": "sync.svg"
+      "file": "queue.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "1a633331c12e23b6daab7e846b9414e64e559597f60d7ed5859a20aaedbd590f"
     },
     {
       "layer": "57F76F0B-BC33-4B8C-90A1-F1051224B8B6",
       "name": "that_one_i_in_a_circle_icon",
-      "file": "that_one_i_in_a_circle_icon.svg"
-    },
-    {
-      "layer": "F4E03FFC-454F-46EF-8D3D-5183AA0C0E17",
-      "name": "tinyMaximize",
-      "file": "tinyMaximize.svg"
-    },
-    {
-      "layer": "8B94DB2C-5D19-4E67-BBCE-9DF03D4A1EE0",
-      "name": "tinyMinimize",
-      "file": "tinyMinimize.svg"
+      "file": "that_one_i_in_a_circle_icon.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "25b15b06cf42dded0750929b8a7530622273088ef6e5fb187f85c0ba9c9959c6"
     },
     {
       "layer": "648C8B0A-C460-4B7F-992D-BE40A007D6E5",
       "name": "tinyNext",
-      "file": "tinyNext.svg"
+      "file": "tinyNext.svg",
+      "width": 8,
+      "height": 8,
+      "sha256": "503dbf57c01535a887528c3edb002d53e29e2e6bb96193b3c2fe0c5b6e656ff7"
     },
     {
       "layer": "99288948-D51B-48A3-A1C3-551E8122A8F7",
       "name": "tinyPause",
-      "file": "tinyPause.svg"
+      "file": "tinyPause.svg",
+      "width": 8,
+      "height": 8,
+      "sha256": "5cdfe4c9fe6e99e529c4b3789fd9c08b72668e570b2e6ef53e71cd7d675d159c"
     },
     {
       "layer": "094CD583-E850-4A6F-AF33-18E67E4986A9",
       "name": "tinyPlay",
-      "file": "tinyPlay.svg"
+      "file": "tinyPlay.svg",
+      "width": 8,
+      "height": 8,
+      "sha256": "27441a79285d599fc06c5d08bceb25b78cbc6b4f3bab5e1a768ce39bed99afb9"
     },
     {
       "layer": "38F8D628-684B-4412-BB76-F72D63F89879",
       "name": "tinyPrev",
-      "file": "tinyPrev.svg"
-    },
-    {
-      "layer": "38D839A2-3344-4B61-9579-4D2E10A299AB",
-      "name": "tinySync",
-      "file": "tinySync.svg"
+      "file": "tinyPrev.svg",
+      "width": 8,
+      "height": 8,
+      "sha256": "78ffb327e7649a5a2f95a8efcd09d022c16f5b20f0eacc1287832c1b1d740f04"
     },
     {
       "layer": "D8672F9F-6D5A-4C03-B083-5ED18EBC6177",
       "name": "tinyX",
-      "file": "tinyX.svg"
+      "file": "tinyX.svg",
+      "width": 8,
+      "height": 8,
+      "sha256": "8f6cf2bfc21132ddbfcce6bf598fe58b3d9647200902d1628dce2dc9914fc535"
     },
     {
       "name": "unPin",
       "layer": "12410ED3-ED47-4577-8409-5CF2699A06EB",
-      "file": "unPin.svg"
+      "file": "unPin.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "5c809c043943ec524c34ee5bd6b9a870d5425ac50dc3ea587b1cd1fce62ff672"
     },
     {
       "layer": "E4FDE931-A4E1-4E34-B419-3560D9BBEB8C",
       "name": "Library",
-      "file": "Library.svg"
+      "file": "Library.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "167005f4f5487e632733337783edbf50597b6d0d30a8c358af8dfdd102badd7c"
+    },
+    {
+      "layer": "830AD407-9EA1-4820-948C-2B50969EFE0F",
+      "name": "Phone",
+      "file": "Phone.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "537f7e057719bc239aa37fb3a00796f3d0de8f42f1d84c2a91835f5231b66dfb"
+    },
+    {
+      "layer": "F12AEBAD-0A1D-46BC-AF62-EE68232EC757",
+      "name": "Motion",
+      "file": "Motion.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b78b61a42bfa0bf60236212c72cf041f1b236dc17b754ecb7e1084c2d3aa87aa"
+    },
+    {
+      "layer": "70F24E47-0DDF-4E11-BF44-808602D40599",
+      "name": "Download",
+      "file": "Download.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "faa2e0168e2e532373280fdc0c0a377a8f37627dc677a0d78435d72a82c0ecc9"
+    },
+    {
+      "layer": "1F6956D4-F2BF-49FB-8850-5C627A5BD4B6",
+      "name": "Exit-Fullscreen",
+      "file": "exitFullscreen.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8571761775d3d29d1ae4d92911609c3bf58e52ae0da2c4c21b3c480c63bcab18"
+    },
+    {
+      "layer": "7EF367C1-94AA-4C52-A62F-573CD646F4C4",
+      "name": "Fullscreen",
+      "file": "fullscreen.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "2d884ba4323234f4ab1960967f9d10695d811edf79f9eea592b92e1e691d46f9"
+    },
+    {
+      "layer": "E96D629A-1BA6-44FA-B4E1-80975DB9B952",
+      "name": "Downloaded",
+      "file": "Downloaded.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b7f9e99f099756bfdfc63efa89984f22dbcd6ddef2fd2d7defee390b26cfa4b1"
     }
   ],
-  "skipped_empty_masters": [
-    {
-      "name": "Edit",
-      "layer": "062622AB-E0E2-404A-ABBB-2F21082B9AD2",
-      "reason": "empty master; no visible vectors"
-    }
-  ]
+  "exported": "2026-10-30",
+  "note": "Re-exported from canonical BaseUi icon sources. Supplied geometry preserved; only full-frame white export canvases removed. Duplicate source choices retain their existing IDs."
 }

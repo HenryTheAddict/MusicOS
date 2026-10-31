@@ -5,6 +5,7 @@
         <path d="M0,0 L8,0 L8,8 L0,8 Z" id="path-1"></path>
     </defs>
     <g id="tinyPause" stroke="none" fill="none" xlink:href="#path-1">
+
         <line x1="3" y1="6" x2="3" y2="2" id="Path" stroke="#979797" stroke-width="1"></line>
         <line x1="5" y1="2" x2="5" y2="6" id="Path" stroke="#979797" stroke-width="1"></line>
     </g>
