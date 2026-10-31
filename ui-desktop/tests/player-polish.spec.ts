@@ -1,5 +1,4 @@
 import {test,expect,type Page} from '@playwright/test';
-import {themePalette,defaultAppearance} from '../src/appearance';
 async function start(page:Page,mode='dark',percent=100){
  await page.addInitScript(({mode,percent})=>{
   localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}}));
@@ -19,7 +18,7 @@ async function start(page:Page,mode='dark',percent=100){
 for(const mode of ['light','dark'])test(`${mode}: player colors belong to the playing album and its context menu`,async({page})=>{
  await start(page,mode);const bar=page.getByRole('region',{name:'Now playing',exact:true});
  const colors=()=>bar.evaluate(el=>({surface:el.style.getPropertyValue('--surface-color'),accent:el.style.getPropertyValue('--accent'),ink:el.style.getPropertyValue('--ink'),fill:el.style.getPropertyValue('--transport-fill'),stroke:el.style.getPropertyValue('--transport-stroke')}));
- const expected=themePalette({...defaultAppearance,mode:mode as 'light'|'dark',source:'artwork'},{background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'},false)!;
+ const expected=await page.evaluate(async mode=>{const path='/src/appearance.ts';const {themePalette,defaultAppearance}=await import(/* @vite-ignore */ path);return themePalette({...defaultAppearance,mode,source:'artwork'},{background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'},false);},mode);
  await expect.poll(async()=>(await colors()).accent).toBe(expected.accent);const before=await colors();
  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).not.toBe(before.surface);

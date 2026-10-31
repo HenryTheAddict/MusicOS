@@ -170,3 +170,10 @@
 .lyrics-lines{padding:.5rem .375rem;}
 .lyrics-lines::before,.lyrics-lines::after{content:'';display:block;height:var(--lyric-space,0px);pointer-events:none;}
 .lyrics-pane[data-variant=mini] .lyrics-lines{padding:0 2px;mask-image:none;}
+
+.lyrics-lines{scrollbar-width:none!important;mask-image:linear-gradient(transparent,#000 8%,#000 56%,#0009 78%,transparent)!important;}
+.lyrics-lines::-webkit-scrollbar{display:none;width:0;height:0;}
+.lyrics-pane[data-following=true] .lyric-line{opacity:clamp(.12,calc(1 - var(--lyric-distance,0)*.2),.68);transition:opacity 180ms,color 180ms;}
+.lyrics-pane[data-following=true] .lyric-line[data-current=true]{opacity:1;}
+.lyrics-pane[data-following=false] .lyric-line{opacity:1;}
+.lyrics-pane[data-following=false] .lyrics-lines{mask-image:linear-gradient(transparent,#000 5%,#000 95%,transparent)!important;}

@@ -41,7 +41,7 @@ test('desktop lyric management at 125 percent removes repeated topic navigation'
 
 test('the first lyric is centered during an intro before its first timestamp',async({page})=>{
  await page.goto('/?fixture=1&lyrics=1&lyricsCase=intro');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await page.mouse.move(240,180);await expect(page.locator('.lyric-line')).toHaveCount(4);
- await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-line')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.42);})).toBeLessThan(.05);
+ await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-line')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.5);})).toBeLessThan(.05);
  expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toHaveLength(0);
 });
 

@@ -259,7 +259,7 @@ export function Menu({
     <Dropdown.Root modal={false} open={open} onOpenChange={next=>{if(next){setPoint(null);didSelect.current=false;contextOpened.current=false;ownerTheme();}setOpen(next);}}>
 
       <Dropdown.Trigger asChild>
-        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${triggerClassName} ${morph==="dots"?"soft-action":""} ${contextOnly?"context-only":""}`} data-morph={morph} data-panel-present={present||undefined} tabIndex={contextOnly?-1:undefined} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
+        <button onPointerEnter={onIntent} onFocus={onIntent} ref={trigger} className={`menu-trigger ${triggerClassName} ${morph==="dots"?"soft-action":""} ${contextOnly?"context-only":""}`} data-morph={morph} data-panel-present={present||undefined} tabIndex={contextOnly?-1:undefined} aria-hidden={contextOnly||undefined} title={label} aria-label={label} data-connected-open={open&&!selectedLabel||undefined}>
           {morph?<><Icon name={morph==='plus'?(open?'menuClose':'menuPlus'):(open?'menuDotsClose':'3dots_(nocircle)')}/>{morph==='dots'&&<span>More</span>}</>:children}
         </button>
       </Dropdown.Trigger>

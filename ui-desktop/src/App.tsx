@@ -946,7 +946,7 @@ export default function App() {
   }
   else if (route.view === "songs" || route.view === "favorites")
     content = tracks.length ? (
-      rows(tracks)
+      <>{route.view==='favorites'&&<div className="favorites-play-actions">{collectionActions(tracks.map(track=>track.id))}</div>}{rows(tracks)}</>
     ) : (
       <Empty title="No songs found.">
         Try another search or add more music.
@@ -1117,7 +1117,7 @@ export default function App() {
               {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:loading?"":"Your next favorite is waiting."}</span>
-            <PlaybackProgress showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
+            <PlaybackProgress revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
           </div>
@@ -1393,7 +1393,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&!expandedPresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={setPlayerView} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
+      {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
