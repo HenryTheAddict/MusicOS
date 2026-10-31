@@ -1,5 +1,5 @@
 import {usePlaybackClock} from './playbackFeed';
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import type {Playback} from "./types";
 import { duration as formatTime } from "./components";
 export default function PlaybackProgress({trackId,position,duration,seek,showTime=true,revealTime=false,transition,live=true}:{revealTime?:boolean;live?:boolean;showTime?:boolean;transition?:Playback["dj_transition"];trackId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>}) {
@@ -8,7 +8,8 @@ export default function PlaybackProgress({trackId,position,duration,seek,showTim
   const [draft,setDraft]=useState<number|null>(null);
   const [pending,setPending]=useState(false);
   const [error,setError]=useState("");
-  const input=useRef<HTMLInputElement>(null);
+  const input=useRef<HTMLInputElement>(null),host=useRef<HTMLDivElement>(null),time=useRef<HTMLOutputElement>(null);
+  useLayoutEffect(()=>{const label=time.current,node=host.current;if(!revealTime||!showTime||!trackId||!label||!node)return;const measure=()=>{const width=`${Math.ceil(label.getBoundingClientRect().width)+8}px`;if(node.style.getPropertyValue("--time-reserve")!==width)node.style.setProperty("--time-reserve",width);};measure();const observer=new ResizeObserver(measure);observer.observe(label);return()=>observer.disconnect();},[revealTime,showTime,trackId]);
   const dragging=useRef(false);
   const operation=useRef(0);
   const maximum=Math.max(0,Number.isFinite(duration)?duration:0);
@@ -21,7 +22,7 @@ export default function PlaybackProgress({trackId,position,duration,seek,showTim
     catch { if(revision===operation.current)setError("Could not seek. Try again."); }
     finally {if(revision===operation.current){setPending(false);setDraft(null);}}
   }
-  return <div className="playback-progress" data-reveal-time={revealTime&&showTime&&!!trackId||undefined} data-seeking={pending || dragging.current || undefined}>
+  return <div ref={host} className="playback-progress" data-reveal-time={revealTime&&showTime&&!!trackId||undefined} data-seeking={pending || dragging.current || undefined}>
     <div className="playback-rail-slot"><div className="progress-rail" aria-hidden="true"><span style={{width:`${percent}%`}}/></div>
     <input ref={input} className="seek" type="range" aria-label="Playback position"
       aria-valuetext={`${formatTime(value)} of ${formatTime(maximum)}`}
@@ -35,7 +36,7 @@ export default function PlaybackProgress({trackId,position,duration,seek,showTim
       onBlur={()=>{if(dragging.current){dragging.current=false;if(input.current)void commit(Number(input.current.value));}}}
     />
     {transition&&(transition.status==='scheduled'||transition.active)&&transition.seconds>0&&maximum>0&&<span className="transition-region" style={{left:`${Math.min(100,transition.outgoing_cue/maximum*100)}%`,width:`${Math.max(.25,Math.min(100-transition.outgoing_cue/maximum*100,(transition.source_seconds??transition.seconds)/maximum*100))}%`}}><button aria-label={`DJ transition ${transition.active?'active':'scheduled'} at ${formatTime(transition.outgoing_cue)}, ${transition.seconds.toFixed(1)} seconds`} title={`DJmode ${transition.active?'mixing':'starts'} · ${formatTime(transition.outgoing_cue)} · ${transition.seconds.toFixed(1)} s`} /></span>}
-    </div>{showTime&&trackId&&<output className="playback-time">{revealTime?<><span className="elapsed-time">{formatTime(value)}</span><span className="remaining-time">−{formatTime(maximum-value)}</span></>:<>{formatTime(value)} <span>/ {formatTime(maximum)}</span></>}</output>}
+    </div>{showTime&&trackId&&<output ref={time} className="playback-time" aria-label={revealTime?`${formatTime(maximum-value)} remaining`:undefined}>{revealTime?<span className="remaining-time">−{formatTime(maximum-value)}</span>:<>{formatTime(value)} <span>/ {formatTime(maximum)}</span></>}</output>}
     {error && <span className="seek-error" role="alert">{error}</span>}
   </div>;
 }

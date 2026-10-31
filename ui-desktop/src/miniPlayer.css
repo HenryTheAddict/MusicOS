@@ -134,7 +134,7 @@
 .mini-player .playback-progress[data-reveal-time]{height:18px;}
 .mini-player .playback-progress[data-reveal-time] .playback-rail-slot{height:18px;}
 .mini-player .playback-progress[data-reveal-time] .playback-time{font-size:9px;gap:5px;}
-.mini-player .playback-progress[data-reveal-time]:is(:hover,:focus-within,[data-seeking=true]) .playback-rail-slot{margin-inline-end:70px;}
+.mini-player .playback-progress[data-reveal-time]:is(:hover,:focus-within,[data-seeking=true]) .playback-rail-slot{margin-inline-end:var(--time-reserve,38px);}
 .mini-composition[data-active=true],.mini-lyrics-view{animation:mini-view-arrive 180ms cubic-bezier(.2,.7,.2,1);}
 @keyframes mini-view-arrive{from{translate:0 3px;opacity:.65}to{translate:0 0;opacity:1}}
 @media(prefers-reduced-motion:reduce){.mini-composition,.mini-lyrics-view{animation:none!important;}}
