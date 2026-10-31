@@ -138,3 +138,16 @@
 .mini-composition[data-active=true],.mini-lyrics-view{animation:mini-view-arrive 180ms cubic-bezier(.2,.7,.2,1);}
 @keyframes mini-view-arrive{from{translate:0 3px;opacity:.65}to{translate:0 0;opacity:1}}
 @media(prefers-reduced-motion:reduce){.mini-composition,.mini-lyrics-view{animation:none!important;}}
+/* At 120 px, reserve a whole upcoming row instead of clipping a two-line header. */
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view{grid-template-columns:minmax(0,1fr);grid-template-rows:14px minmax(0,1fr);gap:2px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view>.mini-player-thumb{display:none;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view>.mini-player-copy{display:grid;grid-template-columns:minmax(0,1fr) 34%;align-items:center;gap:6px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .mini-player-copy strong{font-size:11px;line-height:14px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .playback-progress,.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .playback-rail-slot{height:14px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .playback-rail-slot{margin-inline-end:0!important;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .playback-time{display:none;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-row{height:24px;min-height:24px;padding:0 4px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track .cover{width:20px;height:20px;flex-basis:20px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track-copy small{display:none;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track-copy strong{font-size:11px;line-height:16px;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-remove{height:24px;}
