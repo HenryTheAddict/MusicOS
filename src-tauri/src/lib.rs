@@ -60,3 +60,7 @@ pub mod wifi;
 pub mod lyrics;
 
 #[cfg(target_os="macos")]mod trackpad_phase;
+
+pub mod lyric_formats;
+
+pub mod apple_enrichment;

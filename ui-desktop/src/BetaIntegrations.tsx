@@ -1,3 +1,4 @@
+import AppleEnrichment from './AppleEnrichment';
 import discordIcon from '../../src-tauri/icons/generated/128x128@2x.png';
 import {useViewActive} from './ViewScope';
 import ThemedSwitch from './ThemedSwitch';
@@ -6,7 +7,7 @@ import { call, errorText, native } from "./bridge";
 import type { IntegrationRequest, IntegrationStatus } from "./types";
 import { Icon } from "./components";
 
-export default function BetaIntegrations() {
+export default function BetaIntegrations({cover}:{cover?:string|null}) {
  const active=useViewActive();
   const [status, setStatus] = useState<IntegrationStatus | null>(null);
   const [id, setId] = useState("");
@@ -65,7 +66,7 @@ export default function BetaIntegrations() {
     try { await call("open_provider", { url }); } catch (e) { setError(errorText(e)); }
   }
   return <section className="beta-integrations" aria-label="Connected services">
-    <div className="integration-list" aria-busy={busy}>
+    <AppleEnrichment cover={cover}/><div className="integration-list" aria-busy={busy}>
       <article className="integration-card">
         <div className="integration-heading"><Icon name="Discord"/><div><h3>Discord presence</h3><p>Share what’s playing through Vesktop or Discord.</p></div>
           <ThemedSwitch label="Discord presence" checked={status?.config.discord_enabled??false} disabled={!status||busy} onChange={checked=>configure({discord_enabled:checked})}/>

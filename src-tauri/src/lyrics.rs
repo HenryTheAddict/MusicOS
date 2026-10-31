@@ -3,6 +3,8 @@ use anyhow::{bail, ensure, Context, Result};
 use lofty::{file::TaggedFileExt, tag::ItemKey};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+pub type Extensions = BTreeMap<String, serde_json::Value>;
 use std::{
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
@@ -10,6 +12,8 @@ use std::{
 };
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Word {
+    #[serde(default, flatten)]
+    pub extensions: Extensions,
     pub text: String,
     pub start_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -17,6 +21,8 @@ pub struct Word {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Line {
+    #[serde(default, flatten)]
+    pub extensions: Extensions,
     pub text: String,
     pub start_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -26,6 +32,8 @@ pub struct Line {
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Info {
+    #[serde(default, flatten)]
+    pub extensions: Extensions,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
@@ -43,6 +51,8 @@ pub struct Info {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Document {
+    #[serde(default, flatten)]
+    pub extensions: Extensions,
     pub version: String,
     pub metadata: Info,
     #[serde(default)]
@@ -54,6 +64,7 @@ impl Default for Document {
     fn default() -> Self {
         Self {
             version: "1.0".into(),
+            extensions: Extensions::new(),
             metadata: Info::default(),
             lines: vec![],
             plain: String::new(),
@@ -119,32 +130,32 @@ fn store(db: &Path) -> Result<Connection> {
     c.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS selections(track_id INTEGER PRIMARY KEY,revision INTEGER NOT NULL,document TEXT,source TEXT); CREATE TABLE IF NOT EXISTS cache(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL,payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY,track_id INTEGER NOT NULL,at INTEGER NOT NULL,before_doc TEXT,before_source TEXT,after_doc TEXT,after_source TEXT,revision INTEGER NOT NULL,undone INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS exports(id INTEGER PRIMARY KEY,path TEXT NOT NULL,backup TEXT,at INTEGER NOT NULL);")?;
     Ok(c)
 }
-fn validate(doc: &Document) -> Result<()> {
+pub(crate) fn validate(doc: &Document) -> Result<()> {
     ensure!(doc.version == "1.0", "Unsupported LyricsFile version");
     ensure!(
         doc.plain.len() <= 1_000_000 && doc.lines.len() <= 10000,
         "Lyrics are too large"
     );
     ensure!(
-        doc.metadata.offset_ms.abs() <= 3_600_000,
+        doc.metadata.offset_ms.unsigned_abs() <= 3_600_000,
         "Timing offset is too large"
     );
     let mut last = -1;
     for line in &doc.lines {
         ensure!(
-            line.start_ms >= last && line.start_ms <= 86_400_000 && line.text.len() <= 20000,
+            line.start_ms >= 0 && line.start_ms >= last && line.start_ms <= 86_400_000 && line.text.len() <= 20000,
             "Check line timestamps and text length"
         );
         last = line.start_ms;
         ensure!(
-            line.end_ms.is_none_or(|end| end >= line.start_ms),
+            line.end_ms.is_none_or(|end| end >= line.start_ms && end <= 86_400_000),
             "A line ends before it starts"
         );
         let mut word_time = line.start_ms;
         ensure!(line.words.len() <= 2000, "Too many words in a line");
         for word in &line.words {
             ensure!(
-                word.start_ms >= word_time && word.end_ms.is_none_or(|end| end >= word.start_ms),
+                word.start_ms >= word_time && word.end_ms.is_none_or(|end| end >= word.start_ms && end <= 86_400_000),
                 "Check word timestamps"
             );
             ensure!(word.start_ms <= 86_400_000, "Word timestamp is too large");
@@ -183,6 +194,7 @@ pub fn parse(text: &str, format: &str) -> Result<Document> {
         "Choose a lyric file smaller than 2 MB"
     );
     let text = text.trim_start_matches('\u{feff}');
+    if format == "ttml" { return crate::lyric_formats::parse_ttml(text); }
     if format == "lyricsfile" {
         let doc: Document = serde_yaml::from_str(text).context("Invalid LyricsFile document")?;
         validate(&doc)?;
@@ -247,7 +259,8 @@ pub fn export(doc: &Document, format: &str) -> Result<String> {
     if format == "lyricsfile" {
         return Ok(serde_yaml::to_string(doc)?);
     }
-    ensure!(format == "lrc", "Choose LyricsFile or LRC");
+    if format == "ttml" { return crate::lyric_formats::export_ttml(doc); }
+    ensure!(format == "lrc", "Choose LyricsFile, TTML or LRC");
     ensure!(
         !doc.lines.is_empty(),
         "Plain lyrics have no timestamps. Export as LyricsFile."
@@ -343,12 +356,12 @@ fn local(c: &Connection, track: &musicos_init::database::Track) -> Result<Respon
         );
     }
     let audio = Path::new(&track.path);
-    for ext in ["lyricsfile", "lrc"] {
+    for ext in ["lyricsfile.yaml", "lyricsfile", "lrc"] {
         let p = audio.with_extension(ext);
         if p.is_file() {
             let meta = p.metadata()?;
             ensure!(meta.len() <= 2_000_000, "Local lyrics exceed 2 MB");
-            let doc = describe(parse(&std::fs::read_to_string(&p)?, ext)?, track);
+            let doc = describe(parse(&std::fs::read_to_string(&p)?, if ext == "lyricsfile.yaml" {"lyricsfile"} else {ext})?, track);
             return response(
                 c,
                 track.id,
@@ -514,7 +527,7 @@ fn resting(c:&Connection,track:&musicos_init::database::Track,gate:&Gate)->Resul
     let seconds=gate.next.saturating_duration_since(Instant::now()).as_secs()+1;
     let mut r=response(c,track.id,None,None,"retry_later")?;
     r.retry_after_seconds=Some(seconds);r.provider_status=gate.status;
-    r.message=Some(format!("LRCLIB is temporarily busy. Retry will be available in {seconds} seconds."));Ok(r)
+    r.message=Some(format!("Lyrics provider is temporarily unavailable. Retry will be available in {seconds} seconds."));Ok(r)
 }
 fn lookup(c:&Connection,track:&musicos_init::database::Track,retry:bool,search:bool)->Result<Response>{
     lookup_using(c,track,retry,search,"https://lrclib.net",gate())
@@ -547,7 +560,7 @@ fn lookup_impl(c:&Connection,track:&musicos_init::database::Track,retry:bool,sea
         gate.next=Instant::now()+Duration::from_millis(300);gate.status=None;
         let http=match result{Ok(http)=>http,Err(_)=>{let mut r=response(c,track.id,None,None,"offline")?;r.message=Some("Couldn’t reach LRCLIB. Check your connection, then Retry. Local lyrics remain available.".into());return Ok(r);}};
         let status=http.status().as_u16();
-        if status==429||status==503 {
+        if matches!(status,429|502|503|504) {
             let seconds=retry_seconds(http.headers().get("retry-after").and_then(|v|v.to_str().ok()),status,SystemTime::now());
             let jitter=rand::random::<u64>()%(seconds*250+1);
             gate.next=Instant::now()+Duration::from_millis(seconds*1000+jitter);gate.status=Some(status);
@@ -723,10 +736,13 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
                     "Reload this lyric source before saving; your draft is retained."
                 );
             }
+            let from_apple=req.document.as_ref().and_then(|d|d.extensions.get("x-musicos")).and_then(|v|v.get("attribution")).and_then(|v|v.get("provider")).and_then(|v|v.as_str())==Some("Apple Music");
             let source = Source {
                 kind: "edited".into(),
                 label: if provider.is_some() {
                     "Edited from LRCLIB"
+                } else if from_apple {
+                    "Edited from Apple Music"
                 } else {
                     "Your lyrics"
                 }
@@ -812,15 +828,18 @@ mod tests {
     fn word_times_and_instrumental_validate() {
         let mut d = Document::default();
         d.lines.push(Line {
+            extensions: Extensions::new(),
             text: "One two".into(),
             start_ms: 100,
             words: vec![
                 Word {
+                    extensions: Extensions::new(),
                     text: "One ".into(),
                     start_ms: 100,
                     end_ms: Some(200),
                 },
                 Word {
+                    extensions: Extensions::new(),
                     text: "two".into(),
                     start_ms: 200,
                     end_ms: None,
@@ -987,6 +1006,10 @@ mod provider_tests {
         )
         .unwrap();
         assert_eq!(r["document"]["plain"], doc.plain);
+        let mut canonical=doc.clone();canonical.plain="Canonical sidecar".into();
+        std::fs::write(song.with_extension("lyricsfile.yaml"),export(&canonical,"lyricsfile").unwrap()).unwrap();
+        let canonical_result=execute(&path,Request{action:"load".into(),track_id:Some(id),..Default::default()}).unwrap();
+        assert_eq!(canonical_result["document"]["plain"],"Canonical sidecar");
         assert_eq!(
             parse("[Verse 1]\n\nText", "plain").unwrap().plain,
             "[Verse 1]\n\nText"
@@ -1144,3 +1167,5 @@ mod recovery_tests {
         println!("Full lookup: state={}, timed={}, candidates={}",found.state,found.document.as_ref().is_some_and(|d|!d.lines.is_empty()),found.candidates.len());assert_eq!(found.state,"ready");assert!(!found.document.unwrap().lines.is_empty());let choices=lookup_impl(&c,&track,true,true,true,"https://lrclib.net",&gate).unwrap();println!("Editor find: state={}, candidates={}",choices.state,choices.candidates.len());assert_eq!(choices.state,"choose");assert!(choices.document.is_none());assert!(!choices.candidates.is_empty());assert_eq!(lookup_using(&c,&track,false,false,"http://127.0.0.1:1",&gate).unwrap().state,"ready");
     }
 }
+
+#[cfg(test)]mod gateway_tests{use super::*;use std::{io::{Read,Write},net::TcpListener};#[test]fn gateways_are_retryable_without_negative_cache(){for status in [502,504]{let listener=TcpListener::bind("127.0.0.1:0").unwrap();let base=format!("http://{}",listener.local_addr().unwrap());let worker=std::thread::spawn(move||{let(mut socket,_)=listener.accept().unwrap();let mut bytes=[0;8192];let _=socket.read(&mut bytes);write!(socket,"HTTP/1.1 {status} Gateway Error\r\nRetry-After: 7\r\nContent-Length: 3\r\nConnection: close\r\n\r\nbad").unwrap();});let dir=tempfile::tempdir().unwrap();let db=musicos_init::database::Db::open(&dir.path().join("library.db").to_string_lossy()).unwrap();let id=db.insert_track("/song.flac","Title","Artist","Album",180,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();let c=store(&dir.path().join("library.db")).unwrap();let gate=Mutex::new(Gate{next:Instant::now(),status:None});let result=lookup_using(&c,&track,false,false,&base,&gate).unwrap();assert_eq!(result.state,"retry_later");assert_eq!(result.provider_status,Some(status));assert!(result.retry_after_seconds.unwrap()>=7);assert!(cached(&c,&track,false).unwrap().is_none());worker.join().unwrap();}}}

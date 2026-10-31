@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {lyricIndex,changeLyricLine,editLyricText,lyricText,visibleLyricLine,parseStamp,formatStamp,type LyricDocument} from '../src/lyrics';
+import {activeLyricIndices,lossyLrc,lyricIndex,changeLyricLine,editLyricText,lyricText,visibleLyricLine,parseStamp,formatStamp,type LyricDocument} from '../src/lyrics';
 import {shouldCommitSwipe,acceptsBackAxis} from '../src/useBackSwipe';
 import {clockPosition,type Clock} from '../src/playbackFeed';
 const doc:LyricDocument={version:'1.0',metadata:{title:'',artist:'',album:'',offset_ms:200,instrumental:false},plain:'',lines:[{text:'a',start_ms:1000},{text:'b',start_ms:2000},{text:'c',start_ms:2000}]};
@@ -8,3 +8,6 @@ describe('direct back gesture',()=>{it('commits only enough distance or a delibe
 
 it('word editing reconciles visible lines and preserves unchanged word timings through insertion and deletion',()=>{const a={text:'one',start_ms:1000,words:[{text:'one',start_ms:1000}]},b={text:'two',start_ms:2000,words:[{text:'two',start_ms:2000}]};const source={...doc,plain:'one\ntwo',lines:[a,b]};const changed=editLyricText(source,'ONE\ntwo');expect(changed.lines[0].words).toEqual([]);expect(changed.lines[1]).toBe(b);expect(lyricText(changed)).toBe('ONE\ntwo');const inserted=editLyricText(source,'one\nnew\ntwo');expect(inserted.lines[0]).toBe(a);expect(inserted.lines[2]).toBe(b);expect(inserted.lines[1]).toEqual({text:'new',start_ms:1000});expect(editLyricText(inserted,'one\ntwo').lines).toEqual([a,b]);expect(source.lines).toEqual([a,b]);});
 it('duplicate empty cues do not add giant gaps; a real instrumental break remains visible',()=>{const source={...doc,lines:[{text:'one',start_ms:1000},{text:'',start_ms:2000},{text:'two',start_ms:2000},{text:'',start_ms:5000},{text:'three',start_ms:10000}]};expect(visibleLyricLine(source,1)).toBe(false);expect(visibleLyricLine(source,3)).toBe(true);expect(lyricIndex({...source,metadata:{...source.metadata,offset_ms:0},lines:[{text:'one',start_ms:1000},{text:'',start_ms:1000}]},1.5)).toBe(0);});
+
+it('overlapping voices share the acknowledged clock and explicit ends survive later cues',()=>{const duet={...doc,metadata:{...doc.metadata,offset_ms:0,duration_ms:10000},lines:[{text:'lead',start_ms:1000,end_ms:6000},{text:'reply',start_ms:2000,end_ms:4000},{text:'together',start_ms:6000,end_ms:8000}]};expect(activeLyricIndices(duet,2.5)).toEqual([0,1]);expect(activeLyricIndices(duet,4)).toEqual([0]);expect(activeLyricIndices(duet,6)).toEqual([2]);expect(activeLyricIndices(duet,8)).toEqual([]);expect(lossyLrc(duet)).toBe(true);});
+it('equal timestamps remain active together when line ends are absent',()=>{expect(activeLyricIndices(doc,2.2)).toEqual([1,2]);});

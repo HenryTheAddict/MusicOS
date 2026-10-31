@@ -5351,6 +5351,7 @@ dependencies = [
  "rcgen",
  "reqwest 0.12.28",
  "rodio",
+ "roxmltree 0.21.1",
  "rusqlite",
  "rustfft",
  "rustls",

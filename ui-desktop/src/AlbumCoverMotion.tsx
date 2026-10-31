@@ -1,3 +1,4 @@
+import MotionArtwork from './MotionArtwork';
 import {useRef,type RefObject} from 'react';
 import {Cover} from './components';
 import {useDepthArtwork} from './depthArtwork';
@@ -7,6 +8,6 @@ export default function AlbumArtwork({album,scrollRef,depth,motion}:{album:Album
  const stage=useRef<HTMLDivElement>(null);
  useDepthArtwork(stage,scrollRef,depth);
  return <div ref={stage} className="album-artwork-stage"><button className="album-artwork" aria-label={`Expand ${album.title} artwork`} onClick={e=>openArtwork(e.currentTarget,album.title)}>
-  <Cover src={album.cover} trackId={album.track_ids[0]} title={album.title}/>
+  <MotionArtwork trackId={album.track_ids[0]} priority={1}><Cover src={album.cover} trackId={album.track_ids[0]} title={album.title}/></MotionArtwork>
  </button></div>;
 }

@@ -174,7 +174,7 @@ export function IconButton({
       title={label}
       aria-label={label}
       aria-pressed={pressed}
-      onClick={e=>{if((name==='next'||name==='prev')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const glyph=e.currentTarget.querySelector<HTMLElement>('.icon');if(glyph){const from=getComputedStyle(glyph).transform;glyph.getAnimations().filter(a=>a.id==='transport-skip').forEach(a=>a.cancel());const direction=name==='next'?1:-1;const a=glyph.animate([{transform:from},{transform:`translateX(${direction*4}px)`,offset:.45},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'});a.id='transport-skip';}}onClick();}}
+      onClick={e=>{if((name==='next'||name==='prev')&&!matchMedia('(prefers-reduced-motion: reduce)').matches){const glyph=e.currentTarget.querySelector<HTMLElement>('.icon');if(glyph){const from=getComputedStyle(glyph).transform;glyph.getAnimations().filter(a=>a.id==='transport-skip').forEach(a=>a.cancel());const direction=name==='next'?1:-1;const a=glyph.animate([{transform:from},{transform:`translateX(${direction*4}px)`,offset:.45},{transform:'translateX(0)'}],{duration:180,easing:'ease-out'});a.id='transport-skip';void a.finished.then(()=>a.cancel()).catch(()=>{});}}onClick();}}
       disabled={disabled}
     >
       <Icon name={name} className="control-glyph" />

@@ -1,3 +1,4 @@
+vi.mock('../src/AppleEnrichment',()=>({default:()=>null}));
 import {cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {afterEach,expect,it,vi} from 'vitest';
 import type {IntegrationStatus} from '../src/types';

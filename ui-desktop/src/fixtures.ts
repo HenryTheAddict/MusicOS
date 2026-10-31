@@ -234,6 +234,7 @@ export async function fixtureCall(
       );
       return preferences;
     case 'mini_player': case 'window_pin': return;
+    case 'apple_enrichment': {const {appleFixture}=await import('./appleFixture');return appleFixture((a as any).request);}
     case "album_info":return new URLSearchParams(location.search).has('contributors')?{description:'A collection of songs featuring musicians from across the world. '.repeat(20),source_url:'https://en.wikipedia.org/wiki/Junk_(M83_album)'}:{description:null,source_url:null};
     case "artist_info":
       return {

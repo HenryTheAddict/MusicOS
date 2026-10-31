@@ -1,12 +1,12 @@
 import {useEffect,useRef,useState} from 'react';
 import {useViewActive} from './ViewScope';
 import {call,errorText} from './bridge';
-export type LyricWord={text:string;start_ms:number;end_ms?:number};
-export type LyricLine={text:string;start_ms:number;end_ms?:number;words?:LyricWord[]};
-export type LyricDocument={version:'1.0';metadata:{title:string;artist:string;album:string;duration_ms?:number;offset_ms:number;language?:string;instrumental:boolean};lines:LyricLine[];plain:string};
+export type LyricWord={ [key:string]:unknown;text:string;start_ms:number;end_ms?:number};
+export type LyricLine={ [key:string]:unknown;'x-musicos'?:{voice?:'lead'|'second'|'both'|'unassigned';agents?:string[]};text:string;start_ms:number;end_ms?:number;words?:LyricWord[]};
+export type LyricDocument={[key:string]:unknown;'x-musicos'?:{[key:string]:unknown;attribution?:{provider:string;catalogId?:string};singers?:Record<string,{name:string;group?:boolean}>;original?:{format:string;text:string}};version:'1.0';metadata:{title:string;artist:string;album:string;duration_ms?:number;offset_ms:number;language?:string;instrumental:boolean};lines:LyricLine[];plain:string};
 export type LyricCandidate={id:number;title:string;artist:string;album:string;duration:number;document:LyricDocument};
 export type LyricResponse={before?:LyricDocument|null;after?:LyricDocument|null;track_id:number;revision:number;document:LyricDocument|null;source:{kind:string;label:string;url:string|null;provider_id:number|null}|null;state:string;message?:string;retry_after_seconds?:number;provider_status?:number;candidates:LyricCandidate[];history?:{id:number;track_id:number;at:number;revision:number;undone:boolean}[]};
-export type LyricRequest={action:string;trackId?:number;revision?:number;document?:LyricDocument;candidateId?:number;text?:string;format?:'lyricsfile'|'lrc'|'plain';path?:string;overwrite?:boolean;historyId?:number;retry?:boolean;writeFiles?:boolean};
+export type LyricRequest={action:string;trackId?:number;revision?:number;document?:LyricDocument;candidateId?:number;text?:string;format?:'lyricsfile'|'lrc'|'plain'|'ttml';path?:string;overwrite?:boolean;historyId?:number;retry?:boolean;writeFiles?:boolean};
 const pending=new Map<string,Promise<LyricResponse>>();
 export function lyricCall(request:LyricRequest,identity=''){const key=JSON.stringify({...request,_identity:identity});if(['load','lookup','search','find'].includes(request.action)){const old=pending.get(key);if(old)return old;const job=call('lyrics',{request}).finally(()=>{if(pending.get(key)===job)pending.delete(key);});pending.set(key,job);return job;}return call('lyrics',{request});}
 type Session={trackId:number;result:LyricResponse|null;error:string;at:number;retryAt:number};
@@ -57,3 +57,16 @@ export let requestedLyricEditor:number|undefined;
 export function requestLyricEditor(id:number){requestedLyricEditor=id;window.dispatchEvent(new CustomEvent('musicos-edit-lyrics',{detail:id}));}
 
 export function clearLyricEditorRequest(){requestedLyricEditor=undefined;}
+
+/** A later cue does not end a voice whose explicit interval is still active. */
+const cueEnds=new WeakMap<LyricDocument,number[]>();
+export function activeLyricIndices(doc:LyricDocument,position:number){let ends=cueEnds.get(doc);if(!ends){ends=[];let next=doc.metadata.duration_ms??Infinity,group=Infinity;for(let i=doc.lines.length-1;i>=0;i--){const line=doc.lines[i];if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}ends[i]=line.end_ms??next;}cueEnds.set(doc,ends);}const ms=position*1000-doc.metadata.offset_ms;return doc.lines.flatMap((line,i)=>visibleLyricLine(doc,i)&&ms>=line.start_ms&&ms<ends![i]?[i]:[]);}
+
+export function lyricVoice(line:LyricLine){return line['x-musicos']?.voice??(line['x-musicos']?.agents?.length?'unassigned':'lead');}
+export function lossyLrc(doc:LyricDocument){return doc.lines.some((l,i)=>l.words?.length||l['x-musicos']||l.end_ms!==undefined&&doc.lines.slice(i+1).some(n=>n.start_ms<l.end_ms!));}
+
+let pendingAppleDraft:{trackId:number;document:LyricDocument}|undefined;
+export function requestAppleLyricReview(trackId:number,document:LyricDocument){pendingAppleDraft={trackId,document};window.dispatchEvent(new CustomEvent('musicos-open-lyric-editor',{detail:trackId}));}
+export function takeAppleLyricDraft(trackId:number,consume?:LyricDocument){if(pendingAppleDraft?.trackId!==trackId)return;const doc=pendingAppleDraft.document;if(consume===doc)pendingAppleDraft=undefined;return doc;}
+
+export function lyricSpeaker(doc:LyricDocument,line:LyricLine){const names=line['x-musicos']?.agents?.map(id=>doc['x-musicos']?.singers?.[id]?.name??id).filter(Boolean);return names?.length?names.join(' & '):lyricVoice(line)==='second'?'Second voice':lyricVoice(line)==='both'?'Both voices':'Lead';}

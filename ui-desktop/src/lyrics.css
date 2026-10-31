@@ -186,3 +186,11 @@
 .lyrics-pane[data-variant=mini][data-following=true] .lyric-line{filter:blur(min(1px,var(--lyric-blur,0px)));}
 .lyrics-pane[data-variant=mini][data-following=true] .lyric-line:is([data-current=true],:hover,:focus-visible){filter:none;}
 @media(prefers-reduced-motion:reduce){.lyrics-pane .lyric-line{transition:none!important;}}
+
+/* Vocal lanes belong to the lyric column, never to the surrounding player. */
+.lyrics-pane .lyric-line[data-voice=second]{text-align:right!important;padding-inline-start:12%!important;box-sizing:border-box;}
+.lyrics-pane .lyric-line[data-voice=lead]{text-align:left!important;padding-inline-end:12%!important;box-sizing:border-box;}
+.lyrics-pane .lyric-line[data-voice=both]{text-align:center!important;}
+.lyric-singer-fields{display:flex;gap:.75rem;flex-wrap:wrap;padding:.75rem 0;}.lyric-singer-fields label{flex:1;min-width:9rem;display:grid;gap:.25rem;}.lyric-singer-fields input{width:100%;box-sizing:border-box;}
+.lyric-voice-choices{display:flex;gap:3px;grid-column:2/-1;padding:3px;border-radius:10px;background:var(--control-surface);}.lyric-voice-choices button{flex:1;min-height:32px;border:0;border-radius:8px;padding:.375rem .5rem;background:transparent;color:var(--ink);font:inherit;font-size:.75rem;}.lyric-voice-choices button[aria-pressed=true]{background:var(--surface-color);font-weight:700;}
+.lyric-line-end{grid-column:2/-1;display:flex;align-items:center;gap:.5rem;font-size:.75rem;}.lyric-line-end input{max-width:10rem;}
