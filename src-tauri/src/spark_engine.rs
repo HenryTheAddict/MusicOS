@@ -7,7 +7,7 @@ use sha2::{Digest,Sha256};
 use std::{collections::{BTreeMap,BTreeSet},fs::File,io::Read,path::Path};
 use crate::spark_audio;
 
-pub const GENERATION_VERSION:&str="audio-cosine-mood-diversity-v2";
+pub const GENERATION_VERSION:&str="audio-cosine-mood-diversity-v3";
 #[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Artifact {pub name:String,pub bytes:u64,pub sha256:String}
@@ -105,24 +105,28 @@ pub fn generate(candidates:&[Candidate],available:usize,request:Generation,moods
  let mood=request.mood.as_ref().map(|name|moods.get(name).filter(|v|valid_embedding(v)).context("Choose an available mood")).transpose()?;
  let negative=request.less_like.iter().filter_map(|id|candidates.iter().find(|c|c.id==*id)).collect::<Vec<_>>();
  let excluded=request.less_like.iter().copied().collect::<BTreeSet<_>>();
+ // Compute expensive embedding similarities once; selection only updates bounded diversity terms.
+ let groups=candidates.iter().map(|c|(c.id,c.artist.split(';').next().unwrap_or(&c.artist).trim().to_lowercase())).collect::<BTreeMap<_,_>>();
+ let bases=candidates.iter().map(|c|{
+   let similarity=seed.map(|s|cosine(&s.embedding,&c.embedding));let mood_score=mood.map(|m|cosine(m,&c.embedding));
+   let base=match(similarity,mood_score){(Some(a),Some(b))=>a*0.65+b*0.35,(Some(a),None)|(None,Some(a))=>a,_=>0.};
+   let avoid=negative.iter().map(|n|cosine(&n.embedding,&c.embedding).max(0.)).fold(0_f32,f32::max)*0.25;
+   let jitter=if request.variant==0{0.}else{let hash=(c.id as u64).wrapping_mul(6364136223846793005).wrapping_add((request.variant as u64).wrapping_mul(1442695040888963407));((hash>>32)as u32 as f32/u32::MAX as f32-0.5)*0.025};
+   (c.id,base+if c.favorite{0.025}else{0.}-avoid+jitter)
+ }).collect::<BTreeMap<_,_>>();
  let mut remaining=candidates.iter().filter(|c|!excluded.contains(&c.id)).collect::<Vec<_>>();remaining.sort_by_key(|c|c.id);
  let mut selected:Vec<&Candidate>=Vec::new();let mut artists:BTreeMap<&str,usize>=BTreeMap::new();let mut albums:BTreeMap<(&str,&str),usize>=BTreeMap::new();
- if let Some(seed)=seed.filter(|s|!excluded.contains(&s.id)){selected.push(seed);remaining.retain(|c|c.id!=seed.id);*artists.entry(&seed.artist).or_default()+=1;*albums.entry((&seed.artist,&seed.album)).or_default()+=1;}
+ if let Some(seed)=seed.filter(|s|!excluded.contains(&s.id)){selected.push(seed);remaining.retain(|c|c.id!=seed.id);*artists.entry(groups[&seed.id].as_str()).or_default()+=1;*albums.entry((groups[&seed.id].as_str(),&seed.album)).or_default()+=1;}
  while selected.len()<request.target_count&&!remaining.is_empty() {
   let score=|c:&Candidate| {
-   let similarity=seed.map(|s|cosine(&s.embedding,&c.embedding));let mood_score=mood.map(|m|cosine(m,&c.embedding));
-   let base=match (similarity,mood_score){(Some(a),Some(b))=>a*0.65+b*0.35,(Some(a),None)|(None,Some(a))=>a,_=>0.};
-   let avoid=negative.iter().map(|n|cosine(&n.embedding,&c.embedding).max(0.)).fold(0_f32,f32::max)*0.25;
-   // Small deterministic perturbation allows explicit regeneration. Audio remains
-   // the dominant rank; variant zero is exactly reproducible without perturbation.
-   let jitter=if request.variant==0{0.}else{let hash=(c.id as u64).wrapping_mul(6364136223846793005).wrapping_add((request.variant as u64).wrapping_mul(1442695040888963407));((hash>>32) as u32 as f32/u32::MAX as f32-0.5)*0.025};
-   // Diversity breaks near ties; it must not eventually outweigh audio relevance.
-   let artist_penalty=(artists.get(c.artist.as_str()).copied().unwrap_or(0) as f32*0.04).min(0.12);
-   let album_penalty=(albums.get(&(c.artist.as_str(),c.album.as_str())).copied().unwrap_or(0) as f32*0.025).min(0.075);
-   base+if c.favorite{0.025}else{0.}-avoid-artist_penalty-album_penalty+jitter
+   let group=groups[&c.id].as_str();
+   let artist_penalty=(artists.get(group).copied().unwrap_or(0) as f32*0.04).min(0.12);
+   let album_penalty=(albums.get(&(group,c.album.as_str())).copied().unwrap_or(0) as f32*0.025).min(0.075);
+   let adjacent=selected.last().map(|last|if groups[&last.id]==group{0.035}else{0.}).unwrap_or(0.);
+   bases[&c.id]-artist_penalty-album_penalty-adjacent
   };
   let best=(0..remaining.len()).max_by(|a,b|score(remaining[*a]).total_cmp(&score(remaining[*b])).then_with(||remaining[*b].id.cmp(&remaining[*a].id))).unwrap();let chosen=remaining.remove(best);
-  *artists.entry(&chosen.artist).or_default()+=1;*albums.entry((&chosen.artist,&chosen.album)).or_default()+=1;selected.push(chosen);
+  *artists.entry(groups[&chosen.id].as_str()).or_default()+=1;*albums.entry((groups[&chosen.id].as_str(),&chosen.album)).or_default()+=1;selected.push(chosen);
  }
  ensure!(!selected.is_empty(),"No analyzed songs match this request. Analyze more local songs or clear feedback.");
  Ok(Preview{track_ids:selected.iter().map(|c|c.id).collect(),analyzed:candidates.len(),available,generation_version:GENERATION_VERSION.into(),configuration:request})
@@ -153,10 +157,11 @@ pub fn suggest(candidates:&[Candidate],members:&[i64])->Vec<i64>{
   candidates.push(candidate(25,1,"Unrelated artist"));
   let result=generate(&candidates,25,Generation{seed:Some(1),..Default::default()},&BTreeMap::new()).unwrap();
   assert_eq!(result.track_ids.last(),Some(&25));
-  assert_eq!(result.generation_version,"audio-cosine-mood-diversity-v2");
+  assert_eq!(result.generation_version,"audio-cosine-mood-diversity-v3");
  }
  #[test]fn missing_seed_and_invalid_mood_do_not_substitute_metadata(){let candidates=vec![candidate(1,0,"A")];assert!(generate(&candidates,1,Generation{seed:Some(2),..Default::default()},&BTreeMap::new()).is_err());assert!(generate(&candidates,1,Generation{mood:Some("Bright".into()),..Default::default()},&BTreeMap::new()).is_err());}
  #[test]fn checksum_and_path_traversal_are_rejected(){let dir=tempfile::tempdir().unwrap();std::fs::write(dir.path().join("audio.onnx"),b"model").unwrap();let mut artifact=Artifact{name:"audio.onnx".into(),bytes:5,sha256:format!("{:x}",Sha256::digest(b"model"))};verify_artifact(dir.path(),&artifact).unwrap();artifact.sha256="bad".into();assert!(verify_artifact(dir.path(),&artifact).is_err());artifact.name="../model".into();assert!(verify_artifact(dir.path(),&artifact).is_err());}
  #[test]fn beta_requires_consent_and_exact_replacement_checkpoint(){let pinned:Manifest=serde_json::from_str(include_str!("../resources/spark-candidate.json")).unwrap();assert!(verify_candidate(&pinned,true).is_ok());assert!(verify_candidate(&pinned,false).is_err());let mut old=pinned.clone();old.checkpoint="laion/larger_clap_music".into();assert!(verify_candidate(&old,true).is_err());let mut changed=pinned;changed.files[0].sha256="unreviewed".into();assert!(verify_candidate(&changed,true).is_err());}
+ #[test]fn primary_artist_variants_do_not_bypass_spacing(){let candidates=vec![candidate(1,0,"Artist; Guest A"),candidate(2,0,"ARTIST; Guest B"),candidate(3,0,"Another")];let result=generate(&candidates,3,Generation{seed:Some(1),..Default::default()},&BTreeMap::new()).unwrap();assert_eq!(result.track_ids,vec![1,3,2]);}
  #[test]fn artist_diversity_breaks_equal_similarity(){let candidates=vec![candidate(1,0,"A"),candidate(2,0,"A"),candidate(3,0,"B")];let result=generate(&candidates,3,Generation{seed:Some(1),..Default::default()},&BTreeMap::new()).unwrap();assert_eq!(result.track_ids,vec![1,3,2]);}
 }

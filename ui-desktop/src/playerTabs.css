@@ -1,0 +1,6 @@
+.player-motion-tabs{position:relative;isolation:isolate;}
+.player-motion-tabs>button,.player-motion-tabs>button[aria-pressed=true]{position:relative;z-index:1;font-weight:500!important;background:transparent!important;transition:color 140ms,background-color 140ms;}
+.player-motion-tabs>.player-tab-fill{position:absolute;z-index:0;top:2px;bottom:2px;border-radius:inherit;background:color-mix(in srgb,var(--accent) 18%,var(--surface-color));pointer-events:none;}
+@media(prefers-reduced-motion:reduce){.player-motion-tabs>button{transition:none;}}
+
+.mini-view-tabs>.player-tab-fill{background:var(--control-surface);}

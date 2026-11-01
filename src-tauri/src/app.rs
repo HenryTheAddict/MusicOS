@@ -328,6 +328,7 @@ fn allow_art(app: &tauri::AppHandle, path: &str) {
         }
     }
 }
+pub(crate)fn publish_cached_cover(app:&tauri::AppHandle,id:i64){if load_library(app).ok().is_some_and(|l|l.albums.iter().any(|a|a.track_ids.contains(&id)&&a.cover.is_some())){return;}let db=app.state::<AppState>().config().db_path;if let Some(path)=crate::apple_enrichment::background::cached_cover(&db,id){allow_art(app,&path);let _=app.emit_to("main","apple-cover-cached",json!({"track_id":id,"path":path}));}}
 fn queue_artist(app: &tauri::AppHandle, name: &str) {
     let state = app.state::<AppState>();
     if !providers::artist_due(name) {
@@ -1425,6 +1426,7 @@ async fn library_artwork(app: tauri::AppHandle, track_id: i64, per_track: Option
         let grouped=load_library(&app)?;
         let Some(album)=grouped.albums.iter().find(|a|a.track_ids.contains(&track_id)) else{return Ok(None)};
         if let Some(path)=&album.cover {allow_art(&app,path);return Ok(Some(path.clone()));}
+        if let Some(path)=crate::apple_enrichment::background::cached_cover(&config.db_path,track_id){allow_art(&app,&path);return Ok(Some(path));}
         if let Some(path)=library::recover_album_artwork(&config.db_path,album)? {
             allow_art(&app,&path);
             let _=app.emit("artwork-found",json!({"track_id":track_id,"path":path}));
@@ -1657,6 +1659,7 @@ pub fn run() {
             let client = state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
             client.send(LocalPlaybackCommand::SetListening(state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening.clone()))?;
             app.manage(state);
+            crate::apple_enrichment::background::resume(app.handle().clone(),app.state::<AppState>().config().db_path.clone());
             #[cfg(target_os="macos")]crate::apple_enrichment::install_power_events(app.handle());
             let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};",serde_json::to_string(&launch_appearance)?);
             let window=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?

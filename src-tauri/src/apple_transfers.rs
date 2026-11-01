@@ -77,6 +77,30 @@ fn resolve(items: &[Value], map: &HashMap<String, Vec<i64>>) -> (Vec<i64>, usize
     }
     (ids, missing, ambiguous)
 }
+fn missing_albums(items: &[Value], map: &HashMap<String, Vec<i64>>) -> Vec<Value> {
+    let mut albums = std::collections::BTreeMap::<(String, String), Vec<String>>::new();
+    for item in items {
+        let row = catalog_record(item).unwrap_or_else(|| item.clone());
+        let cat = row["id"].as_str().unwrap_or("");
+        if map.get(cat).is_some_and(|ids| ids.len() == 1) {
+            continue;
+        }
+        let a = &row["attributes"];
+        let album = a["albumName"]
+            .as_str()
+            .unwrap_or("Album not identified")
+            .to_owned();
+        let artist = a["artistName"]
+            .as_str()
+            .unwrap_or("Unknown artist")
+            .to_owned();
+        albums
+            .entry((album, artist))
+            .or_default()
+            .push(a["name"].as_str().unwrap_or("Unidentified song").to_owned());
+    }
+    albums.into_iter().map(|((album,artist),songs)|json!({"album":album,"artist":artist,"needed":songs.len(),"songs":songs.into_iter().take(8).collect::<Vec<_>>()})).collect()
+}
 pub(super) fn snapshot(db: &Path) -> Result<Value> {
     let c = cache(db)?;
     let map = local_map(db)?;
@@ -108,7 +132,7 @@ pub(super) fn snapshot(db: &Path) -> Result<Value> {
                     .and_then(|d| d.get_playlists().ok())
                     .is_some_and(|ps| ps.iter().any(|p| p.id == *id))
             });
-        out.push(json!({"id":id,"name":v["name"],"kind":v["kind"],"total":items.len(),"matched":ids.len(),"missing":missing,"ambiguous":ambiguous,"duplicates":duplicates,"available":v["available"],"reason":v["reason"],"ready":v["available"]==true&&!ids.is_empty()&&missing==0&&ambiguous==0&&duplicates==0,"imported":imported.is_some(),"checked":v["checked"].as_bool().unwrap_or(true),"rank":v["rank"],"resources":v["resources"]}));
+        out.push(json!({"id":id,"name":v["name"],"kind":v["kind"],"total":items.len(),"matched":ids.len(),"missing":missing,"ambiguous":ambiguous,"duplicates":duplicates,"available":v["available"],"reason":v["reason"],"ready":v["available"]==true&&!ids.is_empty()&&missing==0&&ambiguous==0&&duplicates==0,"imported":imported.is_some(),"checked":v["checked"].as_bool().unwrap_or(true),"rank":v["rank"],"missingAlbums":missing_albums(&items,&map),"resources":v["resources"]}));
     }
     out.sort_by_key(|v| {
         (
@@ -380,6 +404,19 @@ pub(super) fn action(db: &Path, action: &str, id: Option<&str>) -> Result<Value>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_album_groups_only_include_unresolved_entries() {
+        let mut map = HashMap::new();
+        map.insert("1".into(), vec![10]);
+        let rows = vec![
+            json!({"id":"1","attributes":{"name":"Have","albumName":"A","artistName":"X"}}),
+            json!({"id":"2","attributes":{"name":"Need","albumName":"A","artistName":"X"}}),
+        ];
+        let groups = missing_albums(&rows, &map);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0]["needed"], 1);
+        assert_eq!(groups[0]["songs"], json!(["Need"]));
+    }
     #[test]
     fn top_eight_headers_do_not_expand_four_hundred_playlists() {
         let rows=(0..400).map(|i|json!({"id":format!("p.{i}"),"attributes":{"lastModifiedDate":format!("2026-10-{:02}T00:00:00Z",i%30+1)}})).collect();

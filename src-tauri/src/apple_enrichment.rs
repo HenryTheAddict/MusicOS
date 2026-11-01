@@ -13,6 +13,8 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, Manager};
+#[path = "apple_background.rs"]
+pub mod background;
 #[path = "apple_transfers.rs"]
 mod transfers;
 #[derive(Default, Clone, Serialize)]
@@ -32,6 +34,7 @@ pub struct Status {
     pub total: usize,
     pub lyrics_ready: usize,
     pub lyrics_failed: usize,
+    pub artwork_ready: usize,
 }
 fn state() -> &'static Mutex<Status> {
     static S: OnceLock<Mutex<Status>> = OnceLock::new();
@@ -77,7 +80,7 @@ fn credentials(db: &Path) -> Result<Credentials> {
 fn store(db: &Path) -> Result<rusqlite::Connection> {
     let c = rusqlite::Connection::open(db.with_file_name("desktop-apple-enrichment-v1.sqlite3"))?;
     c.busy_timeout(Duration::from_secs(5))?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL); CREATE TABLE IF NOT EXISTS choices(track_id INTEGER,catalog_id TEXT,payload TEXT,PRIMARY KEY(track_id,catalog_id)); CREATE TABLE IF NOT EXISTS lyric_cache(catalog_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS artwork_cache(album_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")?;
+    c.execute_batch("CREATE TABLE IF NOT EXISTS links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL); CREATE TABLE IF NOT EXISTS choices(track_id INTEGER,catalog_id TEXT,payload TEXT,PRIMARY KEY(track_id,catalog_id)); CREATE TABLE IF NOT EXISTS lyric_cache(catalog_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS artwork_cache(album_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -95,8 +98,32 @@ fn client() -> Result<reqwest::blocking::Client> {
         .user_agent(crate::product::provider_user_agent())
         .build()?)
 }
+static APPLE_COOLDOWN: AtomicU64 = AtomicU64::new(0);
+fn apple_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
 fn bounded(mut response: reqwest::blocking::Response) -> Result<String> {
     let status = response.status();
+    if matches!(status.as_u16(), 429 | 502 | 503 | 504) {
+        let seconds = response
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| {
+                v.parse::<u64>().ok().or_else(|| {
+                    httpdate::parse_http_date(v)
+                        .ok()
+                        .and_then(|t| t.duration_since(std::time::SystemTime::now()).ok())
+                        .map(|d| d.as_secs())
+                })
+            })
+            .unwrap_or(60);
+        APPLE_COOLDOWN.fetch_max(apple_now().saturating_add(seconds), Ordering::SeqCst);
+    }
+
     ensure!(
         status.is_success(),
         "Apple Music returned HTTP {}. This capability is unavailable; reconnect or try later.",
@@ -112,6 +139,13 @@ fn bounded(mut response: reqwest::blocking::Response) -> Result<String> {
     Ok(data)
 }
 fn get(c: &Credentials, path: &str) -> Result<Value> {
+    ensure!(
+        apple_now() >= APPLE_COOLDOWN.load(Ordering::SeqCst),
+        "Apple Music is cooling down; retry after {} seconds",
+        APPLE_COOLDOWN
+            .load(Ordering::SeqCst)
+            .saturating_sub(apple_now())
+    );
     ensure!(
         path.starts_with("/v1/") && !path.contains("://"),
         "Invalid Apple request"
@@ -336,8 +370,52 @@ pub fn cached_lyric(db: &Path, id: i64) -> Result<Option<crate::lyrics::Document
     })
     .transpose()
 }
+// A connected account enriches this local recording on demand. No library scan,
+// audio download, or metadata replacement is needed to open its lyrics.
+fn lyric_catalog(db: &Path, id: i64) -> Result<String> {
+    if let Ok(catalog)=catalog_for(db,id) { return Ok(catalog); }
+    let auth=credentials(db)?;
+    let track=musicos_init::database::Db::open(&db.to_string_lossy())?
+        .get_track_by_id(id)?.context("This local song is unavailable")?;
+    let term=url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("term",&format!("{} {}",track.title,track.artist)).finish();
+    let value=get(&auth,&format!("/v1/catalog/{}/search?types=songs&limit=25&include=albums&{}",auth.storefront,term))?;
+    let rows=value.pointer("/results/songs/data").and_then(Value::as_array)
+        .context("Apple Music returned no recording matches for this song")?;
+    let mut matches=std::collections::BTreeMap::new();
+    for row in rows {
+        let a=&row["attributes"];
+        if norm(a["name"].as_str().unwrap_or(""))==norm(&track.title)
+            && norm(a["artistName"].as_str().unwrap_or(""))==norm(&track.artist)
+            && norm(a["albumName"].as_str().unwrap_or(""))==norm(&track.album)
+            && a["durationInMillis"].as_f64().is_some_and(|ms|(ms/1000.-track.duration as f64).abs()<=2.) {
+            if let Some(catalog)=row["id"].as_str().filter(|v|digits(v).is_ok()) {matches.insert(catalog,row);}
+        }
+    }
+    ensure!(matches.len()==1,if matches.is_empty(){"Apple Music has no exact recording and album match. Your local song is unchanged; LRCLIB is still available."}else{"Apple Music returned multiple matching editions. Choose the recording in Settings → Integrations before using its lyrics."});
+    let (catalog,row)=matches.first_key_value().unwrap();
+    let fresh=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("This song is unavailable")?;
+    ensure!(signature(&fresh)==signature(&track),"The recording changed during lookup. Try again.");
+    store(db)?.execute("INSERT OR REPLACE INTO links VALUES(?,?,?,?)",rusqlite::params![id,catalog,row.pointer("/relationships/albums/data/0/id").and_then(Value::as_str),signature(&track)])?;
+    Ok((*catalog).to_owned())
+}
+/// Offline cache first. Failed Apple attempts never prevent the independent LRCLIB path.
+pub fn automatic_lyric(db:&Path,id:i64)->Result<Option<crate::lyrics::Document>> {
+    if let Some(doc)=cached_lyric(db,id)? {return Ok(Some(doc));}
+    if credentials(db).is_err() {return Ok(None);}
+    let track=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("This song is unavailable")?;
+    let sql=store(db)?;
+    sql.execute_batch("CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL)")?;
+    let key=signature(&track);
+    let checked=sql.query_row("SELECT checked FROM lyric_attempts WHERE signature=?",[&key],|r|r.get::<_,u64>(0)).unwrap_or(0);
+    if apple_now().saturating_sub(checked)<60 {return Ok(None);}
+    match lyric(db,id) {
+        Ok(value)=>Ok(value.get("document").cloned().map(serde_json::from_value).transpose()?),
+        Err(_)=>{sql.execute("INSERT OR REPLACE INTO lyric_attempts VALUES(?,?)",rusqlite::params![key,apple_now()])?;Ok(None)}
+    }
+}
 pub fn lyric(db: &Path, id: i64) -> Result<Value> {
-    let catalog = catalog_for(db, id)?;
+    let catalog = lyric_catalog(db, id)?;
     let sql = store(db)?;
     if let Ok(raw) = sql.query_row(
         "SELECT document FROM lyric_cache WHERE catalog_id=?",
@@ -530,7 +608,17 @@ pub fn artwork(db: &Path, id: i64) -> Result<Value> {
         [&album],
         |r| r.get::<_, String>(0),
     ) {
-        return Ok(serde_json::from_str(&raw)?);
+        let cached: Value = serde_json::from_str(&raw)?;
+        let age = apple_now().saturating_sub(cached["checkedAt"].as_u64().unwrap_or(0));
+        if age
+            < if cached["url"].is_string() {
+                7 * 86400
+            } else {
+                86400
+            }
+        {
+            return Ok(cached);
+        }
     }
     let c = credentials(db)?;
     let value = get(
@@ -544,8 +632,7 @@ pub fn artwork(db: &Path, id: i64) -> Result<Value> {
     let url = motion_urls(&value)
         .into_iter()
         .find_map(|s| sdr_motion(&s).ok());
-    let payload =
-        json!({"albumId":album,"url":url,"state":if url.is_some(){"available"}else{"unavailable"}});
+    let payload = json!({"albumId":album,"url":url,"checkedAt":apple_now(),"state":if url.is_some(){"available"}else{"unavailable"}});
     sql.execute(
         "INSERT OR REPLACE INTO artwork_cache VALUES(?,?)",
         rusqlite::params![album, serde_json::to_string(&payload)?],
@@ -765,7 +852,7 @@ fn verify_connection(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
     );
     transfers::clear(db)?;
     store(db)?.execute_batch(
-        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM artwork_cache;",
+        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM lyric_attempts;DELETE FROM artwork_cache;",
     )?;
     entry(db)?
         .set_password(&serde_json::to_string(&c)?)
@@ -836,6 +923,11 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
         match req.action.as_str() {
             "transfers" | "refresh_transfers" | "check_playlist" | "transfer_playlist" => {
                 transfers::action(db, &req.action, req.catalog_id.as_deref())
+            }
+            "start_cache" => background::start(app, db),
+            "stop_cache" => {
+                background::stop(db)?;
+                Ok(json!({"status":state().lock().unwrap().clone()}))
             }
             "motion_policy" => Ok(json!({"lowPower":low_power()})),
             "status" => {
@@ -1021,6 +1113,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 Ok(json!({"status":s.clone()}))
             }
             "disconnect" => {
+                background::stop(db)?;
                 AUTH_EPOCH.fetch_add(1, Ordering::SeqCst);
                 close_auth_popups(app);
                 CANCEL.store(true, Ordering::SeqCst);
@@ -1032,13 +1125,14 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                     w.close()?;
                 }
                 transfers::clear(db)?;
+                background::clear(db)?;
                 match entry(db)?.delete_credential() {
                     Ok(()) | Err(keyring::Error::NoEntry) => {}
                     Err(_) => {
                         anyhow::bail!("Could not remove the session from the system keychain")
                     }
                 };
-                store(db)?.execute_batch("DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM artwork_cache;")?;
+                store(db)?.execute_batch("DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM lyric_attempts;DELETE FROM artwork_cache;")?;
                 *state().lock().unwrap() = Status {
                     phase: "disconnected".into(),
                     message: "Disconnected. Your selected lyrics are preserved.".into(),
@@ -1137,6 +1231,22 @@ mod tests {
         assert!(!apple_navigation(
             &"http://music.apple.com/".parse().unwrap()
         ));
+    }
+    #[test]
+    fn cached_apple_lyrics_are_default_offline_and_local_edits_win() {
+        let dir=tempfile::tempdir().unwrap();let path=dir.path().join("library.db");
+        let db=musicos_init::database::Db::open(&path.to_string_lossy()).unwrap();
+        let id=db.insert_track("/absent.flac","Test","Artist","Album",180,1,1).unwrap();
+        let track=db.get_track_by_id(id).unwrap().unwrap();
+        let sql=store(&path).unwrap();
+        sql.execute("INSERT INTO links VALUES(?,?,?,?)",rusqlite::params![id,"123","456",signature(&track)]).unwrap();
+        let doc=crate::lyrics::parse("[00:01.00]Original fixture words","lrc").unwrap();
+        sql.execute("INSERT INTO lyric_cache VALUES(?,?)",rusqlite::params!["123",serde_json::to_string(&doc).unwrap()]).unwrap();
+        assert!(automatic_lyric(&path,id).unwrap().is_some());
+        let load=||crate::lyrics::execute(&path,crate::lyrics::Request{action:"load".into(),track_id:Some(id),..Default::default()}).unwrap();
+        let ready=load();assert_eq!(ready["source"]["label"],"Apple Music");assert_eq!(ready["document"]["metadata"]["title"],"Test");
+        crate::lyrics::execute(&path,crate::lyrics::Request{action:"save".into(),track_id:Some(id),revision:Some(0),document:Some(crate::lyrics::parse("My local edit","plain").unwrap()),..Default::default()}).unwrap();
+        assert_eq!(load()["document"]["plain"],"My local edit");
     }
     #[test]
     fn nested_lyrics() {

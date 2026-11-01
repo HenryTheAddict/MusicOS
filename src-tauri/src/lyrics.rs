@@ -604,6 +604,9 @@ fn save(
     tx.commit()?;
     response(c, id, Some(doc), Some(source), "ready")
 }
+fn apple_response(c:&Connection,id:i64,doc:Document)->Result<Response> {
+    response(c,id,Some(doc),Some(Source{kind:"apple".into(),label:"Apple Music".into(),url:None,provider_id:None}),"ready")
+}
 pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
     let mut c = store(db)?;
     if req.action == "history" {
@@ -650,6 +653,8 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
             let r = local(&c, &track)?;
             if r.document.is_some() {
                 r
+            } else if let Some(doc) = crate::apple_enrichment::cached_lyric(db,id)? {
+                apple_response(&c,id,doc)?
             } else if let Some(items) = cached(&c, &track, false)? {
                 rank(&c, &track, items)?
             } else {
@@ -657,12 +662,15 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
             }
         }
         "find" => lookup_impl(&c,&track,req.retry.unwrap_or(false),true,true,"https://lrclib.net",gate())?,
-        "lookup" | "search" => lookup(
-            &c,
-            &track,
-            req.retry.unwrap_or(false),
-            req.action == "search",
-        )?,
+        "lookup" | "search" => {
+            let local=local(&c,&track)?;
+            if req.action=="lookup" && local.document.is_some() {local}
+            else if req.action=="lookup" {
+                if let Some(doc)=crate::apple_enrichment::automatic_lyric(db,id).unwrap_or(None) {
+                    apple_response(&c,id,doc)?
+                } else {lookup(&c,&track,req.retry.unwrap_or(false),false)?}
+            } else {lookup(&c,&track,req.retry.unwrap_or(false),true)?}
+        },
         "parse" | "import" => {
             let text = if req.action == "import" {
                 let p = req.path.context("Choose a lyric file")?;

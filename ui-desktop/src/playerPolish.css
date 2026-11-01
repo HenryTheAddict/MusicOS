@@ -57,3 +57,7 @@
 @container(max-width:48rem){.expanded-player[data-native-titlebar=true][data-composition]>.expanded-player-header{left:88px;right:8px;}.expanded-player[data-composition] .player-view-tabs>button{padding:4px 6px!important;}}
 
 @container(max-width:48rem){.expanded-player[data-composition=split][data-chrome=hidden] .expanded-player-content{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 28px;grid-template-areas:"song" "side" "progress";}}
+/* The same geometry and weight in every presentation, selected or not. */
+.expanded-header-actions>button{border-radius:12px!important;background:transparent;}
+.expanded-header-actions>button:hover,.expanded-header-actions>button:focus-visible{background:var(--control-surface)!important;}
+.expanded-transport>.icon-button,.mini-controls>.icon-button{border-radius:10px;}

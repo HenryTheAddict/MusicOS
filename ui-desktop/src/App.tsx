@@ -1,3 +1,4 @@
+import{usePlayerHandoff}from'./usePlayerHandoff';
 import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
 import {captureBackPage,useBackSwipe} from './useBackSwipe';
 import Onboarding from './Onboarding';
@@ -298,6 +299,7 @@ export default function App() {
   function chooseDestination(next:Destination){if(section==='Library'&&destination===next)return;window.dispatchEvent(new Event('musicos-navigation-start'));captureScroll();if(next==='search'&&destination!=='search')previousDestination.current=destination;setSection('Library');switchDestination(next);}
   function openSearch(){if(compact||route.view==='search'){chooseDestination('search');if(route.view!=='search')navigateScope('search');setSearchFocus(value=>value+1);setCommandOpen(false);}else setCommandOpen(value=>!value);}
   const mounted = useRef(true);
+  const barMotion=useRef<HTMLElement>(null);usePlayerHandoff(barMotion,player.track?.id,"bar");
   const refreshWork=useRef<Promise<void>|null>(null),refreshAgain=useRef(false);
   const refresh = useCallback(() => {
     if(refreshWork.current){refreshAgain.current=true;return refreshWork.current;}
@@ -327,6 +329,7 @@ export default function App() {
           setPlayer((old) => mergePlaybackUpdate(old,update)),
         ),
         subscribe<Task>("task", setTask),
+        subscribe<number[]>("lyrics-sidecars-updated",ids=>{for(const id of ids)window.dispatchEvent(new CustomEvent("musicos-lyrics-changed",{detail:id}));}),
         subscribe<LibraryChanged | null>("library-changed", (change) => {
           if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();
           window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));
@@ -337,6 +340,7 @@ export default function App() {
         subscribe<string>("native-playback-error",setError),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
         subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
+        subscribe<{track_id:number;path:string}>("apple-cover-cached",update=>{setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id&&!t.cover_art_path?{...t,cover_art_path:update.path}:t),albums:old.albums.map(a=>a.track_ids.includes(update.track_id)&&!a.cover?{...a,cover:update.path}:a)}));setPlayer(old=>old.track?.id===update.track_id&&!old.track.cover_art_path?{...old,track:{...old.track,cover_art_path:update.path}}:old);}),
         subscribe<{track_id:number;path:string}>("song-artwork-found",update=>setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id?{...t,cover_art_path:update.path}:t)}))),
         subscribe<{ track_id: number; path: string }>(
           "artwork-found",
@@ -1088,7 +1092,7 @@ export default function App() {
         <Menu triggerClassName="section-actions-trigger" label="musicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><span className="section-action-glyph"><Icon name={section==='Library'?'Library':section==='Settings'?'Settings':'device'} className="section-category-glyph"/><Icon name="3dots_(nocircle)" className="section-dots-glyph"/></span></Menu>
         </div>
         <div className="header-drag-spacer" />
-        <section style={playingStyle} className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
+        <section ref={barMotion} style={playingStyle} className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
           <Overflow theme={playingStyle} contextOnly items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:windowPinned?'Unpin window':'Pin window',icon:windowPinned?'unPin':'Pin',onSelect:()=>void toggleWindowPin()},...nowActions]}/>
           <button
             className="now-playing-cover"

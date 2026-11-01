@@ -15,7 +15,7 @@ export default function SparkSetup({enabled,onChange}:{enabled:boolean;onChange:
  const refreshRef=useRef<()=>Promise<void>>(async()=>{});
  const working=!!state?.installation?.running||!!state?.analysis?.running&&!state.analysis.paused;
  useEffect(()=>{if(!active)return;let alive=true,pending=false;
-  async function refresh(){if(pending)return;pending=true;try{const next=await displayData('sparklist',{request:{action:'status'}},true);if(alive){setState(next);setError('');if(next.ready&&!previouslyReady.current){invalidateDisplay('playlist_suggestions');invalidateDisplay('spark_recommendations');}previouslyReady.current=next.ready;}}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}
+  async function refresh(){if(pending)return;pending=true;try{const next=await displayData('sparklist',{request:{action:'status'}},true);if(alive){setState(next);setError('');if(next.ready&&!previouslyReady.current){window.dispatchEvent(new Event('musicos-spark-ready'));invalidateDisplay('playlist_suggestions');invalidateDisplay('spark_recommendations');}previouslyReady.current=next.ready;}}catch(e){if(alive)setError(errorText(e));}finally{pending=false;}}
   refreshRef.current=refresh;void refresh();
   const changed=(event:Event)=>{const reason=(event as CustomEvent).detail;if(event.type==='musicos-library-changed'||!reason||reason==='sparklist')void refresh();};
   window.addEventListener('musicos-display-invalidated',changed);window.addEventListener('musicos-library-changed',changed);

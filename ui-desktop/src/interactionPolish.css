@@ -130,3 +130,5 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 
 @media(hover:none){.track-table[data-local-songs] .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
 .settings .settings-panel :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:is([aria-pressed=true],[aria-selected=true]){background:var(--accent);color:var(--accent-ink);}
+/* Selection uses fill and ink, never a changing text width. */
+.home-tabs>button,.home-tabs>button[aria-pressed],.settings :is(.settings-tabs,.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters,.lyric-editor-modes,.lyric-voice-choices)>:is(button,[role=tab]){font-weight:500!important;}

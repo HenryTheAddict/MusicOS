@@ -6,10 +6,11 @@ import{useViewActive}from'./ViewScope';
 const owners=new Map<symbol,{priority:number;visible:boolean;set:(owned:boolean)=>void}>();
 function elect(){const winner=[...owners].filter(([,v])=>v.visible).sort((a,b)=>b[1].priority-a[1].priority)[0]?.[0];for(const[id,o]of owners)o.set(id===winner);}
 const requests=new Map<number,Promise<string|null>>();
-let connected=false;
+let connected=false;let connectionCheck:Promise<unknown>|undefined;
 window.addEventListener('musicos-apple-status',e=>{connected=!!(e as CustomEvent).detail?.signed_in;if(!connected)requests.clear();});
 export default function MotionArtwork({trackId,priority,children,enabled=true}:{trackId?:number;priority:number;children:ReactNode;enabled?:boolean}){
  const active=useViewActive(),node=useRef<HTMLSpanElement>(null),video=useRef<HTMLVideoElement>(null),[owned,setOwned]=useState(false),[url,setUrl]=useState<string|null>(null),[failed,setFailed]=useState(false),[epoch,setEpoch]=useState(0),[viewable,setViewable]=useState(false);
+ useEffect(()=>{if(native&&active&&!connectionCheck)connectionCheck=appleCall('status').catch(()=>{});},[active]);
  useEffect(()=>{const host=node.current;if(!host)return;const observer=new IntersectionObserver(entries=>setViewable(!!entries[0]?.isIntersecting));observer.observe(host);return()=>observer.disconnect();},[]);
  useEffect(()=>{const update=()=>setEpoch(n=>n+1);window.addEventListener('musicos-apple-status',update);return()=>window.removeEventListener('musicos-apple-status',update);},[]);
  useEffect(()=>{if(!enabled||!active||!native||!trackId||!connected||!viewable){setUrl(null);return;}let alive=true;let job=requests.get(trackId);if(!job){job=appleCall('artwork',trackId).then(r=>r.url??null).catch(()=>null);requests.set(trackId,job);if(requests.size>100)requests.delete(requests.keys().next().value!);}setFailed(false);setUrl(null);void job.then(value=>{if(alive)setUrl(value);});return()=>{alive=false;};},[trackId,enabled,active,epoch,viewable]);

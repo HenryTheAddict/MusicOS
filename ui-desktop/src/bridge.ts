@@ -188,9 +188,19 @@ export async function call<K extends keyof Commands>(
   throw new Error("Open the musicOS desktop app to use your library.");
 }
 export function errorText(error: unknown) {
-  if (error && typeof error === "object" && "message" in error)
-    return String(error.message);
-  const text=String(error);return /database (?:is |file is )?locked|database is busy|SQLITE_BUSY/i.test(text)?"Your library is finishing another change. Wait a moment, then retry.":text;
+  function message(value: unknown, depth=0): string | undefined {
+    if (depth>3 || value==null) return;
+    if (typeof value==='string') return value.trim() || undefined;
+    if (value instanceof Error) return value.message;
+    if (typeof value==='object') {
+      const record=value as Record<string,unknown>;
+      for (const key of ['message','error','detail','description']) {
+        const text=message(record[key],depth+1);if(text)return text;
+      }
+    }
+  }
+  const text=message(error)??'Something went wrong. Please try again.';
+  return /database (?:is |file is )?locked|database is busy|SQLITE_BUSY/i.test(text)?"Your library is finishing another change. Wait a moment, then retry.":text;
 }
 export async function subscribe<T>(
   event: string,
