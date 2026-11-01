@@ -32,3 +32,11 @@ Player loading now uses existing local selections/sidecars/tags first, then sign
 A live LRCLIB exact-signature request for High Life returned HTTP 200, duration 202 seconds, with no synchronized lyrics during this check. This is a successful provider response, not evidence of synchronized lyric availability. LRCGET was never bundled or removed: musicOS uses LRCLIB directly. Current provider documentation was checked at https://lrclib.net/docs.txt and the LRCGET project at https://github.com/tranxuanthang/lrcget. No provider outage can be fixed by changing client text.
 
 Automated checks: 193 frontend tests and 206 native tests passed (7 explicit live/physical checks ignored). Cached Apple lyrics load without credentials/network and saved local edits win. Native structured/nested errors render useful messages rather than object coercion. Final browser counts and installed observations follow in the release record.
+
+## Installed delivery
+
+The signed build was installed after a fresh native paused check (God’s Plan at 198 seconds). Opening Lyrics populated the installed player without starting playback. Background caching was observed progressing from 33 to 82 of 257 matched songs with Settings reporting that navigation can continue; completion is not claimed. The current provider cache remains separate from user revisions.
+
+193 UI tests, 206 native tests (7 ignored explicit live/physical gates), and 21 WebKit cases passed. Preservation checks retained 550 songs, 40 favorites, 2 manual playlists and 6 entries, collection sidecars, current settings and user lyric revisions. All eight embedded runtime/model hashes matched. The unrelated existing primary-checkout guide edit was fingerprinted and retained.
+
+Signed executable SHA-256: `85e669f64a3bc828c23ce042be5b94c5c1e503b42de8c377943038698033fde4`. Previous app and profile snapshot are retained in the release/checkpoint record. Native Apple lookup for the pictured High Life recording and physical word/audio alignment remain live acceptance checks; the verified cached/offline/default-source paths and readable error handling do not establish provider coverage for every song.
