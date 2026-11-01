@@ -639,6 +639,7 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
         tx.commit()?;
         return Ok(serde_json::json!({"undone":true}));
     }
+    if req.action == "sync_files" { return crate::lyric_sidecars::sync(db); }
     let id = req.track_id.context("Choose a song")?;
     let database = musicos_init::database::Db::open(&db.to_string_lossy())?;
     let track = database

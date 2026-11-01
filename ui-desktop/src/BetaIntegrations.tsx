@@ -66,7 +66,7 @@ export default function BetaIntegrations({cover}:{cover?:string|null}) {
     try { await call("open_provider", { url }); } catch (e) { setError(errorText(e)); }
   }
   return <section className="beta-integrations" aria-label="Connected services">
-    <AppleEnrichment cover={cover}/><div className="integration-list" aria-busy={busy}>
+    <div className="integration-list" aria-busy={busy}>
       <article className="integration-card">
         <div className="integration-heading"><Icon name="Discord"/><div><h3>Discord presence</h3><p>Share what’s playing through Vesktop or Discord.</p></div>
           <ThemedSwitch label="Discord presence" checked={status?.config.discord_enabled??false} disabled={!status||busy} onChange={checked=>configure({discord_enabled:checked})}/>
@@ -93,6 +93,7 @@ export default function BetaIntegrations({cover}:{cover?:string|null}) {
         </div></details>}
       </article>
     </div>
+    <AppleEnrichment cover={cover}/>
     {!native&&<p className="integration-preview-note">Preview only. Connections run in the desktop app.</p>}
     {status&&<details className="integration-diagnostics"><summary><Icon name="Back"/>Connection details</summary><p>Discord: {status.discord}</p><p>Artwork: {status.discord_artwork??"Waiting for playback"}</p><p>Activity delivery: {status.discord_rpc??"Not connected"}</p><p>Last.fm: {status.lastfm}</p><p>{status.queued} listens waiting to sync.</p></details>}
     {error && <div className="inline-error" role="alert"><p>Couldn’t update this connection. Your previous settings are retained.</p><details><summary>Details</summary>{error}</details></div>}

@@ -1124,7 +1124,7 @@ async fn metadata_edit(
     .await
 }
 #[tauri::command]
-async fn apple_enrichment(app:tauri::AppHandle,request:crate::apple_enrichment::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();crate::apple_enrichment::action(&app,&state.config().db_path,request)}).await}
+async fn apple_enrichment(app:tauri::AppHandle,request:crate::apple_enrichment::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let changed=request.action=="transfer_playlist";let value=crate::apple_enrichment::action(&app,&state.config().db_path,request)?;if changed{let _=app.emit("library-changed",json!({"reason":"collections"}));}Ok(value)}).await}
 
 #[tauri::command]
 async fn lyrics(app:tauri::AppHandle,request:crate::lyrics::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let _guard=if request.action=="write_tags"{let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before writing music files");Some(guard)}else{None};crate::lyrics::execute(&state.config().db_path,request)}).await}

@@ -7,12 +7,14 @@ use std::{
     io::Read,
     path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex, OnceLock,
     },
     time::Duration,
 };
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+#[path = "apple_transfers.rs"]
+mod transfers;
 #[derive(Default, Clone, Serialize)]
 pub struct Status {
     pub enabled: bool,
@@ -313,6 +315,26 @@ fn identify_document(db: &Path, id: i64, doc: &mut crate::lyrics::Document) -> R
     doc.metadata.album = track.album;
     doc.metadata.duration_ms = Some(track.duration as i64 * 1000);
     Ok(())
+}
+pub fn cached_lyric(db: &Path, id: i64) -> Result<Option<crate::lyrics::Document>> {
+    use rusqlite::OptionalExtension;
+    let catalog = match catalog_for(db, id) {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    let raw = store(db)?
+        .query_row(
+            "SELECT document FROM lyric_cache WHERE catalog_id=?",
+            [catalog],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    raw.map(|v| {
+        let mut doc = serde_json::from_str(&v)?;
+        identify_document(db, id, &mut doc)?;
+        Ok(doc)
+    })
+    .transpose()
 }
 pub fn lyric(db: &Path, id: i64) -> Result<Value> {
     let catalog = catalog_for(db, id)?;
@@ -689,16 +711,164 @@ fn sync(db: &Path) -> Result<Value> {
     );
     Ok(json!({"status":s.clone()}))
 }
+static AUTH_EPOCH: AtomicU64 = AtomicU64::new(0);
+fn apple_navigation(url: &url::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some_and(|h| {
+            h == "apple.com" || h.ends_with(".apple.com") || h.ends_with(".icloud.com")
+        })
+}
+fn close_auth_popups(app: &tauri::AppHandle) {
+    for (label, w) in app.webview_windows() {
+        if label.starts_with("apple-enrichment-popup-") {
+            let _ = w.close();
+        }
+    }
+}
+static VERIFYING: AtomicBool = AtomicBool::new(false);
+struct Verification;
+impl Drop for Verification {
+    fn drop(&mut self) {
+        VERIFYING.store(false, Ordering::SeqCst);
+    }
+}
+fn verify_connection(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
+    if VERIFYING.swap(true, Ordering::SeqCst) {
+        return Ok(json!({"status":state().lock().unwrap().clone()}));
+    }
+    let _verification = Verification;
+    let epoch = AUTH_EPOCH.load(Ordering::SeqCst);
+
+    let window = app
+        .get_webview_window("apple-enrichment-signin")
+        .context("Open the Apple sign-in window first")?;
+    let cookie=window.cookies_for_url("https://music.apple.com/".parse()?)?.into_iter().find(|c|c.name()=="media-user-token").context("Apple has not provided a supported session. Finish signing in; if Apple blocks this window, this experimental capability is unavailable.")?;
+    let mut c = Credentials {
+        user: cookie_token(cookie.value())?,
+        bearer: bearer()?,
+        storefront: "us".into(),
+    };
+    let sf = get(&c, "/v1/me/storefront")?;
+    let region = sf
+        .pointer("/data/0/id")
+        .and_then(|v| v.as_str())
+        .context("Apple storefront is unavailable")?;
+    ensure!(
+        region.len() == 2 && region.bytes().all(|v| v.is_ascii_alphabetic()),
+        "Unsupported storefront"
+    );
+    c.storefront = region.to_lowercase();
+    ensure!(
+        epoch == AUTH_EPOCH.load(Ordering::SeqCst)
+            && app.get_webview_window("apple-enrichment-signin").is_some(),
+        "Sign-in was cancelled before verification completed"
+    );
+    transfers::clear(db)?;
+    store(db)?.execute_batch(
+        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM artwork_cache;",
+    )?;
+    entry(db)?
+        .set_password(&serde_json::to_string(&c)?)
+        .map_err(|_| anyhow::anyhow!("Could not save the Apple session in the system keychain"))?;
+    close_auth_popups(app);
+    window.close()?;
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.set_focus();
+    }
+    let mut s = state().lock().unwrap();
+    s.signed_in = true;
+    s.scanned = 0;
+    s.matched = 0;
+    s.ambiguous = 0;
+    s.completed = 0;
+    s.total = 0;
+    s.lyrics_ready = 0;
+    s.lyrics_failed = 0;
+    s.library = "not_checked".into();
+    s.lyrics = "not_checked".into();
+    s.artwork = "not_checked".into();
+    s.sign_in = "available".into();
+    s.phase = "connected".into();
+    s.message = "Signed in. Library, lyrics, and motion artwork are checked independently.".into();
+    Ok(json!({"status":s.clone()}))
+}
+fn watch_signin(app: tauri::AppHandle, db: std::path::PathBuf, epoch: u64) {
+    std::thread::spawn(move || {
+        let started = std::time::Instant::now();
+        while started.elapsed() < Duration::from_secs(600) {
+            if epoch != AUTH_EPOCH.load(Ordering::SeqCst) {
+                return;
+            }
+            let Some(window) = app.get_webview_window("apple-enrichment-signin") else {
+                return;
+            };
+            let ready = window
+                .cookies_for_url("https://music.apple.com/".parse().unwrap())
+                .ok()
+                .is_some_and(|cookies| {
+                    cookies
+                        .iter()
+                        .any(|c| c.name() == "media-user-token" && !c.value().is_empty())
+                });
+            if ready {
+                let _ = action(
+                    &app,
+                    &db,
+                    Request {
+                        action: "verify".into(),
+                        track_id: None,
+                        catalog_id: None,
+                    },
+                );
+                let _ = app.emit_to(
+                    "main",
+                    "apple-enrichment-status",
+                    state().lock().unwrap().clone(),
+                );
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(800));
+        }
+    });
+}
 pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> {
     let result = (|| -> Result<Value> {
         match req.action.as_str() {
+            "transfers" | "refresh_transfers" | "check_playlist" | "transfer_playlist" => {
+                transfers::action(db, &req.action, req.catalog_id.as_deref())
+            }
             "motion_policy" => Ok(json!({"lowPower":low_power()})),
-            "status" => Ok(json!({"status":state().lock().unwrap().clone()})),
+            "status" => {
+                let waiting = state().lock().unwrap().phase == "signing_in";
+                if waiting && !VERIFYING.load(Ordering::SeqCst) {
+                    if let Some(w) = app.get_webview_window("apple-enrichment-signin") {
+                        let ready = w
+                            .cookies_for_url("https://music.apple.com/".parse()?)?
+                            .iter()
+                            .any(|c| c.name() == "media-user-token" && !c.value().is_empty());
+                        if ready {
+                            return verify_connection(app, db);
+                        }
+                    } else {
+                        let mut s = state().lock().unwrap();
+                        s.phase = "cancelled".into();
+                        s.sign_in = "not_checked".into();
+                        s.message="Apple’s window closed before the connection was verified. Open it to try again.".into();
+                    }
+                }
+                Ok(json!({"status":state().lock().unwrap().clone()}))
+            }
             "begin" => {
                 ensure!(!JOB.load(Ordering::SeqCst), "Finish the current sync first");
+                ensure!(
+                    !VERIFYING.load(Ordering::SeqCst),
+                    "Finishing the current connection check"
+                );
+                AUTH_EPOCH.fetch_add(1, Ordering::SeqCst);
                 if let Some(window) = app.get_webview_window("apple-enrichment-signin") {
                     window.set_focus()?;
                 } else {
+                    let popup_app = app.clone();
                     tauri::WebviewWindowBuilder::new(
                         app,
                         "apple-enrichment-signin",
@@ -708,13 +878,35 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                     .inner_size(980., 760.)
                     .min_inner_size(600., 480.)
                     .incognito(true)
-                    .on_navigation(|url| {
-                        url.scheme() == "https"
-                            && url.host_str().is_some_and(|h| {
-                                h == "apple.com"
-                                    || h.ends_with(".apple.com")
-                                    || h.ends_with(".icloud.com")
-                            })
+                    .on_navigation(apple_navigation)
+                    .on_new_window(move |url, features| {
+                        use tauri::webview::NewWindowResponse;
+                        if !apple_navigation(&url) && url.as_str() != "about:blank" {
+                            return NewWindowResponse::Deny;
+                        }
+                        if popup_app
+                            .webview_windows()
+                            .keys()
+                            .filter(|k| k.starts_with("apple-enrichment-popup-"))
+                            .count()
+                            >= 2
+                        {
+                            return NewWindowResponse::Deny;
+                        }
+                        let built = tauri::WebviewWindowBuilder::new(
+                            &popup_app,
+                            format!("apple-enrichment-popup-{}", rand::random::<u64>()),
+                            tauri::WebviewUrl::External("about:blank".parse().unwrap()),
+                        )
+                        .window_features(features)
+                        .title("Apple account · musicOS")
+                        .inner_size(600., 720.)
+                        .on_navigation(|url| url.as_str() == "about:blank" || apple_navigation(url))
+                        .build();
+                        match built {
+                            Ok(window) => NewWindowResponse::Create { window },
+                            Err(_) => NewWindowResponse::Deny,
+                        }
                     })
                     .build()?;
                 }
@@ -722,54 +914,21 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 s.enabled = true;
                 s.phase = "signing_in".into();
                 s.sign_in = "waiting".into();
-                s.message = "Sign in in Apple’s window, then choose Check connection here.".into();
-                Ok(json!({"status":s.clone()}))
+                s.message = "Finish signing in in Apple’s window. musicOS will check the session and bring you back automatically.".into();
+                let status = s.clone();
+                drop(s);
+                watch_signin(
+                    app.clone(),
+                    db.to_owned(),
+                    AUTH_EPOCH.load(Ordering::SeqCst),
+                );
+                Ok(json!({"status":status}))
             }
             "verify" => {
-                let window = app
-                    .get_webview_window("apple-enrichment-signin")
-                    .context("Open the Apple sign-in window first")?;
-                let cookie=window.cookies_for_url("https://music.apple.com/".parse()?)?.into_iter().find(|c|c.name()=="media-user-token"&&c.domain().is_some_and(|h|{let h=h.trim_start_matches('.');h=="music.apple.com"||h.ends_with(".music.apple.com")})).context("Apple has not provided a supported session. Finish signing in; if Apple blocks this window, this experimental capability is unavailable.")?;
-                let mut c = Credentials {
-                    user: cookie_token(cookie.value())?,
-                    bearer: bearer()?,
-                    storefront: "us".into(),
-                };
-                let sf = get(&c, "/v1/me/storefront")?;
-                let region = sf
-                    .pointer("/data/0/id")
-                    .and_then(|v| v.as_str())
-                    .context("Apple storefront is unavailable")?;
-                ensure!(
-                    region.len() == 2 && region.bytes().all(|v| v.is_ascii_alphabetic()),
-                    "Unsupported storefront"
-                );
-                c.storefront = region.to_lowercase();
-                store(db)?.execute_batch("DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM artwork_cache;")?;
-                entry(db)?
-                    .set_password(&serde_json::to_string(&c)?)
-                    .map_err(|_| {
-                        anyhow::anyhow!("Could not save the Apple session in the system keychain")
-                    })?;
-                window.close()?;
-                let mut s = state().lock().unwrap();
-                s.signed_in = true;
-                s.scanned = 0;
-                s.matched = 0;
-                s.ambiguous = 0;
-                s.completed = 0;
-                s.total = 0;
-                s.lyrics_ready = 0;
-                s.lyrics_failed = 0;
-                s.library = "not_checked".into();
-                s.lyrics = "not_checked".into();
-                s.artwork = "not_checked".into();
-                s.sign_in = "available".into();
-                s.phase = "connected".into();
-                s.message =
-                    "Signed in. Library, lyrics, and motion artwork are checked independently."
-                        .into();
-                Ok(json!({"status":s.clone()}))
+                if VERIFYING.load(Ordering::SeqCst) || state().lock().unwrap().signed_in {
+                    return Ok(json!({"status":state().lock().unwrap().clone()}));
+                }
+                verify_connection(app, db)
             }
             "sync" => sync(db),
             "sync_lyrics" => {
@@ -798,7 +957,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                         "Fetching lyrics for matched songs. Your saved selections stay unchanged."
                             .into();
                 }
-                for id in ids {
+                for &id in &ids {
                     if CANCEL.load(Ordering::SeqCst) {
                         break;
                     }
@@ -829,10 +988,29 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                     "ready"
                 }
                 .into();
-                s.message=format!("{} lyrics ready to preview; {} unavailable. Saved lyric choices were not replaced.",s.lyrics_ready,s.lyrics_failed);
-                Ok(json!({"status":s.clone()}))
+                let ready = s.lyrics_ready;
+                let failed = s.lyrics_failed;
+                drop(s);
+                let files = if CANCEL.load(Ordering::SeqCst) {
+                    None
+                } else {
+                    Some(crate::lyric_sidecars::sync_tracks(db, Some(&ids))?)
+                };
+                let mut s = state().lock().unwrap();
+                let sidecar_ids = files
+                    .as_ref()
+                    .map(|f| f["ready_ids"].clone())
+                    .unwrap_or(json!([]));
+                s.message = if let Some(files) = files {
+                    format!("{ready} lyrics cached; {failed} unavailable. {} LyricsFiles saved, {} current, {} existing edits kept, {} file errors. Saved lyric choices stay authoritative.",files["written"],files["unchanged"],files["conflicts"],files["failed"])
+                } else {
+                    "Cancelled. Cached lyrics are retained; no sidecar sync started.".into()
+                };
+                Ok(json!({"status":s.clone(),"sidecarTrackIds":sidecar_ids}))
             }
             "cancel" => {
+                AUTH_EPOCH.fetch_add(1, Ordering::SeqCst);
+                close_auth_popups(app);
                 CANCEL.store(true, Ordering::SeqCst);
                 if let Some(w) = app.get_webview_window("apple-enrichment-signin") {
                     w.close()?;
@@ -843,6 +1021,8 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 Ok(json!({"status":s.clone()}))
             }
             "disconnect" => {
+                AUTH_EPOCH.fetch_add(1, Ordering::SeqCst);
+                close_auth_popups(app);
                 CANCEL.store(true, Ordering::SeqCst);
                 ensure!(
                     !JOB.load(Ordering::SeqCst),
@@ -851,6 +1031,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 if let Some(w) = app.get_webview_window("apple-enrichment-signin") {
                     w.close()?;
                 }
+                transfers::clear(db)?;
                 match entry(db)?.delete_credential() {
                     Ok(()) | Err(keyring::Error::NoEntry) => {}
                     Err(_) => {
@@ -929,6 +1110,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
         }
         s.phase = "unavailable".into();
         match req.action.as_str() {
+            "status" if s.sign_in == "waiting" => s.sign_in = "unavailable".into(),
             "verify" => s.sign_in = "unavailable".into(),
             "sync" => s.library = "unavailable".into(),
             "lyrics" => s.lyrics = "unavailable".into(),
@@ -946,6 +1128,15 @@ mod tests {
         assert!(digits("1234").is_ok());
         assert!(digits("../bad").is_err());
         assert_eq!(norm("Test—Song"), "testsong");
+        assert!(apple_navigation(
+            &"https://idmsa.apple.com/appleauth/auth".parse().unwrap()
+        ));
+        assert!(!apple_navigation(
+            &"https://apple.com.attacker.test/".parse().unwrap()
+        ));
+        assert!(!apple_navigation(
+            &"http://music.apple.com/".parse().unwrap()
+        ));
     }
     #[test]
     fn nested_lyrics() {

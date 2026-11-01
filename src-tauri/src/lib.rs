@@ -64,3 +64,5 @@ pub mod lyrics;
 pub mod lyric_formats;
 
 pub mod apple_enrichment;
+
+pub mod lyric_sidecars;
