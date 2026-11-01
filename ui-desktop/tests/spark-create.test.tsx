@@ -13,7 +13,7 @@ beforeEach(()=>{HTMLElement.prototype.scrollTo=vi.fn();HTMLDialogElement.prototy
 afterEach(()=>{cleanup();bridge.call.mockReset();});
 test('unapproved model stays unavailable and never sends a generation request',async()=>{
  bridge.call.mockResolvedValue({...base,ready:false,reason:'Awaiting evaluation'});
- render(<SparkCreate {...props()}/>);await screen.findByText('Enable experimental audio Sparklist beta');
+ render(<SparkCreate {...props()}/>);await screen.findByText('Prepare your music to make Sparklists.');
  expect(screen.getByRole('button',{name:'Preview Sparklist'})).toBeDisabled();expect(screen.getByRole('button',{name:'Choose for me'})).toBeDisabled();
  expect(bridge.call).toHaveBeenCalledTimes(1);
 });
@@ -39,13 +39,13 @@ test('preview listening is explicit and feedback remains part of the generation'
 
 test('creation picks up model and analysis readiness without remounting',async()=>{
  let ready=false;bridge.call.mockImplementation(async()=>ready?base:{...base,ready:false,beta:true,analyzed:0,analyzed_ids:[]});
- render(<SparkCreate {...props()}/>);await screen.findByText('Set up local audio generation');ready=true;
+ render(<SparkCreate {...props()}/>);await screen.findByText('Prepare your music to make Sparklists.');ready=true;
  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled(),{timeout:2500});
  expect(screen.queryByText(/cached audio embeddings/)).not.toBeInTheDocument();
 });
 test('creation separates choosing, previewing and saving without losing the seed',async()=>{
  bridge.call.mockImplementation((_name:string,args:{request:{action:string;generation?:unknown}})=>Promise.resolve(args.request.action==='preview'?{...base,preview:{track_ids:[1,2],configuration:args.request.generation,analyzed:2,available:3,generation_version:'audio-cosine-mood-diversity-v2'}}:base));
- render(<SparkCreate {...props()}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Select song'}));fireEvent.click(screen.getByRole('button',{name:/Seed song/}));fireEvent.click(screen.getByRole('button',{name:'Preview Sparklist'}));await screen.findByRole('button',{name:'Listen to preview'});expect(screen.queryByRole('textbox',{name:'Name'})).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Name & save'}));expect(screen.getByRole('textbox',{name:'Name'})).toBeVisible();fireEvent.click(screen.getByRole('button',{name:'Back to preview'}));fireEvent.click(screen.getByRole('button',{name:'Change vibe'}));expect(screen.getByText('Starting from')).toBeVisible();expect(screen.getAllByText('Seed song').some(el=>el.closest('.spark-selected-seed'))).toBe(true);
+ render(<SparkCreate {...props()}/>);await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());fireEvent.click(screen.getByRole('button',{name:'Select song'}));fireEvent.click(screen.getByRole('button',{name:/Seed song/}));fireEvent.click(screen.getByRole('button',{name:'Preview Sparklist'}));await screen.findByRole('button',{name:'Listen to preview'});expect(screen.queryByRole('textbox',{name:'Name'})).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Name & save'}));expect(screen.getByRole('textbox',{name:'Name'})).toBeVisible();fireEvent.click(screen.getByRole('button',{name:'Back to preview'}));fireEvent.click(screen.getByRole('button',{name:'Change vibe'}));expect(screen.getByText('Starting from')).toBeVisible();expect(screen.getAllByText('Seed song').some(el=>el.closest('.spark-seed-toggle'))).toBe(true);
 });
 
  test('Choose for me prepares a preview from the chosen seed without starting playback',async()=>{
