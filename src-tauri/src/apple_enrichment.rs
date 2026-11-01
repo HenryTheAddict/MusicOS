@@ -81,6 +81,11 @@ fn store(db: &Path) -> Result<rusqlite::Connection> {
     let c = rusqlite::Connection::open(db.with_file_name("desktop-apple-enrichment-v1.sqlite3"))?;
     c.busy_timeout(Duration::from_secs(5))?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL); CREATE TABLE IF NOT EXISTS choices(track_id INTEGER,catalog_id TEXT,payload TEXT,PRIMARY KEY(track_id,catalog_id)); CREATE TABLE IF NOT EXISTS lyric_cache(catalog_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS artwork_cache(album_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")?;
+    c.execute_batch("CREATE TABLE IF NOT EXISTS asset_links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL);
+        CREATE TRIGGER IF NOT EXISTS retain_asset_link AFTER INSERT ON links BEGIN INSERT OR REPLACE INTO asset_links VALUES(new.track_id,new.catalog_id,new.album_id,new.signature); END;")?;
+    if c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0))?<1 {
+        c.execute_batch("INSERT OR IGNORE INTO asset_links SELECT * FROM links;PRAGMA user_version=1;")?;
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -319,7 +324,7 @@ fn catalog_for(db: &Path, id: i64) -> Result<String> {
         .get_track_by_id(id)?
         .context("Song is no longer available")?;
     Ok(c.query_row(
-        "SELECT catalog_id FROM links WHERE track_id=? AND signature=?",
+        "SELECT catalog_id FROM asset_links WHERE track_id=? AND signature=?",
         rusqlite::params![id, signature(&track)],
         |r| r.get(0),
     )
@@ -637,7 +642,7 @@ pub fn artwork(db: &Path, id: i64) -> Result<Value> {
         "INSERT OR REPLACE INTO artwork_cache VALUES(?,?)",
         rusqlite::params![album, serde_json::to_string(&payload)?],
     )?;
-    sql.execute("DELETE FROM artwork_cache WHERE rowid NOT IN (SELECT rowid FROM artwork_cache ORDER BY rowid DESC LIMIT 100)",[])?;
+
     state().lock().unwrap().artwork = payload["state"].as_str().unwrap().into();
     Ok(payload)
 }
@@ -727,7 +732,7 @@ fn sync(db: &Path) -> Result<Value> {
     let mut sql = store(db)?;
     let tx = sql.transaction()?;
     tx.execute("DELETE FROM choices", [])?;
-    tx.execute("DELETE FROM artwork_cache", [])?;
+
     let mut matched = 0;
     let mut ambiguous = 0;
     for track in &local {
@@ -852,7 +857,7 @@ fn verify_connection(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
     );
     transfers::clear(db)?;
     store(db)?.execute_batch(
-        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM lyric_attempts;DELETE FROM artwork_cache;",
+        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_attempts;",
     )?;
     entry(db)?
         .set_password(&serde_json::to_string(&c)?)
@@ -1132,7 +1137,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                         anyhow::bail!("Could not remove the session from the system keychain")
                     }
                 };
-                store(db)?.execute_batch("DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_cache;DELETE FROM lyric_attempts;DELETE FROM artwork_cache;")?;
+                store(db)?.execute_batch("DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_attempts;")?;
                 *state().lock().unwrap() = Status {
                     phase: "disconnected".into(),
                     message: "Disconnected. Your selected lyrics are preserved.".into(),

@@ -309,7 +309,7 @@ impl DesktopPlayer {
         self.control.clock.levels.each_ref().map(|value| f32::from_bits(value.load(Ordering::Relaxed)))
     }
     pub fn listened(&self) -> f32 {
-        self.current
+        self.presentation().0
             .and_then(|i| self.listens.get(&self.queue[i].key))
             .copied()
             .unwrap_or(0.)
@@ -606,7 +606,7 @@ impl DesktopPlayer {
         self.command(Command::Pause(self.paused));
     }
     pub fn seek(&mut self, position: f32) {
-        if let Some(i) = self.current {
+        if let Some(i) = self.presentation().0 {
             let duration = self.queue[i].track.duration as f32;
             self.start(
                 i,
@@ -620,7 +620,7 @@ impl DesktopPlayer {
         }
     }
     pub fn next(&mut self) {
-        if let Some(i) = self.current {
+        if let Some(i) = self.presentation().0 {
             if i + 1 < self.queue.len() {
                 self.start(i + 1, 0., false);
             } else if self.repeat == LoopMode::All {
@@ -631,9 +631,9 @@ impl DesktopPlayer {
         }
     }
     pub fn prev(&mut self) {
-        if self.get_position() > 3. {
+        if self.presentation_position() > 3. {
             self.seek(0.);
-        } else if let Some(i) = self.current {
+        } else if let Some(i) = self.presentation().0 {
             self.start(i.saturating_sub(1), 0., false);
         }
     }
@@ -795,12 +795,31 @@ impl DesktopPlayer {
             .generation
             .fetch_add(1, Ordering::AcqRel);
     }
+    pub fn settle_audible(&mut self)->Result<()> {
+        let(index,deck)=self.presentation();
+        if index!=self.current {
+            self.control.commands.push(Command::Activate(deck)).map_err(|_|anyhow::anyhow!("Audio controls are busy; try again"))?;
+            self.account();self.outcome("cancelled","explicit control kept the dominant deck");
+            self.current=index;self.active=deck;self.activation_pending=Some(deck);self.prepared=None;self.transition=None;self.scheduled_reported=false;self.plan_revision=self.plan_revision.wrapping_add(1);
+            *self.decks[deck].parameters.lock().unwrap_or_else(|e|e.into_inner())=(self.listening.speed,self.listening.transpose(),self.rate_revision);
+        }
+        Ok(())
+    }
+    fn presentation(&self)->(Option<usize>,usize){
+        let deck=self.control.clock.dominant.load(Ordering::Acquire) as usize;
+        if self.control.clock.mixing.load(Ordering::Acquire) {
+            if let Some((key,incoming))=self.prepared.filter(|(_,incoming)|*incoming==deck){return (self.queue.iter().position(|e|e.key==key),incoming);}
+        }
+        (self.current,self.active)
+    }
+    fn presentation_position(&self)->f32{let (_,deck)=self.presentation();self.control.clock.source_frames[deck].load(Ordering::Acquire) as f32/RATE as f32}
     pub fn get_status(&self) -> Status {
+        let (index,_)=self.presentation();
         Status {
-            track: self.get_current_track().cloned(),
-            queue_index: self.current,
+            track: index.and_then(|i|self.queue.get(i)).map(|e|e.track.clone()),
+            queue_index: index,
             is_playing: self.is_playing(),
-            position: self.get_position(),
+            position: self.presentation_position(),
             volume: self.volume,
             shuffle: self.shuffle,
             loop_mode: self.repeat,
@@ -841,6 +860,7 @@ fn smooth_parameter(current:f32,target:f32)->f32 {if (target-current).abs()<0.00
 pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS.fetch_add(1,Ordering::Relaxed)}
 #[cfg(test)]mod transition_repair_tests {
  use super::*;
+ #[test]fn dominant_presentation_and_explicit_controls_keep_incoming_identity(){let mut p=pending();p.queue[1].track.id=2;p.control.clock.mixing.store(true,Ordering::Release);p.control.clock.dominant.store(1,Ordering::Release);p.control.clock.source_frames[1].store(3*RATE as u64,Ordering::Release);p.listens.insert(2,3.);let shown=p.get_status();assert_eq!(shown.queue_index,Some(1));assert_eq!(shown.track.unwrap().id,2);assert_eq!(shown.position,3.);assert_eq!(p.listened(),3.);assert_eq!(p.current,Some(0));p.settle_audible().unwrap();assert_eq!(p.current,Some(1));assert_eq!(p.active,1);assert!(p.transition.is_none());assert_eq!(p.entry_ids(),vec![1,2]);}
  fn pending()->DesktopPlayer {
   let track=Track{id:1,path:String::new(),title:String::new(),artist:String::new(),album:String::new(),track_number:1,duration:100,file_size:0,modified_at:0,indexed_at:0,cover_art_path:None,cover_art_updated_at:None,cover_art_source_modified_at:None,favorited:false,play_count:0,last_played:None,rating:0};let mut p=DesktopPlayer::new();p.queue=vec![Entry{key:1,track:track.clone()},Entry{key:2,track}];p.current=Some(0);p.paused=false;p.prepared=Some((2,1));p.transition=Some(Transition{request_id:42,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.schedule_id=42;p.decks[1].generation.store(1,Ordering::Release);p
  }

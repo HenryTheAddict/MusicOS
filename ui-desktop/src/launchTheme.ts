@@ -1,6 +1,10 @@
 import {defaultAppearance,themePalette,readableInk,secondaryInk} from './appearance';
-import type {Appearance,Preferences} from './types';
-declare global {interface Window {__MUSICOS_LAUNCH_APPEARANCE__?:Appearance}}
+import type {Appearance,Preferences,Palette} from './types';
+declare global {interface Window {__MUSICOS_LAUNCH_APPEARANCE__?:Appearance;__MUSICOS_LAUNCH_PALETTE__?:LaunchSnapshot|null}}
+type LaunchSnapshot={appearance:Appearance;dark:boolean;palette:Palette};
+const paletteKey='musicos-launch-palette-v1';
+export function savedLaunchPalette(look:Appearance,dark:boolean):Palette|null{try{const s=window.__MUSICOS_LAUNCH_PALETTE__??JSON.parse(localStorage.getItem(paletteKey)??'null');return s&&['mode','source','accent','tint','saturation'].every(k=>s.appearance?.[k]===look[k as keyof Appearance])&&s.dark===dark&&['background','blob','accent','text'].every(k=>/^#[0-9a-f]{6}$/i.test(s.palette?.[k]))?s.palette:null;}catch{return null;}}
+export function rememberLaunchPalette(appearance:Appearance,palette:Palette,dark:boolean){const snapshot={appearance,palette,dark};try{localStorage.setItem(paletteKey,JSON.stringify(snapshot));}catch{}return snapshot;}
 const key='musicos-launch-appearance-v1';
 function valid(value:unknown):value is Appearance {const a=value as Appearance|undefined;return !!a&&['system','light','dark'].includes(a.mode)&&['blue','artwork','custom'].includes(a.source)&&/^#[0-9a-f]{6}$/i.test(a.accent)&&Number.isFinite(a.tint)&&a.tint>=0&&a.tint<=40&&Number.isFinite(a.saturation)&&a.saturation>=0&&a.saturation<=150;}
 export function launchAppearance():Appearance {
@@ -21,7 +25,7 @@ export function launchPreferences(defaults:Preferences):Preferences{return {...d
 // profile must never interpolate from the registered bright-blue CSS defaults.
 export function prepareLaunchTheme(){
  const look=launchAppearance(),dark=look.mode==='dark'||look.mode==='system'&&matchMedia('(prefers-color-scheme: dark)').matches;
- const palette=themePalette(look,null,dark),root=document.documentElement;
+ const palette=savedLaunchPalette(look,dark)??themePalette(look,null,dark),root=document.documentElement;
  const surface=palette?.background??'#cbf1ff',blob=palette?.blob??'#54b9ff',ink=palette?.text??'#111820',accent=palette?.accent??'#0064df';
  root.dataset.themeMode=dark?'dark':'light';
  const tokens={'--page-color':palette?.background??'#00aeff','--shell-color':palette?.blob??'#00baff','--surface-color':surface,'--blob-color':blob,'--ink':ink,'--accent':accent,'--accent-ink':readableInk(accent),'--secondary-ink':secondaryInk(ink,surface,blob,dark)};

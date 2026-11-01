@@ -1,3 +1,4 @@
+mod launch_palette;
 mod product;
 mod desktop_metadata;
 pub mod app;

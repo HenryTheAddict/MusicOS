@@ -329,6 +329,8 @@ fn playback_loop(
 }
 
 fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackCommand) -> Result<()> {
+    if matches!(&command,LocalPlaybackCommand::Previous|LocalPlaybackCommand::Next|LocalPlaybackCommand::SeekAbsolute(_)|LocalPlaybackCommand::SeekRelative(_)|LocalPlaybackCommand::SetDjMode(false)|LocalPlaybackCommand::SelectQueueIndex(_)|LocalPlaybackCommand::RemoveQueueIndex(_)|LocalPlaybackCommand::MoveQueueItem{..}|LocalPlaybackCommand::PlayNext(_)|LocalPlaybackCommand::AddToQueue(_)|LocalPlaybackCommand::InsertQueue{..}|LocalPlaybackCommand::ClearUpcoming|LocalPlaybackCommand::ClearQueue)
+        || matches!(&command,LocalPlaybackCommand::SetListening(v) if v.speed!=player.listening.speed||v.transpose()!=player.listening.transpose()) {player.settle_audible()?;}
     match command {
         LocalPlaybackCommand::PlayTrack(id) => {
             let track = db

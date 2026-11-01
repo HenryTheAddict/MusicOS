@@ -16,7 +16,8 @@ export function usePlaybackFeed(initial:Playback){
  const latest=useRef(initial),shown=useRef(initial),[presentation,setPresentation]=useState(initial);
  const update=useCallback((next:Playback|((old:Playback)=>Playback))=>{
   const value=mergePlaybackUpdate(latest.current,typeof next==='function'?next(latest.current):next);latest.current=value;
-  const speed=value.listening_applied===false?clock.speed:value.listening?.speed??1,sameAnchor=clock.trackId===value.track?.id&&clock.playing===value.is_playing&&clock.speed===speed&&clock.position===value.position;
+  const incoming=value.dj_transition?.active&&value.queue_index!==null&&value.queue_entry_ids?.[value.queue_index]===value.dj_transition.incoming_entry;
+  const speed=value.listening_applied===false?clock.speed:(value.listening?.speed??1)*(incoming?value.dj_transition!.tempo:1),sameAnchor=clock.trackId===value.track?.id&&clock.playing===value.is_playing&&clock.speed===speed&&clock.position===value.position;
   clock={receivedAt:sameAnchor?clock.receivedAt:performance.now(),playing:value.is_playing,speed,trackId:value.track?.id,position:value.position,levels:value.audio_levels??[],reverbFrames:value.reverb_processed_frames??0};listeners.forEach(listener=>listener());
   if(!samePlaybackPresentation(shown.current,value)){shown.current=value;setPresentation(value);}
  },[]);

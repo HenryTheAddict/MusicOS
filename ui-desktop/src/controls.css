@@ -442,7 +442,7 @@
 
 /* A launch blends solid colors together; artwork keeps its own image colors. */@property --shell-color{ syntax:'<color>';inherits:true;initial-value:#00baff; }@property --page-color{ syntax:'<color>';inherits:true;initial-value:#00aeff; }@property --surface-color{ syntax:'<color>';inherits:true;initial-value:#cbf1ff; }@property --blob-color{ syntax:'<color>';inherits:true;initial-value:#54b9ff; }@property --accent{ syntax:'<color>';inherits:true;initial-value:#0064df; }@property --ink{ syntax:'<color>';inherits:true;initial-value:#111820; }@property --accent-ink{ syntax:'<color>';inherits:true;initial-value:#ffffff; }
 html {transition:none;}
-html[data-theme-phase=launch] {transition:--shell-color 1400ms ease,--page-color 1400ms ease,--surface-color 1400ms ease,--blob-color 1400ms ease,--accent 1400ms ease,--ink 1400ms ease,--accent-ink 1400ms ease;}
+html[data-theme-phase=launch] {transition:none;}
 /* Artwork changes continue from their current displayed colors, including
    interrupted fades. Explicit appearance edits remove this intent in layout. */
 html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-color 420ms ease-out,--surface-color 420ms ease-out,--blob-color 420ms ease-out,--accent 420ms ease-out;}

@@ -64,6 +64,7 @@ pub struct Clock {
     pub source_frames: [AtomicU64; 2],
     pub rendered_frames: AtomicU64,
     pub active: AtomicU64,
+    pub dominant: AtomicU64,
     pub mixing: AtomicBool,
     pub ready: [AtomicBool; 2],
     pub underruns: AtomicU64,
@@ -206,6 +207,7 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
 }
 impl Mixer {
     fn cancel(&mut self) {
+        self.clock.dominant.store(self.active as u64,Ordering::Release);
         self.plan = None;
         self.clock.schedule_id.store(0,Ordering::Release);
         self.elapsed = None;
@@ -350,9 +352,9 @@ impl Mixer {
                     .effects
                     .process(outgoing.samples, plan.tail, 1. - progress);
                 for c in 0..2 {
-                    output[c] = (tail[c] * outgoing_gain + incoming.samples[c] * incoming_gain)
-                        / (incoming_gain + outgoing_gain).max(1.);
+                    output[c] = tail[c] * outgoing_gain + incoming.samples[c] * incoming_gain;
                 }
+                if progress>=0.5 {self.clock.dominant.store(plan.incoming as u64,Ordering::Release);}
                 if elapsed >= plan.frames {
                     self.active = plan.incoming;
                     self.clock
@@ -458,6 +460,16 @@ mod tests {
                 })
                 .unwrap();
         }
+    }
+    #[test]
+    fn rendered_automix_keeps_energy_and_reports_dominant_deck_at_midpoint(){
+        let n=RATE as usize;let(mut c,mut mixer)=create(n*3);
+        for deck in 0..2 {for i in 0..n*3 {let hz=if deck==0{220.}else{330.};let sample=(i as f32*hz*std::f32::consts::TAU/RATE as f32).sin()*0.2;c.decks[deck].push(Frame{samples:[sample;2],source_frame:i as f64,generation:0,listening_revision:0}).unwrap();}}
+        c.commands.push(Command::Plan(Schedule{cancel_revision:0,id:1,cue:n as f64/2.,frames:n as u64,incoming:1,tail:Tail::Clean})).unwrap();c.commands.push(Command::Pause(false)).unwrap();
+        let mut samples=Vec::new();let mut first=None;for frame in 0..n*2 {let left=mixer.next().unwrap();let right=mixer.next().unwrap();samples.extend([left,right]);if c.clock.dominant.load(Ordering::Acquire)==1&&first.is_none(){first=Some(frame);}}
+        assert!(first.is_some_and(|at|at.abs_diff(n)<=1));
+        let rms=|a:usize,b:usize|{let slice=&samples[a*2..b*2];(slice.iter().map(|v|v*v).sum::<f32>()/slice.len() as f32).sqrt()};let solo=rms(n/4,n/2);let middle=rms(n*9/10,n*11/10);assert!((middle/solo-1.).abs()<0.04,"blend energy changed: {solo} -> {middle}");assert_eq!(c.clock.active.load(Ordering::Acquire),1);
+        let bytes=(samples.len()*2) as u32;let mut wav=Vec::new();wav.extend(b"RIFF");wav.extend((36+bytes).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16u32.to_le_bytes());wav.extend(1u16.to_le_bytes());wav.extend(2u16.to_le_bytes());wav.extend(RATE.to_le_bytes());wav.extend((RATE*4).to_le_bytes());wav.extend(4u16.to_le_bytes());wav.extend(16u16.to_le_bytes());wav.extend(b"data");wav.extend(bytes.to_le_bytes());for sample in samples {wav.extend(((sample.clamp(-1.,1.)*32767.) as i16).to_le_bytes());}std::fs::write(std::env::temp_dir().join("musicos-automix-render.wav"),wav).unwrap();
     }
     #[test] fn visual_bands_are_calibrated_bounded_and_decay_to_silence(){
         assert!(display_level(0.,0.04,2)>display_level(0.,0.04,0));

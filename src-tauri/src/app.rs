@@ -43,6 +43,13 @@ impl From<anyhow::Error> for AppError {
         }
     }
 }
+#[tauri::command]
+fn save_launch_palette(snapshot:crate::launch_palette::Snapshot)->std::result::Result<(),AppError>{crate::launch_palette::save(&snapshot).map_err(Into::into)}
+#[tauri::command]
+fn present_shell(window:tauri::WebviewWindow,color:String)->std::result::Result<(),AppError>{
+    let color=color.trim();if !(color.len()==7&&color.starts_with('#')&&color[1..].bytes().all(|v|v.is_ascii_hexdigit())){return Err(anyhow::anyhow!("Invalid launch color").into());}
+    let rgb=|a,b|u8::from_str_radix(&color[a..b],16).unwrap();window.set_background_color(Some(tauri::window::Color(rgb(1,3),rgb(3,5),rgb(5,7),255))).map_err(|e|anyhow::anyhow!(e))?;window.show().map_err(|e|anyhow::anyhow!(e))?;Ok(())
+}
 type ApiResult<T> = std::result::Result<T, AppError>;
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Task {
@@ -1649,7 +1656,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             audio_analysis, audio_tempos, playlist_file, sparklist,
-            bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
+            present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
@@ -1661,11 +1668,12 @@ pub fn run() {
             app.manage(state);
             crate::apple_enrichment::background::resume(app.handle().clone(),app.state::<AppState>().config().db_path.clone());
             #[cfg(target_os="macos")]crate::apple_enrichment::install_power_events(app.handle());
-            let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};",serde_json::to_string(&launch_appearance)?);
+            let launch=crate::launch_palette::load().filter(|s|s.valid()&&s.appearance==launch_appearance);
+            let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};window.__MUSICOS_LAUNCH_PALETTE__={};",serde_json::to_string(&launch_appearance)?,serde_json::to_string(&launch)?);
             let window=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?
                 .initialization_script(init).visible(false).build()?;
             let dark=launch_appearance.mode=="dark" || (launch_appearance.mode=="system"&&window.theme().ok()==Some(tauri::Theme::Dark));
-            window.set_background_color(Some(if dark {tauri::window::Color(40,44,63,255)}else{tauri::window::Color(0,186,255,255)}))?;
+            window.set_background_color(Some(launch.as_ref().filter(|s|s.matches(&launch_appearance,dark)).map(|s|s.native_color()).unwrap_or(if dark {tauri::window::Color(32,33,36,255)}else{tauri::window::Color(203,241,255,255)})))?;
             #[cfg(target_os="macos")]
             if let Some(window)=app.get_webview_window("main") {
                 let swipe_app=app.handle().clone();
@@ -1678,7 +1686,9 @@ pub fn run() {
 
             #[cfg(target_os="macos")]
             crate::system_media::register(client.clone(),app.handle().clone())?;
-            window.show()?;
+            // The renderer presents after applying its first palette. A failed
+            // renderer still exposes its window for diagnosis after a bounded wait.
+            let fallback=window.clone();std::thread::spawn(move||{std::thread::sleep(Duration::from_secs(2));if fallback.is_visible().ok()==Some(false){let _=fallback.show();}});
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let mut last_queue_revision = u64::MAX;
@@ -1686,8 +1696,8 @@ pub fn run() {
                 let mut planned=None;
                 let mut planned_at=std::time::Instant::now();
                 let mut arranged=None;
-                let mut analysis_requested=std::collections::BTreeMap::<i64,std::time::Instant>::new();
-                let mut background_scan=std::time::Instant::now();
+                let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
+                let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
                 let mut media_update=std::time::Instant::now()-Duration::from_secs(1);
                 loop {
                     if handle.state::<AppState>().stopped.load(Ordering::Relaxed) { break; }
@@ -1703,13 +1713,13 @@ pub fn run() {
                     let mut config=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone();config.enabled=s.dj_mode;
                     if s.dj_mode {if let Some(current)=s.queue_index {
                      let db=state.config().db_path;let upcoming=s.queue.iter().skip(current).take(5).collect::<Vec<_>>();state.analysis.prioritize(upcoming.iter().map(|t|t.id).collect());
-                     if state.analysis.auto_allowed()&&!analysis_progress.running {analysis_requested.retain(|_,time|time.elapsed()<Duration::from_secs(60));let missing=upcoming.iter().filter(|t|!analysis_requested.contains_key(&t.id)&&crate::analysis::cached_current(&db,t.id,&t.path).is_none()).map(|t|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();if !missing.is_empty(){analysis_requested.extend(missing.iter().map(|t|(t.0,std::time::Instant::now())));let _=state.analysis.start(db.clone(),missing);}else if background_scan.elapsed()>=Duration::from_secs(30){
-                        background_scan=std::time::Instant::now();let cfg=state.config();if let Ok(library)=LocalLibraryRepository::new(&cfg.db_path,&cfg.media_dir).snapshot(&LibraryQuery::default()){
-                            let cached=crate::analysis::cached_many_current(&db,&library.tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());
-                            let stale=library.tracks.iter().zip(cached).filter(|(t,c)|c.is_none()&&t.available&&!analysis_requested.contains_key(&t.id)).take(8).map(|(t,_)|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();
-                            if !stale.is_empty(){analysis_requested.extend(stale.iter().map(|t|(t.0,std::time::Instant::now())));let _=state.analysis.start(db.clone(),stale);}
-                        }
-                     }}
+                     if state.analysis.auto_allowed()&&!analysis_progress.running&&analysis_check.elapsed()>=Duration::from_secs(1) {
+                        analysis_check=std::time::Instant::now();
+                        let candidates=upcoming.iter().map(|t|{let metadata=std::fs::metadata(&t.path).ok();let key=format!("{}|{:?}|{:?}",t.path,metadata.as_ref().map(|m|m.len()),metadata.and_then(|m|m.modified().ok()));(*t,key)}).collect::<Vec<_>>();
+                        let missing=candidates.iter().filter(|(t,key)|analysis_requested.get(&t.id)!=Some(key)&&crate::analysis::cached_current(&db,t.id,&t.path).is_none()).map(|(t,_)|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();
+                        if !missing.is_empty()&&state.analysis.start(db.clone(),missing.clone()).is_ok(){for(id,_,_)in missing{if let Some((_,key))=candidates.iter().find(|(t,_)|t.id==id){analysis_requested.insert(id,key.clone());}}}
+                     }
+
                      let queued_ids=s.queue.iter().skip(current).map(|t|t.id).collect::<Vec<_>>();
                      let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));if config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {arranged=Some(stamp);
                       let features=crate::analysis::cached_many(&db,&s.queue.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());let pins=s.queue_entry_ids.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(i,_)|i).collect();

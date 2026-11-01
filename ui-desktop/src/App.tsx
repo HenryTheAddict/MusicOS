@@ -9,7 +9,7 @@ import {useShellLayout} from './useShellLayout';
 import {useDestinationNavigation,type Destination} from './useDestinationNavigation';
 import ExpandedPlayer,{type PlayerView} from './ExpandedPlayer';
 import {observeInputModality} from './inputModality';
-import {launchPreferences,rememberLaunchAppearance} from './launchTheme';
+import {launchPreferences,rememberLaunchAppearance,rememberLaunchPalette,savedLaunchPalette} from './launchTheme';
 import {usePlaylistDrop} from './usePlaylistDrop';
 import {usePlaybackFeed} from './playbackFeed';
 import {animateOwned} from './presentationMotion';
@@ -224,14 +224,17 @@ export default function App() {
   const look=appearance(preferences);
   useEffect(()=>{if(!loading)rememberLaunchAppearance(look);},[loading,look.mode,look.source,look.accent,look.saturation,look.tint]);
   useEffect(()=>{document.documentElement.dataset.themeMode=look.mode==='system'?(systemDark?'dark':'light'):look.mode;},[look.mode,systemDark]);
-  const palette=useMemo(()=>themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark]);
+  const palette=useMemo(()=>artPalette||look.source!=='artwork'?themePalette(look,artPalette,systemDark):savedLaunchPalette(look,look.mode==='dark'||look.mode==='system'&&systemDark)??themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark]);
   useLayoutEffect(()=>{document.documentElement.dataset.playerLayout=miniMode;return()=>{delete document.documentElement.dataset.playerLayout;};},[miniMode]);
+  const launchShown=useRef(false);
+  useLayoutEffect(()=>{if(loading||launchShown.current)return;const node=document.querySelector<HTMLElement>('.app-shell:not(.mini-shell)');if(!node)return;launchShown.current=true;let alive=true,cancel:(()=>void)|undefined;const reveal=()=>{if(alive)cancel=animateOwned(node,'shell-launch',[{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],180);};if(native)void call('present_shell',{color:getComputedStyle(document.documentElement).getPropertyValue('--shell-color').trim()}).then(reveal).catch(reveal);else reveal();return()=>{alive=false;cancel?.();};},[loading]);
+  useEffect(()=>{if(loading||look.source==='artwork'&&!artPalette)return;const resolved=palette??{background:'#cbf1ff',blob:'#00baff',accent:'#0064df',text:'#111820'};const timer=window.setTimeout(()=>{const snapshot=rememberLaunchPalette(look,resolved,look.mode==='dark'||look.mode==='system'&&systemDark);if(native)void call('save_launch_palette',{snapshot}).catch(()=>{});},180);return()=>clearTimeout(timer);},[loading,palette,systemDark,look.mode,look.source,look.accent,look.tint,look.saturation]);
   const launchThemeSettled=useRef(false);
   const [themeResolved,setThemeResolved]=useState(false);
   useLayoutEffect(()=>{document.documentElement.dataset.themePhase="launch";return()=>{delete document.documentElement.dataset.themePhase;delete document.documentElement.dataset.themeMotion;};},[]);
   useEffect(()=>{
     if(launchThemeSettled.current||!themeResolved)return;
-    const timer=setTimeout(()=>{launchThemeSettled.current=true;document.documentElement.dataset.themePhase="ready";},1600);
+    const timer=setTimeout(()=>{launchThemeSettled.current=true;document.documentElement.dataset.themePhase="ready";},180);
     return()=>clearTimeout(timer);
   },[themeResolved]);
   const appliedTheme=useRef<{appearance:string;resolved:boolean;palette:Palette|null}|null>(null);
@@ -1024,13 +1027,16 @@ export default function App() {
       </>
     );
   }
+  const miniOperation=useRef(0),cancelMiniExit=useRef<(()=>void)|undefined>(undefined);
+  useEffect(()=>{if(!native||miniMode==='normal')return;let alive=true,off:(()=>void)|undefined,closing=false;void import('@tauri-apps/api/window').then(async({getCurrentWindow})=>{const w=getCurrentWindow();const stop=await w.onCloseRequested(async event=>{if(closing)return;event.preventDefault();closing=true;const node=document.querySelector<HTMLElement>('.mini-player');if(node){node.inert=true;animateOwned(node,'mini-native-close',[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(4px)'}],140);await Promise.allSettled(node.getAnimations().map(a=>a.finished));}if(alive)await w.close();});if(alive)off=stop;else stop();});return()=>{alive=false;off?.();};},[miniMode]);
   async function changeMini(mode:'normal'|'tall'|'queue') {
-    if(miniChanging.current)return;
+    const operation=++miniOperation.current;cancelMiniExit.current?.();cancelMiniExit.current=undefined;
+    if(miniChanging.current){miniChanging.current=false;if(mode===miniMode)return;}
     miniChanging.current=true;
     let exit:(()=>void)|undefined;let exitNode:HTMLElement|null=null;
-    try {if(mode==='normal'&&miniMode!=='normal'){const node=document.querySelector<HTMLElement>('.mini-shell>.mini-player');if(node){exitNode=node;node.inert=true;}if(node&&!matchMedia('(prefers-reduced-motion: reduce)').matches){exit=animateOwned(node,'mini-window-exit',[{opacity:getComputedStyle(node).opacity,transform:getComputedStyle(node).transform},{opacity:0,transform:'translateY(4px)'}],140);await Promise.allSettled(node.getAnimations().map(animation=>animation.finished));}}if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
+    try {if(mode==='normal'&&miniMode!=='normal'){const node=document.querySelector<HTMLElement>('.mini-shell>.mini-player');if(node){exitNode=node;node.inert=true;}if(node&&!matchMedia('(prefers-reduced-motion: reduce)').matches){exit=animateOwned(node,'mini-window-exit',[{opacity:getComputedStyle(node).opacity,transform:getComputedStyle(node).transform},{opacity:0,transform:'translateY(4px)'}],140);cancelMiniExit.current=exit;await Promise.allSettled(node.getAnimations().map(animation=>animation.finished));}}if(operation!==miniOperation.current)return;if(native)await call('mini_player',{mode,pinned:miniPinned});setMiniMode(mode);setQueueOpen(false);if(mode!=='normal')changePreferences({...preferences,mini_player_view:mode==='queue'?'queue':'artwork'});}
     catch(e){if(native)await call('mini_player',{mode:'normal'}).catch(()=>{});setMiniMode('normal');setError(errorText(e));}
-    finally {exit?.();if(exitNode?.isConnected)exitNode.inert=false;miniChanging.current=false;}
+    finally {exit?.();if(exitNode?.isConnected)exitNode.inert=false;if(operation===miniOperation.current){miniChanging.current=false;cancelMiniExit.current=undefined;}}
   }
   async function toggleWindowPin(){
     const enabled=!(miniMode==='normal'?windowPinned:miniPinned);

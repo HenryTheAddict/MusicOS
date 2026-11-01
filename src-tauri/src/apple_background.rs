@@ -127,44 +127,13 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
             now()
         ],
     )?;
-    // This cache owns these files only. Keep a 256 MiB budget; originals are elsewhere.
-    let mut total: i64 = c.query_row(
-        "SELECT COALESCE(SUM(bytes),0) FROM static_covers",
-        [],
-        |r| r.get(0),
-    )?;
-    if total > 256 * 1024 * 1024 {
-        let rows = {
-            let mut q =
-                c.prepare("SELECT album_id,path,bytes FROM static_covers ORDER BY checked")?;
-            let rows = q
-                .query_map([], |r| {
-                    Ok((
-                        r.get::<_, String>(0)?,
-                        r.get::<_, String>(1)?,
-                        r.get::<_, i64>(2)?,
-                    ))
-                })?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            rows
-        };
-        for (album, path, size) in rows {
-            if total <= 256 * 1024 * 1024 {
-                break;
-            }
-            if Path::new(&path).parent() == Some(dir.as_path()) {
-                let _ = std::fs::remove_file(path);
-            }
-            c.execute("DELETE FROM static_covers WHERE album_id=?", [album])?;
-            total -= size;
-        }
-    }
+    // Downloaded album images are durable library assets, not evictable renditions.
     Ok(true)
 }
 pub fn cached_cover(db: &Path, id: i64) -> Option<String> {
     let catalog = catalog_for(db, id).ok()?;
     let c = sql(db).ok()?;
-    let path=c.query_row("SELECT static_covers.path FROM links JOIN static_covers ON links.album_id=static_covers.album_id WHERE links.track_id=? AND links.catalog_id=?",rusqlite::params![id,catalog],|r|r.get::<_,String>(0)).optional().ok().flatten()?;
+    let path=c.query_row("SELECT static_covers.path FROM asset_links JOIN static_covers ON asset_links.album_id=static_covers.album_id WHERE asset_links.track_id=? AND asset_links.catalog_id=?",rusqlite::params![id,catalog],|r|r.get::<_,String>(0)).optional().ok().flatten()?;
     Path::new(&path).is_file().then_some(path)
 }
 pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
@@ -351,25 +320,9 @@ pub(super) fn stop(db: &Path) -> Result<()> {
     sql(db)?.execute("INSERT OR REPLACE INTO background_settings VALUES(1,0)", [])?;
     Ok(())
 }
-pub(super) fn clear(db: &Path) -> Result<()> {
-    let c = sql(db)?;
-    let dir = db.with_file_name("apple-cover-cache-v1");
-    if !dir.is_symlink() {
-        let rows = {
-            let mut q = c.prepare("SELECT path FROM static_covers")?;
-            let rows = q
-                .query_map([], |r| r.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            rows
-        };
-        for path in rows {
-            let p = Path::new(&path);
-            if p.parent() == Some(dir.as_path()) {
-                let _ = std::fs::remove_file(p);
-            }
-        }
-    }
-    c.execute_batch("DELETE FROM static_covers;DELETE FROM cache_outcomes;UPDATE background_settings SET enabled=0")?;
+pub(super) fn clear(db:&Path)->Result<()> {
+    // Disconnect cancels account work; downloaded library assets stay local.
+    sql(db)?.execute_batch("DELETE FROM cache_outcomes;UPDATE background_settings SET enabled=0")?;
     Ok(())
 }
 pub fn resume(app: tauri::AppHandle, db: PathBuf) {
@@ -462,6 +415,7 @@ mod cache_tests {
         )
         .unwrap();
         assert_eq!(cached_cover(&db, id).as_deref(), cover.to_str());
+        clear(&db).unwrap();c.execute("DELETE FROM links",[]).unwrap();assert!(cover.exists());assert_eq!(cached_cover(&db,id).as_deref(),cover.to_str());
         stop(&db).unwrap();
         assert!(cover.is_file());
         assert!(d
