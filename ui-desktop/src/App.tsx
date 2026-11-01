@@ -1,3 +1,4 @@
+import PlayerViewCycle from './PlayerViewCycle';
 import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
 import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
@@ -208,6 +209,7 @@ export default function App() {
     if (pendingImport) importDialog.current?.showModal();
   }, [pendingImport]);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [queueView,setQueueView]=useState<'queue'|'lyrics'>('queue');
   const queuePresent=usePanelPresence(queueOpen);
   useEffect(()=>{const open=(event:Event)=>{const page=(event as CustomEvent<{page?:string}>).detail?.page==='spark'?'spark':'quality';setQueueOpen(false);sessionStorage.setItem('musicos-settings-tab','Audio');sessionStorage.setItem('musicos-audio-page',page);setSection('Settings');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));window.dispatchEvent(new CustomEvent('musicos-audio-page',{detail:page}));};window.addEventListener('musicos-open-audio-settings',open);return()=>window.removeEventListener('musicos-open-audio-settings',open);},[]);
   const [commandOpen,setCommandOpen]=useState(false);
@@ -1050,7 +1052,7 @@ export default function App() {
     if(miniMode!=='normal')await changeMini('normal');
     if(player.track){setExpandedOpen(false);setSection('Library');if(kind==='artist')artistFor(player.track,name);else albumFor(player.track);}
   }
-  async function showQueue(){if(miniMode!=='normal')await changeMini('normal');if(compact||expandedOpen)openPlayer('queue');else setQueueOpen(true);}
+  async function showQueue(){if(miniMode!=='normal')await changeMini('normal');if(compact||expandedOpen)openPlayer('queue');else {setQueueView('queue');setQueueOpen(true);}}
   nativeQueueAction.current=()=>void showQueue();
   const nowActions = player.track ? [
     {label:'Lyrics',icon:'Lyrics',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');openPlayer('lyrics');})();}},
@@ -1068,7 +1070,7 @@ export default function App() {
       : route.view
   ) as Scope;
   return (<>
-    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer onViewChange={view=>{if(view!=='lyrics')changePreferences({...preferences,mini_player_view:view==='queue'?'queue':'artwork'});}} density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
     <KeepView className="main-view" active={miniMode==='normal'}>{miniMode==='normal'&&<div
       className="app-shell adaptive-shell" ref={shell.root} data-layout={shell.layout}
       style={{'--playing-favorite-tone':playingPalette?.accent??'var(--accent)'} as CSSProperties}
@@ -1135,7 +1137,7 @@ export default function App() {
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
           </div>
           <div className="mini-controls">
-            <IconButton name="queue" label="Open Up next" pressed={queueOpen} onClick={() => compact?openPlayer('queue'):setQueueOpen(!queueOpen)} />
+            <PlayerViewCycle value={queueOpen?queueView:'playing'} onChange={next=>{if(compact){openPlayer(next);}else{if(next!=='playing')setQueueView(next);setQueueOpen(next!=='playing');}}}/>
             <AudioQuality key={player.track?.id??'empty'} tracks={player.track?[player.track]:[]} compact/>
             <IconButton
               name={player.shuffle ? "ShuffleON" : "ShuffleOFF"}
@@ -1405,7 +1407,7 @@ export default function App() {
       )}
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
-      {queuePresent&&!expandedPresent&&<AudioPanel theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
+      {queuePresent&&!expandedPresent&&<AudioPanel view={queueView} theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
       {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}

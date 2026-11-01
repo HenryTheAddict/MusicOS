@@ -1,3 +1,4 @@
+import {playerViewMorph,resetCycleShape,type CycleGlyph} from './playerViewMorph';
 import {shuffleMorph} from './shuffleMorph';
 import {menuDotsMorph} from './menuDotsMorph';
 import { useId, useLayoutEffect, useRef } from "react";
@@ -9,6 +10,8 @@ import { playPauseMorph } from "./playPauseMorph";
 const exports = import.meta.glob("../../assets/icons/ui/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const icons = Object.fromEntries(Object.entries(exports).map(([path, svg]) => [path.split("/").at(-1)!.replace(/\.svg$/, ""), svg.slice(svg.indexOf("<svg"))]));
 icons.menuPlus = icons.Plus;
+icons.playerQueue=icons.queue;icons.playerLyrics=icons.Lyrics.replace('viewBox="0 0 32 32"','viewBox="8 7 16 16"');icons.playerPlaying=icons.Song;
+const cycleNames=['playerQueue','playerLyrics','playerPlaying'];
 icons.controlClose=icons.tinyX.replace('viewBox="0 0 8 8"','viewBox="-2 -2 12 12"').replace(/#979797/g,'var(--icon-stroke,currentColor)');
 icons.menuDotsClose=icons.controlClose;
 icons.menuClose=icons.menuPlus.replace('<g ', '<g transform="rotate(45 16 16)" ');
@@ -53,7 +56,8 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
     const old = previous.current;
     previous.current = name;
     let cancel = () => {};
-    if(old!==name&&['ShuffleON','ShuffleOFF'].includes(old)&&['ShuffleON','ShuffleOFF'].includes(name)){
+    if(old!==name&&cycleNames.includes(old)&&cycleNames.includes(name)){if(reduced.matches){host.innerHTML=markup;resetCycleShape(host,name as CycleGlyph);}else cancel=playerViewMorph(host,old as CycleGlyph,name as CycleGlyph,markup);
+    }else if(old!==name&&['ShuffleON','ShuffleOFF'].includes(old)&&['ShuffleON','ShuffleOFF'].includes(name)){
       if(reduced.matches){host.innerHTML=markup;host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}else cancel=shuffleMorph(host,name==='ShuffleON',markup);
     } else if (old !== name && host.innerHTML && !reduced.matches && groups.some(group => group.includes(old) && group.includes(name))) {
       cancel = [old,name].every(value=>['3dots_(nocircle)','3dots(incircle)','menuDotsClose'].includes(value)) ? menuDotsMorph(host,name==='menuDotsClose',markup)
@@ -61,8 +65,8 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
         : [old,name].includes('rowLevels') ? playLevelsMorph(host,name==='rowLevels',markup,(name==='pause'||old==='pause')?'pause':'play')
         : [old,name].every(value=>value==='play'||value==='pause') ? playPauseMorph(host,name==='pause',markup)
         : morphSvg(host, host.innerHTML, markup, ['queue','controlClose','menuDotsClose','tinyX','menuPlus','3dots_(nocircle)','3dots(incircle)'].includes(name)?140:180);
-    } else {host.innerHTML = markup;host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}
-    const finish = () => { if (reduced.matches) { cancel(); host.innerHTML = markup;host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0); } };
+    } else {host.innerHTML = markup;if(cycleNames.includes(name))resetCycleShape(host,name as CycleGlyph);host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}
+    const finish = () => { if (reduced.matches) { cancel(); host.innerHTML = markup;if(cycleNames.includes(name))resetCycleShape(host,name as CycleGlyph);host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0); } };
     reduced.addEventListener("change", finish);
     return () => { cancel(); reduced.removeEventListener("change", finish); };
   }, [name, prefix]);

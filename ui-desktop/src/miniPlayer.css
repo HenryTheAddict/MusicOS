@@ -154,3 +154,10 @@
 .mini-player:is([data-density=compact],[data-density=wide]) .lyrics-pane .lyric-line{font-size:12px!important;line-height:16px!important;padding:0!important;min-height:16px;}
 .mini-player .lyrics-pane[data-variant=mini] .lyrics-lines{mask-image:none!important;}
 .mini-player .lyrics-kind{display:none;}
+
+/* The cycling footer replaces the tab row without changing native bounds. */
+.mini-player[data-density=standard]{grid-template-rows:minmax(0,1fr) 40px;gap:6px;}
+.mini-player:is([data-density=compact],[data-density=wide]){grid-template-rows:minmax(0,1fr) 36px;}
+.mini-player[data-density=standard] .mini-player-art{width:min(100%,calc(var(--mini-player-height,100dvh) - 126px));}
+.mini-player .player-view-cycle>.icon{width:22px;height:22px;}
+.retained-panel-lyrics{display:flex;flex:1;min-height:0;}.retained-panel-lyrics[hidden]{display:none;}.retained-panel-lyrics>.lyrics-pane{flex:1;min-height:0;}
