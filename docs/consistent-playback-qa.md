@@ -32,3 +32,13 @@ Evidence folder: `out/consistent-playback-2026-11-01/`.
 ## Delivery gate
 
 Preserve the latest profile, collection sidecars, original audio, previous app and OS work. Compare all eight protected runtime/model hashes and record the signed executable SHA-256. Installation requires a fresh native paused/stopped check. Do not replace or quit the running app while that check is unavailable or playback is running.
+
+## Installed verification
+
+After the user unlocked and paused musicOS, both previously failing hardware checks passed individually: native output reclamation/reopen and recovery preserving playhead, duplicate queue entries, controls and paused intent. The existing 92 passing serial cases plus these successful reruns cover all 94 current core tests.
+
+The signed update was installed after a fresh native Play-button check on MY EYES at 35.2 seconds. Startup restored that paused track/position. Lyrics loaded, and Up next selected through the shared view controls without issuing playback. The user subsequently interacted with the app and started playback; it was left running. This is not recorded as an audible Automix acceptance test. Physical trackpad and listening acceptance remain outstanding.
+
+Post-install checks verified 550 songs, 40 favorites, 2 manual playlists and 6 entries, collection sidecars, metadata, preferences and user lyric revisions. One newer listening update was retained. All eight protected embedded runtime/model files matched, and the pre-existing primary-checkout guide edit was preserved. Previous app and latest profile checkpoints are retained in `releases/desktop-consistent-playback-2026-11-01`.
+
+Signed executable SHA-256: `cc26e24923778d76ff5cc1cf33c654a87c1a319c4337c0d49899c6fe9547e826`.
