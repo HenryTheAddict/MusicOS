@@ -1,0 +1,11 @@
+import {useEffect,useRef,useState} from 'react';
+import {call,errorText,native} from './bridge';
+import ThemedChoice from './ThemedChoice';
+import {useViewActive} from './ViewScope';
+type Choice='automatic'|'explicit'|'clean'|'ask';
+export default function LyricEditionControl({trackId}:{trackId?:number}){
+ const active=useViewActive(),[value,setValue]=useState<Choice>(trackId===undefined?'explicit':'automatic'),[evidence,setEvidence]=useState('unknown'),[busy,setBusy]=useState(false),[error,setError]=useState(''),generation=useRef(0);
+ useEffect(()=>{const seq=++generation.current;setValue(trackId===undefined?'explicit':'automatic');setError('');if(!active||!native)return;void call('lyric_edition',{request:{trackId}}).then(r=>{if(seq===generation.current){setValue(trackId===undefined?r.preference:r.edition??'automatic');setEvidence(r.evidence??'unknown');}}).catch(e=>{if(seq===generation.current)setError(errorText(e));});return()=>{generation.current++;};},[trackId,active]);
+ async function change(choice:string){const seq=++generation.current;setBusy(true);setError('');try{if(native)await call('lyric_edition',{request:trackId===undefined?{preference:choice as 'explicit'|'clean'|'ask'}:{trackId,edition:choice as 'automatic'|'explicit'|'clean'}});if(seq===generation.current){setValue(choice as Choice);window.dispatchEvent(new CustomEvent('musicos-lyrics-changed',{detail:trackId}));}}catch(e){if(seq===generation.current)setError(errorText(e));}finally{if(seq===generation.current)setBusy(false);}}
+ return <div className="lyric-edition-control" aria-busy={busy}><div><strong>{trackId===undefined?'Preferred lyric edition':'Lyric edition for this song'}</strong><small>{trackId===undefined?'Known file ratings and your recording choices take priority.':`File rating: ${evidence==='unknown'?'Unknown':evidence==='clean'?'Clean':'Explicit'} · saved lyric edits stay yours.`}</small></div><ThemedChoice disabled={busy} label={trackId===undefined?'Preferred lyric edition':'Song lyric edition'} value={value} options={(trackId===undefined?[{value:'explicit',label:'Explicit'},{value:'clean',label:'Clean'},{value:'ask',label:'Ask'}]:[{value:'automatic',label:'Automatic'},{value:'explicit',label:'Explicit'},{value:'clean',label:'Clean'}])} onChange={choice=>{if(!busy)void change(choice);}}/>{error&&<p role="alert">{error}</p>}</div>;
+}

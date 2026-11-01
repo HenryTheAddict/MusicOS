@@ -67,3 +67,7 @@ pub mod lyric_formats;
 pub mod apple_enrichment;
 
 pub mod lyric_sidecars;
+
+pub mod lyric_edition;
+
+pub mod haptics;

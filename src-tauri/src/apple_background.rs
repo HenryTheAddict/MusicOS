@@ -198,7 +198,7 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
                     .ok()
                     .flatten()
                 })
-                .filter(|v| now() - v.2 < 86400);
+                .filter(|v| now() - v.2 < 86400 && !edition_stale(&db,*id).unwrap_or(true));
             let result = if recent.as_ref().is_some_and(|v| v.0 == "unavailable") {
                 Err(anyhow::anyhow!(
                     "No cached lyric match; skipped until explicit future refresh"

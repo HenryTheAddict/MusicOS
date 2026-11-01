@@ -1,9 +1,11 @@
+import {haptic} from './haptics';
 import type {PointerEvent as ReactPointerEvent} from 'react';
 import type {Track} from './types';
 import {springStep} from './motion';
 export type SongDrag={id:number;ids?:number[];x:number;y:number;drop:boolean;cancelled:boolean};
+let feedbackKey='';
 let cancelCurrent:(()=>void)|undefined,feedback:((label:string,allowed:boolean)=>void)|undefined,retirePreview:(()=>void)|undefined;
-export function songDragFeedback(label:string,allowed=true){feedback?.(label,allowed);}
+export function songDragFeedback(label:string,allowed=true){if(feedback&&allowed&&label!==feedbackKey&&!label.startsWith('Drop onto')){feedbackKey=label;haptic('target',label);}feedback?.(label,allowed);}
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 // A press remains a click until it crosses the drag threshold. Capture only then.
 export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[track.id]){
@@ -33,7 +35,7 @@ export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[
   if(e.pointerId!==pointer||done)return;const now=performance.now(),dt=Math.max(8,now-moved);vx=clamp((e.clientX-x)*1000/dt,-2500,2500);vy=clamp((e.clientY-y)*1000/dt,-2500,2500);x=e.clientX;y=e.clientY;moved=now;
   if(!target.isConnected){cancel();return;}if(!moving&&Math.hypot(x-start.x,y-start.y)<6)return;
   if(!moving){
-   moving=true;
+   moving=true;feedbackKey='';haptic('pickup',String(track.id));
    target.querySelectorAll<HTMLElement>('.track-label,.row-play').forEach(el=>{const style=getComputedStyle(el);frozen.set(el,{transform:el.style.transform,opacity:el.style.opacity});el.style.transform=style.transform;el.style.opacity=style.opacity;});
    target.setPointerCapture?.(pointer);target.dataset.songDragging='true';
    ghost=document.createElement('div');ghost.className='song-drag-preview';ghost.setAttribute('aria-hidden','true');inner=document.createElement('div');inner.className='song-drag-preview-inner';
@@ -41,7 +43,7 @@ export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[
    feedback=(label,allowed)=>{if(hint&&hint.textContent!==label)hint.textContent=label;if(ghost)ghost.dataset.allowed=String(allowed);};
    observer=new ResizeObserver(entries=>{width=entries[0].borderBoxSize?.[0]?.inlineSize??ghost?.offsetWidth??0;height=entries[0].borderBoxSize?.[0]?.blockSize??ghost?.offsetHeight??0;schedule();});observer.observe(ghost);last=now;
   }
-  e.preventDefault();window.getSelection()?.removeAllRanges();songDragFeedback('Drop onto a playlist or Up next');emit();schedule();
+  e.preventDefault();window.getSelection()?.removeAllRanges();emit();schedule();
  };
  const cleanup=(settle=false)=>{
   if(done)return;done=true;cancelAnimationFrame(frame);observer?.disconnect();

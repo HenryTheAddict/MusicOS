@@ -13,8 +13,13 @@ impl Default for Appearance{fn default()->Self{Self{mode:crate::product::config(
 impl Appearance{fn normalize(mut self)->Self{if !["system","light","dark"].contains(&self.mode.as_str()){self.mode="system".into();}if !["artwork","blue","custom"].contains(&self.source.as_str()){self.source="blue".into();}if self.accent.len()!=7||!self.accent.starts_with('#')||!self.accent[1..].bytes().all(|c|c.is_ascii_hexdigit()){self.accent="#0064df".into();}self.saturation=self.saturation.min(150);self.tint=self.tint.min(40);self}}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+pub struct TrackpadFeedback {pub enabled:bool,pub beat_hover:bool,pub interactions:bool}
+impl Default for TrackpadFeedback{fn default()->Self{Self{enabled:cfg!(target_os="macos"),beat_hover:true,interactions:true}}}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct Preferences {
     pub version: u32,
+    pub trackpad_feedback:TrackpadFeedback,
     pub onboarding_version: u32,
     pub mini_player_view: String,
     pub mini_player_density: String,
@@ -38,6 +43,7 @@ impl Default for Preferences {
     fn default() -> Self {
         Self {
             version: 1,
+            trackpad_feedback:Default::default(),
             onboarding_version: 0,
             mini_player_view: "artwork".into(),
             mini_player_density: crate::product::config().defaults.mini_player_density.clone(),
@@ -107,6 +113,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         // Parse fields independently: one invalid field must not discard valid siblings.
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
+            if let Some(v)=v.get("trackpad_feedback"){if let Ok(value)=serde_json::from_value(v.clone()){p.trackpad_feedback=value;}}
             p.onboarding_version=v.get("onboarding_version").and_then(|n|n.as_u64()).unwrap_or(crate::product::config().onboarding.version as u64).min(crate::product::config().onboarding.version as u64) as u32;
             if let Some(s)=v["mini_player_density"].as_str(){p.mini_player_density=s.into();}
             if let Some(s)=v["mini_player_view"].as_str(){p.mini_player_view=s.into();}
@@ -276,3 +283,5 @@ mod density_tests {
 }
 
 #[cfg(test)]mod onboarding_tests {use super::*;#[test]fn only_genuinely_new_profiles_need_setup(){let root=tempfile::tempdir().unwrap();let path=root.path().join("interface.json");assert_eq!(load_from(&path,None).onboarding_version,0);std::fs::write(&path,r#"{"display_name":"Zoë","appearance":{"mode":"dark"}}"#).unwrap();let existing=load_from(&path,None);assert_eq!(existing.onboarding_version,crate::product::config().onboarding.version);assert_eq!(existing.display_name,"Zoë");std::fs::write(&path,r#"{"onboarding_version":0,"display_name":""}"#).unwrap();let mut pending=load_from(&path,None);assert_eq!(pending.onboarding_version,0);pending.onboarding_version=crate::product::config().onboarding.version;atomic_write_json(&path,&pending).unwrap();assert_eq!(load_from(&path,None).onboarding_version,pending.onboarding_version);}}
+
+#[cfg(test)]mod feedback_tests{use super::*;#[test]fn feedback_defaults_and_toggles_persist(){let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");let mut p=load_from(&path,None);assert_eq!(p.trackpad_feedback.enabled,cfg!(target_os="macos"));assert!(p.trackpad_feedback.beat_hover&&p.trackpad_feedback.interactions);p.trackpad_feedback.enabled=false;p.trackpad_feedback.beat_hover=false;atomic_write_json(&path,&p).unwrap();assert_eq!(load_from(&path,None).trackpad_feedback,p.trackpad_feedback);}}

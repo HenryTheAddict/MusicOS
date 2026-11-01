@@ -8,6 +8,7 @@ static SYNC: Mutex<()> = Mutex::new(());
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
+pub fn managed(c:&rusqlite::Connection,path:&Path)->bool {let Ok(bytes)=std::fs::read(path) else{return false;};c.query_row("SELECT digest FROM sidecar_sync WHERE path=?",[path.to_string_lossy()],|r|r.get::<_,String>(0)).ok().is_some_and(|digest|digest==hash(&bytes))}
 fn write(
     c: &rusqlite::Connection,
     audio: &Path,
@@ -230,4 +231,12 @@ mod batch_tests {
         assert_eq!(loaded["document"]["plain"], "Corrected words");
         assert_eq!(loaded["revision"], 2);
     }
+}
+
+#[cfg(test)]mod edition_tests{use super::*;
+ #[test]fn edition_changes_refresh_only_unedited_managed_apple_sidecars(){
+ let dir=tempfile::tempdir().unwrap();let db=dir.path().join("library.db");let audio=dir.path().join("song.flac");std::fs::write(&audio,b"audio unchanged").unwrap();let library=musicos_init::database::Db::open(&db.to_string_lossy()).unwrap();let id=library.insert_track(audio.to_str().unwrap(),"Song","Artist","Album",180,1,1).unwrap();let sql=crate::apple_enrichment::store(&db).unwrap();let track=library.get_track_by_id(id).unwrap().unwrap();let policy=crate::lyric_edition::policy(&sql,&track).unwrap();
+ let link=|catalog:&str,words:&str|{let mut doc=crate::lyrics::parse(words,"plain").unwrap();doc.extensions.insert("x-musicos".into(),json!({"attribution":{"provider":"Apple Music","catalogId":catalog}}));sql.execute("INSERT OR REPLACE INTO links VALUES(?,?,?,?)",rusqlite::params![id,catalog,"10","Song|Artist|Album|180"]).unwrap();sql.execute("INSERT OR REPLACE INTO lyric_cache VALUES(?,?)",rusqlite::params![catalog,serde_json::to_string(&doc).unwrap()]).unwrap();crate::lyric_edition::record(&sql,id,catalog,&policy,false).unwrap();};
+ let load=||crate::lyrics::execute(&db,crate::lyrics::Request{action:"load".into(),track_id:Some(id),..Default::default()}).unwrap();let sync=||{let c=rusqlite::Connection::open(db.with_file_name("desktop-lyrics-v1.sqlite3")).unwrap();c.execute_batch("CREATE TABLE IF NOT EXISTS sidecar_sync(path TEXT PRIMARY KEY,digest TEXT NOT NULL)").unwrap();let doc:crate::lyrics::Document=serde_json::from_value(load()["document"].clone()).unwrap();write(&c,&audio,&doc).unwrap()};link("100","Clean words");assert_eq!(sync(),"written");link("200","Explicit words");assert_eq!(load()["document"]["plain"],"Explicit words");assert_eq!(sync(),"written");let path=audio.with_extension("lyricsfile.yaml");let mut doc=crate::lyrics::parse(&std::fs::read_to_string(&path).unwrap(),"lyricsfile").unwrap();doc.plain="External edit".into();std::fs::write(&path,crate::lyrics::export(&doc,"lyricsfile").unwrap()).unwrap();link("300","Another cached version");assert_eq!(load()["document"]["plain"],"External edit");assert_eq!(std::fs::read(audio).unwrap(),b"audio unchanged");
+ }
 }

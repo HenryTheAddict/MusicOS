@@ -89,6 +89,8 @@ pub struct AppState {
     artist_running: AtomicBool,
 }
 impl AppState {
+    pub(crate) fn haptic_allowed(&self,kind:crate::haptics::Kind,track:Option<i64>)->bool{let p=self.preferences.lock().unwrap_or_else(|e|e.into_inner()).trackpad_feedback.clone();if !p.enabled{return false;}if kind==crate::haptics::Kind::Beat{if !p.beat_hover{return false;}let playback=self.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();playback.is_playing&&track.is_some()&&playback.track.as_ref().map(|t|t.id)==track}else{p.interactions}}
+
     fn new() -> Result<Self> {
         let config = storage::load_config()?;
         let repo = LocalLibraryRepository::new(&config.db_path, &config.media_dir);
@@ -1132,6 +1134,10 @@ async fn metadata_edit(
     .await
 }
 #[tauri::command]
+async fn trackpad_feedback(app:tauri::AppHandle,window:tauri::WebviewWindow,request:crate::haptics::Request){crate::haptics::request(app,window,request).await}
+#[tauri::command]
+async fn lyric_edition(app:tauri::AppHandle,request:crate::lyric_edition::Request)->ApiResult<Value>{blocking(move||crate::lyric_edition::action(&app.state::<AppState>().config().db_path,request)).await}
+#[tauri::command]
 async fn apple_enrichment(app:tauri::AppHandle,request:crate::apple_enrichment::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let changed=request.action=="transfer_playlist";let value=crate::apple_enrichment::action(&app,&state.config().db_path,request)?;if changed{let _=app.emit("library-changed",json!({"reason":"collections"}));}Ok(value)}).await}
 
 #[tauri::command]
@@ -1654,7 +1660,7 @@ fn open_provider(url: String) -> ApiResult<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(tauri::generate_handler![lyric_edition,trackpad_feedback,
             audio_analysis, audio_tempos, playlist_file, sparklist,
             present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,

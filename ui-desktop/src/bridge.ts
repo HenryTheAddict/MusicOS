@@ -147,6 +147,8 @@ type Commands = {
   metadata_workspace:{args:{request:import("./types").MetadataWorkspaceRequest};result:import("./types").MetadataWorkspace};
   present_shell:{args:{color:string};result:void};
   save_launch_palette:{args:{snapshot:{appearance:import("./types").Appearance;dark:boolean;palette:import("./types").Palette}};result:void};
+  trackpad_feedback:{args:{request:{kind:import('./haptics').FeedbackKind;key:string;trackId?:number}};result:void};
+  lyric_edition:{args:{request:{trackId?:number;preference?:'explicit'|'clean'|'ask';edition?:'automatic'|'explicit'|'clean'}};result:{preference:'explicit'|'clean'|'ask';edition?:'automatic'|'explicit'|'clean';evidence?:'unknown'|'explicit'|'clean';resolved?:string}};
   apple_enrichment:{args:{request:{action:string;trackId?:number;catalogId?:string}};result:import("./AppleEnrichment").AppleResponse};
   lyrics:{args:{request:import("./lyrics").LyricRequest};result:import("./lyrics").LyricResponse};
   metadata_review: {

@@ -1,3 +1,4 @@
+import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
 import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
 import {captureBackPage,useBackSwipe} from './useBackSwipe';
@@ -164,6 +165,8 @@ export default function App() {
   const dropNotice=usePlaylistDrop(collections,library.tracks,setCollections,setCollectionError);
   const collectionSummaries=useMemo(()=>new Map(collections.map(item=>{let duration=0,available=0;for(const id of item.track_ids){const track=tracksById.get(id);if(track){duration+=track.duration;available++;}}return [item.id,{duration,available}];})),[collections,tracksById]);
   const [preferences, setPreferences] = useState(()=>launchPreferences(defaultPreferences));
+  useEffect(()=>setFeedbackSettings(preferences.trackpad_feedback),[preferences.trackpad_feedback]);
+  useEffect(installInteractionFeedback,[]);
   const savedSparkBeta=useRef(defaultPreferences.sparklist_beta);
   useSmoothCorners();
   const [miniMode,setMiniMode]=useState<'normal'|'tall'|'queue'>('normal');

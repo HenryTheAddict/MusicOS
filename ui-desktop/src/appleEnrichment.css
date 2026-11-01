@@ -25,3 +25,25 @@
 .apple-integration-header{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;}.apple-integration-header>.icon{width:24px;height:24px;}.apple-integration-header>div{flex:1;min-width:12rem;}.apple-integration h3,.apple-integration h4{margin:0 0 .375rem;}.apple-integration p{font-size:.8125rem;line-height:1.5;margin:.25rem 0 .75rem;}
 .apple-integration button{font:500 .8125rem Figtree,sans-serif;color:var(--ink);background:var(--surface-color);border:1px solid var(--control-border);border-radius:10px;min-height:36px;padding:.5rem .75rem;display:inline-flex;align-items:center;justify-content:center;gap:.5rem;}.apple-integration button:hover:not(:disabled){background:var(--blob-color);}.apple-integration button:disabled{opacity:.5;}.apple-integration-details{border-top:1px solid var(--control-border);margin-top:1rem;padding-top:1rem;}.apple-integration .apple-capabilities{grid-template-columns:repeat(2,minmax(0,1fr));}.apple-integration summary{padding:.75rem 0;cursor:pointer;font-size:.875rem;}.apple-integration details{border-top:1px solid var(--control-border);margin-top:.75rem;}.apple-integration .apple-primary{background:var(--accent);color:var(--accent-ink);}.apple-integration .apple-transfers{margin-top:0;border:0;padding-top:0;}
 .settings .apple-integration button.apple-primary,.settings .apple-integration button.apple-primary:hover:not(:disabled){background:var(--ink);color:var(--surface-color);border-color:transparent;}
+
+/* Compact Settings groups, with one Sketch chevron and no native marker. */
+.apple-integration .apple-integration-details{display:flex;flex-direction:column;gap:12px;padding-top:16px;}
+.apple-integration .apple-integration-details>h4,.apple-integration .apple-integration-details>p{margin:0;}
+.apple-integration .apple-group-heading{margin-top:8px!important;}
+.apple-integration .apple-capabilities{margin:0;gap:6px;}
+.apple-integration .apple-capabilities>div{padding:8px 10px;}
+.apple-integration .apple-sync-status{margin:0;padding:10px 12px;order:0;}
+.apple-integration .apple-setup-actions{order:0;gap:8px;}
+.apple-integration details{margin:0;padding-top:4px;}
+.apple-integration summary{list-style:none!important;display:flex!important;align-items:center;justify-content:flex-start;gap:8px;min-height:40px;padding:4px 0!important;font:600 .8125rem/1.4 Figtree,sans-serif;}
+.apple-integration summary::-webkit-details-marker{display:none!important;}
+.apple-integration summary::marker{content:'';}
+.apple-integration summary::before,.apple-integration summary::after{display:none!important;content:none!important;}
+.apple-integration summary>.icon{width:16px;height:16px;flex:none;transform:rotate(0deg);transition:transform 140ms;}
+.apple-integration details[open]>summary>.icon{transform:rotate(180deg);}
+.apple-integration .apple-setup-footer{padding-top:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.apple-integration .apple-setup-footer p{margin:0;font-size:11px;}
+.apple-integration .apple-setup-footer button{min-height:32px;padding:5px 10px;font-size:12px;}
+.lyric-edition-control{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 0;}
+.lyric-edition-control>div{flex:1;min-width:10rem;}.lyric-edition-control strong{display:block;font-size:13px;font-weight:600;}.lyric-edition-control small{display:block;font-size:11px;line-height:1.5;margin-top:3px;color:var(--secondary-ink,var(--ink));}
+@media(prefers-reduced-motion:reduce){.apple-integration summary>.icon{transition:none;}}

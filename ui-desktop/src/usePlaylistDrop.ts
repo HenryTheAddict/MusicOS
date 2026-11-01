@@ -1,3 +1,4 @@
+import {haptic} from './haptics';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {call,errorText} from './bridge';
 import {playlistDropPlan} from './playlistDrop';
@@ -15,7 +16,7 @@ export function usePlaylistDrop(collections:SavedCollection[],tracks:Track[],onC
    if(pending.has(id)){songDragFeedback('Saving this playlist…',false);return;}
    songDragFeedback(plan.label,plan.allowed);if(!value.drop){if(plan.allowed)target.dataset.songDrop='true';return;}
    if(!plan.allowed){setNotice(plan.label);return;}pending.add(id);
-   void call('collections',{request:{action:'add',id,track_ids:plan.ids}}).then(items=>{if(alive){latest.current.onChange(items);setNotice(`Added ${plan.ids.length} ${plan.ids.length===1?'song':'songs'} to ${item!.name}`);}}).catch(error=>{if(alive)latest.current.onError(errorText(error));}).finally(()=>pending.delete(id));
+   void call('collections',{request:{action:'add',id,track_ids:plan.ids}}).then(items=>{if(alive){latest.current.onChange(items);haptic('drop',id);setNotice(`Added ${plan.ids.length} ${plan.ids.length===1?'song':'songs'} to ${item!.name}`);}}).catch(error=>{if(alive)latest.current.onError(errorText(error));}).finally(()=>pending.delete(id));
   };
   window.addEventListener('musicos-song-drag',drag);return()=>{alive=false;clear();window.removeEventListener('musicos-song-drag',drag);};
  },[]);return notice;

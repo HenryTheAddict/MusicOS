@@ -77,7 +77,7 @@ fn credentials(db: &Path) -> Result<Credentials> {
         .map_err(|_| anyhow::anyhow!("Connect Apple Music to continue."))?;
     Ok(serde_json::from_str(&raw)?)
 }
-fn store(db: &Path) -> Result<rusqlite::Connection> {
+pub(crate) fn store(db: &Path) -> Result<rusqlite::Connection> {
     let c = rusqlite::Connection::open(db.with_file_name("desktop-apple-enrichment-v1.sqlite3"))?;
     c.busy_timeout(Duration::from_secs(5))?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL); CREATE TABLE IF NOT EXISTS choices(track_id INTEGER,catalog_id TEXT,payload TEXT,PRIMARY KEY(track_id,catalog_id)); CREATE TABLE IF NOT EXISTS lyric_cache(catalog_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS artwork_cache(album_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")?;
@@ -375,10 +375,15 @@ pub fn cached_lyric(db: &Path, id: i64) -> Result<Option<crate::lyrics::Document
     })
     .transpose()
 }
+pub fn edition_stale(db:&Path,id:i64)->Result<bool>{let sql=store(db)?;let track=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("Song unavailable")?;let p=crate::lyric_edition::policy(&sql,&track)?;Ok(catalog_for(db,id).ok().is_some_and(|catalog|!crate::lyric_edition::valid(&sql,id,&catalog,&p).unwrap_or(false)))}
+pub fn document_stale(db:&Path,id:i64,doc:&crate::lyrics::Document)->Result<bool>{let catalog=doc.extensions.get("x-musicos").and_then(|v|v.pointer("/attribution/catalogId")).and_then(Value::as_str);Ok(edition_stale(db,id)?||catalog.is_some_and(|id_in_file|catalog_for(db,id).is_ok_and(|current|current!=id_in_file)))}
 // A connected account enriches this local recording on demand. No library scan,
 // audio download, or metadata replacement is needed to open its lyrics.
 fn lyric_catalog(db: &Path, id: i64) -> Result<String> {
-    if let Ok(catalog)=catalog_for(db,id) { return Ok(catalog); }
+    let sql=store(db)?;
+    let policy_track=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("Song unavailable")?;
+    let policy=crate::lyric_edition::policy(&sql,&policy_track)?;
+    if let Ok(catalog)=catalog_for(db,id) {if crate::lyric_edition::valid(&sql,id,&catalog,&policy)? {return Ok(catalog);}}
     let auth=credentials(db)?;
     let track=musicos_init::database::Db::open(&db.to_string_lossy())?
         .get_track_by_id(id)?.context("This local song is unavailable")?;
@@ -397,21 +402,25 @@ fn lyric_catalog(db: &Path, id: i64) -> Result<String> {
             if let Some(catalog)=row["id"].as_str().filter(|v|digits(v).is_ok()) {matches.insert(catalog,row);}
         }
     }
-    ensure!(matches.len()==1,if matches.is_empty(){"Apple Music has no exact recording and album match. Your local song is unchanged; LRCLIB is still available."}else{"Apple Music returned multiple matching editions. Choose the recording in Settings → Integrations before using its lyrics."});
-    let (catalog,row)=matches.first_key_value().unwrap();
+    let chosen=crate::lyric_edition::choose(&matches,&policy);
+    if chosen.is_none(){for (catalog,row) in &matches{sql.execute("INSERT OR REPLACE INTO choices VALUES(?,?,?)",rusqlite::params![id,catalog,serde_json::to_string(row)?])?;}}
+    ensure!(chosen.is_some(),if matches.is_empty(){"Apple Music has no exact recording and album match. Your local song is unchanged; LRCLIB is still available."}else{"Apple Music returned multiple matching editions. Choose the recording in Settings → Integrations before using its lyrics."});
+    let (catalog,row)=chosen.unwrap();
     let fresh=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("This song is unavailable")?;
     ensure!(signature(&fresh)==signature(&track),"The recording changed during lookup. Try again.");
-    store(db)?.execute("INSERT OR REPLACE INTO links VALUES(?,?,?,?)",rusqlite::params![id,catalog,row.pointer("/relationships/albums/data/0/id").and_then(Value::as_str),signature(&track)])?;
-    Ok((*catalog).to_owned())
+    ensure!(crate::lyric_edition::policy(&sql,&fresh)?==policy,"Lyric edition changed during lookup. Try again.");
+    sql.execute("INSERT OR REPLACE INTO links VALUES(?,?,?,?)",rusqlite::params![id,catalog,row.pointer("/relationships/albums/data/0/id").and_then(Value::as_str),signature(&track)])?;
+    crate::lyric_edition::record(&sql,id,catalog,&policy,false)?;
+    Ok(catalog.to_owned())
 }
 /// Offline cache first. Failed Apple attempts never prevent the independent LRCLIB path.
 pub fn automatic_lyric(db:&Path,id:i64)->Result<Option<crate::lyrics::Document>> {
-    if let Some(doc)=cached_lyric(db,id)? {return Ok(Some(doc));}
-    if credentials(db).is_err() {return Ok(None);}
+    if !edition_stale(db,id)? {if let Some(doc)=cached_lyric(db,id)? {return Ok(Some(doc));}}
+    if credentials(db).is_err() {return cached_lyric(db,id);}
     let track=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(id)?.context("This song is unavailable")?;
     let sql=store(db)?;
     sql.execute_batch("CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL)")?;
-    let key=signature(&track);
+    let key=format!("{}:{}",signature(&track),crate::lyric_edition::policy(&sql,&track)?.key);
     let checked=sql.query_row("SELECT checked FROM lyric_attempts WHERE signature=?",[&key],|r|r.get::<_,u64>(0)).unwrap_or(0);
     if apple_now().saturating_sub(checked)<60 {return Ok(None);}
     match lyric(db,id) {
@@ -422,6 +431,7 @@ pub fn automatic_lyric(db:&Path,id:i64)->Result<Option<crate::lyrics::Document>>
 pub fn lyric(db: &Path, id: i64) -> Result<Value> {
     let catalog = lyric_catalog(db, id)?;
     let sql = store(db)?;
+    ensure!(!edition_stale(db,id)?,"Lyric edition changed. Try again.");
     if let Ok(raw) = sql.query_row(
         "SELECT document FROM lyric_cache WHERE catalog_id=?",
         [&catalog],
@@ -454,7 +464,7 @@ pub fn lyric(db: &Path, id: i64) -> Result<Value> {
         );
     }
     ensure!(
-        catalog_for(db, id)? == catalog,
+        catalog_for(db, id)? == catalog && !edition_stale(db,id)?,
         "The recording changed during lookup. Match it again before using these lyrics."
     );
     identify_document(db, id, &mut doc)?;
@@ -742,12 +752,14 @@ fn sync(db: &Path) -> Result<Value> {
         );
         let saved: Option<String> = tx
             .query_row(
-                "SELECT catalog_id FROM links WHERE track_id=? AND signature=?",
+                "SELECT catalog_id FROM asset_links WHERE track_id=? AND signature=?",
                 rusqlite::params![track.id, signature(track)],
                 |r| r.get(0),
             )
             .ok();
-        if saved.is_some() {
+        let policy=crate::lyric_edition::policy(&tx,track)?;
+        if saved.as_deref().is_some_and(|id|crate::lyric_edition::valid(&tx,track.id,id,&policy).unwrap_or(false)) {
+            tx.execute("INSERT OR REPLACE INTO links SELECT * FROM asset_links WHERE track_id=?",[track.id])?;
             matched += 1;
             continue;
         }
@@ -772,8 +784,7 @@ fn sync(db: &Path) -> Result<Value> {
                 seen.insert(id, row);
             }
         }
-        if seen.len() == 1 {
-            let (id, row) = seen.first_key_value().unwrap();
+        if let Some((id,row))=crate::lyric_edition::choose(&seen,&policy) {
             let album = row
                 .pointer("/relationships/albums/data/0/id")
                 .and_then(|v| v.as_str());
@@ -781,8 +792,9 @@ fn sync(db: &Path) -> Result<Value> {
                 "INSERT OR REPLACE INTO links VALUES(?,?,?,?)",
                 rusqlite::params![track.id, id, album, signature(track)],
             )?;
+            crate::lyric_edition::record(&tx,track.id,id,&policy,false)?;
             matched += 1;
-        } else if seen.len() > 1 {
+        } else if !seen.is_empty() {
             ambiguous += 1;
             for (id, row) in seen {
                 tx.execute(
@@ -1194,6 +1206,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                         signature(&track)
                     ],
                 )?;
+                crate::lyric_edition::record(&c,id,&catalog,&crate::lyric_edition::policy(&c,&track)?,true)?;
                 c.execute("DELETE FROM choices WHERE track_id=?", [id])?;
                 Ok(json!({"status":state().lock().unwrap().clone()}))
             }

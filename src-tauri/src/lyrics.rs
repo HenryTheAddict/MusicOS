@@ -89,6 +89,7 @@ pub struct Candidate {
 }
 #[derive(Serialize)]
 pub struct Response {
+    #[serde(default)] pub edition_recheck:bool,
     pub track_id: i64,
     pub revision: i64,
     pub document: Option<Document>,
@@ -301,6 +302,7 @@ fn response(
     state: &str,
 ) -> Result<Response> {
     Ok(Response {
+        edition_recheck:false,
         track_id: id,
         revision: current(c, id)?.0,
         document,
@@ -362,12 +364,13 @@ fn local(c: &Connection, track: &musicos_init::database::Track) -> Result<Respon
             let meta = p.metadata()?;
             ensure!(meta.len() <= 2_000_000, "Local lyrics exceed 2 MB");
             let doc = describe(parse(&std::fs::read_to_string(&p)?, if ext == "lyricsfile.yaml" {"lyricsfile"} else {ext})?, track);
+            let managed_apple=crate::lyric_sidecars::managed(c,&p)&&doc.extensions.get("x-musicos").and_then(|v|v.pointer("/attribution/provider")).and_then(serde_json::Value::as_str)==Some("Apple Music");
             return response(
                 c,
                 track.id,
                 Some(doc),
                 Some(Source {
-                    kind: "sidecar".into(),
+                    kind: if managed_apple {"managed_apple"}else{"sidecar"}.into(),
                     label: format!("Local .{ext}"),
                     url: None,
                     provider_id: None,
@@ -650,11 +653,11 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
         .context("This song is no longer in the library")?;
     let value = match req.action.as_str() {
         "load" => {
-            let r = local(&c, &track)?;
+            let mut r = local(&c, &track)?;
             if r.document.is_some() {
-                r
+                r.edition_recheck=r.revision==0&&r.source.as_ref().is_some_and(|s|s.kind=="managed_apple")&&crate::apple_enrichment::document_stale(db,id,r.document.as_ref().unwrap())?;if r.edition_recheck&&!crate::apple_enrichment::edition_stale(db,id)?{if let Some(doc)=crate::apple_enrichment::cached_lyric(db,id)?{r=apple_response(&c,id,doc)?;}}r
             } else if let Some(doc) = crate::apple_enrichment::cached_lyric(db,id)? {
-                apple_response(&c,id,doc)?
+                {let mut r=apple_response(&c,id,doc)?;r.edition_recheck=crate::apple_enrichment::edition_stale(db,id)?;r}
             } else if let Some(items) = cached(&c, &track, false)? {
                 rank(&c, &track, items)?
             } else {
@@ -664,7 +667,7 @@ pub fn execute(db: &Path, req: Request) -> Result<serde_json::Value> {
         "find" => lookup_impl(&c,&track,req.retry.unwrap_or(false),true,true,"https://lrclib.net",gate())?,
         "lookup" | "search" => {
             let local=local(&c,&track)?;
-            if req.action=="lookup" && local.document.is_some() {local}
+            if req.action=="lookup" && local.document.is_some() && !(local.revision==0&&local.source.as_ref().is_some_and(|s|s.kind=="managed_apple")&&crate::apple_enrichment::document_stale(db,id,local.document.as_ref().unwrap())?) {local}
             else if req.action=="lookup" {
                 if let Some(doc)=crate::apple_enrichment::automatic_lyric(db,id).unwrap_or(None) {
                     apple_response(&c,id,doc)?
