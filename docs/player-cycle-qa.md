@@ -14,3 +14,5 @@ Validation:
 - No native playback logic, audio protocol, Android schema, Wi-Fi manifest, embedded runtime, or model change. Delivery requires a fresh paused/stopped check, signed hash and protected-file comparison, latest profile backup, previous app archive, and native post-load verification.
 
 The user confirmed that the preceding release's Force Touch beat pulses and interaction ticks both feel right. That acceptance is recorded in its release manifest.
+
+Installed after freshly confirming Mercury paused at 83.9 seconds. It restored paused at the same position. The native Queue control exposed its Lyrics next action; the user then resumed playback and navigated during further inspection, so that activity was left untouched. Signed executable SHA-256: `3582945fb4fb4cf78ccd8f794cf36c4a8757f199dd5fcdc9b7cd49bb14690abb`. All eight protected runtime/model hashes are unchanged. The profile comparison permits only serialization of the already-enabled default trackpad settings; existing settings, collections, lyric revisions, and newer listening activity are preserved.
