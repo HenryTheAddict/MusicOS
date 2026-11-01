@@ -3,9 +3,9 @@ import type {PointerEvent as ReactPointerEvent} from 'react';
 import type {Track} from './types';
 import {springStep} from './motion';
 export type SongDrag={id:number;ids?:number[];x:number;y:number;drop:boolean;cancelled:boolean};
-let feedbackKey='';
+let feedbackKey='',scrollFeedback=false;
 let cancelCurrent:(()=>void)|undefined,feedback:((label:string,allowed:boolean)=>void)|undefined,retirePreview:(()=>void)|undefined;
-export function songDragFeedback(label:string,allowed=true){if(feedback&&allowed&&label!==feedbackKey&&!label.startsWith('Drop onto')){feedbackKey=label;haptic('target',label);}feedback?.(label,allowed);}
+export function songDragFeedback(label:string,allowed=true){if(!scrollFeedback&&feedback&&allowed&&label!==feedbackKey&&!label.startsWith('Drop onto')){feedbackKey=label;haptic('target',label);}feedback?.(label,allowed);}
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 // A press remains a click until it crosses the drag threshold. Capture only then.
 export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[track.id]){
@@ -28,7 +28,7 @@ export function startSongDrag(event:ReactPointerEvent,track:Track,ids:number[]=[
   if(reduced.matches||(!recent&&now-moved>=600)){sx=sy=tilt=svx=svy=tv=0;}else{[sx,svx]=springStep(sx,svx,tx,dt);[sy,svy]=springStep(sy,svy,ty,dt);[tilt,tv]=springStep(tilt,tv,tr,dt);}
   ghost.style.transform=`translate3d(${clamp(x+12,8,Math.max(8,innerWidth-width-8))}px,${clamp(y+12,8,Math.max(8,innerHeight-height-8))}px,0)`;
   inner.style.transform=`rotate(${clamp(tilt,-3,3)}deg) scale(${1+clamp(sx,-.03,.03)},${1+clamp(sy,-.03,.03)})`;
-  const node=scrollTarget();let scrolled=false;if(node){const speed=velocity(node),before=node.scrollTop;if(speed)node.scrollTop+=speed;scrolled=node.scrollTop!==before;if(scrolled)emit();}
+  const node=scrollTarget();let scrolled=false;if(node){const speed=velocity(node),before=node.scrollTop;if(speed)node.scrollTop+=speed;scrolled=node.scrollTop!==before;if(scrolled){scrollFeedback=true;try{emit();}finally{scrollFeedback=false;}}}
   if(scrolled||(!reduced.matches&&(recent||Math.abs(sx)+Math.abs(sy)+Math.abs(svx)+Math.abs(svy)+Math.abs(tilt)+Math.abs(tv)>.001)))schedule();
  };
  const move=(e:PointerEvent)=>{

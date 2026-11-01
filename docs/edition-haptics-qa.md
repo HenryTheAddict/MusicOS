@@ -19,8 +19,8 @@ Desktop branch: `codex/desktop-heart-preservation`. Android schemas, Wi-Fi manif
 ## Automated validation
 
 - UI build succeeds.
-- UI unit suite: 200 passed, including Shuffle exact endpoints/intermediate frames/reversal/Reduced Motion, provider-session invalidation, retained offline lyrics, beat skipping and disabled feedback.
-- Native suite: 214 passed, 7 pre-existing ignored tests. Includes real FLAC clean-rating evidence, preference persistence, ambiguous counterpart ranking, authoritative manual matches, managed/external sidecar preservation, and native feedback coalescing. Native suite runs serially because existing sidecar synchronization intentionally has one process-wide job lock.
+- UI unit suite: 201 passed, including Shuffle exact endpoints/intermediate frames/reversal/Reduced Motion, provider-session invalidation, retained offline lyrics, beat skipping and disabled feedback.
+- Native suite: 214 passed, 7 pre-existing ignored tests. Includes real FLAC clean-rating evidence, preference persistence, ambiguous counterpart ranking, authoritative manual matches, managed/external sidecar preservation, and native feedback coalescing. The final cancellation change also passes its focused native test. Native suite runs serially because existing sidecar synchronization intentionally has one process-wide job lock.
 - WebKit: 41 checks passed, followed by 7 targeted confirmation checks after final footer consolidation. Checks cover fixed transport coordinates, 480×480 / 720×480 / 1280×800, all four scales, artwork Light/Dark, blue, extreme custom themes, mini-player minimums, Follow layout, single disclosure chevrons, heart timing and resizing/focus behavior.
 - Test reloads emit existing cancelled dynamic-module warnings during page teardown; assertions verify the subsequent visible application state. No claim of a console-clean suite is made.
 

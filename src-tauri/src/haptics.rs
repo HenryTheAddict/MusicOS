@@ -7,6 +7,7 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Kind {
+    Stop,
     Beat,
     Pickup,
     Target,
@@ -30,6 +31,12 @@ pub struct Gate {
     last: Option<(Kind, String, Instant)>,
 }
 impl Gate {
+    fn stop_beat(&mut self) {
+        if self.pending.is_some_and(|(_, kind, _)| kind == Kind::Beat) {
+            self.pending = None;
+        }
+    }
+
     fn enqueue(&mut self, kind: Kind, key: &str, now: Instant) -> Option<u64> {
         if key.len() > 160 {
             return None;
@@ -68,6 +75,10 @@ fn gate() -> &'static Mutex<Gate> {
     GATE.get_or_init(Default::default)
 }
 pub async fn request(app: tauri::AppHandle, window: tauri::WebviewWindow, req: Request) {
+    if req.kind == Kind::Stop {
+        gate().lock().unwrap().stop_beat();
+        return;
+    }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, window, req);
@@ -121,7 +132,10 @@ mod tests {
         let now = Instant::now();
         let mut g = Gate::default();
         let beat = g.enqueue(Kind::Beat, "1", now).unwrap();
+        g.stop_beat();assert!(g.accept(beat,"1".into(),now).is_none());
+        let beat=g.enqueue(Kind::Beat,"1",now).unwrap();
         let action = g.enqueue(Kind::Drop, "drop", now).unwrap();
+        g.stop_beat();
         assert!(g.accept(beat, "1".into(), now).is_none());
         assert_eq!(g.accept(action, "drop".into(), now), Some(Kind::Drop));
         assert!(g
