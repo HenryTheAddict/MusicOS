@@ -19,3 +19,11 @@ Isolated desktop branch: `codex/desktop-heart-preservation`. Android, audio prot
 - WebKit coverage: explicit offline sync without provider/playback calls, blocked incomplete transfers, offline cached collection access, quiet entry, automatic sign-in completion and stopped polling, Home counts, existing duet/edit/review flows, and setup layout at 480×480/720×480/1280×800, all four scales and five theme cases.
 - Live check of the previous installed sign-in returned “Apple has not provided a supported session.” The user reported a signed-in window remaining open. The return-flow fixes compile and automated behavior passes; authenticated account/session retrieval, real playlist pagination, subscription lyrics and motion art are **not** claimed verified until tested after loading the update.
 - Preserve the latest profile and previous app, record the signed executable and eight unchanged runtime/model hashes, and load only after a fresh paused/stopped check. No physical touch, headphone, trackpad, Windows/Linux or Android acceptance claim.
+
+## Live account check after installation
+
+- Authenticated session/storefront verification succeeded; the sign-in window closed and musicOS returned to matching. A manual Check connection was used during observation, so unattended automatic completion is not separately claimed accepted.
+- Sequential Apple library read completed: 257 local recording matches, 27 requiring an explicit recording choice.
+- Playlist API returned 124 headers for this account/session; the UI cached and showed eight recent choices. One playlist was checked: 24/48 local matches, correctly blocked from transfer. Recent listening returned data; heavy rotation was unavailable. No imported playlist was created.
+- “Bad Habit” returned Apple TTML with 72 timed lines and 422 timed word spans. One provider-cache document was saved and opened as an unsaved Metadata draft. No lyric selection, sidecar, original audio or unrelated metadata was written during this check.
+- Installed signature/protected files reverified. Profile/settings, user lyric revisions, 550 tracks, 39 favorites and existing collections stayed intact. Actual paused-playback word synchronization, animated-art rendering and power-state behavior remain separate gates.
