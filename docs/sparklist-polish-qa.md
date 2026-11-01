@@ -18,4 +18,4 @@ Track lookup and the displayed generated cover are memoized. No new polling or a
 
 ## Delivery
 
-Isolated desktop branch: codex/desktop-heart-preservation. Signed executable hash, unchanged embedded runtime/model hashes, fresh paused/stopped gate, latest-profile checkpoint, previous app archive, and installed verification are recorded in the delivery manifest. Native verification and installation pending while the Mac is locked. No Android schema, Wi-Fi manifest, database, or OS-source changes.
+Isolated desktop branch: codex/desktop-heart-preservation. Signed executable hash, unchanged embedded runtime/model hashes, fresh paused/stopped gate, latest-profile checkpoint, previous app archive, and installed verification are recorded in the delivery manifest. Initial native verification confirmed all creation steps and a real 25-song preview, with playback paused at 192.4 seconds throughout. It caught an inherited two-column form rule in the saved editor; the follow-up explicitly stacks its fields and adds a layout regression. Final native verification follows the corrected build. No Android schema, Wi-Fi manifest, database, or OS-source changes.
