@@ -9,9 +9,13 @@ The seek bar uses a transformed fill without trailing width interpolation. Point
 Verification:
 
 - UI build passed; **71 files / 221 UI tests passed**, including palette staleness, frozen seek geometry, cancellation, finite/reversible lyric following and notice cleanup.
-- **14 browser checks passed**: all three window sizes, four interface scales and four theme families; invariant transport coordinates across views; retained lyric nodes, larger computed type, seeking and skip feedback.
+- **14 browser checks plus the retained-modal regression passed**: all three window sizes, four interface scales and four theme families; invariant transport coordinates across views; retained lyric nodes, larger computed type, seeking and skip feedback.
 - **Three perceptual palette regressions and nine provider regressions passed**, covering distinct colors, neutral/transparent covers, specks, cached original artwork and unchanged interface contrast.
 - Real Metal readback passed: original output exact, recoloring applied, black/white endpoints retained, invalid palette safe, original restored exactly when disabled.
 - Silent native fixture inspected with real Metal output, larger timed lyrics, cue seeking and Next acknowledgement/notice. It does not open the user profile or output audio. Native fullscreen visibility while an app is on another macOS Space is not a live playback synchronization test.
 
-Signed executable SHA-256: `b4e9d81392e2aba890cfe9223afc877746dacbc8942e6a6ff27b84044d0a1dd9`. All eight protected helper/runtime/model hashes match the previous installed build. Delivery records preserve the latest profile, ordered collections and previous app. Broader Apple, Automix listening and physical trackpad acceptance gates are unchanged; this repair does not claim those passed.
+Signed executable SHA-256: `1e0b4e706ec209afd50e7270c2d7dd3ad2ab41a709b59a9cf40ac35f9b6f1d16`. All eight protected helper/runtime/model hashes match the previous installed build. Delivery records preserve the latest profile, ordered collections and previous app. Broader Apple, Automix listening and physical trackpad acceptance gates are unchanged; this repair does not claim those passed.
+
+## Retained-modal correction
+
+The first installed inspection caught an existing top-layer interaction: opening the transparent visualizer from an already-open expanded player exposed that retained dialog and its independent backdrop. Ordinary ancestor opacity cannot hide a modal in the browser top layer. The visualizer now explicitly hides covered expanded dialogs and clears their backdrops, preserving their state for restoration. The new regression opens the visualizer from a retained Lyrics dialog, verifies hidden pixels/backdrop and restores that dialog on exit. The initial installed candidate remains archived separately; the final signed correction has the hash above.

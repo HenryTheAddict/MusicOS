@@ -39,3 +39,12 @@ test('lyrics remain mounted through cues and a skip reveals a finite stationary 
  const after=await player.locator('.expanded-transport').boundingBox();expect(after).toEqual(before);
  await page.waitForTimeout(2450);await expect(player.locator('.song-change-notice')).toBeEmpty();
 });
+
+test('retained expanded player and its backdrop do not leak through native visualizer transparency',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed&retainedPlayer=1');
+ await page.getByRole('slider',{name:'Playback position'}).focus();await page.keyboard.press('Meta+v');const visualizer=page.locator('[data-visualizer=true]'),covered=page.locator('.expanded-player:not([data-visualizer=true])');
+ await expect(visualizer).toBeVisible();await expect(covered).toHaveAttribute('aria-hidden','true');
+ await expect(covered).toHaveCSS('visibility','hidden');await expect(covered).toHaveCSS('opacity','0');
+ expect(await covered.evaluate(el=>getComputedStyle(el,'::backdrop').backdropFilter)).toBe('none');
+ await page.keyboard.press('Meta+v');await expect(visualizer).toHaveCount(0);await expect(covered).toBeVisible();
+});

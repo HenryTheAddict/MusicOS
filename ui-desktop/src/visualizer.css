@@ -55,3 +55,7 @@
 .expanded-player[data-visualizer=true] .audio-panel{--ink:#fff!important;--surface-color:#17222a!important;--secondary-ink:#d8e4ed!important;--ink-secondary:#d8e4ed!important;--control-surface:#2b414f!important;--control-border:#ffffff35!important;--accent:#b3dfff!important;color:#fff!important;}
 
 @media(max-height:600px){.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.45rem,3.8vw,2.35rem)!important;}}
+/* Retained modal dialogs escape their ancestor's opacity in the top layer.
+   Hide the covered player explicitly, including its independent backdrop. */
+:root[data-native-visualizer=true] .expanded-player:not([data-visualizer=true]){visibility:hidden!important;opacity:0!important;pointer-events:none!important;}
+:root[data-native-visualizer=true] .expanded-player:not([data-visualizer=true])::backdrop{background:transparent!important;backdrop-filter:none!important;}
