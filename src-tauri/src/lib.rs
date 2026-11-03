@@ -1,3 +1,4 @@
+mod artwork_colors;
 mod launch_palette;
 mod product;
 mod desktop_metadata;

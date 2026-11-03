@@ -846,6 +846,8 @@ fn plain_credit(html: &str) -> String {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Palette {
+    #[serde(default)]
+    pub swatches: Vec<String>,
     pub background: String,
     pub accent: String,
     pub blob: String,
@@ -858,7 +860,7 @@ pub fn palette(path: &Path) -> Result<Palette> {
         .modified()?
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_nanos();
-    let cache = cache_path(&format!("palette-v6:{}:{stamp}", path.display()));
+    let cache = cache_path(&format!("palette-v7:{}:{stamp}", path.display()));
     if let Ok(bytes) = std::fs::read(&cache) {
         if let Ok(p) = serde_json::from_slice(&bytes) {
             return Ok(p);
@@ -868,10 +870,9 @@ pub fn palette(path: &Path) -> Result<Palette> {
     // pixel-bounded rendition cache as the UI rather than silently losing their
     // theme, or decoding a full-resolution image on every navigation.
     let sample=crate::artwork_renditions::rendition(path,128)?;
-    let image = image::io::Reader::open(sample)?
-        .with_guessed_format()?
-        .decode()?
-        .thumbnail(32, 32)
+    let decoded = image::io::Reader::open(sample)?.with_guessed_format()?.decode()?;
+    let swatches=crate::artwork_colors::swatches(&decoded.to_rgba8());
+    let image = decoded.thumbnail(32, 32)
         .to_rgb8();
     let mut sum = [0u64; 3];
     let mut count = 0;
@@ -908,6 +909,7 @@ pub fn palette(path: &Path) -> Result<Palette> {
     let mut strength=70_u16;
     let blob=loop{let rgb=vivid.map(|v|((u16::from(v)*strength+255*(100-strength))/100)as u8);if (luminance(rgb)+0.05)/(luminance([18,32,42])+0.05)>=4.5||strength==0{break rgb;}strength-=1;};
     let p = Palette {
+        swatches,
         background: hex(std::array::from_fn(|i| {
             if vivid.iter().max().unwrap()-vivid.iter().min().unwrap()<20 {
                 ((u16::from(rgb[i])*25+255*75)/100) as u8

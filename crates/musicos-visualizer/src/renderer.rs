@@ -34,7 +34,7 @@ struct Values{controls:vec4<f32>,shadow:vec4<f32>,mid:vec4<f32>,highlight:vec4<f
   var tone=mix(values.shadow.rgb,values.mid.rgb,smoothstep(0.,0.5,light));
   tone=mix(tone,values.highlight.rgb,smoothstep(0.5,0.85,light));
   // Keep black black and retain luminous detail without an HDR gain boost.
-  tone=mix(tone,vec3(1.),smoothstep(0.65,1.,light));
+  tone=mix(tone,vec3(1.),smoothstep(0.9,1.,light));
   color=clamp(tone*light/max(dot(tone,weights),0.001),vec3(0.),vec3(1.));
  }
  return vec4(color,1.);

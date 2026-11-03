@@ -742,3 +742,6 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 .now-playing-info:hover .playback-progress[data-reveal-time] .playback-rail-slot{margin-inline-end:var(--time-reserve,48px);}
 .now-playing-info:hover .playback-progress[data-reveal-time] .playback-time{opacity:1;visibility:visible;}
 .spark-build-status{display:grid;gap:.375rem;padding:.75rem 1rem;margin:.75rem 0;border-radius:.875rem;background:var(--control-surface);font-size:.8125rem;text-align:left;}.spark-build-status small{font-size:.6875rem;color:var(--secondary-ink);}.spark-build-status progress{width:100%;height:6px;accent-color:var(--accent);}.spark-stages span,.spark-stages [aria-current=step]{font-weight:500;}
+/* A frozen pointer range keeps scrubbing accurate while the time label opens. */
+.playback-progress .progress-rail>span{transform-origin:left;transition:none;}
+.playback-progress[data-scrubbing=true] .playback-rail-slot{flex:none;width:var(--frozen-rail-width);margin-inline-end:0!important;transition:none!important;}

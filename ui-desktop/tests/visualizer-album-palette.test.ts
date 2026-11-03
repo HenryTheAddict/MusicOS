@@ -8,6 +8,9 @@ it('uses actual artwork colors independently of theme text and rejects malformed
  expect(visualizerAlbumPalette(palette)?.[0]).toEqual([128/255,0,0]);
  expect(visualizerAlbumPalette({...palette,blob:'invalid'})).toBeUndefined();
 });
+it('prefers distinct raw cover swatches over whitened interface surfaces',()=>{
+ expect(visualizerAlbumPalette({...palette,swatches:['#1234ab','#e3a211','#be2844']})).toEqual([[18/255,52/255,171/255],[227/255,162/255,17/255],[190/255,40/255,68/255]]);
+});
 it('does no artwork work when off, rejects stale albums, and restores original colors immediately',async()=>{
  let finishA:(value:any)=>void=()=>{},finishB:(value:any)=>void=()=>{};
  vi.mocked(resolveArtworkTheme).mockClear().mockImplementationOnce(()=>new Promise(r=>{finishA=r;})).mockImplementationOnce(()=>new Promise(r=>{finishB=r;}));

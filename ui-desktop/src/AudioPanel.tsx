@@ -14,7 +14,7 @@ export default function AudioPanel({player,scale,presentation,closing=false,onCl
  const active=useViewActive();
  const offset=player.queue_index===null?0:player.queue_index+1,upcoming=player.queue.slice(offset);
  const panel=useRef<HTMLElement>(null),opener=useRef(document.querySelector<HTMLElement>('[aria-label="Open Up next"]')??document.activeElement as HTMLElement|null);
- usePlayerHandoff(panel,player.track?.id,view);
+ usePlayerHandoff(panel,player.track?.id,view,player.queue_entry_ids?.[player.queue_index??-1]);
  const [docked,setDocked]=useState(false),[songDrop,setSongDrop]=useState(false);
  const actionRef=useRef(onAction);actionRef.current=onAction;
  const playerRef=useRef(player);playerRef.current=player;

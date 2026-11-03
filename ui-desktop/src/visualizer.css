@@ -7,17 +7,20 @@
 .expanded-player[data-visualizer=true] .expanded-player-header button{color:#fff;background:#10202b99;border-color:#ffffff35;}
 .expanded-player[data-visualizer=true] .expanded-song-column{display:none!important;}
 .expanded-player[data-visualizer=true] .expanded-player-content{display:flex!important;align-items:center;justify-content:center;padding:76px 20px 12px!important;bottom:140px;}
-.expanded-player[data-visualizer=true] .expanded-side-view{width:min(44rem,100%);height:100%;}
+.expanded-player[data-visualizer=true] .expanded-side-view{width:min(54rem,100%);height:100%;}
 .expanded-player[data-visualizer=true][data-view=playing] .expanded-player-content{pointer-events:none;visibility:hidden;}
 .expanded-player[data-visualizer=true] .expanded-queue-view{background:#10202bba;padding:16px;border-radius:20px;box-sizing:border-box;}
 .expanded-player[data-visualizer=true] .expanded-player-dock{border-radius:20px;background:linear-gradient(transparent,#07131bc9);padding:12px 16px 0;box-sizing:border-box;}
 .expanded-player[data-visualizer=true] .expanded-player-dock .icon-button{--playback-tone:#aad3ed;}
-.expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-progress{opacity:0;pointer-events:none;}
+.expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-progress{opacity:.8;}
+.expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-dock{background:transparent;}
 .expanded-player[data-visualizer=true] .expanded-player-progress{transition:opacity 140ms;}
 .expanded-player[data-visualizer=true] .lyrics-pane[data-variant=visualizer]{height:100%;width:100%;display:flex;flex-direction:column;justify-content:center;position:relative;background:radial-gradient(ellipse at center,#07131ba6,transparent 70%);}
 .lyrics-pane[data-variant=visualizer]>.lyrics-heading,.lyrics-pane[data-variant=visualizer]>.lyrics-footer{display:none;}
-.lyrics-pane[data-variant=visualizer][data-following=true] .lyrics-lines{flex:0 1 auto;max-height:100%;padding-block:8px!important;mask-image:none!important;}
-.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.4rem,4vw,3.2rem);line-height:1.25;filter:none!important;padding-block:.3em;}
+.lyrics-pane[data-variant=visualizer][data-following=true] .lyrics-lines{flex:1;min-height:0;padding-block:8px!important;mask-image:linear-gradient(transparent,#000 12%,#000 78%,transparent)!important;}
+.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.8rem,4.6vw,4.25rem)!important;line-height:1.22!important;filter:none!important;padding-block:.22em!important;}
+.lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line:not([data-in-window=true]){opacity:0!important;visibility:hidden;pointer-events:none;}
+.lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line{transition:opacity 240ms ease-out,visibility 240ms;}
 .lyrics-pane[data-variant=visualizer] .lyric-line:not([data-current=true]){opacity:.6;}
 .lyrics-pane[data-variant=visualizer] .lyrics-follow-slot{flex:none;min-height:44px;}
 .visualizer-picker-trigger{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;border:1px solid var(--control-border);border-radius:12px;font:500 .875rem "MusicOS Sans",sans-serif;}
@@ -50,3 +53,5 @@
 
 .expanded-player[data-visualizer=true]::after{background:none!important;}
 .expanded-player[data-visualizer=true] .audio-panel{--ink:#fff!important;--surface-color:#17222a!important;--secondary-ink:#d8e4ed!important;--ink-secondary:#d8e4ed!important;--control-surface:#2b414f!important;--control-border:#ffffff35!important;--accent:#b3dfff!important;color:#fff!important;}
+
+@media(max-height:600px){.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.45rem,3.8vw,2.35rem)!important;}}

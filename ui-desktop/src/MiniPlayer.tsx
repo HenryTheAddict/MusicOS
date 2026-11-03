@@ -40,7 +40,7 @@ export default function MiniPlayer({preview=false,density="standard",player,cove
   window.addEventListener('keydown',escape);
   return()=>window.removeEventListener('keydown',escape);
  },[view,preview]);
- usePlayerHandoff(root,player.track?.id,view);
+ usePlayerHandoff(root,player.track?.id,view,player.queue_entry_ids?.[player.queue_index??-1]);
  return <section ref={root} tabIndex={-1} className="mini-player" data-layout={mode} data-view={view} data-density={density} inert={preview} aria-label="Mini Player" onMouseDown={preview?undefined:e=>dragWindow(e,onWindowError)} onContextMenu={e=>{if(e.defaultPrevented)return;e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.defaultPrevented)return;if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('button[aria-label="Mini Player actions"]')?.dispatchEvent(new Event('musicos-open-menu'));}if(e.key==='Escape'&&!document.querySelector('.mini-actions-popover:popover-open')&&!e.defaultPrevented&&!((e.target as HTMLElement).closest('[role=menu]'))){e.preventDefault();view!=='tall'?changeView('playing'):onMode('normal');}}}>
 
   <div className="mini-player-content">{lyrics&&<div className="mini-lyrics-view">{preview?<p>Lyrics preview</p>:<LyricsView renderMenu={items=><MiniActions contextOnly height={density==='standard'?320:120} onResize={onMenuResize} items={items}/>} variant="mini" track={track??undefined} player={player} active={!preview} onSeek={position=>onAction({type:'seek',position})} onPlay={async()=>{}}/>}</div>}

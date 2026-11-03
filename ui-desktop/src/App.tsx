@@ -314,7 +314,7 @@ export default function App() {
   function chooseDestination(next:Destination){if(section==='Library'&&destination===next)return;window.dispatchEvent(new Event('musicos-navigation-start'));captureScroll();if(next==='search'&&destination!=='search')previousDestination.current=destination;setSection('Library');switchDestination(next);}
   function openSearch(){if(compact||route.view==='search'){chooseDestination('search');if(route.view!=='search')navigateScope('search');setSearchFocus(value=>value+1);setCommandOpen(false);}else setCommandOpen(value=>!value);}
   const mounted = useRef(true);
-  const barMotion=useRef<HTMLElement>(null);usePlayerHandoff(barMotion,player.track?.id,"bar");
+  const barMotion=useRef<HTMLElement>(null);usePlayerHandoff(barMotion,player.track?.id,"bar",player.queue_entry_ids?.[player.queue_index??-1]);
   const refreshWork=useRef<Promise<void>|null>(null),refreshAgain=useRef(false);
   const refresh = useCallback(() => {
     if(refreshWork.current){refreshAgain.current=true;return refreshWork.current;}
@@ -525,6 +525,7 @@ export default function App() {
   useEffect(()=>{const observer=observeInputModality();inputModality.current=observer;return()=>{observer.dispose();inputModality.current=null;};},[]);
   const nativeQueueAction=useRef<()=>void>(()=>{});
   const run = useCallback(async (action: PlaybackAction) => {
+    if(action.type==='next'||action.type==='previous')window.dispatchEvent(new CustomEvent('musicos-transport-intent',{detail:action.type}));
     try {
       setPlayer(await call("playback", { action }));
       if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));
@@ -532,7 +533,7 @@ export default function App() {
       setError(errorText(e));
     }
   }, []);
-  const runImmersive=useCallback(async(action:PlaybackAction)=>{setPlayer(await call('playback',{action}));if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));},[]);
+  const runImmersive=useCallback(async(action:PlaybackAction)=>{if(action.type==='next'||action.type==='previous')window.dispatchEvent(new CustomEvent('musicos-transport-intent',{detail:action.type}));setPlayer(await call('playback',{action}));if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));},[]);
   const shortcutDispatch=useRef<(shortcut:PlayerShortcut)=>void>(()=>{});
   shortcutDispatch.current=shortcut=>{if(document.querySelector(".onboarding[open]"))return;if(shortcut==='previous'||shortcut==='next')void run({type:shortcut});else if(shortcut==='visualizer')toggleVisualizer();else if(visualizerOpen){const next=nextPlayerView(visualizerView);setVisualizerView(next);changePreferences({...preferences,visualizer:{...(preferences.visualizer??defaultVisualizer),lyrics:next==='lyrics'}});}else if(expandedOpen)setPlayerView(nextPlayerView(playerView));else if(miniMode!=='normal')window.dispatchEvent(new Event('musicos-cycle-mini-view'));else{const next=nextPlayerView(queueOpen?queueView:'playing');if(next!=='playing')setQueueView(next);setQueueOpen(next!=='playing');}};
   useNativePlayerShortcuts(shortcut=>shortcutDispatch.current(shortcut));

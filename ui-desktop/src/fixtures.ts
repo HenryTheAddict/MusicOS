@@ -248,6 +248,7 @@ export async function fixtureCall(
       };
     case "artwork_palette":
       return {
+        swatches:["#1a6944","#dea72b","#23589a"],
         background: "#c8ded9",
         accent: "#20574d",
         blob: "#55937a",

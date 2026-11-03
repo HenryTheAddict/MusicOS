@@ -78,3 +78,9 @@
 .expanded-player .expanded-player-dock .icon-button{min-width:44px;min-height:44px;width:44px;height:44px;}
 .expanded-player .expanded-player-dock .expanded-primary-play{display:flex;align-items:center;justify-content:center;width:64px;height:64px;flex:none;}
 .expanded-player .expanded-player-dock .expanded-primary-play>.icon-button{width:64px;height:64px;}
+
+/* One compact acknowledgement above the stationary transport, including the visualizer. */
+.song-change-notice{position:absolute;bottom:calc(100% + 10px);left:50%;translate:-50% 0;display:flex;align-items:center;gap:10px;width:max-content;max-width:min(26rem,calc(100vw - 48px));padding:10px 14px;border:1px solid var(--control-border);border-radius:14px;background:var(--control-surface);color:var(--ink);box-sizing:border-box;opacity:0;transform:translateY(6px);pointer-events:none;transition:opacity 180ms,transform 180ms;}
+.song-change-notice[data-visible=true]{opacity:1;transform:translateY(0);}
+.song-change-notice>.icon{width:24px;height:24px;flex:none;}.song-change-notice>span{min-width:0;}.song-change-notice strong,.song-change-notice small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.song-change-notice strong{font-size:.875rem;font-weight:600;}.song-change-notice small{font-size:.75rem;opacity:.75;}
+@media(prefers-reduced-motion:reduce){.song-change-notice{transition:none;transform:none;}}

@@ -156,6 +156,7 @@ export interface CatalogItem {
   local: false;
 }
 export interface Palette {
+  swatches?:string[];
   background: string;
   accent: string;
   blob: string;

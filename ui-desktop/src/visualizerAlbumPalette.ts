@@ -5,7 +5,7 @@ import type {AlbumPalette} from './visualizer';
 
 /** Use artwork colors, independently of the user's interface theme or tint. */
 export function visualizerAlbumPalette(palette:Palette):AlbumPalette|undefined{
- const colors=[palette.accent,palette.blob,palette.background];
+ const colors=palette.swatches?.length===3?palette.swatches:[palette.accent,palette.blob,palette.background];
  if(colors.some(color=>!/^#[\da-f]{6}$/i.test(color)))return undefined;
  return colors.map(color=>[1,3,5].map(i=>parseInt(color.slice(i,i+2),16)/255)) as AlbumPalette;
 }
