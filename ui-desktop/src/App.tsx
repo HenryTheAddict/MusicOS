@@ -732,7 +732,7 @@ export default function App() {
   function actionsForTrack(track:Track,ids=[track.id]){return [...playbackItems(ids),
    {label:track.favorited?'Unfavorite song':'Favorite song',icon:track.favorited?'hearted':'noheart',onSelect:()=>favorite(track)},
    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})},
-   {label:'Visualizer',icon:'Sparklist',onSelect:()=>toggleVisualizer()},
+   {label:'Visualizer',icon:'Visualizer',onSelect:()=>toggleVisualizer()},
     {label:'Lyrics',icon:'Lyrics',onSelect:()=>openPlayer('lyrics',track.id===player.track?.id?null:track)},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
    {label:native?'Show in Finder':'Show in file manager',icon:native?'Open In Finder':'Open In Folder',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},

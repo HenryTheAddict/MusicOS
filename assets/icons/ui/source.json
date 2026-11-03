@@ -368,7 +368,8 @@
       "file": "Settings.svg",
       "width": 32,
       "height": 32,
-      "sha256": "a7b908b9c4436fae0252d316246851bf750d1fefbb7815328b59aa23971456a6"
+      "sha256": "032223294687d143c2a8201ab211a29b8b1d1ae2cefbda69299524ef14d46dd5",
+      "note": "Exported from canonical 32\u00d732 Sketch master; removed only the white export-canvas use. Vector geometry and strokes unchanged."
     },
     {
       "layer": "60167733-AFC5-451F-B855-152EC721B35D",
@@ -665,6 +666,15 @@
       "width": 32,
       "height": 32,
       "sha256": "b7f9e99f099756bfdfc63efa89984f22dbcd6ddef2fd2d7defee390b26cfa4b1"
+    },
+    {
+      "layer": "C21A68F4-A394-48E0-B8CA-EF1F1B41BD4C",
+      "name": "Visualizer",
+      "file": "Visualizer.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "661d19732b00871bcd1065d1edca4fe86464051504575bed48e11de86c91a266",
+      "note": "Exported from canonical 32\u00d732 Sketch master; removed only the white export-canvas use. Vector geometry and strokes unchanged."
     }
   ],
   "exported": "2026-10-30",

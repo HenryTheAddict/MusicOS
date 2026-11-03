@@ -7,7 +7,7 @@ test('only playback and collection controls retain themed shading',()=>{
 
 test('refreshed Sketch masters stay visible and transparent without changing path geometry',async()=>{
  const sources=import.meta.glob('../../assets/icons/ui/*.svg',{query:'?raw',import:'default',eager:true}) as Record<string,string>;
- for(const name of ['Library','sync','tinySync','Album','SmartPlaylist','Metadata','Settings','Open In Finder','Open In Folder','Lyrics','Cloud','Drive','Add_circuled']){
+ for(const name of ['Library','sync','tinySync','Album','SmartPlaylist','Metadata','Settings','Visualizer','Open In Finder','Open In Folder','Lyrics','Cloud','Drive','Add_circuled']){
   const svg=sources[`../../assets/icons/ui/${name}.svg`];expect(svg, name).toBeTruthy();
   const parser=new DOMParser(),before=parser.parseFromString(svg,'image/svg+xml'),after=parser.parseFromString(solidIcon(svg,name),'image/svg+xml');
   expect(before.querySelector('parsererror'),name).toBeNull();expect(before.querySelector('svg')?.getAttribute('viewBox')).toMatch(/^0 0 (32 32|8 8)$/);

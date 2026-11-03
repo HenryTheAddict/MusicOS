@@ -10,7 +10,7 @@
 .expanded-player[data-visualizer=true] .expanded-side-view{width:min(54rem,100%);height:100%;}
 .expanded-player[data-visualizer=true][data-view=playing] .expanded-player-content{pointer-events:none;visibility:hidden;}
 .expanded-player[data-visualizer=true] .expanded-queue-view{background:#10202bba;padding:16px;border-radius:20px;box-sizing:border-box;}
-.expanded-player[data-visualizer=true] .expanded-player-dock{border-radius:20px;background:linear-gradient(transparent,#07131bc9);padding:12px 16px 0;box-sizing:border-box;}
+.expanded-player[data-visualizer=true] .expanded-player-dock{border-radius:20px;background:linear-gradient(transparent,#07131bc9);height:116px;padding:8px 16px;box-sizing:border-box;}
 .expanded-player[data-visualizer=true] .expanded-player-dock .icon-button{--playback-tone:#e4dce8;}
 .expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-progress{opacity:.8;}
 .expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-dock{background:transparent;}

@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {resolveArtworkTheme} from './artworkTheme';
 import type {Palette} from './types';
 import type {AlbumPalette} from './visualizer';
@@ -11,15 +11,19 @@ export function visualizerAlbumPalette(palette:Palette):AlbumPalette|undefined{
 }
 export function useVisualizerAlbumPalette(enabled:boolean,trackId:number|undefined,cover:string|null|undefined){
  const [resolved,setResolved]=useState<{key:string;palette:AlbumPalette|undefined}|null>(null);
- const key=JSON.stringify([trackId,cover]);
+ const cache=useRef(new Map<string,AlbumPalette|undefined>()),[revision,setRevision]=useState(0);
+ // Tracks sharing a cover share its colors. Re-keying by song briefly removed
+ // the palette on every skip, even when that exact artwork was already ready.
+ const key=JSON.stringify([revision,cover?['cover',cover]:['embedded',trackId]]);
+ useEffect(()=>{const invalidate=()=>{cache.current.clear();setResolved(null);setRevision(n=>n+1);};window.addEventListener('musicos-artwork-invalidated',invalidate);return()=>window.removeEventListener('musicos-artwork-invalidated',invalidate);},[]);
  useEffect(()=>{
-  if(!enabled)return;
+  if(!enabled||cache.current.has(key))return;
   let alive=true;
   void resolveArtworkTheme([cover],trackId).then(result=>{
-   if(alive)setResolved({key,palette:result?visualizerAlbumPalette(result.palette):undefined});
+   if(alive){const palette=result?visualizerAlbumPalette(result.palette):undefined;cache.current.set(key,palette);setResolved({key,palette});}
   }).catch(()=>{if(alive)setResolved({key,palette:undefined});});
   return()=>{alive=false;};
  },[enabled,key,trackId,cover]);
  // An old album must never tint a new track while its artwork is loading.
- return enabled&&resolved?.key===key?resolved.palette:undefined;
+ return enabled?(cache.current.has(key)?cache.current.get(key):resolved?.key===key?resolved.palette:undefined):undefined;
 }

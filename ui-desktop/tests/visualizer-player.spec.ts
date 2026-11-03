@@ -19,10 +19,22 @@ for(const size of [{width:480,height:480},{width:720,height:480},{width:1280,hei
    await expect(player.getByRole('button',{name:'Next track',exact:true})).toBeVisible();
    const controls=await player.locator('.expanded-transport').boundingBox(),bar=await seek.boundingBox();expect(controls!.x).toBeGreaterThanOrEqual(0);expect(controls!.x+controls!.width).toBeLessThanOrEqual(size.width+1);expect(controls!.y+controls!.height).toBeLessThanOrEqual(size.height+1);expect(bar!.x+bar!.width).toBeLessThanOrEqual(size.width+1);boxes.push(controls);
    for(const button of await player.locator('.expanded-header-actions>button').all()){const b=await button.boundingBox();expect(b!.width).toBeGreaterThanOrEqual(43.99);expect(b!.height).toBeGreaterThanOrEqual(43.99);}
+   // Fixed hit areas must contain and center the glyphs at every interface scale.
+   const geometry=await player.locator('.expanded-transport .icon-button').evaluateAll(buttons=>buttons.map(button=>{const b=button.getBoundingClientRect(),g=button.querySelector('.icon')!.getBoundingClientRect();return {dx:g.x+g.width/2-b.x-b.width/2,dy:g.y+g.height/2-b.y-b.height/2,inset:Math.min(g.x-b.x,g.y-b.y,b.right-g.right,b.bottom-g.bottom)};}));
+   for(const g of geometry){expect(Math.abs(g.dx)).toBeLessThan(.1);expect(Math.abs(g.dy)).toBeLessThan(.1);expect(g.inset).toBeGreaterThanOrEqual(5.99);}
+   const dock=await player.locator('.expanded-player-dock').boundingBox();expect(controls!.y+controls!.height).toBeLessThanOrEqual(dock!.y+dock!.height-7.99);
   }
   for(const box of boxes.slice(1)){expect(Math.abs(box!.x-boxes[0]!.x)).toBeLessThan(1);expect(Math.abs(box!.y-boxes[0]!.y)).toBeLessThan(1);}
   expect(await player.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
  }
+});
+
+test('Play and Pause keep the same centered footprint through the morph',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed&scale=150');await page.getByRole('button',{name:'Open visualizer'}).click();await page.mouse.move(400,100);await page.getByRole('slider',{name:'Playback position'}).focus();
+ await expect.poll(()=>page.locator('.expanded-player').evaluate(el=>el.getAnimations().length)).toBe(0);
+ const control=page.locator('.expanded-primary-play>.icon-button'),glyph=control.locator('.icon'),before=await control.boundingBox(),icon=await glyph.boundingBox();
+ await control.click();await expect(control).toHaveAttribute('aria-label','Pause');await expect(glyph).toHaveAttribute('data-morphing','true');expect(await control.boundingBox()).toEqual(before);expect(await glyph.boundingBox()).toEqual(icon);
+ await control.click();await expect(control).toHaveAttribute('aria-label','Play');await expect(glyph).not.toHaveAttribute('data-morphing','true');expect(await control.boundingBox()).toEqual(before);expect(await glyph.boundingBox()).toEqual(icon);
 });
 
 test('lyrics remain mounted through cues and a skip reveals a finite stationary transport',async({page})=>{
