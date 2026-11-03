@@ -33,9 +33,22 @@ struct Values{controls:vec4<f32>,shadow:vec4<f32>,mid:vec4<f32>,highlight:vec4<f
   let light=dot(color,weights);
   var tone=mix(values.shadow.rgb,values.mid.rgb,smoothstep(0.,0.5,light));
   tone=mix(tone,values.highlight.rgb,smoothstep(0.5,0.85,light));
-  // Keep black black and retain luminous detail without an HDR gain boost.
-  tone=mix(tone,vec3(1.),smoothstep(0.9,1.,light));
-  color=clamp(tone*light/max(dot(tone,weights),0.001),vec3(0.),vec3(1.));
+  // Preserve a preset's different color regions, rather than mapping every
+  // equally bright pixel to the same purple/brown band.
+  let low=min(color.r,min(color.g,color.b));
+  let chromatic=color-vec3(low);
+  let hueWeights=chromatic/max(chromatic.r+chromatic.g+chromatic.b,0.001);
+  let hueTone=values.shadow.rgb*hueWeights.r+values.mid.rgb*hueWeights.g+values.highlight.rgb*hueWeights.b;
+  tone=mix(tone,hueTone,smoothstep(0.025,0.2,max(chromatic.r,max(chromatic.g,chromatic.b))));
+  // Fit chroma around the original luminance instead of clipping channels.
+  // This preserves bright details, black levels and SDR output.
+  let delta=tone-vec3(dot(tone,weights));
+  var amount=1.;
+  for(var channel=0;channel<3;channel++){
+   if delta[channel]>0.0001 {amount=min(amount,(1.-light)/delta[channel]);}
+   if delta[channel]<-0.0001 {amount=min(amount,-light/delta[channel]);}
+  }
+  color=clamp(vec3(light)+delta*max(0.,amount),vec3(0.),vec3(1.));
  }
  return vec4(color,1.);
 }"#;

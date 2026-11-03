@@ -98,7 +98,8 @@
 }}
 /* Shared immersive and small-surface lyrics. */
 .lyrics-pane>.context-only{position:absolute;width:1px;height:1px;min-width:0;min-height:0;opacity:0;padding:0;pointer-events:none;}
-.lyrics-pane:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.lyrics-pane:focus-visible,.lyrics-lines:focus-visible{outline:none!important;}
+.lyrics-pane:has(.lyrics-lines:focus-visible)::after{content:"Lyrics · ↑ ↓ to scroll";position:absolute;right:8px;top:8px;z-index:2;padding:5px 9px;border:1px solid var(--accent);border-radius:8px;background:var(--control-surface);color:var(--ink);font:500 11px/18px "MusicOS Sans",sans-serif;pointer-events:none;}
 .lyric-activity{display:inline-flex;align-items:center;gap:.65em;min-height:1.4em;vertical-align:middle;color:inherit;}
 .lyric-activity>.icon{width:.8em;height:1em;flex:none;}
 .lyric-activity-dots{display:inline-flex;align-items:center;gap:.28em;}

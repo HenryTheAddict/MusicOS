@@ -30,7 +30,7 @@ test('lyrics remain mounted through cues and a skip reveals a finite stationary 
  const player=page.locator('.expanded-player'),pane=page.locator('.lyrics-pane[data-variant=visualizer]');
  await expect(pane.locator('.lyric-line')).toHaveCount(4);
  const first=pane.locator('[data-line="0"]'),same=await first.elementHandle();
- expect(await first.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(50);
+ expect(await first.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThan(40);
  const seek=player.getByRole('slider',{name:'Playback position'});await seek.focus();await seek.press('End');
  await expect(pane.locator('[data-line="3"]')).toHaveAttribute('data-current','true');expect(await same!.evaluate(el=>el.isConnected)).toBe(true);
  await page.waitForTimeout(280);expect(await pane.locator('.lyrics-lines').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
@@ -47,4 +47,14 @@ test('retained expanded player and its backdrop do not leak through native visua
  await expect(covered).toHaveCSS('visibility','hidden');await expect(covered).toHaveCSS('opacity','0');
  expect(await covered.evaluate(el=>getComputedStyle(el,'::backdrop').backdropFilter)).toBe('none');
  await page.keyboard.press('Meta+v');await expect(visualizer).toHaveCount(0);await expect(covered).toBeVisible();
+});
+
+
+test('keyboard focus uses a compact lyric cue instead of outlining the viewport',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');await page.getByRole('button',{name:'Open visualizer'}).click();await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');
+ const pane=page.locator('.lyrics-pane[data-variant=visualizer]'),scroll=pane.locator('.lyrics-lines');await expect(scroll).toBeVisible();await page.keyboard.press('Tab');await scroll.focus();
+ await expect(pane).not.toHaveAttribute('tabindex','0');expect(await scroll.evaluate(el=>getComputedStyle(el).outlineStyle)).toBe('none');
+ expect(await pane.evaluate(el=>getComputedStyle(el,'::after').content)).toContain('Lyrics');
+ const font=await pane.locator('.lyric-line').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize));expect(font).toBeGreaterThan(40);expect(font).toBeLessThan(60);
+ const selector=page.locator('[data-player-cycle]');await page.keyboard.press('Tab');expect((await selector.boundingBox())!.width).toBe(44);
 });
