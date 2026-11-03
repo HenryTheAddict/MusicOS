@@ -15,3 +15,6 @@
 .onboarding .onboarding-primary:hover,.onboarding .onboarding-choices>button[aria-pressed=true]:hover{background:color-mix(in srgb,var(--accent) 96%,var(--ink));}
 .onboarding-copy{scrollbar-width:thin;scrollbar-color:var(--control-border) transparent;}.onboarding-copy::-webkit-scrollbar{width:5px;}.onboarding-copy::-webkit-scrollbar-thumb{background:var(--control-border);border-radius:8px;}
 @media(max-height:520px) and (min-width:681px){.onboarding-step{margin-bottom:8px;}.onboarding h1{margin-bottom:12px;}.onboarding-lead{line-height:1.45;margin-bottom:14px;}.onboarding-note{margin:12px 0;}.onboarding-phone{padding-top:10px;}}
+
+/* Keep the action row reachable in short and square windows. */
+.onboarding-aside{min-height:0;overflow:hidden;}.onboarding-scene{min-height:0;}.onboarding-sleeve{width:min(78%,190px,25dvh);}.onboarding-footer>button{min-width:0;white-space:normal;}.onboarding-copy fieldset{min-width:0;}.onboarding .onboarding-top>button{padding:0;display:grid;place-items:center;}.onboarding .onboarding-top>button>.icon{width:20px;height:20px;}

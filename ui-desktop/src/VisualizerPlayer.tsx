@@ -19,11 +19,11 @@ export default function VisualizerPlayer({preferences,onPreferences,...props}:{p
  const latest=useRef({preferences,onPreferences});latest.current={preferences,onPreferences};
  const id=props.player.track?.id,offset=id===undefined?undefined:beatOffsets.get(id);
  const colorFilter=useId();
- const albumPalette=useVisualizerAlbumPalette(!!prefs.album_colors,id,props.cover);
+ const {palette:albumPalette,pending:albumPalettePending}=useVisualizerAlbumPalette(!!prefs.album_colors,id,props.cover);
  const beat={trackId:id,bpm:props.bpm,offset,confidence:offset===undefined?0:0.5};
- const configIdentity=useRef(''),requestId=useRef(0),identity=JSON.stringify([prefs,albumPalette,beat,reduced,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
+ const configIdentity=useRef(''),requestId=useRef(0),identity=JSON.stringify([prefs,albumPalette,albumPalettePending,beat,reduced,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
  if(configIdentity.current!==identity){configIdentity.current=identity;requestId.current=++nextRequestId;}
- settings.current={requestId:requestId.current,preferences:prefs,albumPalette,beat,reduced};
+ settings.current={requestId:requestId.current,preferences:prefs,albumPalette,albumPalettePending,beat,reduced};
  useEffect(()=>{
   let alive=true,off:(()=>void)|undefined,previousFull:boolean|undefined;
   const restore=async()=>{if(native){await call('visualizer',{request:{action:'close'}}).catch(()=>{});if(previousFull!==undefined){const {getCurrentWindow}=await import('@tauri-apps/api/window');await getCurrentWindow().setFullscreen(previousFull).catch(()=>{});}}else if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});delete document.documentElement.dataset.nativeVisualizer;};
@@ -38,7 +38,7 @@ export default function VisualizerPlayer({preferences,onPreferences,...props}:{p
   };setError('');setReady(!native);void serializeWindow(open);
   return()=>{alive=false;off?.();void serializeWindow(restore);};
  },[attempt]);
- useEffect(()=>{if(!native||!ready)return;let alive=true;const revision=settings.current.requestId;void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(e=>{if(alive&&revision===settings.current.requestId)setError(errorText(e));});return()=>{alive=false;};},[ready,prefs,albumPalette,id,offset,props.bpm,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
+ useEffect(()=>{if(!native||!ready)return;let alive=true;const revision=settings.current.requestId;void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(e=>{if(alive&&revision===settings.current.requestId)setError(errorText(e));});return()=>{alive=false;};},[ready,prefs,albumPalette,albumPalettePending,id,offset,props.bpm,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
  useEffect(()=>{const media=matchMedia('(prefers-reduced-motion: reduce)'),update=()=>{setReduced(media.matches);settings.current={...settings.current,reduced:media.matches};if(native&&ready)void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(()=>{});};media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[ready]);
  const view=props.view;
  const stills=import.meta.glob<string>('../../assets/visualizers/thumbnails/*.png',{query:'?url',import:'default',eager:true});

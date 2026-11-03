@@ -73,6 +73,7 @@ export interface Preferences {
   trackpad_feedback?:import('./haptics').FeedbackSettings;
   mini_player_density?:"standard"|"compact"|"wide";
   mini_player_view?:"artwork"|"queue";
+  player_background?:"solid"|"flowing";
   now_playing_artwork_action?:"album"|"mini_player"|"artwork";
   appearance?:Appearance;
   artists_album_only?:boolean;

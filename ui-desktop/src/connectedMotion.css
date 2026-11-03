@@ -97,3 +97,16 @@
 .audio-suggestions-action>span{min-width:0;overflow-wrap:anywhere;}
 .audio-suggestions-action>.icon:last-child{width:.75rem;height:.75rem;margin-left:.5rem;transform:rotate(180deg);}
 .audio-suggestions-action:hover{background:color-mix(in srgb,var(--ink) 8%,var(--control-surface));}
+
+/* Without a description, the hero ends at the cover rather than an empty row. */
+.album-detail:not(:has(.album-description)) .album-hero{align-items:stretch;}
+.album-detail .album-footer:not(:has(.album-description)){display:flex;justify-content:flex-end;min-height:0;}
+.album-detail .album-footer:not(:has(.album-description)) .album-footer-controls{gap:8px;}
+.album-detail:not(:has(.album-description)) .album-copy{min-height:0;height:auto;align-self:stretch;}
+@container(min-width:40rem){
+ .album-detail:not(:has(.album-description)) .album-copy{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto minmax(0,1fr);column-gap:16px;row-gap:8px;}
+ .album-detail:not(:has(.album-description)) .album-copy>h1{grid-column:1;grid-row:1;}
+ .album-detail:not(:has(.album-description)) .album-copy>.album-artist-credits{grid-column:1;grid-row:2;}
+ .album-detail:not(:has(.album-description)) .album-copy>.collection-meta{grid-column:1;grid-row:3;align-self:start;}
+ .album-copy>.album-footer:not(:has(.album-description)){grid-column:2;grid-row:1/4;align-self:end;margin-top:0;padding-top:0;}
+}

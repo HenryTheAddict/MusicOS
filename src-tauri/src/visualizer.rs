@@ -15,6 +15,7 @@ pub struct Settings {
     pub beat: Beat,
     pub reduced: bool,
     pub album_palette: Option<[[f32; 3]; 3]>,
+    pub album_palette_pending: bool,
 }
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -230,6 +231,8 @@ pub mod surface {
                     };
                     let presenter = Presenter::new(&display.gpu.device, display.config.format);
                     let mut audio = Audio::default();
+                    let mut colors =
+                        musicos_visualizer::palette_transition::PaletteTransition::default();
                     while !control.stop.load(Ordering::Acquire) {
                         let now = Instant::now();
                         if !control.visible.load(Ordering::Relaxed) {
@@ -298,9 +301,15 @@ pub mod surface {
                                     engine.image(),
                                     0.,
                                     1.,
-                                    settings
-                                        .album_palette
-                                        .filter(|_| settings.preferences.album_colors),
+                                    colors.update(
+                                        settings
+                                            .album_palette
+                                            .filter(|_| settings.preferences.album_colors),
+                                        settings.preferences.album_colors
+                                            && settings.album_palette_pending,
+                                        settings.reduced,
+                                        start.elapsed().as_secs_f64(),
+                                    ),
                                 );
                                 frame.present();
                             }
@@ -515,6 +524,8 @@ pub mod surface {
         let mut engine = Engine::new(&display.gpu, &initial.preferences.preset, w, h, 42)?;
         let present = Presenter::new(&display.gpu.device, display.config.format);
         let mut coordinator = Coordinator::default();
+        let color_epoch = Instant::now();
+        let mut colors = musicos_visualizer::palette_transition::PaletteTransition::default();
         let mut seen = u64::MAX;
         let mut last = Instant::now();
         let mut deadline = last;
@@ -544,10 +555,27 @@ pub mod surface {
             let settling = !settings.reduced
                 && paused_at.is_some_and(|at| at.elapsed() < Duration::from_millis(180));
             let moving = visible && snapshot.playing && !settings.reduced;
+            let matched = settings.beat.track_id == snapshot.track_id;
+            let color_time = color_epoch.elapsed().as_secs_f64();
+            let palette = colors.update(
+                settings
+                    .album_palette
+                    .filter(|_| settings.preferences.album_colors && matched),
+                settings.preferences.album_colors && (settings.album_palette_pending || !matched),
+                settings.reduced,
+                color_time,
+            );
+            let changing_colors = colors.transitioning(color_time);
             if let Some(tap) = client.visualizer_audio() {
                 tap.set_active(moving);
             }
-            if !visible || (!moving && !settling && !engine.transitioning() && seen == revision) {
+            if !visible
+                || (!moving
+                    && !settling
+                    && !engine.transitioning()
+                    && !changing_colors
+                    && seen == revision)
+            {
                 state.status.lock().unwrap_or_else(|e| e.into_inner()).phase =
                     if visible { "frozen" } else { "hidden" }.into();
                 wait(state, revision);
@@ -575,7 +603,6 @@ pub mod surface {
                 receipt = now;
                 previous = snapshot;
             }
-            let matched = settings.beat.track_id == snapshot.track_id;
             let clock = Clock {
                 entry: snapshot.entry,
                 position: snapshot.position
@@ -653,9 +680,7 @@ pub mod surface {
                 engine.image(),
                 0.,
                 1.,
-                settings
-                    .album_palette
-                    .filter(|_| settings.preferences.album_colors && matched),
+                palette,
             );
             frame.present();
             let mut status = state.status.lock().unwrap_or_else(|e| e.into_inner());
@@ -705,7 +730,7 @@ pub mod surface {
                 quality = (quality * 0.8_f64).max(0.4);
                 slow = 0;
             }
-            if moving || settling || engine.transitioning() {
+            if moving || settling || engine.transitioning() || changing_colors {
                 pace(&mut deadline);
             }
         }

@@ -25,6 +25,7 @@ pub struct Preferences {
     pub mini_player_view: String,
     pub mini_player_density: String,
     pub now_playing_artwork_action: String,
+    pub player_background: String,
     pub display_name: String,
     pub interface_percent: u16,
     pub coverflow_colors: bool,
@@ -50,6 +51,7 @@ impl Default for Preferences {
             mini_player_view: "artwork".into(),
             mini_player_density: crate::product::config().defaults.mini_player_density.clone(),
             now_playing_artwork_action: "album".into(),
+            player_background: "flowing".into(),
             display_name: String::new(),
             interface_percent: crate::product::config().defaults.interface_percent,
             coverflow_colors: false,
@@ -70,6 +72,7 @@ impl Default for Preferences {
 impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
+        if !["solid","flowing"].contains(&self.player_background.as_str()){self.player_background="flowing".into();}
         self.visualizer=self.visualizer.normalize();
         if self.mini_player_density != "compact" && self.mini_player_density != "wide" {self.mini_player_density="standard".into();}
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
@@ -300,4 +303,16 @@ mod density_tests {
   std::fs::write(&path,r#"{"display_name":"Listener","visualizer":{"preset":"missing","timed_seconds":1,"beat_interval":7}}"#).unwrap();
   let loaded=load_from(&path,None);assert_eq!(loaded.display_name,"Listener");assert_eq!(loaded.visualizer.preset,"boxes");assert_eq!(loaded.visualizer.timed_seconds,30);assert_eq!(loaded.visualizer.beat_interval,32);
  }
+}
+
+#[cfg(test)]
+mod player_background_tests {
+    #[test]
+    fn old_profiles_and_unknown_backgrounds_keep_the_existing_flowing_scene() {
+        let old:super::Preferences=serde_json::from_str("{}").unwrap();
+        assert_eq!(old.player_background,"flowing");
+        let mut p=old;p.player_background="unknown".into();assert_eq!(p.normalize().player_background,"flowing");
+        let p:super::Preferences=serde_json::from_str(r#"{"player_background":"solid"}"#).unwrap();
+        assert_eq!(p.normalize().player_background,"solid");
+    }
 }

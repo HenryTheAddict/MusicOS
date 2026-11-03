@@ -170,8 +170,8 @@
 .lyric-line-end{grid-column:2/-1;display:flex;align-items:center;gap:.5rem;font-size:.75rem;}.lyric-line-end input{max-width:10rem;}
 .lyric-file-sync{margin-bottom:1rem;border:1px solid var(--control-border);border-radius:.875rem;padding:.75rem 1rem;background:var(--control-surface);}.lyric-file-sync summary{display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.8125rem;font-weight:650;}.lyric-file-sync .icon{width:1rem;height:1rem;flex:none;}.lyric-file-sync p{font-size:.75rem;line-height:1.5;max-width:70ch;}.lyric-file-sync button{display:inline-flex;align-items:center;gap:.5rem;border-radius:.625rem;border:1px solid var(--control-border);padding:.625rem .75rem;background:var(--surface-color);color:var(--ink);font:600 .75rem Figtree,sans-serif;min-height:40px;}
 .lyric-line .lyric-word{transition:opacity 140ms,text-shadow 140ms;}
-.lyric-line[data-current=true] .lyric-word[data-word-active=true]{animation:lyric-word-light var(--word-duration,450ms) ease-out both;text-shadow:0 0 .45em color-mix(in srgb,var(--ink) 38%,transparent),0 0 1.1em color-mix(in srgb,var(--accent) 36%,transparent);}
-@keyframes lyric-word-light{0%{text-shadow:0 0 0 transparent;}35%{text-shadow:0 0 .35em color-mix(in srgb,var(--ink) 45%,transparent),0 0 .9em color-mix(in srgb,var(--accent) 48%,transparent);}100%{text-shadow:0 0 .18em color-mix(in srgb,var(--ink) 22%,transparent);}}
+.lyric-line[data-current=true] .lyric-word[data-word-active=true]{animation:lyric-word-light var(--word-duration,450ms) ease-out both;text-shadow:0 0 .45em color-mix(in srgb,var(--ink) 38%,transparent),0 0 .55em color-mix(in srgb,var(--accent) 36%,transparent);}
+@keyframes lyric-word-light{0%{text-shadow:0 0 0 transparent;}35%{text-shadow:0 0 .35em color-mix(in srgb,var(--ink) 45%,transparent),0 0 .5em color-mix(in srgb,var(--accent) 48%,transparent);}100%{text-shadow:0 0 .18em color-mix(in srgb,var(--ink) 22%,transparent);}}
 @media(prefers-reduced-motion:reduce){.lyric-line .lyric-word{transition:none!important;animation:none!important;text-shadow:none!important;}}
 
 /* Follow owns a reserved tray; it never floats over a lyric line. */
@@ -192,3 +192,12 @@
 .lyrics-pane[data-variant=full] .lyric-line{font-size:clamp(1.65rem,3.6vw,3.35rem)!important;line-height:1.3!important;padding-block:.4em!important;}
 @media(max-width:720px){.lyrics-pane[data-variant=full] .lyric-line{font-size:clamp(1.45rem,4.5vw,2.1rem)!important;}}
 .lyrics-pane .lyric-line{font-family:"MusicOS Sans",sans-serif!important;}
+
+/* The scroll gutter contains the glow; line buttons never clip their ink. */
+.lyrics-pane .lyrics-lines{padding-inline:32px!important;box-sizing:border-box;}
+.lyrics-pane .lyric-line{overflow:visible!important;}
+.lyrics-pane[data-variant=mini] .lyrics-lines{padding-inline:12px!important;}
+.lyric-line[data-current=true] .lyric-word[data-word-active=true]{opacity:1;background-image:linear-gradient(to right,var(--ink) var(--word-progress,0%),color-mix(in srgb,var(--ink) 42%,transparent) var(--word-progress,0%));background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation-play-state:paused;}
+.lyric-line[data-current=true] .lyric-word[data-word-active=true][data-word-playing=true]{animation-play-state:running;}
+.lyric-line:dir(rtl) .lyric-word[data-word-active=true]{background-image:linear-gradient(to left,var(--ink) var(--word-progress,0%),color-mix(in srgb,var(--ink) 42%,transparent) var(--word-progress,0%));}
+@media(prefers-reduced-motion:reduce){.lyric-line .lyric-word{background:none!important;-webkit-text-fill-color:currentColor!important;}}

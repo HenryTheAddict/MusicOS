@@ -87,3 +87,14 @@
 .song-change-notice[data-visible=true]{opacity:1;transform:translateY(0);}
 .song-change-notice>.icon{width:24px;height:24px;flex:none;}.song-change-notice>span{min-width:0;}.song-change-notice strong,.song-change-notice small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.song-change-notice strong{font-size:.875rem;font-weight:600;}.song-change-notice small{font-size:.75rem;opacity:.75;}
 @media(prefers-reduced-motion:reduce){.song-change-notice{transition:none;transform:none;}}
+
+.song-change-content{display:flex;align-items:center;gap:10px;min-width:0;max-width:100%;}.song-change-content>.cover{width:44px;height:44px;flex:none;border-radius:9px;object-fit:cover;}.song-change-content>span{min-width:0;}.song-change-content small:first-child{font-size:10px;letter-spacing:.025em;}
+
+.expanded-player[data-background=solid]::after{background:none!important;}
+.expanded-player[data-background=flowing]:not([data-visualizer=true]) .lyrics-liquid{background:linear-gradient(145deg,var(--player-scene-surface),color-mix(in srgb,var(--player-scene-blob) 36%,var(--player-scene-surface)));}
+.expanded-player[data-background=flowing]:not([data-visualizer=true])::after{background:linear-gradient(115deg,color-mix(in srgb,var(--player-scene-surface) 35%,transparent),color-mix(in srgb,var(--player-scene-surface) 60%,transparent))!important;}
+
+@property --player-scene-surface{syntax:'<color>';inherits:true;initial-value:#17222a;}
+@property --player-scene-blob{syntax:'<color>';inherits:true;initial-value:#263b49;}
+.expanded-player:not([data-visualizer=true]){background-color:var(--player-scene-surface)!important;transition:--player-scene-surface 320ms ease-in-out,--player-scene-blob 320ms ease-in-out;}
+@media(prefers-reduced-motion:reduce){.expanded-player:not([data-visualizer=true]){transition:none;}}

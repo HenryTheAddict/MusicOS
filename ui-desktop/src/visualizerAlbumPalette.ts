@@ -25,5 +25,6 @@ export function useVisualizerAlbumPalette(enabled:boolean,trackId:number|undefin
   return()=>{alive=false;};
  },[enabled,key,trackId,cover]);
  // An old album must never tint a new track while its artwork is loading.
- return enabled?(cache.current.has(key)?cache.current.get(key):resolved?.key===key?resolved.palette:undefined):undefined;
+ const ready=cache.current.has(key)||resolved?.key===key;
+ return {palette:enabled?(cache.current.has(key)?cache.current.get(key):resolved?.key===key?resolved.palette:undefined):undefined,pending:enabled&&!ready};
 }

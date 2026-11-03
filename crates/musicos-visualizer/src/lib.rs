@@ -20,3 +20,5 @@ pub use wgpu;
 pub mod random;
 
 pub mod pixel;
+
+pub mod palette_transition;
