@@ -62,6 +62,8 @@ pub struct Task {
     pub cancelled: bool,
 }
 pub struct AppState {
+    #[cfg(target_os="macos")]
+    visualizer:Mutex<Option<crate::visualizer::surface::Session>>,
     mini_player: Mutex<Option<PlayerWindowBounds>>,
     mini_menu_position: Mutex<Option<tauri::PhysicalPosition<i32>>>,
     mini_layout: Mutex<String>,
@@ -115,6 +117,8 @@ impl AppState {
         let preference_error=preference_error.or(recovery_error);
         let integrations = IntegrationService::start(playback.client())?;
         Ok(Self {
+            #[cfg(target_os="macos")]
+            visualizer:Mutex::new(None),
             mini_player: Mutex::new(None),
             mini_menu_position: Mutex::new(None),
             mini_layout: Mutex::new("normal".into()),
@@ -1138,7 +1142,28 @@ async fn trackpad_feedback(app:tauri::AppHandle,window:tauri::WebviewWindow,requ
 #[tauri::command]
 async fn lyric_edition(app:tauri::AppHandle,request:crate::lyric_edition::Request)->ApiResult<Value>{blocking(move||crate::lyric_edition::action(&app.state::<AppState>().config().db_path,request)).await}
 #[tauri::command]
-async fn apple_enrichment(app:tauri::AppHandle,request:crate::apple_enrichment::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let changed=request.action=="transfer_playlist";let value=crate::apple_enrichment::action(&app,&state.config().db_path,request)?;if changed{let _=app.emit("library-changed",json!({"reason":"collections"}));}Ok(value)}).await}
+async fn visualizer(app:tauri::AppHandle,window:tauri::WebviewWindow,request:crate::visualizer::Request)->ApiResult<crate::visualizer::Status>{
+    #[cfg(not(target_os="macos"))]
+    {let _=(app,window,request);return Err(AppError::from(anyhow::anyhow!("The native visualizer is currently available on macOS desktop.")));}
+    #[cfg(target_os="macos")]
+    {
+        if window.label()!="main"{return Err(AppError::from(anyhow::anyhow!("Open visualizers in the musicOS player window")));}
+        let state=app.state::<AppState>();
+        match request.action.as_str(){
+            "status"=>Ok(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).as_ref().map(|s|s.status()).unwrap_or_default()),
+            "close"=>{let session=state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take();let status=session.as_ref().map(|s|s.status()).unwrap_or_default();drop(session);Ok(status)},
+            "refresh"=>{let mut owned=state.visualizer.lock().unwrap_or_else(|e|e.into_inner());let session=owned.as_mut().ok_or_else(||AppError::from(anyhow::anyhow!("Open the visualizer first")))?;if let Some(settings)=request.settings{session.update(settings);}Ok(session.status())},
+            "open"=>{
+                let settings=request.settings.unwrap_or_default();let client=state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();let (send,receive)=tokio::sync::oneshot::channel();
+                window.with_webview(move|web|{let state=app.state::<AppState>();let mut owned=state.visualizer.lock().unwrap_or_else(|e|e.into_inner());let result=(||->anyhow::Result<crate::visualizer::Status>{if let Some(session)=owned.as_ref(){session.update(settings);return Ok(session.status());}let session=unsafe{crate::visualizer::surface::Session::render(web.inner(),client,settings,app.clone())}?;let status=session.status();*owned=Some(session);Ok(status)})();let _=send.send(result.map_err(AppError::from));}).map_err(|e|AppError::from(anyhow::anyhow!(e)))?;
+                receive.await.map_err(|_|AppError::from(anyhow::anyhow!("The visualizer window closed during startup")))?
+            },
+            _=>Err(AppError::from(anyhow::anyhow!("Unknown visualizer action")))
+        }
+    }
+}
+#[tauri::command]
+async fn apple_enrichment(app:tauri::AppHandle,request:crate::apple_enrichment::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let changed=request.action=="transfer_playlist";let value=crate::apple_enrichment::action(&app,&state.config().db_path,request)?;if changed{let _=app.emit("library-changed",json!({"reason":"collections"}));}if let Some(path)=value["staticPath"].as_str(){allow_art(&app,path);}Ok(value)}).await}
 
 #[tauri::command]
 async fn lyrics(app:tauri::AppHandle,request:crate::lyrics::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let _guard=if request.action=="write_tags"{let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before writing music files");Some(guard)}else{None};crate::lyrics::execute(&state.config().db_path,request)}).await}
@@ -1664,7 +1689,7 @@ pub fn run() {
             audio_analysis, audio_tempos, playlist_file, sparklist,
             present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
-            artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
+            visualizer, artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
             let state = AppState::new()?;
@@ -1678,6 +1703,7 @@ pub fn run() {
             let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};window.__MUSICOS_LAUNCH_PALETTE__={};",serde_json::to_string(&launch_appearance)?,serde_json::to_string(&launch)?);
             let window=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?
                 .initialization_script(init).visible(false).build()?;
+            crate::player_shortcuts::install(app.handle(),"main");
             let dark=launch_appearance.mode=="dark" || (launch_appearance.mode=="system"&&window.theme().ok()==Some(tauri::Theme::Dark));
             window.set_background_color(Some(launch.as_ref().filter(|s|s.matches(&launch_appearance,dark)).map(|s|s.native_color()).unwrap_or(if dark {tauri::window::Color(32,33,36,255)}else{tauri::window::Color(203,241,255,255)})))?;
             #[cfg(target_os="macos")]
@@ -1764,6 +1790,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("Could not start musicOS");
     app.run(|handle, event| {
+        #[cfg(target_os="macos")]
+        if matches!(&event,tauri::RunEvent::WindowEvent{label,event:tauri::WindowEvent::Destroyed,..} if label=="main") {
+            drop(handle.state::<AppState>().visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());
+            crate::player_shortcuts::shutdown();
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             let state=handle.state::<AppState>();
             let snapshot=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
@@ -1772,7 +1803,7 @@ pub fn run() {
             if let Err(error)=storage::save_config(&config) {eprintln!("Could not save playback session: {error:#}");}
             drop(config);
             #[cfg(target_os="macos")]
-            {crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();}
+            {drop(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();crate::player_shortcuts::shutdown();}
             crate::spark_install::cancel();
             handle.state::<AppState>().integrations.shutdown();
             let _ = handle.state::<AppState>().analysis.control("cancel");

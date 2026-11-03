@@ -19,6 +19,7 @@ export default function MiniPlayer({preview=false,density="standard",player,cove
  const [view,setView]=useState<'tall'|'queue'|'lyrics'>(mode);const lyrics=view==='lyrics';
  useEffect(()=>setView(mode),[mode]);
  function changeView(next:CyclingView){setView(next==='playing'?'tall':next);onViewChange?.(next);}
+ useEffect(()=>{const cycle=()=>changeView(view==='tall'?'queue':view==='queue'?'lyrics':'playing');window.addEventListener('musicos-cycle-mini-view',cycle);return()=>window.removeEventListener('musicos-cycle-mini-view',cycle);},[view,onViewChange]);
  const track=player.track;
  const upcomingCount=Math.max(0,player.queue.length-(player.queue_index===null?0:player.queue_index+1));
  const queueContent=useMemo(()=>{

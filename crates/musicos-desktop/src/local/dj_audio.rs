@@ -47,6 +47,7 @@ pub enum Command {
 }
 #[derive(Default)]
 pub struct Clock {
+    pub visualizer: Arc<super::visualizer_audio::Tap>,
     pub listening_revision: AtomicU64,
     pub applied_reverb:AtomicU32,
     pub applied_reverb_depth:AtomicU32,
@@ -159,9 +160,15 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
         let mut low = 0_f32; let mut high_cut = 0_f32; let mut smoothed=[0_f32;3];
         let low_alpha = 1. - (-2. * std::f32::consts::PI * 250. / RATE as f32).exp();
         let high_alpha = 1. - (-2. * std::f32::consts::PI * 2500. / RATE as f32).exp();
+        let mut analyzer=super::visualizer_audio::Analyzer::default();
+        let mut was_active=false;
         loop {
+            let Some(live)=meter_clock.upgrade() else {break};
+            let active=live.visualizer.active();
+            if active!=was_active{analyzer.reset_history();was_active=active;}
             let mut energy = [0_f32; 3]; let mut count = 0_u32;
             while let Ok(frame) = samples.pop() {
+                if active {analyzer.push(frame);}
                 let x = (frame[0] + frame[1]) * 0.5;
                 low += low_alpha * (x - low); high_cut += high_alpha * (x - high_cut);
                 for (sum, band) in energy.iter_mut().zip([low, high_cut - low, x - high_cut]) { *sum += band * band; }
@@ -174,6 +181,8 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
                     target.store(smoothed[i].to_bits(), Ordering::Relaxed);
                 }
             } else { break; }
+            if active && count>0 {analyzer.publish(&live.visualizer,0.05);}
+            drop(live);
             if samples.is_abandoned() { break; }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }

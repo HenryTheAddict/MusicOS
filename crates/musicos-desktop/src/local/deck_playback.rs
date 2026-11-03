@@ -304,6 +304,7 @@ impl DesktopPlayer {
             tempo: t.tempo,
         })
     }
+    pub fn visualizer_audio(&self)->Arc<super::visualizer_audio::Tap>{self.control.clock.visualizer.clone()}
     pub fn audio_levels(&self) -> [f32; 3] {
         if self.paused { return [0.; 3]; }
         self.control.clock.levels.each_ref().map(|value| f32::from_bits(value.load(Ordering::Relaxed)))

@@ -75,16 +75,37 @@ fn credentials(db: &Path) -> Result<Credentials> {
     let raw = entry(db)?
         .get_password()
         .map_err(|_| anyhow::anyhow!("Connect Apple Music to continue."))?;
-    Ok(serde_json::from_str(&raw)?)
+    let mut saved: Credentials = serde_json::from_str(&raw)?;
+    // The web app's developer token can expire before the retained user session.
+    // Refresh only that public token; a valid user session does not need sign-in.
+    if token_expiry(&saved.bearer).is_some_and(|expiry| expiry <= apple_now().saturating_add(60)) {
+        static REFRESH: Mutex<()> = Mutex::new(());
+        let _guard = REFRESH.lock().unwrap_or_else(|e| e.into_inner());
+        saved = serde_json::from_str(&entry(db)?.get_password()?)?;
+        if token_expiry(&saved.bearer).is_some_and(|expiry| expiry <= apple_now().saturating_add(60)) {
+            saved.bearer = bearer()?;
+            entry(db)?.set_password(&serde_json::to_string(&saved)?)?;
+        }
+    }
+    Ok(saved)
+}
+fn token_expiry(token: &str) -> Option<u64> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload).ok()?;
+    serde_json::from_slice::<Value>(&bytes).ok()?["exp"].as_u64()
 }
 pub(crate) fn store(db: &Path) -> Result<rusqlite::Connection> {
     let c = rusqlite::Connection::open(db.with_file_name("desktop-apple-enrichment-v1.sqlite3"))?;
     c.busy_timeout(Duration::from_secs(5))?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL); CREATE TABLE IF NOT EXISTS choices(track_id INTEGER,catalog_id TEXT,payload TEXT,PRIMARY KEY(track_id,catalog_id)); CREATE TABLE IF NOT EXISTS lyric_cache(catalog_id TEXT PRIMARY KEY,document TEXT NOT NULL); CREATE TABLE IF NOT EXISTS lyric_attempts(signature TEXT PRIMARY KEY,checked INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS artwork_cache(album_id TEXT PRIMARY KEY,payload TEXT NOT NULL);")?;
     c.execute_batch("CREATE TABLE IF NOT EXISTS asset_links(track_id INTEGER PRIMARY KEY,catalog_id TEXT NOT NULL,album_id TEXT,signature TEXT NOT NULL);
-        CREATE TRIGGER IF NOT EXISTS retain_asset_link AFTER INSERT ON links BEGIN INSERT OR REPLACE INTO asset_links VALUES(new.track_id,new.catalog_id,new.album_id,new.signature); END;")?;
+        CREATE TRIGGER IF NOT EXISTS retain_asset_link AFTER INSERT ON links BEGIN INSERT OR REPLACE INTO asset_links VALUES(new.track_id,new.catalog_id,new.album_id,new.signature); END;
+        CREATE TRIGGER IF NOT EXISTS update_asset_link AFTER UPDATE ON links BEGIN INSERT OR REPLACE INTO asset_links VALUES(new.track_id,new.catalog_id,new.album_id,new.signature); END;")?;
     if c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0))?<1 {
         c.execute_batch("INSERT OR IGNORE INTO asset_links SELECT * FROM links;PRAGMA user_version=1;")?;
+    }
+    if c.pragma_query_value(None,"user_version",|r|r.get::<_,i64>(0))?<2 {
+        c.execute_batch("UPDATE asset_links SET album_id=(SELECT links.album_id FROM links WHERE links.track_id=asset_links.track_id AND links.catalog_id=asset_links.catalog_id AND links.signature=asset_links.signature) WHERE album_id IS NULL AND EXISTS(SELECT 1 FROM links WHERE links.track_id=asset_links.track_id AND links.catalog_id=asset_links.catalog_id AND links.signature=asset_links.signature AND links.album_id IS NOT NULL);PRAGMA user_version=2;")?;
     }
     #[cfg(unix)]
     {
@@ -529,7 +550,7 @@ fn sdr_motion(value: &str) -> Result<String> {
                     .and_then(|v| v.split_once('x'))
                     .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)));
                 if let Some((w, h)) = size {
-                    if w <= 720 && h <= 720 && w == h {
+                    if w <= 1080 && h <= 1080 && w == h {
                         let variant = u.join(line)?;
                         media_url(variant.as_str())?;
                         choices.push((w, variant.to_string()));
@@ -867,10 +888,8 @@ fn verify_connection(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             && app.get_webview_window("apple-enrichment-signin").is_some(),
         "Sign-in was cancelled before verification completed"
     );
-    transfers::clear(db)?;
-    store(db)?.execute_batch(
-        "DELETE FROM links;DELETE FROM choices;DELETE FROM lyric_attempts;",
-    )?;
+    // Reconnecting a session must not discard recording choices, asset links,
+    // cached lyrics, or the existing library index. Refresh is a separate action.
     entry(db)?
         .set_password(&serde_json::to_string(&c)?)
         .map_err(|_| anyhow::anyhow!("Could not save the Apple session in the system keychain"))?;
@@ -879,22 +898,26 @@ fn verify_connection(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.set_focus();
     }
+    let retained=store(db)?;
+    let matched:usize=retained.query_row("SELECT count(*) FROM links",[],|r|r.get(0))?;
+    let ambiguous:usize=retained.query_row("SELECT count(DISTINCT track_id) FROM choices",[],|r|r.get(0))?;
     let mut s = state().lock().unwrap();
     s.signed_in = true;
     s.scanned = 0;
-    s.matched = 0;
-    s.ambiguous = 0;
+    s.matched = matched;
+    s.ambiguous = ambiguous;
     s.completed = 0;
     s.total = 0;
     s.lyrics_ready = 0;
     s.lyrics_failed = 0;
-    s.library = "not_checked".into();
+    s.library = if matched>0 {"available"}else{"not_checked"}.into();
     s.lyrics = "not_checked".into();
     s.artwork = "not_checked".into();
     s.sign_in = "available".into();
     s.phase = "connected".into();
     s.message = "Signed in. Library, lyrics, and motion artwork are checked independently.".into();
-    Ok(json!({"status":s.clone()}))
+    let status=s.clone();drop(s);let _=app.emit_to("main","apple-enrichment-status",status.clone());
+    Ok(json!({"status":status}))
 }
 fn watch_signin(app: tauri::AppHandle, db: std::path::PathBuf, epoch: u64) {
     std::thread::spawn(move || {
@@ -1034,7 +1057,7 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 Ok(json!({"status":status}))
             }
             "verify" => {
-                if VERIFYING.load(Ordering::SeqCst) || state().lock().unwrap().signed_in {
+                if VERIFYING.load(Ordering::SeqCst) {
                     return Ok(json!({"status":state().lock().unwrap().clone()}));
                 }
                 verify_connection(app, db)
@@ -1159,6 +1182,17 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
             }
             "lyrics" => lyric(db, req.track_id.context("Choose a local song")?),
             "artwork" => artwork(db, req.track_id.context("Choose a local song")?),
+            "expanded_artwork" => {
+                let id=req.track_id.context("Choose a local song")?;
+                // Still and video capabilities are independent. Keep a durable
+                // still cover usable when motion artwork or the network fails.
+                let still_error=background::cover(db,id).err().map(|e|e.to_string());
+                let still=background::cached_cover(db,id);
+                let mut result=artwork(db,id).unwrap_or_else(|e|json!({"state":"unavailable","url":null,"motionError":e.to_string()}));
+                if let Some(message)=still_error.as_deref().filter(|m|m.contains("HTTP 401")).or_else(||result["motionError"].as_str().filter(|m|m.contains("HTTP 401"))){apply_action_error(&mut state().lock().unwrap(),"artwork",message);}
+                result["staticPath"]=json!(still);result["staticError"]=json!(still_error);result["status"]=json!(state().lock().unwrap().clone());
+                Ok(result)
+            },
             "matches" => {
                 let c = store(db)?;
                 let tracks =
@@ -1214,27 +1248,50 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
         }
     })();
     if let Err(error) = &result {
-        let mut s = state().lock().unwrap();
-        s.message = error.to_string();
-        if s.message.contains("HTTP 401") {
-            s.signed_in = false;
-            s.sign_in = "unavailable".into();
-        }
-        s.phase = "unavailable".into();
-        match req.action.as_str() {
-            "status" if s.sign_in == "waiting" => s.sign_in = "unavailable".into(),
-            "verify" => s.sign_in = "unavailable".into(),
-            "sync" => s.library = "unavailable".into(),
-            "lyrics" => s.lyrics = "unavailable".into(),
-            "artwork" => s.artwork = "unavailable".into(),
-            _ => {}
-        }
+        let status={let mut s=state().lock().unwrap();apply_action_error(&mut s,&req.action,&error.to_string());s.clone()};
+        let _=app.emit_to("main","apple-enrichment-status",status);
     }
     result
+}
+fn apply_action_error(s: &mut Status, action: &str, message: &str) {
+    s.message = message.to_owned();
+    if message.contains("HTTP 401") {
+        s.signed_in = false;
+        s.sign_in = "unavailable".into();
+        s.phase = "reconnect_required".into();
+    } else if matches!(action, "verify" | "status") && s.phase == "signing_in" {
+        // Keep Apple's window and the explicit Check connection action usable.
+        // A temporary verification failure does not silently restart requests.
+        s.sign_in = "waiting".into();
+    } else if matches!(action, "sync" | "sync_lyrics" | "refresh_transfers") {
+        s.phase = if s.signed_in { "ready" } else { "unavailable" }.into();
+    }
+    match action {
+        "sync" => s.library = "unavailable".into(),
+        "lyrics" | "sync_lyrics" => s.lyrics = "unavailable".into(),
+        "artwork" => s.artwork = "unavailable".into(),
+        _ => {}
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn capability_errors_do_not_disconnect_or_end_background_work() {
+        let mut s = Status { signed_in: true, sign_in: "available".into(), phase: "background_cache".into(), ..Default::default() };
+        apply_action_error(&mut s, "artwork", "Artwork is unavailable");
+        assert!(s.signed_in);assert_eq!(s.phase,"background_cache");assert_eq!(s.artwork,"unavailable");
+        apply_action_error(&mut s,"lyrics","Apple Music returned HTTP 401");
+        assert!(!s.signed_in);assert_eq!(s.phase,"reconnect_required");
+        s.phase="signing_in".into();apply_action_error(&mut s,"verify","Could not reach Apple Music");
+        assert_eq!(s.phase,"signing_in");assert_eq!(s.sign_in,"waiting");
+    }
+    #[test]
+    fn session_token_expiry_is_read_without_exposing_token_contents() {
+        let payload=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"exp":1234}"#);
+        assert_eq!(token_expiry(&format!("header.{payload}.signature")),Some(1234));
+        assert_eq!(token_expiry("unsupported"),None);
+    }
     #[test]
     fn identity_and_url_guards() {
         assert!(digits("1234").is_ok());
@@ -1265,6 +1322,24 @@ mod tests {
         let ready=load();assert_eq!(ready["source"]["label"],"Apple Music");assert_eq!(ready["document"]["metadata"]["title"],"Test");
         crate::lyrics::execute(&path,crate::lyrics::Request{action:"save".into(),track_id:Some(id),revision:Some(0),document:Some(crate::lyrics::parse("My local edit","plain").unwrap()),..Default::default()}).unwrap();
         assert_eq!(load()["document"]["plain"],"My local edit");
+    }
+    #[test]
+    fn late_album_identity_updates_the_durable_artwork_link() {
+        let root=tempfile::tempdir().unwrap();let path=root.path().join("library.db");let c=store(&path).unwrap();
+        c.execute("INSERT INTO links VALUES(1,'123',NULL,'recording')",[]).unwrap();
+        c.execute("UPDATE links SET album_id='456' WHERE track_id=1",[]).unwrap();
+        assert_eq!(c.query_row("SELECT album_id FROM asset_links WHERE track_id=1",[],|r|r.get::<_,String>(0)).unwrap(),"456");
+        c.execute("DELETE FROM links WHERE track_id=1",[]).unwrap();
+        assert_eq!(c.query_row("SELECT catalog_id FROM asset_links WHERE track_id=1",[],|r|r.get::<_,String>(0)).unwrap(),"123");
+    }
+    #[test]
+    fn existing_null_album_links_are_repaired_without_changing_recordings() {
+        let root=tempfile::tempdir().unwrap();let path=root.path().join("library.db");let c=store(&path).unwrap();
+        c.execute("INSERT INTO links VALUES(1,'123','456','recording')",[]).unwrap();
+        c.execute("UPDATE asset_links SET album_id=NULL WHERE track_id=1",[]).unwrap();
+        c.pragma_update(None,"user_version",1).unwrap();drop(c);
+        let repaired=store(&path).unwrap();
+        assert_eq!(repaired.query_row("SELECT album_id FROM asset_links WHERE track_id=1 AND catalog_id='123' AND signature='recording'",[],|r|r.get::<_,String>(0)).unwrap(),"456");
     }
     #[test]
     fn nested_lyrics() {

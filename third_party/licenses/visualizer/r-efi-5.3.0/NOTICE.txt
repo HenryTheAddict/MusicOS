@@ -1,0 +1,1 @@
+r-efi 5.3.0 declares MIT OR Apache-2.0 OR LGPL-2.1-or-later in its published manifest. This distribution selects MIT. The upstream archive did not include a separate license text; the complete SPDX license text is retained here alongside its unmodified manifest. Authors as listed upstream: . Repository: https://github.com/r-efi/r-efi.

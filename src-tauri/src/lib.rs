@@ -71,3 +71,7 @@ pub mod lyric_sidecars;
 pub mod lyric_edition;
 
 pub mod haptics;
+
+pub mod visualizer;
+
+pub mod player_shortcuts;

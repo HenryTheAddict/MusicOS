@@ -1,0 +1,20 @@
+import {cleanup,render,screen} from '@testing-library/react';
+import {afterEach,expect,it,vi} from 'vitest';
+import {ViewActivity} from '../src/ViewScope';
+import FavoriteButton from '../src/FavoriteButton';
+import type {Track} from '../src/types';
+const {watch,stop,release}=vi.hoisted(()=>({watch:vi.fn(),stop:vi.fn(),release:vi.fn()}));
+vi.mock('../src/heartVisibility',()=>({watchHeart:watch}));
+vi.mock('../src/haptics',()=>({hoverHeart:vi.fn(),releaseHeart:release,haptic:vi.fn()}));
+vi.mock('../src/AssetIcon',()=>({AssetIcon:()=>null}));
+afterEach(()=>{cleanup();vi.clearAllMocks();});
+it('stops covered heartbeat work without losing the favorite control or its state',()=>{
+ watch.mockReturnValue(stop);
+ const track={id:9,title:'Fixture',favorited:true} as Track;
+ const content=(active:boolean)=><ViewActivity active={active}><FavoriteButton track={track} bpm={120} playing label="Fixture heart"/></ViewActivity>;
+ const view=render(content(true));const heart=screen.getByRole('button',{name:'Fixture heart'});
+ expect(watch).toHaveBeenCalledTimes(1);expect(heart).toHaveAttribute('data-playing','true');
+ view.rerender(content(false));expect(stop).toHaveBeenCalledTimes(1);expect(release).toHaveBeenCalledWith(heart);
+ expect(screen.getByRole('button',{name:'Fixture heart'})).toBe(heart);expect(heart).toHaveAttribute('aria-pressed','true');expect(heart).toHaveAttribute('data-playing','false');
+ view.rerender(content(true));expect(watch).toHaveBeenCalledTimes(2);expect(heart).toHaveAttribute('data-playing','true');
+});

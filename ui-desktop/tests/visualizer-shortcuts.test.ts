@@ -1,0 +1,9 @@
+import {describe,it,expect} from 'vitest';
+import {defaultVisualizer,playerShortcut,visualizerCatalog} from '../src/visualizer';
+describe('visualizer shortcut ownership',()=>{
+ const event=(key:string,target:EventTarget=document.body)=>({key,metaKey:true,ctrlKey:false,altKey:false,shiftKey:false,repeat:false,target});
+ it('keeps Paste and editor commands untouched',()=>{for(const tag of ['input','textarea','select'])for(const key of ['v','p','n','b'])expect(playerShortcut(event(key,document.createElement(tag)))).toBeNull();const editor=document.createElement('div');editor.contentEditable='true';editor.setAttribute('contenteditable','true');const child=document.createElement('span');editor.append(child);expect(playerShortcut(event('v',child))).toBeNull();});
+ it('routes one deliberate press and ignores repeat and unrelated modifiers',()=>{for(const [key,action] of [['p','previous'],['n','next'],['v','visualizer'],['b','panel']])expect(playerShortcut(event(key))).toBe(action);expect(playerShortcut({...event('n'),repeat:true})).toBeNull();expect(playerShortcut({...event('n'),altKey:true})).toBeNull();expect(playerShortcut({...event('v'),metaKey:false})).toBeNull();});
+ it('keeps transport shortcuts available after seeking',()=>{const seek=document.createElement('input');seek.type='range';expect(playerShortcut(event('v',seek))).toBe('visualizer');expect(playerShortcut(event('b',seek))).toBe('panel');});
+ it('starts without fetching lyrics and keeps the exact selected catalog',()=>{expect(defaultVisualizer).toMatchObject({preset:'boxes',lyrics:false,beat_sync:true,rotation:'manual'});expect(visualizerCatalog).toHaveLength(13);expect(new Set(visualizerCatalog.map(p=>p.id)).size).toBe(13);});
+});

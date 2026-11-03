@@ -1,0 +1,40 @@
+# Native visualizers and Apple enrichment repair — 2026-11-02
+
+## Implementation
+
+The isolated desktop branch adds only the 13 selected, aliased preset sources. Their original JSON, source revisions, SHA-256 checksums, names, authors, port mappings, and applicable licenses are retained. The native renderer runs bounded Rust EEL evaluation, GPU pixel-equation dispatch, original warp/composite shader ports, feedback, blur, noise, shapes, and waveforms through wgpu/Metal. Unsupported programs fail visibly; no JavaScript rendering fallback is bundled. Settings → About exposes full credits and license texts.
+
+A native Metal surface sits below the existing transparent player interface in the same window. Opening preserves playback, previous view/fullscreen/window mode and bounds; closing restores them. Cmd+P/N/V/B use one focused-window owner, ignore repeats, preserve editing/Paste, and remain available after seeking. The visualizer starts with boxes, Manual rotation, Beat Sync on, lyrics off. Preset selection, two-second replacement blends, rotation options, acknowledged queue-entry/beat evidence, unknown-tempo fallback, optional shared timed/duet lyrics and Reduced Motion are implemented. PCM and spectrum arrays stay native, using the existing mixed-output meter ring and an inactive-by-default FFT worker. The scene pauses after settling and stops drawing when hidden/occluded/closed. Covered artwork decoding and heartbeat work are suspended without unmounting the underlying page.
+
+Apple verification refreshes expiring public web authorization independently of the retained Keychain session, actually rechecks connection status, and preserves recording links, choices, lyric selections and cached assets on reconnect. Temporary capability failures do not invalidate the entire connection. An additive repair in the desktop-owned Apple index restores missing album links for retained assets. Static expanded covers request 2048 pixels, retain aspect ratio, never upscale, coalesce matching requests and save atomically. Still artwork survives unavailable motion art. Video remains SDR, bounded to 1080p, visible-only, and owned by at most one cover. Expanded artwork offers still/animated presentation. Original audio and embedded covers remain untouched.
+
+## Automated and isolated native verification
+
+- UI build and desktop native check pass. UI suite: **68 files / 213 tests passed**, including covered heartbeat cleanup, editor Paste, native interaction chrome, artwork ownership/coalescing/stale responses and nested Escape.
+- Browser matrix: **13 checks passed**, covering 480×480, 720×480, 1280×800; 80/100/125/150% interface scales; artwork Light/Dark, blue and extreme custom colors; stable transport positions across Normal, Queue and Lyrics; preset choices, nested menus and editing shortcuts. The browser fixture is separate from the user's account, library and audio.
+- Curated renderer: **15 tests passed**; all original shader programs and every selected EEL program compile. Tests cover policy/beat boundaries, seek/repeat/speed/entry changes, fallback, unsupported semantics, shared random streams, fractional version-two random ranges, dimensions and finite output.
+- Actual Metal mesh readback: **39 cases passed** (13 presets × 3 aspect ratios), maximum UV difference below 0.0000003 against the independent f64 pixel/warp reference with identical main-frame state.
+- All 13 public main-frame control outputs match the pinned reference to within 0.00001 after 180 identical audio frames. First-frame mean absolute RGB error is 0–1.77% across all 13 ports. Original and Rust 180-frame images were inspected side by side. Feedback systems amplify small filtering/rasterization differences, so these comparisons do not claim byte-identical long-running images. The reference-state adapter aligns constructor random state; it does not inject images, equation outputs, shaders or geometry.
+- Native fixture verified a real Metal scene underneath clickable controls, preset selection, queue/lyrics overlays, native fullscreen entry/exit, editor Paste and Cmd+B/V after seek focus. It caught and repaired shortcut misclassification of range inputs and nested options Escape bubbling. It is silent and never opens AppState or the user's profile.
+- Native audio telemetry tests: **2 passed**; inactive transforms remain zero and stereo spectrum peaks follow input. Existing actual mixer/DSP regressions: **10 passed**. Apple session/cache/artwork tests: **19 passed, 2 network-dependent tests ignored**. These do not establish live authenticated Apple support.
+- Display-pacing accumulator regression passes. Native drawable timing uses public Metal presentation callbacks, not estimated FPS from scripting time. [Apple presentation callback](https://developer.apple.com/documentation/metal/mtldrawable/addpresentedhandler(_:)), [presented time](https://developer.apple.com/documentation/metal/mtldrawable/presentedtime).
+
+## Measurements and limits
+
+Hardware: Apple M5 Pro, Metal. Reference: pinned Butterchurn revision from the manifest, 640×480, 64×48 mesh, identical native/reference audio features and deterministic state. Exclude the first ten frames for CPU/GPU timing.
+
+Main-frame evaluation plus GPU pixel dispatch used approximately **0.025–0.057 ms CPU/frame**, versus **0.087–0.958 ms** for the reference's corresponding main/pixel equation work. Pixel GPU work measured approximately **0.007–0.037 ms**. This is the explicitly measured equation scope, not a claim that every application operation or the entire renderer is faster.
+
+Complete preset GPU execution at 640×480 measured approximately **0.22–3.98 ms/frame**, depending on effect. Full offscreen CPU submission/driver cost measured approximately **0.29–3.51 ms/frame**. Offscreen throughput includes driver back-pressure and is not display FPS. Adaptive native rendering includes drawable-acquisition stalls before reducing resolution; the frame cap remains 60.
+
+The silent native boxes fixture recorded 6,313 actually presented frames. Its final 600 intervals had median **16.6666 ms**, 95th percentile **16.6668 ms**, mean **16.6666 ms**, with one interval over 25 ms over the session. Before replacing accumulating relative sleeps with absolute deadlines, a separate fixture run's final 600 intervals had median 16.6666 ms, 95th percentile 24.9999 ms and mean 18.6110 ms. These are fixture observations with UI interaction, not a controlled claim about all presets or every monitor.
+
+An unpaced all-13 offscreen validation process peaked at approximately **443 MiB resident memory** (macOS separately reported a 2.39 GiB peak footprint including graphics/driver accounting). That harness eagerly reads reference JSON and creates all 13 pipelines serially; it does not represent steady-state application memory. The isolated native fixture was approximately 107 MiB resident after closure, with no continuing render work. A like-for-like installed application memory/audio comparison remains an acceptance gate.
+
+## Delivery / remaining live gates
+
+The current app and profile have not been replaced by this report. Before installation, compare all protected helper/runtime/model hashes, verify the signed bundle, checkpoint the latest profile/collections and archive the previous app. Require a fresh native paused/stopped check. Keep OS work and Android schemas/manifests unchanged.
+
+Still required before declaring full acceptance: visual recheck of the final fullscreen geometry correction; installed-build playback/Automix synchronization, audio-underrun and memory comparison; native entry/exit from every mini-player preset; and live authenticated Apple verification, refresh, high-resolution still artwork and available motion artwork. Browser tests and synthetic native features do not establish these gates. A locked Mac currently prevents these checks.
+
+Reproduction instructions: `scripts/visualizers/README.md`. Local logs, reference captures, native display-pacing data and the signed delivery manifest are retained under the task's `out` / release directories; they contain no authentication secrets.

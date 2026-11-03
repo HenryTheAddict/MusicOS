@@ -1,3 +1,7 @@
+import {useNativePlayerShortcuts,type PlayerShortcut} from './useNativePlayerShortcuts';
+import VisualizerPlayer from './VisualizerPlayer';
+import {defaultVisualizer,playerShortcut} from './visualizer';
+import {nextPlayerView} from './PlayerViewCycle';
 import PlayerViewCycle from './PlayerViewCycle';
 import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
@@ -26,7 +30,7 @@ import FavoriteButton from './FavoriteButton';
 import OverflowLabel from './OverflowLabel';
 import {playerTheme} from './playerTheme';
 import {invalidateDisplay,type LibraryChanged} from './displayData';
-import {KeepView} from './ViewScope';
+import {KeepView,ViewActivity} from './ViewScope';
 import {mergePlaybackUpdate} from './playbackPresentation';
 import {captureAlbumCover,captureAlbumReturn,captureArtistCover,captureArtistReturn,captureLibraryToolbar} from './albumTransitions';
 import MiniPlayer from './MiniPlayer';
@@ -299,11 +303,14 @@ export default function App() {
   const shell=useShellLayout(scale,miniMode==='normal');
   const compact=shell.compact;
   const [lyricPreview,setLyricPreview]=useState<Track|null>(null);
+  const [visualizerOpen,setVisualizerOpen]=useState(false),[visualizerView,setVisualizerView]=useState<PlayerView>('playing');
+  const visualizerOpener=useRef<HTMLElement|null>(null);
   const [expandedOpen,setExpandedOpen]=useState(false),[playerView,setPlayerView]=useState<PlayerView>('playing');
   const expandedPresent=usePanelPresence(expandedOpen);
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen,navigation.history.length>0,()=>goBack(true),navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,()=>goBack(true),navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
   function openPlayer(view:PlayerView='playing',preview:Track|null=null){setLyricPreview(preview);playerOpener.current=document.querySelector<HTMLElement>(view==='lyrics'?'.now-playing-title-action':view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
+  function toggleVisualizer(){if(!visualizerOpen){visualizerOpener.current=document.activeElement as HTMLElement|null;setVisualizerView((preferences.visualizer??defaultVisualizer).lyrics?'lyrics':'playing');}setVisualizerOpen(v=>!v);}
   function chooseDestination(next:Destination){if(section==='Library'&&destination===next)return;window.dispatchEvent(new Event('musicos-navigation-start'));captureScroll();if(next==='search'&&destination!=='search')previousDestination.current=destination;setSection('Library');switchDestination(next);}
   function openSearch(){if(compact||route.view==='search'){chooseDestination('search');if(route.view!=='search')navigateScope('search');setSearchFocus(value=>value+1);setCommandOpen(false);}else setCommandOpen(value=>!value);}
   const mounted = useRef(true);
@@ -526,6 +533,9 @@ export default function App() {
     }
   }, []);
   const runImmersive=useCallback(async(action:PlaybackAction)=>{setPlayer(await call('playback',{action}));if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));},[]);
+  const shortcutDispatch=useRef<(shortcut:PlayerShortcut)=>void>(()=>{});
+  shortcutDispatch.current=shortcut=>{if(document.querySelector(".onboarding[open]"))return;if(shortcut==='previous'||shortcut==='next')void run({type:shortcut});else if(shortcut==='visualizer')toggleVisualizer();else if(visualizerOpen){const next=nextPlayerView(visualizerView);setVisualizerView(next);changePreferences({...preferences,visualizer:{...(preferences.visualizer??defaultVisualizer),lyrics:next==='lyrics'}});}else if(expandedOpen)setPlayerView(nextPlayerView(playerView));else if(miniMode!=='normal')window.dispatchEvent(new Event('musicos-cycle-mini-view'));else{const next=nextPlayerView(queueOpen?queueView:'playing');if(next!=='playing')setQueueView(next);setQueueOpen(next!=='playing');}};
+  useNativePlayerShortcuts(shortcut=>shortcutDispatch.current(shortcut));
   useEffect(() => {
     const pointerSpace=(e:KeyboardEvent)=>{
       const target=e.target as HTMLElement;
@@ -537,6 +547,9 @@ export default function App() {
     const listener = (e: KeyboardEvent) => {
       if (e.defaultPrevented||document.querySelector(".onboarding[open]")) return;
       const target = e.target as HTMLElement;
+      const shortcut=playerShortcut(e);
+      if(shortcut){e.preventDefault();e.stopPropagation();shortcutDispatch.current(shortcut);return;}
+
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){
         e.preventDefault();if(!document.querySelector('dialog[open]'))openSearch();return;
       }
@@ -574,7 +587,7 @@ export default function App() {
     };
     window.addEventListener("keydown", listener);
     return () => {window.removeEventListener("keydown", listener);window.removeEventListener("keydown",pointerSpace,true);};
-  }, [run, section, queueOpen, player.track?.id,findRoute,findOpen,miniMode,commandOpen,compact,destination,route.view]);
+  }, [run, section, queueOpen, queueView, expandedOpen, playerView, visualizerOpen,visualizerView,preferences.visualizer,player.track?.id,findRoute,findOpen,miniMode,commandOpen,compact,destination,route.view]);
   function changePreferences(next: Preferences) {
     // A deliberate theme choice must not continue the launch interpolation:
     // intermediate light/dark ink and surfaces can be unreadable together.
@@ -718,7 +731,8 @@ export default function App() {
   function actionsForTrack(track:Track,ids=[track.id]){return [...playbackItems(ids),
    {label:track.favorited?'Unfavorite song':'Favorite song',icon:track.favorited?'hearted':'noheart',onSelect:()=>favorite(track)},
    {label:'Add to playlist…',icon:'Playlist',onSelect:()=>setPlaylistTrack({...track,selectionIds:ids})},
-   {label:'Lyrics',icon:'Lyrics',onSelect:()=>openPlayer('lyrics',track.id===player.track?.id?null:track)},
+   {label:'Visualizer',icon:'Sparklist',onSelect:()=>toggleVisualizer()},
+    {label:'Lyrics',icon:'Lyrics',onSelect:()=>openPlayer('lyrics',track.id===player.track?.id?null:track)},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
    {label:native?'Show in Finder':'Show in file manager',icon:native?'Open In Finder':'Open In Folder',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
    {label:'Show artist',icon:'Artist',onSelect:()=>artistFor(track)},
@@ -1069,10 +1083,10 @@ export default function App() {
       ? `${route.view}s`
       : route.view
   ) as Scope;
-  return (<>
-    {miniMode!=='normal'&&(<div className="app-shell mini-shell" style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer onViewChange={view=>{if(view!=='lyrics')changePreferences({...preferences,mini_player_view:view==='queue'?'queue':'artwork'});}} density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
+  return (<><ViewActivity active={!visualizerOpen}>
+    {miniMode!=='normal'&&(<div className="app-shell mini-shell" inert={visualizerOpen} style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer onViewChange={view=>{if(view!=='lyrics')changePreferences({...preferences,mini_player_view:view==='queue'?'queue':'artwork'});}} density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
     <KeepView className="main-view" active={miniMode==='normal'}>{miniMode==='normal'&&<div
-      className="app-shell adaptive-shell" ref={shell.root} data-layout={shell.layout}
+      className="app-shell adaptive-shell" inert={visualizerOpen} ref={shell.root} data-layout={shell.layout}
       style={{'--playing-favorite-tone':playingPalette?.accent??'var(--accent)'} as CSSProperties}
       data-size={preferences.interface_percent}
       data-adaptive={!!palette}
@@ -1408,7 +1422,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&!expandedPresent&&<AudioPanel view={queueView} theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
+      {expandedPresent&&<ExpandedPlayer previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen&&!visualizerOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
@@ -1430,6 +1444,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div>}</KeepView>{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
+    </div>}</KeepView></ViewActivity>{visualizerOpen&&<VisualizerPlayer preferences={preferences} onPreferences={changePreferences} open view={visualizerView} onView={setVisualizerView} onClose={()=>setVisualizerOpen(false)} returnFocus={visualizerOpener.current} layout={shell.layout} onWindowError={setError} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={null} onPreviewPlay={async()=>{}} onEditLyrics={id=>{setVisualizerOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}}/>}{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
   );
 }

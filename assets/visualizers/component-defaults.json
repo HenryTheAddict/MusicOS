@@ -1,0 +1,43 @@
+{
+  "shape": {
+    "enabled": 0,
+    "sides": 4,
+    "additive": 0,
+    "thickoutline": 0,
+    "textured": 0,
+    "num_inst": 1,
+    "tex_zoom": 1,
+    "tex_ang": 0,
+    "x": 0.5,
+    "y": 0.5,
+    "rad": 0.1,
+    "ang": 0,
+    "r": 1,
+    "g": 0,
+    "b": 0,
+    "a": 1,
+    "r2": 0,
+    "g2": 1,
+    "b2": 0,
+    "a2": 0,
+    "border_r": 1,
+    "border_g": 1,
+    "border_b": 1,
+    "border_a": 0.1
+  },
+  "wave": {
+    "enabled": 0,
+    "samples": 512,
+    "sep": 0,
+    "scaling": 1,
+    "smoothing": 0.5,
+    "r": 1,
+    "g": 1,
+    "b": 1,
+    "a": 1,
+    "spectrum": 0,
+    "usedots": 0,
+    "thick": 0,
+    "additive": 0
+  }
+}

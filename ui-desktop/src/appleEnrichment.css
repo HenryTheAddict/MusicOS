@@ -47,3 +47,6 @@
 .lyric-edition-control{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 0;}
 .lyric-edition-control>div{flex:1;min-width:10rem;}.lyric-edition-control strong{display:block;font-size:13px;font-weight:600;}.lyric-edition-control small{display:block;font-size:11px;line-height:1.5;margin-top:3px;color:var(--secondary-ink,var(--ink));}
 @media(prefers-reduced-motion:reduce){.apple-integration summary>.icon{transition:none;}}
+.motion-artwork>.expanded-static-artwork{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;dynamic-range-limit:standard;transition:opacity 140ms;}
+.motion-artwork>video{transition:opacity 140ms;}
+@media(prefers-reduced-motion:reduce){.motion-artwork>.expanded-static-artwork,.motion-artwork>video{transition:none;}}

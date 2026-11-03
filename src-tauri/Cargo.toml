@@ -22,6 +22,7 @@ tauri-build = { version = "2", features = [] }
 fs2 = "0.4"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
+musicos-visualizer = { path = "../crates/musicos-visualizer" }
 musicos-desktop = { path = "../crates/musicos-desktop", default-features = false }
 musicos-init = { path = "../crates/musicos-init", features = ["desktop-app", "desktop-audio"] }
 serde = { version = "1", features = ["derive"] }

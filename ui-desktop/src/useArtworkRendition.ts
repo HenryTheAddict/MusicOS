@@ -23,7 +23,7 @@ export function useArtworkRendition(source:string|null|undefined,revision:number
   const update=()=>{
    if(!near)return;
    const pixels=Math.max(element.clientWidth,element.clientHeight)*Math.min(window.devicePixelRatio||1,2);
-   const size=!pixels?640:pixels<=128?128:pixels<=640?640:1200;
+   const size=!pixels?640:pixels<=128?128:pixels<=640?640:pixels<=1200?1200:2048;
    if(size===last)return;last=size;const current=++serial;
    const request=artworkRendition(source,size,revision);
    void request.then(path=>{if(alive&&current===serial)setReady({source,path});}).catch(()=>{if(alive&&current===serial)failure.current();});

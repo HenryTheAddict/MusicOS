@@ -11,3 +11,8 @@ export function useVisiblePolling(work:()=>void,interval:number,dependencies:unk
  const active=useViewActive(),latest=useRef(work);latest.current=work;
  useEffect(()=>{if(!active)return;latest.current();const timer=setInterval(()=>latest.current(),interval);return()=>clearInterval(timer);},[active,interval,...dependencies]);
 }
+
+/** Suspend covered media and timers while retaining the underlying layout. */
+export function ViewActivity({active,children}:{active:boolean;children:ReactNode}){
+ const parent=useViewActive();return <Visible.Provider value={parent&&active}>{children}</Visible.Provider>;
+}

@@ -99,6 +99,7 @@ export const emptyTask: Task = {
   cancelled: false,
 };
 type Commands = {
+  visualizer:{args:{request:{action:"open"|"close"|"refresh"|"status";settings?:import("./visualizer").VisualizerSettings}};result:import("./visualizer").VisualizerStatus};
   wifi_sync:{args:{action:string;trackIds?:number[];peerId?:string;copyFormat?:import("./Devices").CopyFormat};result:import("./Devices").WifiStatus};
   audio_tempos:{args:undefined;result:{running:boolean;tempos:{track_id:number;bpm:number;beat_offset?:number}[]}};
   artwork_performance:{args:{sample:{width:number;height:number;frames:number;interface_percent:number;raf_median_ms:number;raf_p95_ms:number;cpu_draw_p95_ms:number;over_120hz_budget:number}};result:void};

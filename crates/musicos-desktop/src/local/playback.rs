@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, RwLock};
+use std::sync::{mpsc, Arc, RwLock, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -126,6 +126,7 @@ pub struct LocalPlaybackService {
     sender: mpsc::Sender<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
     worker: Option<thread::JoinHandle<()>>,
+    visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 }
 
 /// A lightweight handle for secondary windows and other UI entities.
@@ -137,9 +138,20 @@ pub struct LocalPlaybackService {
 pub struct LocalPlaybackClient {
     sender: mpsc::Sender<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
+    visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 }
 
+#[derive(Clone,Copy,Default)]
+pub struct VisualizerClock{pub revision:u64,pub track_id:Option<i64>,pub entry:Option<u64>,pub playing:bool,pub position:f64,pub speed:f64}
 impl LocalPlaybackClient {
+    pub fn visualizer_clock(&self)->VisualizerClock{
+        let Ok(s)=self.snapshot.read()else{return VisualizerClock::default()};
+        let entry=s.queue_index.and_then(|i|s.queue_entry_ids.get(i).copied());
+        let tempo=s.dj_transition.as_ref().filter(|t|t.active&&entry==Some(t.incoming_entry)).map(|t|t.tempo as f64).unwrap_or(1.);
+        VisualizerClock{revision:s.revision,track_id:s.track.as_ref().map(|t|t.id),entry,playing:s.is_playing,position:s.position as f64,speed:s.listening.speed as f64*tempo}
+    }
+
+    pub fn visualizer_audio(&self)->Option<Arc<super::visualizer_audio::Tap>>{self.visualizer.get().cloned()}
     pub fn send(&self, command: LocalPlaybackCommand) -> Result<()> {
         self.sender
             .send(command)
@@ -175,14 +187,16 @@ impl LocalPlaybackService {
         let (sender, receiver) = mpsc::channel();
         let snapshot = Arc::new(RwLock::new(LocalPlaybackSnapshot::default()));
         let worker_snapshot = snapshot.clone();
+        let visualizer=Arc::new(OnceLock::new());let worker_visualizer=visualizer.clone();
         let worker = thread::Builder::new()
             .name("musicos-local-playback".to_string())
-            .spawn(move || playback_loop(db_path, preferences, receiver, worker_snapshot))
+            .spawn(move || playback_loop(db_path, preferences, receiver, worker_snapshot, worker_visualizer))
             .context("starting local playback worker")?;
         Ok(Self {
             sender,
             snapshot,
             worker: Some(worker),
+            visualizer,
         })
     }
 
@@ -203,6 +217,7 @@ impl LocalPlaybackService {
         LocalPlaybackClient {
             sender: self.sender.clone(),
             snapshot: self.snapshot.clone(),
+            visualizer: self.visualizer.clone(),
         }
     }
 }
@@ -221,6 +236,7 @@ fn playback_loop(
     preferences: PlaybackPreferences,
     receiver: mpsc::Receiver<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
+    visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 ) {
     let db_path = match db_path.to_str() {
         Some(path) => path.to_string(),
@@ -237,6 +253,7 @@ fn playback_loop(
         }
     };
     let mut player = AudioPlayer::new();
+    let _=visualizer.set(player.visualizer_audio());
     player.set_volume(preferences.volume);
     player.set_shuffle(preferences.shuffle);
     player.set_loop_mode(match preferences.repeat.as_str() {

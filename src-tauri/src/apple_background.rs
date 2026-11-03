@@ -27,8 +27,20 @@ fn fatal(message: &str) -> bool {
     .iter()
     .any(|s| message.contains(s))
 }
-fn cover(db: &Path, id: i64) -> Result<bool> {
+// Coalesce simultaneous expanded-player/background requests. Only matching
+// recordings/albums wait for each other; unrelated artwork remains independent.
+fn cover_lock(key: String) -> std::sync::Arc<std::sync::Mutex<()>> {
+    use std::sync::{Arc,Mutex,OnceLock,Weak};
+    static LOCKS:OnceLock<Mutex<std::collections::HashMap<String,Weak<Mutex<()>>>>>=OnceLock::new();
+    let mut locks=LOCKS.get_or_init(Default::default).lock().unwrap_or_else(|e|e.into_inner());
+    locks.retain(|_,v|v.strong_count()>0);
+    if let Some(lock)=locks.get(&key).and_then(Weak::upgrade){return lock;}
+    let lock=Arc::new(Mutex::new(()));locks.insert(key,Arc::downgrade(&lock));lock
+}
+pub(super) fn cover(db: &Path, id: i64) -> Result<bool> {
     let catalog = catalog_for(db, id)?;
+    let recording_lock=cover_lock(format!("{}:recording:{catalog}",db.display()));
+    let _recording=recording_lock.lock().unwrap_or_else(|e|e.into_inner());
     let c = sql(db)?;
     let known = c
         .query_row("SELECT album_id FROM links WHERE track_id=?", [id], |r| {
@@ -43,7 +55,7 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
             |r| r.get::<_, String>(0),
         )
         .optional()?
-        .is_some_and(|p| Path::new(&p).is_file())
+        .is_some_and(|p| high_resolution_cover(Path::new(&p)))
         {
             return Ok(true);
         }
@@ -71,6 +83,8 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
         .and_then(Value::as_str)
         .context("Album identity is unavailable")?;
     digits(album)?;
+    let album_lock=cover_lock(format!("{}:album:{album}",db.display()));
+    let _album=album_lock.lock().unwrap_or_else(|e|e.into_inner());
     c.execute(
         "UPDATE links SET album_id=? WHERE track_id=? AND catalog_id=?",
         rusqlite::params![album, id, catalog],
@@ -81,7 +95,7 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
         |r| r.get::<_, String>(0),
     )
     .optional()?
-    .is_some_and(|p| Path::new(&p).is_file())
+    .is_some_and(|p| high_resolution_cover(Path::new(&p)))
     {
         return Ok(true);
     }
@@ -89,8 +103,8 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
         .pointer("/attributes/artwork/url")
         .and_then(Value::as_str)
         .context("Static artwork is unavailable")?
-        .replace("{w}", "800")
-        .replace("{h}", "800")
+        .replace("{w}", "2048")
+        .replace("{h}", "2048")
         .replace("{f}", "jpg")
         .replace("{c}", "bb");
     let url = media_url(&source)?;
@@ -106,17 +120,25 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
     ensure!(bytes.len() <= 12_000_000, "Artwork exceeds cache limit");
     let mut reader = image::io::Reader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
     let mut limits = image::io::Limits::default();
-    limits.max_alloc = Some(48 * 1024 * 1024);
+    limits.max_alloc = Some(128 * 1024 * 1024);
     limits.max_image_width = Some(4096);
     limits.max_image_height = Some(4096);
     reader.limits(limits);
-    let image = reader.decode()?.thumbnail(800, 800).to_rgb8();
+    let decoded = reader.decode()?;
+    let image = bounded_cover(decoded);
     let dir = db.with_file_name("apple-cover-cache-v1");
     ensure!(!dir.is_symlink(), "Choose a real cache folder");
     std::fs::create_dir_all(&dir)?;
-    let target = dir.join(format!("{album}.jpg"));
+    let target = dir.join(format!("{album}-2048.jpg"));
     let tmp = dir.join(format!(".{album}-{}.tmp", rand::random::<u64>()));
-    image.save_with_format(&tmp, image::ImageFormat::Jpeg)?;
+    let saved = (|| -> Result<()> {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut file, 95).encode_image(&image)?;
+        use std::io::Write;
+        file.flush()?;file.get_ref().sync_all()?;
+        Ok(())
+    })();
+    if let Err(error)=saved { let _=std::fs::remove_file(&tmp);return Err(error); }
     std::fs::rename(tmp, &target)?;
     c.execute(
         "INSERT OR REPLACE INTO static_covers VALUES(?,?,?,?)",
@@ -129,6 +151,12 @@ fn cover(db: &Path, id: i64) -> Result<bool> {
     )?;
     // Downloaded album images are durable library assets, not evictable renditions.
     Ok(true)
+}
+fn bounded_cover(decoded:image::DynamicImage)->image::RgbImage {
+    if decoded.width().max(decoded.height())>2048 { decoded.resize(2048,2048,image::imageops::FilterType::Lanczos3) }else{decoded}.to_rgb8()
+}
+fn high_resolution_cover(path: &Path) -> bool {
+    image::image_dimensions(path).is_ok_and(|(w,h)|w>0 && h>0 && (w.max(h)>=1600 || path.file_name().is_some_and(|n|n.to_string_lossy().ends_with("-2048.jpg"))))
 }
 pub fn cached_cover(db: &Path, id: i64) -> Option<String> {
     let catalog = catalog_for(db, id).ok()?;
@@ -343,19 +371,19 @@ pub fn resume(app: tauri::AppHandle, db: PathBuf) {
         let matches = c
             .query_row("SELECT COUNT(*) FROM links", [], |r| r.get::<_, usize>(0))
             .unwrap_or(0);
-        if matches > 0 && credentials(&db).is_ok() {
+        if credentials(&db).is_ok() {
             let mut s = state().lock().unwrap();
             s.enabled = true;
             s.signed_in = true;
             s.sign_in = "stored".into();
-            s.library = "available".into();
+            s.library = if matches > 0 {"available"} else {"not_checked"}.into();
             s.matched = matches;
             s.phase = "ready".into();
             s.message =
                 "Saved connection and cached matches. Online capabilities are checked when used."
                     .into();
-            drop(s);
-            if enabled {
+            let status=s.clone();drop(s);let _=app.emit_to("main","apple-enrichment-status",status);
+            if enabled && matches > 0 {
                 let _ = start(&app, &db);
             }
         }
@@ -435,4 +463,22 @@ mod cache_tests {
         assert!(cached_cover(&db, id).is_none());
         assert_eq!(std::fs::read(audio).unwrap(), b"audio");
     }
+}
+
+#[cfg(test)] mod cover_tests {
+ use super::*;
+ #[test] fn expanded_covers_never_upscale_or_lose_aspect() {
+  let small=bounded_cover(image::DynamicImage::new_rgb8(800,600));assert_eq!(small.dimensions(),(800,600));
+  let large=bounded_cover(image::DynamicImage::new_rgb8(4096,2048));assert_eq!(large.dimensions(),(2048,1024));
+ }
+ #[test] fn an_attempted_high_resolution_cover_is_durable_even_when_the_source_is_smaller() {
+  let root=tempfile::tempdir().unwrap();let old=root.path().join("123.jpg");let upgraded=root.path().join("123-2048.jpg");
+  image::RgbImage::new(800,800).save(&old).unwrap();assert!(!high_resolution_cover(&old));
+  image::RgbImage::new(800,800).save(&upgraded).unwrap();assert!(high_resolution_cover(&upgraded));
+  assert!(!high_resolution_cover(&root.path().join("missing-2048.jpg")));
+ }
+ #[test] fn concurrent_requests_share_only_the_matching_asset_lock() {
+  let a=cover_lock("album:1".into());let b=cover_lock("album:1".into());let c=cover_lock("album:2".into());
+  assert!(std::sync::Arc::ptr_eq(&a,&b));assert!(!std::sync::Arc::ptr_eq(&a,&c));
+ }
 }

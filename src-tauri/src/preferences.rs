@@ -20,6 +20,7 @@ impl Default for TrackpadFeedback{fn default()->Self{Self{enabled:cfg!(target_os
 pub struct Preferences {
     pub version: u32,
     pub trackpad_feedback:TrackpadFeedback,
+    pub visualizer:musicos_visualizer::control::Preferences,
     pub onboarding_version: u32,
     pub mini_player_view: String,
     pub mini_player_density: String,
@@ -44,6 +45,7 @@ impl Default for Preferences {
         Self {
             version: 1,
             trackpad_feedback:Default::default(),
+            visualizer:Default::default(),
             onboarding_version: 0,
             mini_player_view: "artwork".into(),
             mini_player_density: crate::product::config().defaults.mini_player_density.clone(),
@@ -68,6 +70,7 @@ impl Default for Preferences {
 impl Preferences {
     pub fn normalize(mut self) -> Self {
         self.version = 1;
+        self.visualizer=self.visualizer.normalize();
         if self.mini_player_density != "compact" && self.mini_player_density != "wide" {self.mini_player_density="standard".into();}
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
@@ -113,6 +116,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         // Parse fields independently: one invalid field must not discard valid siblings.
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
+            if let Some(v)=v.get("visualizer"){if let Ok(value)=serde_json::from_value(v.clone()){p.visualizer=value;}}
             if let Some(v)=v.get("trackpad_feedback"){if let Ok(value)=serde_json::from_value(v.clone()){p.trackpad_feedback=value;}}
             p.onboarding_version=v.get("onboarding_version").and_then(|n|n.as_u64()).unwrap_or(crate::product::config().onboarding.version as u64).min(crate::product::config().onboarding.version as u64) as u32;
             if let Some(s)=v["mini_player_density"].as_str(){p.mini_player_density=s.into();}
@@ -285,3 +289,15 @@ mod density_tests {
 #[cfg(test)]mod onboarding_tests {use super::*;#[test]fn only_genuinely_new_profiles_need_setup(){let root=tempfile::tempdir().unwrap();let path=root.path().join("interface.json");assert_eq!(load_from(&path,None).onboarding_version,0);std::fs::write(&path,r#"{"display_name":"Zoë","appearance":{"mode":"dark"}}"#).unwrap();let existing=load_from(&path,None);assert_eq!(existing.onboarding_version,crate::product::config().onboarding.version);assert_eq!(existing.display_name,"Zoë");std::fs::write(&path,r#"{"onboarding_version":0,"display_name":""}"#).unwrap();let mut pending=load_from(&path,None);assert_eq!(pending.onboarding_version,0);pending.onboarding_version=crate::product::config().onboarding.version;atomic_write_json(&path,&pending).unwrap();assert_eq!(load_from(&path,None).onboarding_version,pending.onboarding_version);}}
 
 #[cfg(test)]mod feedback_tests{use super::*;#[test]fn feedback_defaults_and_toggles_persist(){let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");let mut p=load_from(&path,None);assert_eq!(p.trackpad_feedback.enabled,cfg!(target_os="macos"));assert!(p.trackpad_feedback.beat_hover&&p.trackpad_feedback.interactions);p.trackpad_feedback.enabled=false;p.trackpad_feedback.beat_hover=false;atomic_write_json(&path,&p).unwrap();assert_eq!(load_from(&path,None).trackpad_feedback,p.trackpad_feedback);}}
+
+#[cfg(test)] mod visualizer_tests {
+ use super::*;
+ #[test] fn visualizer_defaults_and_rotation_survive_restart() {
+  let root=tempfile::tempdir().unwrap();let path=root.path().join("prefs.json");
+  let mut prefs=load_from(&path,None);assert_eq!(prefs.visualizer,musicos_visualizer::control::Preferences::default());
+  prefs.visualizer.preset="bazinga".into();prefs.visualizer.rotation=musicos_visualizer::control::Rotation::Beats;prefs.visualizer.beat_interval=64;prefs.visualizer.lyrics=true;
+  atomic_write_json(&path,&prefs).unwrap();assert_eq!(load_from(&path,None).visualizer,prefs.visualizer);
+  std::fs::write(&path,r#"{"display_name":"Listener","visualizer":{"preset":"missing","timed_seconds":1,"beat_interval":7}}"#).unwrap();
+  let loaded=load_from(&path,None);assert_eq!(loaded.display_name,"Listener");assert_eq!(loaded.visualizer.preset,"boxes");assert_eq!(loaded.visualizer.timed_seconds,30);assert_eq!(loaded.visualizer.beat_interval,32);
+ }
+}

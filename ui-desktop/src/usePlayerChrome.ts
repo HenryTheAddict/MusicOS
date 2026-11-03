@@ -21,10 +21,11 @@ export function usePlayerChrome(host:RefObject<HTMLDialogElement|null>,open:bool
   const visibility=()=>{if(document.hidden)clearTimeout(timer);else reveal();};
   node.addEventListener('pointermove',move);node.addEventListener('pointerleave',move);node.addEventListener('pointerdown',press,true);node.addEventListener('pointerup',reveal,true);node.addEventListener('keydown',reveal,true);node.addEventListener('focusin',focus);node.addEventListener('focusout',blur);
   node.addEventListener('click',click,true);
+  window.addEventListener('musicos-player-interaction',reveal);
   document.addEventListener('visibilitychange',visibility);
   const menu=new MutationObserver(records=>{if(records.some(record=>record.oldValue!==(record.target as Element).getAttribute(record.attributeName!)))reveal();});menu.observe(node,{subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['aria-expanded','data-seeking']});
   setVisible(false);
-  return()=>{clearTimeout(timer);menu.disconnect();document.removeEventListener('visibilitychange',visibility);node.removeEventListener('pointermove',move);node.removeEventListener('pointerleave',move);node.removeEventListener('pointerdown',press,true);node.removeEventListener('pointerup',reveal,true);node.removeEventListener('click',click,true);node.removeEventListener('keydown',reveal,true);node.removeEventListener('focusin',focus);node.removeEventListener('focusout',blur);};
+  return()=>{clearTimeout(timer);menu.disconnect();window.removeEventListener('musicos-player-interaction',reveal);document.removeEventListener('visibilitychange',visibility);node.removeEventListener('pointermove',move);node.removeEventListener('pointerleave',move);node.removeEventListener('pointerdown',press,true);node.removeEventListener('pointerup',reveal,true);node.removeEventListener('click',click,true);node.removeEventListener('keydown',reveal,true);node.removeEventListener('focusin',focus);node.removeEventListener('focusout',blur);};
  },[host,open]);
  return visible?'visible':'hidden';
 }

@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>musicOS isolated preset reference</title><canvas id="screen" width="640" height="480"></canvas>
+<script type="module">
+import Butterchurn from './butterchurn/dist/butterchurn.js';
+window.renderPreset=async function(preset,frames=180){
+ const canvas=document.querySelector('canvas');const v=Butterchurn.createVisualizer(null,canvas,{width:640,height:480,meshWidth:64,meshHeight:48,deterministic:true,seed:42,pixelRatio:1,textureRatio:1,outputFXAA:false});
+ await v.loadPreset(preset,0);
+ window.viz=v;const r=v.renderer;
+ for(const key of ['warpShader','compShader']){const p=r[key].shaderProgram;if(!r.gl.getProgramParameter(p,r.gl.LINK_STATUS))throw Error(key+': '+r.gl.getProgramInfoLog(p));}
+ r.blending=false;r.blendProgress=1;r.fps=60;r.calcTimeAndFPS=function(){this.time+=1/60;this.fps=60;};
+ const values=[];const features=[];const times=[];const equationTimes=[];let frameWork=0;
+ const main=r.presetEquationRunner.runFrameEquations.bind(r.presetEquationRunner);r.presetEquationRunner.runFrameEquations=(...a)=>{const at=performance.now();const value=main(...a);frameWork+=performance.now()-at;return value;};
+ const pixel=r.runPixelEquations.bind(r);r.runPixelEquations=(...a)=>{const at=performance.now();const value=pixel(...a);frameWork+=performance.now()-at;return value;};
+ for(let frame=0;frame<frames;frame++){
+  const t=frame/60,arrays=[new Uint8Array(1024),new Uint8Array(1024),new Uint8Array(1024)];
+  for(let i=0;i<1024;i++){const left=Math.sin((t*48000+i)*Math.PI*2*110/48000)*.4,right=Math.sin((t*48000+i)*Math.PI*2*165/48000)*.4;arrays[0][i]=Math.floor((left+right)*64+128);arrays[1][i]=Math.floor(left*128+128);arrays[2][i]=Math.floor(right*128+128);}
+  frameWork=0;const at=performance.now();v.render({elapsedTime:1/60,audioLevels:{timeByteArray:arrays[0],timeByteArrayL:arrays[1],timeByteArrayR:arrays[2]}});times.push(performance.now()-at);equationTimes.push(frameWork);
+  features.push({waveform:[Array.from(r.audio.timeArrayL,x=>x/128),Array.from(r.audio.timeArrayR,x=>x/128)],spectrum:[Array.from(r.audio.freqArrayL),Array.from(r.audio.freqArrayR)],bands:[r.audioLevels.bass,r.audioLevels.mid,r.audioLevels.treb],attenuated:[r.audioLevels.bass_att,r.audioLevels.mid_att,r.audioLevels.treb_att]});
+  if(frame===frames-1)values.push({frame:r.mdVSFrame,time:r.time,uv:Array.from(r.warpUVs??[])});
+ }
+ const gl=r.gl;gl.finish();const error=gl.getError();if(error)throw Error(`WebGL error ${error}`);return{initialRandomState:window.__musicosInitialRandomState,image:canvas.toDataURL('image/png'),features,values,times,equationTimes};
+};
+</script>

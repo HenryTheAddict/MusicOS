@@ -1,0 +1,1 @@
+hexf-parse 0.2.1 declares CC0-1.0 in its published manifest. This distribution selects CC0-1.0. The upstream archive did not include a separate license text; the complete SPDX license text is retained here alongside its unmodified manifest. Authors as listed upstream: Kang Seonghoon <public+rust@mearie.org>. Repository: https://github.com/lifthrasiir/hexf.

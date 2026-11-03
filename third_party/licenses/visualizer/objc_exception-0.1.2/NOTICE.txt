@@ -1,0 +1,1 @@
+objc_exception 0.1.2 declares MIT in its published manifest. This distribution selects MIT. The upstream archive did not include a separate license text; the complete SPDX license text is retained here alongside its unmodified manifest. Authors as listed upstream: Steven Sheldon. Repository: http://github.com/SSheldon/rust-objc-exception.

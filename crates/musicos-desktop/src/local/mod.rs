@@ -29,3 +29,5 @@ pub use source_audit::{
     SourceAuditReport, SourceCleanupReport, TrustedRoot, TrustedSourceSet,
 };
 
+
+pub mod visualizer_audio;

@@ -1,0 +1,267 @@
+{
+  "version": 1,
+  "presets_revision": "c10e2616762f262de898e5d4c1f162a3e01340c1",
+  "engine_reference_revision": "fbac2f6bab62fd9c6a50ebbeb29359c5eb05903e",
+  "presets": [
+    {
+      "id": "boxes",
+      "name": "boxes",
+      "original_filename": "suksma - pus on my cat - j4+ - cubby.json",
+      "authors": "suksma, j4+, cubby",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/suksma%20-%20pus%20on%20my%20cat%20-%20j4%2B%20-%20cubby.json",
+      "sha256": "94015c81f36184d8acf96b597fc6d9d2208e1becb53f19a08a49b14e12f9c875",
+      "source": "original/boxes.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "oil-puddle",
+      "name": "oil puddle",
+      "original_filename": "undulate harque - shit broo.json",
+      "authors": "undulate harque",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/undulate%20harque%20-%20shit%20broo.json",
+      "sha256": "9e2be620eddf062861d233a3d11366f60e9c4813c465bdf915f69f036ce1f951",
+      "source": "original/oil-puddle.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "carbonated",
+      "name": "carbonated",
+      "original_filename": "Zylot - In death there is life (Geiss Layered Mix) (Jelly).json",
+      "authors": "Zylot; Geiss (layered mix)",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/Zylot%20-%20In%20death%20there%20is%20life%20%28Geiss%20Layered%20Mix%29%20%28Jelly%29.json",
+      "sha256": "8c673baaf0b61a9285fd44f6c10e1b32cfe84c7a882a5770cfe7a0bb29471fa4",
+      "source": "original/carbonated.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "watercolor",
+      "name": "watercolor",
+      "original_filename": "$$$ Royal - Mashup (441).json",
+      "authors": "$$$ Royal",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/%24%24%24%20Royal%20-%20Mashup%20%28441%29.json",
+      "sha256": "6b734b2be61c4b6f73eb83279cb9a3442c76c08b858bca160cce13fe2c20c145",
+      "source": "original/watercolor.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "cells",
+      "name": "cells",
+      "original_filename": "$$$ Royal - Mashup (431).json",
+      "authors": "$$$ Royal",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/%24%24%24%20Royal%20-%20Mashup%20%28431%29.json",
+      "sha256": "87bd3f7bdaa9702f9afbb0b9e63eb098ac9ae8f26c583db9ffa785c55bd27275",
+      "source": "original/cells.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "tweaker",
+      "name": "tweaker",
+      "original_filename": "$$$ Royal - Mashup (337).json",
+      "authors": "$$$ Royal",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/%24%24%24%20Royal%20-%20Mashup%20%28337%29.json",
+      "sha256": "7123d23486d694674ea046ccacc63b357641255209e39966e2a34738f466f911",
+      "source": "original/tweaker.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "universe",
+      "name": "Universe",
+      "original_filename": "$$$ Royal - Mashup (307).json",
+      "authors": "$$$ Royal",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/%24%24%24%20Royal%20-%20Mashup%20%28307%29.json",
+      "sha256": "1da2c0a66c3175d3580f04e8119cf572210a04879d7bd2ff2c9cb02cda23faa6",
+      "source": "original/universe.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "mold",
+      "name": "mold",
+      "original_filename": "flexi - borderline imagery.json",
+      "authors": "flexi",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/flexi%20-%20borderline%20imagery.json",
+      "sha256": "75209f6a2c4037f7ade05142e7541581c797b63c528abbce579cba2b0ba3103b",
+      "source": "original/mold.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "bazinga",
+      "name": "bazinga",
+      "original_filename": "flexi - bouncing balls [double mindblob gastrointestinal mix].json",
+      "authors": "flexi",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/flexi%20-%20bouncing%20balls%20%5Bdouble%20mindblob%20gastrointestinal%20mix%5D.json",
+      "sha256": "ca0fd67354c4ffcdbdc6a0a184322a42763cb396d39d64895d92877bb277bea1",
+      "source": "original/bazinga.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "infinite",
+      "name": "infinite",
+      "original_filename": "Flexi, fishbrain + Martin - witchery.json",
+      "authors": "Flexi, fishbrain + Martin",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/Flexi%2C%20fishbrain%20%2B%20Martin%20-%20witchery.json",
+      "sha256": "795ddd01689cad3e02f32ebf10d5a4dbb709fb1643e061837c158471a21e8233",
+      "source": "original/infinite.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "outfinate",
+      "name": "outfinate",
+      "original_filename": "Flexi, fishbrain, Geiss + Martin - tokamak witchery.json",
+      "authors": "Flexi, fishbrain, Geiss + Martin",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/Flexi%2C%20fishbrain%2C%20Geiss%20%2B%20Martin%20-%20tokamak%20witchery.json",
+      "sha256": "f2684149aa603a8689ec63e18f937c6ac83891e4f4e0bf0da2ddb044e12a460d",
+      "source": "original/outfinate.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "paint-stir",
+      "name": "paint stir",
+      "original_filename": "Flexi, martin + geiss - dedicated to the sherwin maxawow.json",
+      "authors": "Flexi, martin + geiss",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/Flexi%2C%20martin%20%2B%20geiss%20-%20dedicated%20to%20the%20sherwin%20maxawow.json",
+      "sha256": "07bc227d238c16f753b568cf2e7ef4131107d47459df71444efa9ec8bb7ed156",
+      "source": "original/paint-stir.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    },
+    {
+      "id": "mucus",
+      "name": "mucus",
+      "original_filename": "martin - mucus cervix.json",
+      "authors": "martin",
+      "source_url": "https://github.com/jberg/butterchurn-presets/blob/c10e2616762f262de898e5d4c1f162a3e01340c1/presets/full/martin%20-%20mucus%20cervix.json",
+      "sha256": "b41d5f6336f59d8407883a82dabaa196d8e6e2bddad040375f221071416f46c1",
+      "source": "original/mucus.json",
+      "license": "MIT",
+      "modifications": [
+        "Original JSON retained byte-for-byte; Rust equation and GPU ports recorded separately."
+      ],
+      "port": {
+        "equations": "crates/musicos-visualizer/src/eel.rs",
+        "pixel_equations": "crates/musicos-visualizer/src/pixel.rs",
+        "shaders": "crates/musicos-visualizer/src/shaders.rs",
+        "drawing": "crates/musicos-visualizer/src/sprites.rs",
+        "feedback": "crates/musicos-visualizer/src/renderer.rs"
+      }
+    }
+  ]
+}

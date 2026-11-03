@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/musicos-init", "crates/musicos-desktop", "src-tauri"]
+members = ["crates/musicos-init", "crates/musicos-desktop", "src-tauri", "crates/musicos-visualizer"]
 exclude = ["out", "out/**", "out/qemu/build/musicos-init"]
 resolver = "2"
 
