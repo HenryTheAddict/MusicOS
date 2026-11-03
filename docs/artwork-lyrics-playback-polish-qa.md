@@ -19,3 +19,7 @@ Signed executable SHA-256: `1e0b4e706ec209afd50e7270c2d7dd3ad2ab41a709b59a9cf40a
 ## Retained-modal correction
 
 The first installed inspection caught an existing top-layer interaction: opening the transparent visualizer from an already-open expanded player exposed that retained dialog and its independent backdrop. Ordinary ancestor opacity cannot hide a modal in the browser top layer. The visualizer now explicitly hides covered expanded dialogs and clears their backdrops, preserving their state for restoration. The new regression opens the visualizer from a retained Lyrics dialog, verifies hidden pixels/backdrop and restores that dialog on exit. The initial installed candidate remains archived separately; the final signed correction has the hash above.
+
+## Final installed verification
+
+The layering correction was installed after the user paused and a fresh native check confirmed Good Morning at 5.7 seconds. The previous app and latest profile were checkpointed again. Entering the visualizer from an existing Lyrics player showed one visible lyric layer and one progress bar over the purple album-derived scene, without the old cover or dialog. Exiting restored the prior Lyrics player and its shared transport. The final native control read Play (paused); the agent issued no playback commands. The ordered collections and library counts match the checkpoint. The signed build and checkpoint are recorded in the primary workspace at `releases/desktop-lyric-motion-layer-2026-11-03/release.json`.
