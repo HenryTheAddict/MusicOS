@@ -1,5 +1,5 @@
 :root[data-native-visualizer=true],:root[data-native-visualizer=true] body,:root[data-native-visualizer=true] #root{background:transparent!important;}
-:root[data-native-visualizer=true] .app-shell{visibility:hidden;}
+:root[data-native-visualizer=true] .app-shell{visibility:hidden;opacity:0!important;pointer-events:none;}
 .expanded-player[data-visualizer=true]{visibility:visible!important;inset:0!important;width:100%!important;height:100%!important;max-width:none!important;max-height:none!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;color:#fff!important;--ink:#fff!important;--secondary-ink:#e0e3e7!important;--surface-color:#17222a!important;--blob-color:#263b49;--control-surface:#17222acc!important;--control-border:#ffffff35;--accent:#b3dfff;--accent-ink:#17222a;}
 .expanded-player[data-visualizer=true]::backdrop{background:transparent!important;backdrop-filter:none!important;}
 .expanded-player[data-visualizer=true] .expanded-player-header{left:20px!important;right:20px!important;top:16px!important;gap:12px;justify-content:flex-start;}

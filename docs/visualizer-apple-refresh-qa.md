@@ -33,8 +33,8 @@ An unpaced all-13 offscreen validation process peaked at approximately **443 MiB
 
 ## Delivery / remaining live gates
 
-The current app and profile have not been replaced by this report. Before installation, compare all protected helper/runtime/model hashes, verify the signed bundle, checkpoint the latest profile/collections and archive the previous app. Require a fresh native paused/stopped check. Keep OS work and Android schemas/manifests unchanged.
+The initial signed delivery was installed after a fresh paused check and a latest-profile checkpoint. Its final manual root-layer positioning was defective: the native layer appeared in the upper-right quarter of the window. The subsequent repair uses an AppKit-managed backing layer and removes manual root-layer placement. A separate opacity guard prevents explicitly visible descendants of the covered shell from leaking into the visualizer. See `visualizer-album-colors-repair-qa.md` for this repair and its delivery record.
 
-Still required before declaring full acceptance: visual recheck of the final fullscreen geometry correction; installed-build playback/Automix synchronization, audio-underrun and memory comparison; native entry/exit from every mini-player preset; and live authenticated Apple verification, refresh, high-resolution still artwork and available motion artwork. Browser tests and synthetic native features do not establish these gates. A locked Mac currently prevents these checks.
+Still required before declaring full visualizer acceptance: installed-build playback/Automix synchronization, audio-underrun and memory comparison; native entry/exit from every mini-player preset; and live authenticated Apple verification, refresh, high-resolution still artwork and available motion artwork. Browser tests and synthetic native features do not establish these gates.
 
 Reproduction instructions: `scripts/visualizers/README.md`. Local logs, reference captures, native display-pacing data and the signed delivery manifest are retained under the task's `out` / release directories; they contain no authentication secrets.

@@ -18,7 +18,28 @@ struct Parameters{axis:vec4<f32>,edge:vec4<f32>};@group(0)@binding(2)var<uniform
  else{let weights=array<f32,2>(14.2,4.1);let distances=array<f32,2>(0.9014084507,2.487804878);for(var i=0;i<2;i++){c+=(textureSample(source,smp,v.uv+d*distances[i]).rgb+textureSample(source,smp,v.uv-d*distances[i]).rgb)*weights[i];}c*=0.5/18.3;let t=sqrt(min(min(v.uv.x,v.uv.y),1.-max(v.uv.x,v.uv.y)));c*=1.-parameters.edge.x+parameters.edge.x*clamp(t*5.,0.,1.);}
  return vec4(c,1.);
 }"#;
-const PRESENT: &str = r#"struct Out{@builtin(position)p:vec4<f32>,@location(0)uv:vec2<f32>};@vertex fn vs(@builtin(vertex_index)i:u32)->Out{let p=array<vec2<f32>,3>(vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));return Out(vec4(p[i],0.,1.),p[i]*vec2(0.5,-0.5)+0.5);}@group(0)@binding(0)var a:texture_2d<f32>;@group(0)@binding(1)var b:texture_2d<f32>;@group(0)@binding(2)var smp:sampler;@group(0)@binding(3)var<uniform> values:vec4<f32>;@fragment fn fs(v:Out)->@location(0)vec4<f32>{return vec4(clamp(mix(textureSample(a,smp,v.uv).rgb,textureSample(b,smp,v.uv).rgb,values.x)*values.y,vec3(0.),vec3(1.)),1.);}"#;
+const PRESENT: &str = r#"
+struct Out{@builtin(position)p:vec4<f32>,@location(0)uv:vec2<f32>};
+@vertex fn vs(@builtin(vertex_index)i:u32)->Out{let p=array<vec2<f32>,3>(vec2(-1.,-1.),vec2(3.,-1.),vec2(-1.,3.));return Out(vec4(p[i],0.,1.),p[i]*vec2(0.5,-0.5)+0.5);}
+@group(0)@binding(0)var a:texture_2d<f32>;
+@group(0)@binding(1)var b:texture_2d<f32>;
+@group(0)@binding(2)var smp:sampler;
+struct Values{controls:vec4<f32>,shadow:vec4<f32>,mid:vec4<f32>,highlight:vec4<f32>};
+@group(0)@binding(3)var<uniform> values:Values;
+@fragment fn fs(v:Out)->@location(0)vec4<f32>{
+ var color=clamp(mix(textureSample(a,smp,v.uv).rgb,textureSample(b,smp,v.uv).rgb,values.controls.x)*values.controls.y,vec3(0.),vec3(1.));
+ if values.controls.z>0.{
+  let weights=vec3(0.2126,0.7152,0.0722);
+  let light=dot(color,weights);
+  var tone=mix(values.shadow.rgb,values.mid.rgb,smoothstep(0.,0.5,light));
+  tone=mix(tone,values.highlight.rgb,smoothstep(0.5,0.85,light));
+  // Keep black black and retain luminous detail without an HDR gain boost.
+  tone=mix(tone,vec3(1.),smoothstep(0.65,1.,light));
+  color=clamp(tone*light/max(dot(tone,weights),0.001),vec3(0.),vec3(1.));
+ }
+ return vec4(color,1.);
+}"#;
+
 pub struct Image {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -782,7 +803,7 @@ impl Presenter {
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
             }),
-            values: uniform(device, "Visualizer blend", 16),
+            values: uniform(device, "Visualizer blend and album colors", 64),
         }
     }
     pub fn draw(
@@ -794,11 +815,39 @@ impl Presenter {
         blend: f32,
         beat_gain: f32,
     ) {
-        gpu.queue.write_buffer(
-            &self.values,
-            0,
-            bytemuck::cast_slice(&[blend.clamp(0., 1.), beat_gain.clamp(1., 1.06), 0., 0.]),
-        );
+        self.draw_colored(gpu, target, a, b, blend, beat_gain, None);
+    }
+    /// Final-output recoloring never enters feedback textures or preset equations.
+    pub fn draw_colored(
+        &self,
+        gpu: &Gpu,
+        target: &wgpu::TextureView,
+        a: &Image,
+        b: &Image,
+        blend: f32,
+        beat_gain: f32,
+        palette: Option<[[f32; 3]; 3]>,
+    ) {
+        let palette = palette.filter(|colors| {
+            colors
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && (0. ..=1.).contains(v))
+        });
+        let mut values = [[0_f32; 4]; 4];
+        values[0] = [
+            blend.clamp(0., 1.),
+            beat_gain.clamp(1., 1.06),
+            if palette.is_some() { 1. } else { 0. },
+            0.,
+        ];
+        if let Some(colors) = palette {
+            for (target, color) in values[1..].iter_mut().zip(colors) {
+                target[..3].copy_from_slice(&color);
+            }
+        }
+        gpu.queue
+            .write_buffer(&self.values, 0, bytemuck::cast_slice(&values));
         let bind = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.layout,

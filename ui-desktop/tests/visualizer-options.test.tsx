@@ -16,3 +16,9 @@ it('keeps unknown beat timing explicit and updates lyrics only on the chosen tog
  expect(screen.getByRole('status')).toHaveTextContent('30 seconds');expect(change).not.toHaveBeenCalled();
  fireEvent.click(screen.getByRole('switch',{name:'Visualizer lyrics'}));expect(change).toHaveBeenLastCalledWith(expect.objectContaining({lyrics:true,rotation:'beats'}));
 });
+it('offers remembered album colors without changing preset or playback options',()=>{
+ const change=vi.fn();render(<VisualizerSettings value={defaultVisualizer} onChange={change} fallback={false}/>);
+ fireEvent.click(screen.getByRole('button',{name:'Visualizer options'}));
+ const toggle=screen.getByRole('switch',{name:'Album colors'});expect(toggle).not.toBeChecked();
+ fireEvent.click(toggle);expect(change).toHaveBeenLastCalledWith({...defaultVisualizer,album_colors:true});
+});

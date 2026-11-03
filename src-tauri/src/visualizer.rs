@@ -14,6 +14,7 @@ pub struct Settings {
     pub preferences: musicos_visualizer::control::Preferences,
     pub beat: Beat,
     pub reduced: bool,
+    pub album_palette: Option<[[f32; 3]; 3]>,
 }
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -290,13 +291,16 @@ pub mod surface {
                         last = now;
                         match display.surface.get_current_texture() {
                             Ok(frame) => {
-                                presenter.draw(
+                                presenter.draw_colored(
                                     &display.gpu,
                                     &frame.texture.create_view(&Default::default()),
                                     engine.image(),
                                     engine.image(),
                                     0.,
                                     1.,
+                                    settings
+                                        .album_palette
+                                        .filter(|_| settings.preferences.album_colors),
                                 );
                                 frame.present();
                             }
@@ -642,7 +646,17 @@ pub mod surface {
                 Err(error) => return Err(error.into()),
             };
             let view = frame.texture.create_view(&Default::default());
-            present.draw(&display.gpu, &view, engine.image(), engine.image(), 0., 1.);
+            present.draw_colored(
+                &display.gpu,
+                &view,
+                engine.image(),
+                engine.image(),
+                0.,
+                1.,
+                settings
+                    .album_palette
+                    .filter(|_| settings.preferences.album_colors && matched),
+            );
             frame.present();
             let mut status = state.status.lock().unwrap_or_else(|e| e.into_inner());
             let old = (

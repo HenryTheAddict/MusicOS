@@ -18,6 +18,7 @@ pub struct Preferences {
     pub timed_seconds: u32,
     pub beat_interval: u32,
     pub beat_sync: bool,
+    pub album_colors: bool,
     pub lyrics: bool,
 }
 impl Default for Preferences {
@@ -28,6 +29,7 @@ impl Default for Preferences {
             timed_seconds: 30,
             beat_interval: 32,
             beat_sync: true,
+            album_colors: false,
             lyrics: false,
         }
     }
@@ -105,7 +107,11 @@ impl Coordinator {
         self.next_beat = None;
     }
     pub fn step(&mut self, prefs: &Preferences, clock: Clock, dt: f64) -> Option<Change> {
-        if self.policy.as_ref() != Some(prefs) {
+        if self.policy.as_ref().is_none_or(|old| {
+            old.rotation != prefs.rotation
+                || old.timed_seconds != prefs.timed_seconds
+                || old.beat_interval != prefs.beat_interval
+        }) {
             self.reset();
             self.policy = Some(prefs.clone());
         }
@@ -195,6 +201,33 @@ mod tests {
             beat_offset: Some(0.),
             confidence: 0.9,
         }
+    }
+    #[test]
+    fn album_colors_round_trip_and_do_not_reset_rotation() {
+        let mut prefs: Preferences = serde_json::from_str(r#"{"preset":"oil-puddle"}"#).unwrap();
+        assert!(!prefs.album_colors);
+        prefs.album_colors = true;
+        assert!(
+            serde_json::from_str::<Preferences>(&serde_json::to_string(&prefs).unwrap())
+                .unwrap()
+                .album_colors
+        );
+        let mut coordinator = Coordinator::default();
+        prefs.rotation = Rotation::Timed;
+        prefs.timed_seconds = 15;
+        let mut clock = Clock {
+            playing: true,
+            speed: 1.,
+            ..Default::default()
+        };
+        coordinator.step(&prefs, clock, 0.);
+        for _ in 0..59 {
+            clock.position += 0.25;
+            assert!(coordinator.step(&prefs, clock, 0.25).is_none());
+        }
+        prefs.album_colors = false;
+        clock.position += 0.25;
+        assert!(coordinator.step(&prefs, clock, 0.25).is_some());
     }
     #[test]
     fn defaults_and_unknown_tempo_never_invent_beats() {

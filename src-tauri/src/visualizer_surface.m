@@ -39,18 +39,23 @@ typedef void (*MusicOSSurfacePresented)(void *, double);
 }
 @end
 @implementation MusicOSVisualizerView
+// A layer-backed view lets AppKit own the root layer's anchor, bounds and
+// backing scale. Assigning/repositioning a hosted root layer offsets it by half
+// the window on AppKit's zero-anchor layers.
+-(CALayer *)makeBackingLayer {
+ MusicOSVisualizerLayer *layer=[MusicOSVisualizerLayer layer];layer.owner=self;layer.opaque=YES;
+ CGColorSpaceRef colorspace=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+ layer.colorspace=colorspace;CGColorSpaceRelease(colorspace);
+ layer.wantsExtendedDynamicRangeContent=NO;
+ return layer;
+}
+-(BOOL)wantsUpdateLayer { return YES; }
+-(void)updateLayer { /* Metal owns drawing; AppKit owns geometry. */ }
 -(BOOL)isOpaque { return YES; }
 -(BOOL)acceptsFirstResponder { return NO; }
 -(NSView *)hitTest:(NSPoint)point { return nil; }
 -(void)publish {
  if (!self.update) return;
- // A hosted Metal layer does not inherit WebKit's safe-area/layout timing.
- // Keep its geometry exact and suppress implicit Core Animation resizing.
- [CATransaction begin];[CATransaction setDisableActions:YES];
- self.layer.bounds=NSRectToCGRect(self.bounds);
- self.layer.position=CGPointMake(NSMidX(self.bounds),NSMidY(self.bounds));
- self.layer.contentsScale=self.window.backingScaleFactor ?: 1;
- [CATransaction commit];
  NSRect pixels=[self convertRectToBacking:self.bounds];
  BOOL visible=self.window && self.window.visible && !self.window.miniaturized && (self.window.occlusionState & NSWindowOcclusionStateVisible) && !self.hidden;
  self.update(self.context,(uint32_t)MAX(1,pixels.size.width),(uint32_t)MAX(1,pixels.size.height),visible);
@@ -74,10 +79,6 @@ void *musicos_visualizer_attach(void *web,void *context,MusicOSSurfaceUpdate upd
  if(overlay.superview!=parent)return NULL;
  MusicOSVisualizerView *view=[[MusicOSVisualizerView alloc] initWithFrame:parent.bounds];
  view.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;view.wantsLayer=YES;
- MusicOSVisualizerLayer *layer=[MusicOSVisualizerLayer layer];layer.owner=view;layer.opaque=YES;
- CGColorSpaceRef colorspace=CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
- layer.colorspace=colorspace;CGColorSpaceRelease(colorspace);
- layer.wantsExtendedDynamicRangeContent=NO;view.layer=layer;
  view.web=wk;view.priorDrawsBackground=[[wk valueForKey:@"drawsBackground"] boolValue];view.priorOpaque=wk.window.opaque;view.priorBackgroundColor=wk.window.backgroundColor;
  view.context=context;view.update=update;view.releaseContext=releaseContext;view.presented=presented;
  [parent addSubview:view positioned:NSWindowBelow relativeTo:overlay];
