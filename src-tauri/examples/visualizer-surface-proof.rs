@@ -73,7 +73,7 @@ fn main() {
             let window = tauri::WebviewWindowBuilder::new(
                 app,
                 "proof",
-                tauri::WebviewUrl::External(if ui{"http://127.0.0.1:1422/visualizer-proof.html?lyrics=timed"}else{"visualizer-proof://localhost/index.html"}.parse()?),
+                tauri::WebviewUrl::External(if ui{"http://127.0.0.1:1422/visualizer-proof.html?lyrics=timed&lyricsCase=words"}else{"visualizer-proof://localhost/index.html"}.parse()?),
             )
             .title_bar_style(tauri::TitleBarStyle::Overlay)
             .hidden_title(true)

@@ -18,7 +18,7 @@ import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { call, artwork, asset, native, localArtwork, libraryArtwork } from "./bridge";
 import type { Track } from "./types";
-import { AssetIcon } from "./AssetIcon";
+import { AssetIcon, portraitPlaceholder } from "./AssetIcon";
 import FavoriteButton from './FavoriteButton';
 import {trackCredits} from './credits';
 import {useArtworkParallax} from './motion';
@@ -132,7 +132,7 @@ export function Cover({
   const framed=usePortraitArtwork(portrait?resolved:null,epoch);
   const displayPath=portrait?framed?.display:rendition;
   const pending=!!resolved&&!displayPath;
-  const desiredUrl=displayPath?artwork(displayPath)+(native&&extracted?.path===resolved?`?musicos-artwork=${epoch}`:''):asset(`assets/icons/ui/${portrait?'noARTIST':'noCOVER'}.svg`);
+  const desiredUrl=displayPath?artwork(displayPath)+(native&&extracted?.path===resolved?`?musicos-artwork=${epoch}`:''):portrait?portraitPlaceholder:asset('assets/icons/ui/noCOVER.svg');
   const displayed=useArtworkImage({url:desiredUrl,path:displayPath?(portrait?framed?.path:resolved??undefined):undefined,original:resolved??undefined,version:epoch},`${portrait?'portrait':'cover'}:${trackId??title}`,!!resolved,markFailed,pending);
   useLayoutEffect(()=>{const image=imageRef.current;onLoadingChange?.(!!resolved&&!(image?.complete&&image.naturalWidth>0));},[resolved,onLoadingChange]);
   return (

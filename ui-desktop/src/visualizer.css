@@ -67,8 +67,7 @@
 
 /* Busy video needs a stable local contrast floor, ordinary solid views do not. */
 .expanded-player[data-visualizer=true] .lyrics-pane[data-variant=visualizer]{background:radial-gradient(ellipse at center,#060a116e 12%,#060a1138 52%,transparent 78%);}
-.lyrics-pane[data-variant=visualizer] .lyric-line{--lyric-contrast:0 2px 4px #0009;text-shadow:var(--lyric-contrast);-webkit-text-stroke:.3px #0004;}
-.lyrics-pane[data-variant=visualizer] .lyric-word[data-word-active=true]{text-shadow:0 2px 4px #0008,0 0 .35em #ffffff50;}
+.lyrics-pane[data-variant=visualizer] .lyric-line{text-shadow:0 1px 3px #0005;-webkit-text-stroke:0;}
 .expanded-player[data-visualizer=true] .expanded-player-dock{background:linear-gradient(transparent,#05091170 32%,#050911ab);border-radius:16px;transition:background-color 180ms;}
 .expanded-player[data-visualizer=true][data-chrome=hidden] .expanded-player-dock{background:transparent;}
 .visualizer-settings{width:min(22rem,calc(100vw - 24px));padding:14px;font-size:13px;border-radius:16px;}

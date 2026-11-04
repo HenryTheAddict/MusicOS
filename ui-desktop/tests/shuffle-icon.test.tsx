@@ -1,5 +1,9 @@
 import {render} from '@testing-library/react';
 import {afterEach,expect,test,vi} from 'vitest';
-import {AssetIcon} from '../src/AssetIcon';
+import {AssetIcon,portraitPlaceholder} from '../src/AssetIcon';
 afterEach(()=>vi.restoreAllMocks());
 test('Shuffle follows acknowledged changes, ignores unrelated renders, and switches immediately for Reduced Motion',()=>{let reduced=false;vi.spyOn(window,'matchMedia').mockImplementation(()=>({matches:reduced,addEventListener(){},removeEventListener(){}} as any));let count=0;const frames=new Map<number,FrameRequestCallback>();vi.spyOn(window,'requestAnimationFrame').mockImplementation(cb=>{frames.set(++count,cb);return count;});vi.spyOn(window,'cancelAnimationFrame').mockImplementation(id=>{frames.delete(id);});const view=render(<AssetIcon name="ShuffleOFF"/>);view.rerender(<AssetIcon name="ShuffleON"/>);expect(frames.size).toBe(1);const before=view.container.innerHTML;view.rerender(<AssetIcon name="ShuffleON"/>);expect(view.container.innerHTML).toBe(before);expect(frames.size).toBe(1);reduced=true;view.rerender(<AssetIcon name="ShuffleOFF"/>);expect(frames.size).toBe(0);expect(view.container.querySelector('[data-shuffle-morph]')).toBeNull();expect(view.container.querySelector('line')).not.toBeNull();view.unmount();expect(frames.size).toBe(0);});
+
+test('Shuffle playback actions preserve Sketch strokes without its white export canvas',()=>{const view=render(<AssetIcon name="ShufflePlay"/>);expect(view.container.querySelector('use[fill="#FFFFFF"]')).toBeNull();expect(view.container.querySelectorAll('path[stroke]')).toHaveLength(3);expect(view.container.querySelector('svg')).toHaveAttribute('viewBox','0 0 32 32');view.unmount();});
+
+test('artist image fallback retains its paths with a transparent canvas',()=>{const svg=decodeURIComponent(portraitPlaceholder.split(',').slice(1).join(','));const doc=new DOMParser().parseFromString(svg,'image/svg+xml');expect(doc.querySelector('use[fill="#FFFFFF"]')).toBeNull();expect(doc.querySelectorAll('g>path')).toHaveLength(3);expect(doc.documentElement.getAttribute('viewBox')).toBe('0 0 32 32');});

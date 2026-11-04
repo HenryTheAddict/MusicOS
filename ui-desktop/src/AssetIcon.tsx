@@ -26,7 +26,10 @@ export function solidIcon(svg:string, name:string) {
     if(shaded){let stop=0;return markup.replace(/stop-color="[^"]+"/g,()=>`stop-color="var(--shuffle-${stop++===0?'top':'bottom'},var(--control-surface))"`);}
     gradients.add(id);return '';
   });
-  let result=flat.replace(/url\(#([^)]+)\)/g,(reference,id:string)=>gradients.has(id)?'currentColor':reference);
+  // This export includes Sketch's white canvas as a <use>, not icon geometry.
+  // Keep the authored strokes and play glyph transparent in menus.
+  const canvasFree=['ShufflePlay','noARTIST'].includes(name)?flat.replace(/<use\b[^>]*fill="#FFFFFF"[^>]*><\/use>/g,''):flat;
+  let result=canvasFree.replace(/url\(#([^)]+)\)/g,(reference,id:string)=>gradients.has(id)?'currentColor':reference);
   if(name==='ShuffleON'||name==='ShuffleOFF')result=result.replace(/stroke="#3B3B3B"/g,'stroke="var(--icon-fill,var(--secondary-ink,currentColor))"');
   if(['play','pause','prev','next'].includes(name)){
     result=result.replace(/(<path\b[^>]*?)fill="#000000"/g,'$1fill="url(#transport-shade)"');
@@ -36,6 +39,10 @@ export function solidIcon(svg:string, name:string) {
   if(name==='Library')result=result.replace(/fill="#FFFFFF"/g,'fill="var(--icon-surface,var(--control-surface))"');
   return result;
 }
+
+// The image fallback keeps Sketch's supplied path coordinates, without its
+// white export canvas. Its surrounding surface is owned by the active theme.
+export const portraitPlaceholder='data:image/svg+xml,'+encodeURIComponent(solidIcon(icons.noARTIST,'noARTIST'));
 
 export function AssetIcon({ name, className = "" }: { name: string; className?: string }) {
   const element = useRef<HTMLElement>(null);

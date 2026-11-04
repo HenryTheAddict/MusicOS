@@ -867,3 +867,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid v
 .collection-grid-container{position:relative}
 
 @media (prefers-reduced-motion:reduce){.settings-tabs>button{transition:none!important}}
+
+/* Missing portraits use their full theme-owned silhouette. The supplied SVG
+   is transparent; never put a white export tile inside another portrait. */
+.app-shell .card-artwork>.cover.portrait.placeholder{box-sizing:border-box;background-image:linear-gradient(135deg,color-mix(in srgb,var(--accent) 16%,var(--control-surface)),var(--control-surface))!important;background-color:var(--control-surface)!important;border:1px solid var(--control-border);padding:24%;object-fit:contain;border-radius:32%;}
