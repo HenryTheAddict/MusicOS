@@ -20,6 +20,7 @@ impl Default for TrackpadFeedback{fn default()->Self{Self{enabled:cfg!(target_os
 pub struct Preferences {
     pub version: u32,
     pub trackpad_feedback:TrackpadFeedback,
+    pub controller:crate::controller::Preferences,
     pub visualizer:musicos_visualizer::control::Preferences,
     pub onboarding_version: u32,
     pub mini_player_view: String,
@@ -46,6 +47,7 @@ impl Default for Preferences {
         Self {
             version: 1,
             trackpad_feedback:Default::default(),
+            controller:Default::default(),
             visualizer:Default::default(),
             onboarding_version: 0,
             mini_player_view: "artwork".into(),
@@ -120,6 +122,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             let mut p = Preferences::default();
             if let Some(v)=v.get("visualizer"){if let Ok(value)=serde_json::from_value(v.clone()){p.visualizer=value;}}
+            if let Some(v)=v.get("controller"){if let Ok(value)=serde_json::from_value(v.clone()){p.controller=value;}}
             if let Some(v)=v.get("trackpad_feedback"){if let Ok(value)=serde_json::from_value(v.clone()){p.trackpad_feedback=value;}}
             p.onboarding_version=v.get("onboarding_version").and_then(|n|n.as_u64()).unwrap_or(crate::product::config().onboarding.version as u64).min(crate::product::config().onboarding.version as u64) as u32;
             if let Some(s)=v["mini_player_density"].as_str(){p.mini_player_density=s.into();}
@@ -316,3 +319,5 @@ mod player_background_tests {
         assert_eq!(p.normalize().player_background,"solid");
     }
 }
+
+#[cfg(test)]mod controller_tests{use super::*;#[test]fn controller_defaults_and_independent_feedback_persist(){let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");let mut p=load_from(&path,None);assert_eq!(p.controller,crate::controller::Preferences::default());p.controller.vibration=false;p.controller.beat_focus=false;let original=p.trackpad_feedback.clone();atomic_write_json(&path,&p).unwrap();let restored=load_from(&path,None);assert_eq!(restored.controller,p.controller);assert_eq!(restored.trackpad_feedback,original);}}

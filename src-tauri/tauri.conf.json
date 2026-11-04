@@ -50,7 +50,6 @@
     "resources": {
       "../assets/fonts/Figtree-OFL.txt": "fonts/Figtree-OFL.txt",
       "../third_party/licenses/": "licenses/",
-      "resources/runtime/libonnxruntime.1.31.0.dylib": "runtime/libonnxruntime.1.31.0.dylib",
       "resources/models/": "models/"
     }
   }

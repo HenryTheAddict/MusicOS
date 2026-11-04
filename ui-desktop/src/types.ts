@@ -69,6 +69,7 @@ export interface LibraryFilters {sort:'recent'|'title';genre:string;quality:'all
 export interface Listening {bands:3|8;gains3:number[];gains8:number[];speed:number;pitch:number;linked:boolean;reverb?:number;reverb_depth?:number}
 export interface Appearance {mode:"system"|"light"|"dark";source:"artwork"|"blue"|"custom";accent:string;saturation:number;tint:number}
 export interface Preferences {
+  controller?:import("./controller").ControllerPreferences;
   visualizer?:import('./visualizer').VisualizerPreferences;
   trackpad_feedback?:import('./haptics').FeedbackSettings;
   mini_player_density?:"standard"|"compact"|"wide";

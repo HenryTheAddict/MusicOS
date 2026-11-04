@@ -261,7 +261,7 @@ impl AudioPlayer {
                 _stream: stream_opt,
                 stream_handle: handle_opt,
                 sink: sink_opt,
-                #[cfg(target_os = "linux")]
+                #[cfg(all(feature = "device-audio", target_os = "linux"))]
                 alsa_playback: None,
                 queue: Vec::new(),
                 current_index: None,
@@ -372,7 +372,7 @@ impl AudioPlayer {
 
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         {
-            #[cfg(target_os = "linux")]
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
             if self.prefers_direct_alsa() {
                 if self.start_alsa_playback(
                     track_path.clone(),
@@ -434,7 +434,7 @@ impl AudioPlayer {
                 self.last_error = Some(message);
             }
 
-            #[cfg(target_os = "linux")]
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
             if !self.prefers_direct_alsa()
                 && self.start_alsa_playback(
                     track_path.clone(),
@@ -579,7 +579,7 @@ impl AudioPlayer {
             if let Some(sink) = self.sink.take() {
                 sink.stop();
             }
-            #[cfg(target_os = "linux")]
+            #[cfg(all(feature = "device-audio", target_os = "linux"))]
             {
                 self.alsa_playback = None;
             }

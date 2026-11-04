@@ -4,9 +4,11 @@ import {beatOffsets} from './heartVisibility';
 export type FeedbackSettings={enabled:boolean;beat_hover:boolean;interactions:boolean};
 export type FeedbackKind='stop'|'beat'|'pickup'|'target'|'reorder'|'drop'|'favorite'|'toggle'|'step';
 export const defaultFeedback:FeedbackSettings={enabled:/Mac/.test(navigator.platform),beat_hover:true,interactions:true};
+let controllerFeedback:((kind:FeedbackKind,key:string,trackId?:number)=>void)|undefined;
+export function setControllerFeedbackSink(sink:typeof controllerFeedback){controllerFeedback=sink;}
 let settings=defaultFeedback,hover:HTMLElement|null=null,timer=0,off:(()=>void)|undefined,lastBeat='',lastInteraction=-Infinity,beatSubmitted=false;
 function cancelNativeBeat(){if(!beatSubmitted)return;beatSubmitted=false;void call('trackpad_feedback',{request:{kind:'stop',key:'hover-ended'}}).catch(()=>{});}
-export function haptic(kind:FeedbackKind,key:string,trackId?:number){if(!native||!settings.enabled||document.hidden||!document.hasFocus()||(kind==='beat'?!settings.beat_hover:!settings.interactions))return;
+export function haptic(kind:FeedbackKind,key:string,trackId?:number){controllerFeedback?.(kind,key,trackId);if(!native||!settings.enabled||document.hidden||!document.hasFocus()||(kind==='beat'?!settings.beat_hover:!settings.interactions))return;
  if(kind==='beat'&&performance.now()-lastInteraction<120)return;if(kind==='beat')beatSubmitted=true;if(kind!=='beat')lastInteraction=performance.now();void call('trackpad_feedback',{request:{kind,key,trackId}}).catch(()=>{});
 }
 export function setFeedbackSettings(value?:FeedbackSettings){settings=value??defaultFeedback;update();}

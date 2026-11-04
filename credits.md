@@ -41,3 +41,9 @@ Figtree, Erik D. Kennedy and contributors, SIL Open Font License 1.1. See the bu
 ## Other application dependencies
 
 Additional third-party packages retain their package licenses and existing application attributions. Song contributor credits in `credits.ts` are separate from these software credits.
+
+## Controller input and vibration
+
+Native controller input and force feedback use [Gilrs 0.11.2](https://gitlab.com/gilrs-project/gilrs) and gilrs-core 0.6.8, by the Gilrs contributors, under MIT OR Apache-2.0. Linux device discovery uses libudev-sys 0.1.4 (MIT), and controller storage uses vec_map 0.8.2 (MIT OR Apache-2.0). Complete supplied notices are bundled in `third_party/licenses/controller`. Gilrs bundles the SDL Game Controller Database, under its zlib license; its notice is included alongside the controller licenses. Vibration availability depends on hardware and the operating-system driver.
+
+The Linux build bundles the Microsoft ONNX Runtime 1.31.0 CPU runtime under MIT with its third-party notices, alongside the existing model. Runtime source and checksums are recorded by `scripts/linux/prepare-runtime.py`; complete notices are in `third_party/licenses/onnxruntime-MIT.txt` and `onnxruntime-ThirdPartyNotices.txt`.

@@ -8,7 +8,7 @@ export function usePlayerChrome(host:RefObject<HTMLDialogElement|null>,open:bool
   let timer:ReturnType<typeof setTimeout>|undefined,shown=false,swallowClick=false;
   const reveal=()=>{if(!shown){shown=true;setVisible(true);}clearTimeout(timer);timer=setTimeout(()=>{
    const focused=document.activeElement;
-   const keyboardControl=document.documentElement.dataset.inputModality==='keyboard'&&focused instanceof Element&&node.contains(focused)&&!!focused.closest('.expanded-player-header,.expanded-player-controls');
+   const keyboardControl=(document.documentElement.dataset.inputModality==='keyboard'||document.documentElement.dataset.controllerInput==='true')&&focused instanceof Element&&node.contains(focused)&&!!focused.closest('.expanded-player-header,.expanded-player-controls');
    if(node.querySelector('input:active,[data-seeking=true],[role=menu]:not([inert])')||node.querySelector('[aria-expanded=true]')||keyboardControl)return;
    shown=false;setVisible(false);
   },2200);};
@@ -17,7 +17,7 @@ export function usePlayerChrome(host:RefObject<HTMLDialogElement|null>,open:bool
   const press=(event:PointerEvent)=>{swallowClick=!shown&&event.pointerType==='touch';if(swallowClick){event.preventDefault();event.stopPropagation();}reveal();};
   const click=(event:MouseEvent)=>{if(swallowClick){swallowClick=false;event.preventDefault();event.stopImmediatePropagation();}};
   const blur=()=>{if(shown)reveal();};
-  const focus=(event:FocusEvent)=>{if(event.target!==node&&(shown||document.documentElement.dataset.inputModality==='keyboard'))reveal();};
+  const focus=(event:FocusEvent)=>{if(event.target!==node&&(shown||(document.documentElement.dataset.inputModality==='keyboard'||document.documentElement.dataset.controllerInput==='true')))reveal();};
   const visibility=()=>{if(document.hidden)clearTimeout(timer);else reveal();};
   node.addEventListener('pointermove',move);node.addEventListener('pointerleave',move);node.addEventListener('pointerdown',press,true);node.addEventListener('pointerup',reveal,true);node.addEventListener('keydown',reveal,true);node.addEventListener('focusin',focus);node.addEventListener('focusout',blur);
   node.addEventListener('click',click,true);

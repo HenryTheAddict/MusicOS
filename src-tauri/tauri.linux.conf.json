@@ -1,0 +1,16 @@
+{
+  "bundle": {
+    "targets": [
+      "appimage"
+    ],
+    "resources": {
+      "resources/runtime/libonnxruntime.so.1.31.0": "runtime/libonnxruntime.so.1.31.0",
+      "resources/runtime/libonnxruntime_providers_shared.so": "runtime/libonnxruntime_providers_shared.so"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  }
+}

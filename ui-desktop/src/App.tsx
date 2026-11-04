@@ -1,3 +1,4 @@
+import {installController,defaultController} from './controller';
 import {useNativePlayerShortcuts,type PlayerShortcut} from './useNativePlayerShortcuts';
 import VisualizerPlayer from './VisualizerPlayer';
 import {defaultVisualizer,playerShortcut} from './visualizer';
@@ -17,7 +18,7 @@ import ExpandedPlayer,{type PlayerView} from './ExpandedPlayer';
 import {observeInputModality} from './inputModality';
 import {launchPreferences,rememberLaunchAppearance,rememberLaunchPalette,savedLaunchPalette} from './launchTheme';
 import {usePlaylistDrop} from './usePlaylistDrop';
-import {usePlaybackFeed} from './playbackFeed';
+import {clockPosition,currentPlaybackClock,usePlaybackFeed} from './playbackFeed';
 import {animateOwned} from './presentationMotion';
 import {secondaryInk} from './appearance';
 import {personalName} from './personalName';
@@ -536,6 +537,9 @@ export default function App() {
   const runImmersive=useCallback(async(action:PlaybackAction)=>{if(action.type==='next'||action.type==='previous')window.dispatchEvent(new CustomEvent('musicos-transport-intent',{detail:action.type}));setPlayer(await call('playback',{action}));if(action.type==='seek')window.dispatchEvent(new Event('musicos-playback-discontinuity'));},[]);
   const shortcutDispatch=useRef<(shortcut:PlayerShortcut)=>void>(()=>{});
   shortcutDispatch.current=shortcut=>{if(document.querySelector(".onboarding[open]"))return;if(shortcut==='previous'||shortcut==='next')void run({type:shortcut});else if(shortcut==='visualizer')toggleVisualizer();else if(visualizerOpen){const next=nextPlayerView(visualizerView);setVisualizerView(next);changePreferences({...preferences,visualizer:{...(preferences.visualizer??defaultVisualizer),lyrics:next==='lyrics'}});}else if(expandedOpen)setPlayerView(nextPlayerView(playerView));else if(miniMode!=='normal')window.dispatchEvent(new Event('musicos-cycle-mini-view'));else{const next=nextPlayerView(queueOpen?queueView:'playing');if(next!=='playing')setQueueView(next);setQueueOpen(next!=='playing');}};
+  const controllerActions=useRef({play:()=>{},previous:()=>{},next:()=>{},panel:()=>{},visualizer:()=>{},favorite:()=>{},seek:(_delta:number)=>{},back:()=>{},error:(e:unknown)=>setError(errorText(e))});
+  controllerActions.current={play:()=>{if(player.track)void run({type:'toggle'});},previous:()=>{if(player.track)void run({type:'previous'});},next:()=>{if(player.track)void run({type:'next'});},panel:()=>shortcutDispatch.current('panel'),visualizer:()=>shortcutDispatch.current('visualizer'),favorite:()=>{if(player.track)void favorite(player.track);},seek:delta=>{if(player.track)void run({type:'seek',position:Math.max(0,Math.min(player.track.duration,clockPosition(currentPlaybackClock())+delta))});},back:()=>{if(queueOpen)setQueueOpen(false);else if(navigation.history.length)goBack();},error:e=>setError(errorText(e))};
+  useEffect(()=>installController(preferences.controller??defaultController,Object.fromEntries(Object.keys(controllerActions.current).map(key=>[key,(...args:unknown[])=>(controllerActions.current[key as keyof typeof controllerActions.current] as (...v:unknown[])=>void)(...args)])) as typeof controllerActions.current),[preferences.controller]);
   useNativePlayerShortcuts(shortcut=>shortcutDispatch.current(shortcut));
   useEffect(() => {
     const pointerSpace=(e:KeyboardEvent)=>{
