@@ -310,7 +310,7 @@ export default function App() {
   const visualizerOpener=useRef<HTMLElement|null>(null);
   const [expandedOpen,setExpandedOpen]=useState(false),[playerView,setPlayerView]=useState<PlayerView>('playing');
   const expandedPresent=usePanelPresence(expandedOpen);
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,()=>goBack(true),navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,goBack,navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
   function openPlayer(view:PlayerView='playing',preview:Track|null=null){setLyricPreview(preview);playerOpener.current=document.querySelector<HTMLElement>(view==='lyrics'?'.now-playing-title-action':view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
   function toggleVisualizer(){if(!visualizerOpen){visualizerOpener.current=document.activeElement as HTMLElement|null;setVisualizerView((preferences.visualizer??defaultVisualizer).lyrics?'lyrics':'playing');}setVisualizerOpen(v=>!v);}

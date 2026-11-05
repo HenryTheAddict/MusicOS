@@ -1,13 +1,13 @@
 import {test,expect} from '@playwright/test';
 test.use({browserName:'webkit'});
 async function phase(page:any,value:number){await page.evaluate((value:number)=>window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:value})),value);}
-test('page tracks fingers, releases once, and suppresses trailing momentum',async({page})=>{await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const detail=page.locator('.album-detail h1');await detail.hover();await phase(page,1);await page.mouse.wheel(-80,0);await expect(page.locator('.back-page-preview')).toHaveCount(1);await expect(page.locator('.back-page-preview')).toHaveCSS('transform','none');await expect(page.locator('#library-content')).toHaveAttribute('data-swiping','true');expect(await page.locator('#library-content').evaluate(e=>getComputedStyle(e).transform)).not.toBe('none');await page.mouse.wheel(-220,0);await phase(page,2);await phase(page,4);await expect(page.locator('.app-shell .collection-grid')).toBeVisible();await expect(page.locator('.app-shell .album-detail')).toHaveCount(0);await expect(page.locator('.back-page-preview')).toHaveCount(0);await page.mouse.wheel(-400,0);await expect(page.locator('.app-shell .collection-grid')).toBeVisible();expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback').length)).toBe(0);});
+test('page tracks fingers, releases once, and suppresses trailing momentum',async({page})=>{await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const detail=page.locator('.album-detail h1');await detail.hover();await phase(page,1);await page.mouse.wheel(-80,0);await expect(page.locator('.back-page-preview')).toHaveCount(1);await expect(page.locator('.back-page-preview')).toHaveCSS('transform','none');await expect(page.locator('#library-content')).toHaveAttribute('data-swiping','true');expect(await page.locator('#library-content').evaluate(e=>getComputedStyle(e).transform)).not.toBe('none');await page.mouse.wheel(-220,0);await phase(page,2);await phase(page,4);await expect(page.locator('#library-content .collection-grid')).toBeVisible();await expect(page.locator('.app-shell .album-detail')).toHaveCount(0);await expect(page.locator('.back-page-preview')).toHaveCount(0);await page.mouse.wheel(-400,0);await expect(page.locator('#library-content .collection-grid')).toBeVisible();expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback').length)).toBe(0);});
 test('reversal, vertical intent, modal menus and reduced motion retain behavior',async({page})=>{await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const detail=page.locator('.album-detail h1');await detail.hover();await page.mouse.wheel(-20,100);await page.waitForTimeout(100);await expect(detail).toBeVisible();await phase(page,1);await page.mouse.wheel(-80,0);await page.mouse.wheel(70,0);await phase(page,2);await expect(page.locator('.back-page-preview')).toHaveCount(0);await expect(detail).toBeVisible();await page.getByRole('button',{name:'More library views'}).click();await page.getByRole('menuitem',{name:'Playlists',exact:true}).hover();await page.mouse.wheel(-400,0);await expect(page.getByRole('menu')).toBeVisible();await page.keyboard.press('Escape');await page.emulateMedia({reducedMotion:'reduce'});await detail.hover();await phase(page,1);await page.mouse.wheel(-400,0);await phase(page,2);await expect(page.locator('.personal-home')).toBeVisible();await expect(page.locator('.back-page-preview')).toHaveCount(0);});
 test('full-distance release hands over immediately with no second transition or retained preview',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.locator('.album-detail h1').hover();await phase(page,1);await page.mouse.wheel(-1400,0);await phase(page,2);await expect(page.locator('.app-shell .collection-grid')).toBeVisible();await expect(page.locator('.back-page-preview')).toHaveCount(0);expect(await page.locator('#library-content').evaluate(e=>e.getAnimations({subtree:true}).filter(a=>/interactive-back|content-change|page-navigation/.test(a.id)).length)).toBe(0);await phase(page,4);await page.mouse.wheel(-400,0);await expect(page.locator('.collection-grid')).toBeVisible();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.locator('.album-detail h1').hover();await phase(page,1);await page.mouse.wheel(-1400,0);await phase(page,2);await expect(page.locator('#library-content .collection-grid')).toBeVisible();await expect(page.locator('.back-page-preview')).toHaveCount(0);expect(await page.locator('#library-content').evaluate(e=>e.getAnimations({subtree:true}).filter(a=>/interactive-back|content-change|page-navigation/.test(a.id)).length)).toBe(0);await phase(page,4);await page.mouse.wheel(-400,0);await expect(page.locator('#library-content .collection-grid')).toBeVisible();
 });
 test('a short fast flick survives the zero-distance finger-release event',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.locator('.album-detail h1').hover();await phase(page,1);await page.mouse.wheel(-90,0);await page.locator('#library-content').evaluate(node=>node.dispatchEvent(new WheelEvent('wheel',{deltaX:0,deltaY:0,bubbles:true,cancelable:true})));await phase(page,2);await expect(page.locator('.collection-grid')).toBeVisible();await expect(page.locator('.back-page-preview')).toHaveCount(0);
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.locator('.album-detail h1').hover();await phase(page,1);await page.mouse.wheel(-90,0);await page.locator('#library-content').evaluate(node=>node.dispatchEvent(new WheelEvent('wheel',{deltaX:0,deltaY:0,bubbles:true,cancelable:true})));await phase(page,2);await expect(page.locator('#library-content .collection-grid')).toBeVisible();await expect(page.locator('.back-page-preview')).toHaveCount(0);
 });
 test('artwork and fade follow finger distance and retract without a second transfer',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:2000});
@@ -16,5 +16,45 @@ test('artwork and fade follow finger distance and retract without a second trans
  const target=await page.locator(`.back-page-preview [data-collection-id="${id}"] .card-artwork`).boundingBox();expect(target).not.toBeNull();
  const shown=(await cover.boundingBox())!,p=at.distance/at.width;expect(Math.abs(shown.x-(source.x+(target!.x-source.x)*p))).toBeLessThan(2);expect(Math.abs(at.opacity-(1-p))).toBeLessThan(.02);
  await page.mouse.wheel(-120,0);const further=(await cover.boundingBox())!;expect(Math.abs(further.x-shown.x)+Math.abs(further.y-shown.y)).toBeGreaterThan(1);await phase(page,3);await expect(cover).toHaveCount(0);await expect(page.locator('.album-detail')).toBeVisible();await expect(page.locator('#library-content')).toHaveCSS('opacity','1');
- await phase(page,1);await page.mouse.wheel(-1400,0);await phase(page,2);await expect(page.locator('.app-shell .collection-grid')).toBeVisible();await expect(page.locator('.swipe-cover-transfer,.album-cover-transfer,.back-page-preview')).toHaveCount(0);expect(await page.evaluate(()=>document.getAnimations().filter(a=>a.id.startsWith('interactive-back')).length)).toBe(0);
+ await phase(page,1);await page.mouse.wheel(-1400,0);await phase(page,2);await expect(page.locator('#library-content .collection-grid')).toBeVisible();await expect(page.locator('.swipe-cover-transfer,.album-cover-transfer,.back-page-preview')).toHaveCount(0);expect(await page.evaluate(()=>document.getAnimations().filter(a=>a.id.startsWith('interactive-back')).length)).toBe(0);
+});
+
+
+test('Filter reveals with the swipe and the preview stays aligned through the first live frame',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Albums',exact:true}).click();
+ const bar=page.locator('.library-toolbar:not(.back-swipe-bar)');
+ const initialBar=(await bar.boundingBox())!;
+ const initialGrid=(await page.locator('#library-content').boundingBox())!;
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await expect(page.locator('.album-cover-transfer')).toHaveCount(0);
+ await page.locator('.album-detail h1').hover();
+ await phase(page,1);
+ await page.mouse.wheel(-150,0);
+ const previewBar=page.locator('.back-swipe-bar.library-toolbar');
+ await expect(previewBar).toHaveCount(1);
+ await expect(previewBar).toHaveAttribute('aria-hidden','true');
+ expect((await previewBar.boundingBox())!.y).toBeCloseTo(initialBar.y,0);
+ expect((await page.locator('.back-page-preview .page-scroll').boundingBox())!.y).toBeCloseTo(initialGrid.y,0);
+ const opacity=()=>previewBar.evaluate(node=>Number(getComputedStyle(node).opacity));
+ const partial=await opacity();
+ expect(partial).toBeGreaterThan(0);
+ expect(partial).toBeLessThan(1);
+ await page.mouse.wheel(-100,0);
+ await expect.poll(opacity).toBeGreaterThan(partial);
+ await page.mouse.wheel(-1400,0);
+ await expect(previewBar).toHaveCSS('opacity','1');
+ const firstFrame=await page.evaluate(()=>new Promise<{preview:boolean;aligned:boolean;toolbarVisible:boolean}>(resolve=>{
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2}));
+  requestAnimationFrame(()=>{
+   const frozen=document.querySelector('.back-page-preview .page-scroll');
+   const live=document.querySelector('#library-content');
+   const toolbar=document.querySelector('.back-swipe-bar.library-toolbar');
+   resolve({preview:!!frozen,aligned:!!frozen&&!!live&&Math.abs(frozen.getBoundingClientRect().top-live.getBoundingClientRect().top)<1,toolbarVisible:!!toolbar&&getComputedStyle(toolbar).opacity==='1'});
+  });
+ }));
+ expect(firstFrame).toEqual({preview:true,aligned:true,toolbarVisible:true});
+ await expect(page.locator('.back-page-preview,.back-swipe-bar,.swipe-cover-transfer')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Filter',exact:true})).toBeVisible();
+ expect((await page.locator('#library-content').boundingBox())!.y).toBeCloseTo(initialGrid.y,0);
 });
