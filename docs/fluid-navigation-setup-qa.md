@@ -16,3 +16,13 @@ Onboarding is now two steps, Appearance and Music folders, with a live inert lib
 - Installed-app inspection and final profile comparison are recorded with the release manifest after loading.
 
 This delivery does not claim new physical trackpad, controller, audible Automix, or Linux hardware acceptance. The existing Linux AppImage is a separate artifact and is not rebuilt for this macOS UI repair.
+
+## Installed delivery
+
+- Source: `0133889505d4a48a40e5bdaa676bd9565d1502ec`.
+- Signed executable SHA-256: `80336033d1f5bdf8f4d07cf33dbaef194bb90addde6fe7f6a4275016b98c0f2b`.
+- Installed after fresh native Play-button verification (paused), with previous app and latest SQLite/preferences checkpoint retained. The restored track was Outro Freestyle/4ever at 0:01. Playback subsequently resumed through user interaction and was left running.
+- Installed native album and artist surfaces were inspected. Native setup inspection was not completed during concurrent user interaction; setup validation uses browser screenshots and the automated size/scale matrix.
+- Library retained 625 tracks, 55 favorites, 2 manual playlists, and 6 manual playlist entries. Manual collection fingerprint and Sparklist sidecar are unchanged.
+- All eight protected runtime/model hashes and the primary OS worktree are unchanged.
+- Release bundle, previous app, profile checkpoint pointer, screenshots, logs, and manifest: `/Users/henry/Developer/MusicOS/releases/desktop-fluid-navigation-setup-2026-11-04`.
