@@ -19,3 +19,12 @@
 - Physical gesture feel, audible lyric synchronization, and display frame pacing are not newly accepted from browser tests. No new hardware/performance claim is made in this repair.
 
 Installed build, preservation checks, and any native-verification limitations are recorded in the release manifest.
+
+## Installed delivery
+
+- Source: `1d7a3e8a687e9e6a3ffcab91447122d0da7b0f5b`.
+- Signed executable SHA-256: `ddcee121e6dc66437bcc80c5ccd22371c9603ace9e03107c85916c9be177cc42`.
+- Fresh native paused check preceded installation. The installed app restored the saved song paused at 0:43. Further UI inspection was limited by concurrent user interaction and was stopped; browser checks provide the new presentation evidence.
+- Retained 625 tracks, 56 favorites, 2 manual playlists, and 6 manual entries. Manual collection fingerprint and Sparklist sidecar are unchanged.
+- Previous app and latest SQLite/preferences checkpoint retained. All eight protected files and primary OS worktree diff are unchanged.
+- Release, logs, screenshots, checkpoint pointer, previous app, and manifest: `/Users/henry/Developer/MusicOS/releases/desktop-progressive-return-2026-11-04`.
