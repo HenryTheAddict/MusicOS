@@ -183,6 +183,7 @@ Motion explains where an object went. It must follow the displayed state, remain
 - After 12 px of predominantly horizontal movement, content follows the fingers directly. Shell, sidebar/bottom navigation, and Now Playing stay stationary.
 - Reveal one frozen, inert previous page at its saved scroll position. No preview parallax, bounce, scaling, delayed cue, or history-wide live mounting.
 - Commit at 25% distance or a deliberate fast flick of at least 60 px. Finish within 180 ms or retract within 140 ms from the displayed position.
+- Artwork returns toward its card in proportion to the swipe distance. The outgoing content fades at the same rate. One gesture drives the cover through release or retraction.
 - Pop history once, ignore trailing momentum, and suppress the regular cover/page transition during interactive swiping.
 - Sliders, horizontal shelves, menus, queues, and editors retain their own gestures.
 

@@ -37,3 +37,5 @@ body:has(.app-shell[data-adaptive=true]) .section-dropdown{background:var(--cont
 .now-playing .now-playing-info>strong{line-height:.8125rem;}
 .now-playing .now-playing-info>.now-playing-credits{line-height:.6875rem;}
 .now-playing .now-playing-info>.playback-progress{height:.625rem;}
+
+.swipe-cover-transfer{position:fixed;z-index:18;display:block;object-fit:cover;transform-origin:0 0;pointer-events:none;user-select:none;background:transparent;will-change:transform;}

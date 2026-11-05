@@ -63,7 +63,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   if(motion.matches||document.documentElement.dataset.swipeNavigation){departingToolbar?.remove();departingPage?.remove();return;}
   const disposers:(()=>void)[]=[];let frame=0,removed=false;
   const cancel=()=>{if(removed)return;removed=true;cancelAnimationFrame(frame);disposers.forEach(dispose=>dispose());};
-  const changed=()=>{if(motion.matches)cancel();};motion.addEventListener('change',changed);
+  const changed=()=>{if(motion.matches)cancel();},gesture=()=>cancel();motion.addEventListener('change',changed);window.addEventListener('musicos-back-gesture-start',gesture);
   const returning=!!captured?.returning;
   if(departingPage){
    document.body.append(departingPage);
@@ -72,8 +72,10 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
    disposers.push(animateOwned(page,'library-return-in',[{opacity:0},{opacity:1}],320,'cubic-bezier(.4,0,.2,1)'));
    const toolbar=page.closest('.content-column')?.querySelector<HTMLElement>(':scope > .library-toolbar:not(.library-toolbar-exit)');
    if(toolbar)disposers.push(animateOwned(toolbar,'library-toolbar-return',[{opacity:0,clipPath:'inset(0 0 100% 0 round 1rem)'},{opacity:1,clipPath:'inset(0 0 0% 0 round 1rem)'}],320,'cubic-bezier(.4,0,.2,1)'));
-   const stop=()=>cancel();window.addEventListener('resize',stop);root.current?.addEventListener('scroll',stop,{once:true,passive:true});
-   const scroller=root.current;disposers.push(()=>{window.removeEventListener('resize',stop);scroller?.removeEventListener('scroll',stop);});
+   const scroller=root.current;let settled=false,restoredScroll=0;const settle=requestAnimationFrame(()=>{restoredScroll=scroller?.scrollTop??0;settled=true;});
+   const stop=()=>cancel(),scroll=()=>{if(settled&&Math.abs((scroller?.scrollTop??0)-restoredScroll)>1)cancel();};
+   window.addEventListener('resize',stop);scroller?.addEventListener('scroll',scroll,{passive:true});
+   disposers.push(()=>{cancelAnimationFrame(settle);window.removeEventListener('resize',stop);scroller?.removeEventListener('scroll',scroll);});
   }
   const reveal=(node:HTMLElement|null,id='album-detail-reveal',spatial=true)=>{if(node)disposers.push(animateOwned(node,id,[{opacity:0,transform:spatial?`translateX(${returning?-6:6}px)`:'none'},{opacity:1,transform:'none'}],180));};
   if(departingToolbar){
@@ -130,6 +132,6 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
    const immediate=destination();if(immediate)hide(immediate);
    disposers.push(release);frame=requestAnimationFrame(transfer);
   }
-  return()=>{cancel();motion.removeEventListener('change',changed);};
+  return()=>{cancel();motion.removeEventListener('change',changed);window.removeEventListener('musicos-back-gesture-start',gesture);};
  },[root,location,ready]);
 }
