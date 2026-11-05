@@ -7,7 +7,7 @@ import PlayerViewCycle from './PlayerViewCycle';
 import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
 import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
-import {captureBackPage,useBackSwipe} from './useBackSwipe';
+import {captureBackPage,useBackSwipe,type BackArtwork} from './useBackSwipe';
 import Onboarding from './Onboarding';
 import {product} from './product';
 import {dropImportSource} from './importDestination';
@@ -226,23 +226,27 @@ export default function App() {
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
   const [, setArtistInfo] = useState<ArtistInfo | null>(null);
-  const [resolvedThemeCover, setResolvedThemeCover] = useState<string | null>(null);
   useEffect(()=>{if(loading)return;const warm=()=>{void import('./Settings');void import('./CollectionManager');void import('./SuperCommand');void import('./LibraryTools');if(native)void call('library_ready').catch(()=>{});};const id=window.setTimeout(warm,1200);return()=>clearTimeout(id);},[loading]);
   const [themeEpoch, setThemeEpoch] = useState(0);
   useEffect(() => { const clear = () => { clearThemeCache(); setThemeEpoch(n=>n+1); }; window.addEventListener("musicos-artwork-invalidated", clear); return () => window.removeEventListener("musicos-artwork-invalidated", clear); }, []);
-  const [artPalette,setArtPalette]=useState<Palette|null>(null);
+  const [resolvedArtwork,setResolvedArtwork]=useState<BackArtwork|null>(null);
+  const artPalette=resolvedArtwork?.result?.palette??null;
+  const resolvedThemeCover=resolvedArtwork?.result?.path??null;
   const [systemDark,setSystemDark]=useState(()=>matchMedia('(prefers-color-scheme: dark)').matches);
   useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)');const change=()=>setSystemDark(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   const look=appearance(preferences);
   useEffect(()=>{if(!loading)rememberLaunchAppearance(look);},[loading,look.mode,look.source,look.accent,look.saturation,look.tint]);
   useEffect(()=>{document.documentElement.dataset.themeMode=look.mode==='system'?(systemDark?'dark':'light'):look.mode;},[look.mode,systemDark]);
-  const palette=useMemo(()=>artPalette||look.source!=='artwork'?themePalette(look,artPalette,systemDark):savedLaunchPalette(look,look.mode==='dark'||look.mode==='system'&&systemDark)??themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark]);
+  // Keep the launch fallback stable when no artwork is available. The launch
+  // snapshot written by another page is for the next startup.
+  const launchFallback=useMemo(()=>savedLaunchPalette(look,look.mode==='dark'||look.mode==='system'&&systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,systemDark]);
+  const palette=useMemo(()=>!artPalette&&look.source==='artwork'&&launchFallback?launchFallback:themePalette(look,artPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,artPalette,systemDark,launchFallback]);
   useLayoutEffect(()=>{document.documentElement.dataset.playerLayout=miniMode;return()=>{delete document.documentElement.dataset.playerLayout;};},[miniMode]);
   const launchShown=useRef(false);
   useLayoutEffect(()=>{if(loading||launchShown.current)return;const node=document.querySelector<HTMLElement>('.app-shell:not(.mini-shell)');if(!node)return;launchShown.current=true;let alive=true,cancel:(()=>void)|undefined;const reveal=()=>{if(alive)cancel=animateOwned(node,'shell-launch',[{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],180);};if(native)void call('present_shell',{color:getComputedStyle(document.documentElement).getPropertyValue('--shell-color').trim()}).then(reveal).catch(reveal);else reveal();return()=>{alive=false;cancel?.();};},[loading]);
   useEffect(()=>{if(loading||look.source==='artwork'&&!artPalette)return;const resolved=palette??{background:'#cbf1ff',blob:'#00baff',accent:'#0064df',text:'#111820'};const timer=window.setTimeout(()=>{const snapshot=rememberLaunchPalette(look,resolved,look.mode==='dark'||look.mode==='system'&&systemDark);if(native)void call('save_launch_palette',{snapshot}).catch(()=>{});},180);return()=>clearTimeout(timer);},[loading,palette,systemDark,look.mode,look.source,look.accent,look.tint,look.saturation]);
   const launchThemeSettled=useRef(false);
-  const [themeResolved,setThemeResolved]=useState(false);
+  const themeResolved=resolvedArtwork!==null;
   useLayoutEffect(()=>{document.documentElement.dataset.themePhase="launch";return()=>{delete document.documentElement.dataset.themePhase;delete document.documentElement.dataset.themeMotion;};},[]);
   useEffect(()=>{
     if(launchThemeSettled.current||!themeResolved)return;
@@ -251,6 +255,7 @@ export default function App() {
   },[themeResolved]);
   const appliedTheme=useRef<{appearance:string;resolved:boolean;palette:Palette|null}|null>(null);
   const appearanceKey=JSON.stringify([look,look.mode==='system'?systemDark:null]);
+  const swipeAppearanceKey=look.source==='artwork'?JSON.stringify([appearanceKey,themeEpoch]):'';
   useLayoutEffect(()=>{
     const previous=appliedTheme.current;
     if(previous?.appearance!==appearanceKey||look.source!=='artwork'){
@@ -310,7 +315,7 @@ export default function App() {
   const visualizerOpener=useRef<HTMLElement|null>(null);
   const [expandedOpen,setExpandedOpen]=useState(false),[playerView,setPlayerView]=useState<PlayerView>('playing');
   const expandedPresent=usePanelPresence(expandedOpen);
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,goBack,navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'');
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,goBack,navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'',swipeAppearanceKey);
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
   function openPlayer(view:PlayerView='playing',preview:Track|null=null){setLyricPreview(preview);playerOpener.current=document.querySelector<HTMLElement>(view==='lyrics'?'.now-playing-title-action':view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
   function toggleVisualizer(){if(!visualizerOpen){visualizerOpener.current=document.activeElement as HTMLElement|null;setVisualizerView((preferences.visualizer??defaultVisualizer).lyrics?'lyrics':'playing');}setVisualizerOpen(v=>!v);}
@@ -521,7 +526,7 @@ export default function App() {
       if(loading)return;
       const [paths,tracks]=JSON.parse(themeRequest) as [(string|null)[],number|number[]|undefined];
       const result=look.source==='artwork'?await resolveArtworkTheme(paths,tracks??undefined):null;
-      if(!gone){setResolvedThemeCover(result?.path??null);setArtPalette(result?.palette??null);setThemeResolved(true);}
+      if(!gone)setResolvedArtwork({request:themeRequest,result});
     }
     void resolve();return ()=>{gone=true;};
   }, [loading,look.source,themeRequest,themeEpoch]);
@@ -634,7 +639,8 @@ export default function App() {
         patch: { scroll: scrollRef.current.scrollTop },
       });
   }
-  function goBack(interactive=false) {
+  function goBack(interactive=false,artwork?:BackArtwork) {
+    if(artwork)setResolvedArtwork(artwork);
     if(!interactive&&section==='Library'&&route.view==='album')captureAlbumReturn(scrollRef.current);
     else if(!interactive&&section==='Library'&&route.view==='artist')captureArtistReturn(scrollRef.current);
     window.dispatchEvent(new Event("musicos-navigation-start"));
@@ -647,7 +653,8 @@ export default function App() {
     setSection(next);
   }
   function openRoute(next: Route) {
-    captureBackPage(scrollRef.current,JSON.stringify({...route,scroll:0}));
+    const artwork=resolvedArtwork?.request===themeRequest?resolvedArtwork:undefined;
+    captureBackPage(scrollRef.current,JSON.stringify({...route,scroll:0}),swipeAppearanceKey,artwork);
     window.dispatchEvent(new Event("musicos-navigation-start"));
     if(section==='Library'&&['album','artist'].includes(next.view))captureLibraryToolbar(scrollRef.current);
     captureScroll();

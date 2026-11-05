@@ -38,8 +38,8 @@ for(const mode of ['light','dark'])test(`${mode}: artwork fades after launch and
 test('late palette never replaces the current album and pending lookup retains displayed colors',async({page})=>{
  await coloredArtwork(page);const root=page.locator('html');const red=await root.evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim());
  await page.getByRole('button',{name:'Open Fantasy',exact:true}).click();expect(await root.evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim())).toBe(red);
- await page.locator('.sidebar-back').click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#f3f7f9');
- await page.waitForTimeout(750);await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(243, 247, 249)');expect(await root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#f3f7f9');
+ await page.locator('.sidebar-back').click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#c8ded9');
+ await page.waitForTimeout(750);await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(200, 222, 217)');expect(await root.evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe('#c8ded9');
 });
 test('explicit appearance changes, System mode switches, and Reduced Motion remain immediate',async({page})=>{
  await coloredArtwork(page);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect.poll(()=>transitions(page)).toContain('--surface-color');
@@ -47,4 +47,58 @@ test('explicit appearance changes, System mode switches, and Reduced Motion rema
  await page.emulateMedia({reducedMotion:'no-preference'});await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:'Dark',exact:true}).click();await expect(page.locator('html')).not.toHaveAttribute('data-theme-motion','artwork');expect(await transitions(page)).toEqual([]);
  await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:'System',exact:true}).click();await page.emulateMedia({colorScheme:'light'});await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme-mode','dark');expect(await transitions(page)).toEqual([]);
+});
+
+for(const mode of ['light','dark'])test(`${mode}: a Back swipe blends the shell and preview together through release`,async({page})=>{
+ await coloredArtwork(page,mode);
+ const colors=()=>page.evaluate(()=>{
+  const root=document.documentElement;
+  const canvas=document.createElement('canvas').getContext('2d')!;
+  const pixel=(value:string)=>{
+   canvas.fillStyle=value;
+   canvas.fillRect(0,0,1,1);
+   return [...canvas.getImageData(0,0,1,1).data].join(',');
+  };
+  const style=getComputedStyle(root);
+  const preview=document.querySelector('.back-page-preview');
+  return {
+   shell:pixel(style.getPropertyValue('--shell-color')),
+   surface:pixel(style.getPropertyValue('--page-color')),
+   preview:preview?pixel(getComputedStyle(preview).backgroundColor):null,
+   owned:root.hasAttribute('data-back-swipe-theme'),
+  };
+ });
+ const gesture=(phase:number|null, fraction=0)=>page.evaluate(({phase,fraction})=>{
+  const target=document.querySelector('#library-content')!;
+  if(phase!==null)window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:phase}));
+  if(fraction)target.dispatchEvent(new WheelEvent('wheel',{deltaX:target.clientWidth*fraction,bubbles:true,cancelable:true}));
+ },{phase,fraction});
+ const destination=await colors();
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await expect.poll(()=>transitions(page)).toContain('--shell-color');
+ await finishColors(page);
+ const source=await colors();
+ expect(source.shell).not.toBe(destination.shell);
+
+ await gesture(1,-.25);
+ const blend=await colors();
+ expect(blend.owned).toBe(true);
+ expect(blend.shell).not.toBe(source.shell);
+ expect(blend.shell).not.toBe(destination.shell);
+ expect(blend.preview).toBe(blend.surface);
+ await gesture(null,-.25);
+ await expect.poll(async()=>(await colors()).shell).not.toBe(blend.shell);
+ await gesture(null,.25);
+ await expect.poll(async()=>(await colors()).shell).toBe(blend.shell);
+ await gesture(3);
+ await expect.poll(colors).toEqual(source);
+
+ await gesture(1,-.58);
+ const beforeRelease=await colors();
+ expect(beforeRelease.shell).not.toBe(destination.shell);
+ expect(beforeRelease.preview).toBe(beforeRelease.surface);
+ await gesture(2);
+ await expect(page.locator('#library-content .collection-grid')).toBeVisible();
+ await expect.poll(colors).toEqual(destination);
+ expect(await transitions(page)).toEqual([]);
 });

@@ -174,6 +174,16 @@
 
 .back-swipe-cue{display:none;}
 @property --back-swipe-progress{syntax:'<number>';inherits:true;initial-value:0;}
+/* The shell, outgoing page, and inert preview share the gesture's palette. */
+html[data-back-swipe-theme] {transition:none;}
+html[data-back-swipe-theme=true] {
+  --back-swipe-weight:calc(var(--back-swipe-progress) * 100%);
+  --shell-color:color-mix(in oklab,var(--swipe-from-shell-color),var(--swipe-to-shell-color) var(--back-swipe-weight)) !important;
+  --page-color:color-mix(in oklab,var(--swipe-from-page-color),var(--swipe-to-page-color) var(--back-swipe-weight)) !important;
+  --surface-color:color-mix(in oklab,var(--swipe-from-surface-color),var(--swipe-to-surface-color) var(--back-swipe-weight)) !important;
+  --blob-color:color-mix(in oklab,var(--swipe-from-blob-color),var(--swipe-to-blob-color) var(--back-swipe-weight)) !important;
+  --accent:color-mix(in oklab,var(--swipe-from-accent),var(--swipe-to-accent) var(--back-swipe-weight)) !important;
+}
 .page-frame.back-page-preview{position:absolute;z-index:1;pointer-events:none;contain:strict;}
 .content-column > .back-swipe-bar{position:absolute;z-index:3;margin:0;pointer-events:none;opacity:var(--back-swipe-progress);clip-path:inset(0 0 calc((1 - var(--back-swipe-progress)) * 22%) 0 round 1rem);}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview){z-index:2;background:transparent;border-color:transparent;}
