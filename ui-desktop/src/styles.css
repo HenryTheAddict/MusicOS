@@ -1809,3 +1809,6 @@ button, input { line-height: 1.2; }
   .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .section-control > .menu-trigger:first-child { justify-self: end; width: min(100%, 13.875rem); }
   .app-shell:not(.adaptive-shell):is([data-size="125"], [data-size="150"]) .now-playing { grid-column: 1/-1; width: 100%; min-width: 0; }
 }
+
+/* Route restoration owns library scroll; async portraits/credits must not re-anchor it. */
+.page-scroll{overflow-anchor:none;scroll-behavior:auto;}

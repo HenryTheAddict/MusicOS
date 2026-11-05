@@ -4,14 +4,15 @@ import { Cover, collectionDuration } from "./components";
 import {animateOwned} from './presentationMotion';
 import {openArtwork} from './ArtworkViewer';
 import type { Album, Artist, ArtistInfo, Track } from "./types";
+const expandedArtists=new Map<string,boolean>();
 export default function ArtistOverview({artist,albums,tracks,info,fallback,actions,onProvider}:{artist:Artist;albums:Album[];tracks:Track[];info:ArtistInfo|null;fallback?:Album;actions:ReactNode;onProvider:(url:string)=>void}) {
   const root=useRef<HTMLElement>(null);
   const previousHeight=useRef<number|null>(null);
-  const [expanded,setExpanded]=useState(false);
-  useLayoutEffect(()=>{setExpanded(false);},[artist.id]);
+  const [expanded,setExpanded]=useState(()=>expandedArtists.get(artist.id)??false);
+  useLayoutEffect(()=>{setExpanded(expandedArtists.get(artist.id)??false);},[artist.id]);
   function expand(){
     previousHeight.current=root.current?.getBoundingClientRect().height??null;
-    setExpanded(value=>!value);
+    const next=!expanded;if(expandedArtists.size>=32&&!expandedArtists.has(artist.id))expandedArtists.delete(expandedArtists.keys().next().value!);expandedArtists.set(artist.id,next);setExpanded(next);
   }
   useLayoutEffect(()=>{
     const before=previousHeight.current,node=root.current;previousHeight.current=null;

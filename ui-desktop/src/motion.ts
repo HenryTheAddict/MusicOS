@@ -30,7 +30,7 @@ export function usePageEntrance(root:RefObject<HTMLElement|null>,location:string
  useAlbumReveal(root,location,ready);
  // Detail groups and artwork already animate independently. Fading the whole
  // retained page as well adds a large compositing layer and doubles the fade.
- useContentFade(root,location,ready&&!/^Library:(album|artist):/.test(location),'.page-content',/^Library:(albums|artists)(:|$)/.test(location)?'library-labels':'navigation-content',!transfer);
+ useContentFade(root,location,ready&&!/^Library:(album|artist):/.test(location),'.page-content',/^Library:(albums|artists)(:|$)/.test(location)?'library-labels':'navigation-content',!transfer&&!location.startsWith('Library:'));
 }
 
 export function parallaxOffset(center:number,top:number,height:number) {

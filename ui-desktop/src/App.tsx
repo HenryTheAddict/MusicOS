@@ -138,6 +138,8 @@ const scopeIcons: Record<Scope, string> = {
 };
 
 const profileCache = new Map<string, Promise<ArtistInfo>>();
+const profileInfoCache=new Map<string,ArtistInfo>();
+function rememberArtistInfo(name:string,info:ArtistInfo){if(profileInfoCache.size>=256&&!profileInfoCache.has(name))profileInfoCache.delete(profileInfoCache.keys().next().value!);profileInfoCache.set(name,info);}
 function contrastInk(hex:string){
  const rgb=hex.replace('#','').match(/.{2}/g)?.map(v=>parseInt(v,16)/255);
  if(!rgb||rgb.length!==3)return '#fff';
@@ -223,7 +225,7 @@ export default function App() {
   const sparkRecommendations=useSparkRecommendations(collections,player.track?.id,!loading&&miniMode==='normal'&&(section==='Library'||commandOpen),library,preferences.sparklist_beta);
   const [artistLoading,setArtistLoading]=useState<Set<string>>(()=>new Set());
   const artistCompletions=useRef(new Map<string,number>());
-  const [artistInfo, setArtistInfo] = useState<ArtistInfo | null>(null);
+  const [, setArtistInfo] = useState<ArtistInfo | null>(null);
   const [resolvedThemeCover, setResolvedThemeCover] = useState<string | null>(null);
   useEffect(()=>{if(loading)return;const warm=()=>{void import('./Settings');void import('./CollectionManager');void import('./SuperCommand');void import('./LibraryTools');if(native)void call('library_ready').catch(()=>{});};const id=window.setTimeout(warm,1200);return()=>clearTimeout(id);},[loading]);
   const [themeEpoch, setThemeEpoch] = useState(0);
@@ -355,7 +357,7 @@ export default function App() {
         subscribe("native-open-queue",()=>nativeQueueAction.current()),
         subscribe<string>("native-playback-error",setError),
         subscribe("audio-rescanned",()=>window.dispatchEvent(new Event("musicos-audio-rescanned"))),
-        subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
+        subscribe("artist-profile", (payload:any)=>{artistCompletions.current.set(payload.name,(artistCompletions.current.get(payload.name)??0)+1);setArtistLoading(old=>{const next=new Set(old);next.delete(payload.name);return next;});profileCache.set(payload.name,Promise.resolve(payload.info));rememberArtistInfo(payload.name,payload.info);setLibrary(old=>({...old,artists:old.artists.map(a=>a.name===payload.name?{...a,portrait:payload.info.portrait}:a)}));if(artistNameRef.current===payload.name)setArtistInfo(payload.info);}),
         subscribe<{track_id:number;path:string}>("apple-cover-cached",update=>{setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id&&!t.cover_art_path?{...t,cover_art_path:update.path}:t),albums:old.albums.map(a=>a.track_ids.includes(update.track_id)&&!a.cover?{...a,cover:update.path}:a)}));setPlayer(old=>old.track?.id===update.track_id&&!old.track.cover_art_path?{...old,track:{...old.track,cover_art_path:update.path}}:old);}),
         subscribe<{track_id:number;path:string}>("song-artwork-found",update=>setLibrary(old=>({...old,tracks:old.tracks.map(t=>t.id===update.track_id?{...t,cover_art_path:update.path}:t)}))),
         subscribe<{ track_id: number; path: string }>(
@@ -424,6 +426,7 @@ export default function App() {
 
   const album = library.albums.find((a) => a.id === route.id||a.legacy_ids?.includes(route.id??""));
   const artist = library.artists.find((a) => a.id === route.id||a.legacy_ids?.includes(route.id??""));
+  const viewedArtistInfo=artist?profileInfoCache.get(artist.name)??null:null;
   const artistCoverAlbums = useMemo(() => {
     const covers = new Map<string, Album>();
     const artistsByAlbum = new Map<string, string[]>();
@@ -450,7 +453,7 @@ export default function App() {
     let request=profileCache.get(name);
     if(!request){request=call("artist_info",{name,refresh:false});profileCache.set(name,request);request.catch(()=>profileCache.delete(name));}
     let pending=false;
-    try {const info=await request;pending=info.lookup_status==='loading'&&started===(artistCompletions.current.get(name)??0);if(pending)setArtistLoading(old=>old.has(name)?old:new Set(old).add(name));
+    try {const info=await request;if(started===(artistCompletions.current.get(name)??0))rememberArtistInfo(name,info);pending=info.lookup_status==='loading'&&started===(artistCompletions.current.get(name)??0);if(pending)setArtistLoading(old=>old.has(name)?old:new Set(old).add(name));
     if(info.portrait&&started===(artistCompletions.current.get(name)??0))setLibrary(old=>old.artists.some(a=>a.name===name&&a.portrait!==info.portrait)?({...old,artists:old.artists.map(a=>a.name===name?{...a,portrait:info.portrait}:a)}):old);
     return info;
     }finally{if(!pending)setArtistLoading(old=>{if(!old.has(name))return old;const next=new Set(old);next.delete(name);return next;});}
@@ -503,7 +506,7 @@ export default function App() {
         : route.view
       : "albums",
     route.view === "catalog" ? route.catalog?.cover : album?.cover,
-    artistInfo?.portrait ?? artist?.portrait,
+    viewedArtistInfo?.portrait ?? artist?.portrait,
     firstArtistAlbum?.cover,
     playingCover,
   );
@@ -905,7 +908,7 @@ export default function App() {
     const fallbackAlbum = artistCoverAlbums.get(artist.id);
     content = (
       <article className="artist-detail" data-artist-id={artist.id}>
-        <ArtistOverview key={artist.id} artist={artist} albums={albums} tracks={tracks} info={artistInfo}
+        <ArtistOverview key={artist.id} artist={artist} albums={albums} tracks={tracks} info={viewedArtistInfo}
           fallback={fallbackAlbum} actions={collectionActions(artist.track_ids)}
           onProvider={url=>void call("open_provider",{url}).catch(e=>setError(errorText(e)))} />
         <h2 className="section-title">Albums</h2>
