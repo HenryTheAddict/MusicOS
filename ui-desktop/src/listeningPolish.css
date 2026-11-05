@@ -1,6 +1,7 @@
 /* A cached image connects the grid and detail view without moving layout. */
 .album-cover-transfer{position:fixed;z-index:18;display:block;pointer-events:none;user-select:none;object-fit:cover;transform-origin:0 0;background:transparent;box-shadow:none;will-change:transform;}
 .library-toolbar-exit{position:fixed;z-index:17;margin:0;pointer-events:none;user-select:none;}
+.library-page-exit{position:fixed;z-index:17;overflow:hidden;pointer-events:none;user-select:none;background:transparent;contain:layout paint;}
 .artist-name-part{display:inline-block;}
 
 /* Navigation surfaces belong to the displayed palette, not its brightest accent. */

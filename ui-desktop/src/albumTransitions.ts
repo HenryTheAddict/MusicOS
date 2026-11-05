@@ -6,7 +6,23 @@ type CoverKind='album'|'artist';
 type CoverOrigin={kind:CoverKind;id:string;url:string;rect:DOMRect;returning:boolean;at:number;radius:number;smoothing:number};
 let origin:CoverOrigin|null=null;
 let toolbarExit:HTMLElement|null=null;
+let pageExit:HTMLElement|null=null;
 const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+function captureReturnPage(root:HTMLElement|null){
+ pageExit?.remove();pageExit=null;if(!root||reduced())return;
+ const page=root.querySelector<HTMLElement>('.page-content');if(!page)return;
+ const viewport=root.getBoundingClientRect(),box=page.getBoundingClientRect(),layer=document.createElement('div'),copy=page.cloneNode(true) as HTMLElement;
+ layer.className='library-page-exit';layer.inert=true;layer.setAttribute('aria-hidden','true');
+ Object.assign(layer.style,{left:`${viewport.left}px`,top:`${viewport.top}px`,width:`${viewport.width}px`,height:`${viewport.height}px`,borderRadius:getComputedStyle(root).borderRadius});
+ // Freeze only rendered markup, never a second live page or its requests.
+ const style=getComputedStyle(root);for(let i=0;i<style.length;i++){const key=style[i];if(key.startsWith('--'))layer.style.setProperty(key,style.getPropertyValue(key));}
+ copy.removeAttribute('id');copy.querySelectorAll('[id]').forEach(n=>n.removeAttribute('id'));
+ copy.querySelectorAll('video,audio,dialog,[hidden]').forEach(n=>n.remove());
+ copy.querySelectorAll<HTMLElement>('*').forEach(n=>{n.style.setProperty('animation','none','important');n.style.setProperty('transition','none','important');});
+ copy.querySelectorAll<HTMLElement>('.album-artwork-stage,.artist-portrait-button').forEach(n=>n.style.visibility='hidden');
+ Object.assign(copy.style,{position:'absolute',left:`${box.left-viewport.left}px`,top:`${box.top-viewport.top}px`,width:`${box.width}px`,margin:'0',opacity:'1',transform:'none'});
+ layer.append(copy);pageExit=layer;
+}
 /** Retain only the outgoing bar's pixels; navigation and layout change immediately. */
 export function captureLibraryToolbar(root:HTMLElement|null){
  toolbarExit?.remove();toolbarExit=null;if(reduced())return;
@@ -32,23 +48,33 @@ function snapshot(kind:CoverKind,id:string,surface:HTMLElement|null|undefined,re
 }
 export function coverTransferPending(){return !!origin&&performance.now()-origin.at<750;}
 export function captureAlbumCover(id:string,surface?:HTMLElement){snapshot('album',id,surface,false);}
-export function captureAlbumReturn(root:HTMLElement|null){const album=root?.querySelector<HTMLElement>('.album-detail[data-album-id]');snapshot('album',album?.dataset.albumId??'',album,true);}
+export function captureAlbumReturn(root:HTMLElement|null){const album=root?.querySelector<HTMLElement>('.album-detail[data-album-id]');snapshot('album',album?.dataset.albumId??'',album,true);captureReturnPage(root);}
 
 export function captureArtistCover(id:string,surface?:HTMLElement){snapshot('artist',id,surface,false);}
-export function captureArtistReturn(root:HTMLElement|null){const artist=root?.querySelector<HTMLElement>('.artist-detail[data-artist-id]');snapshot('artist',artist?.dataset.artistId??'',artist,true);}
+export function captureArtistReturn(root:HTMLElement|null){const artist=root?.querySelector<HTMLElement>('.artist-detail[data-artist-id]');snapshot('artist',artist?.dataset.artistId??'',artist,true);captureReturnPage(root);}
 
 /** One artwork owner, measured against the settled layout. Copy never moves its anchor. */
 export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,ready:boolean){
  useLayoutEffect(()=>{
-  const page=root.current?.querySelector<HTMLElement>('.page-content'),departingToolbar=toolbarExit,captured=origin;
-  toolbarExit=null;origin=null;
-  if(!ready||!page||!location.startsWith('Library:')){departingToolbar?.remove();return;}
+  const page=root.current?.querySelector<HTMLElement>('.page-content'),departingToolbar=toolbarExit,departingPage=pageExit,captured=origin;
+  toolbarExit=null;pageExit=null;origin=null;
+  if(!ready||!page||!location.startsWith('Library:')){departingToolbar?.remove();departingPage?.remove();return;}
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
-  if(motion.matches||document.documentElement.dataset.swipeNavigation){departingToolbar?.remove();return;}
+  if(motion.matches||document.documentElement.dataset.swipeNavigation){departingToolbar?.remove();departingPage?.remove();return;}
   const disposers:(()=>void)[]=[];let frame=0,removed=false;
   const cancel=()=>{if(removed)return;removed=true;cancelAnimationFrame(frame);disposers.forEach(dispose=>dispose());};
   const changed=()=>{if(motion.matches)cancel();};motion.addEventListener('change',changed);
   const returning=!!captured?.returning;
+  if(departingPage){
+   document.body.append(departingPage);
+   disposers.push(animateOwned(departingPage,'library-return-out',[{opacity:1},{opacity:0}],320,'cubic-bezier(.4,0,.2,1)'),()=>departingPage.remove());
+   const timer=setTimeout(()=>departingPage.remove(),320);disposers.push(()=>clearTimeout(timer));
+   disposers.push(animateOwned(page,'library-return-in',[{opacity:0},{opacity:1}],320,'cubic-bezier(.4,0,.2,1)'));
+   const toolbar=page.closest('.content-column')?.querySelector<HTMLElement>(':scope > .library-toolbar:not(.library-toolbar-exit)');
+   if(toolbar)disposers.push(animateOwned(toolbar,'library-toolbar-return',[{opacity:0,clipPath:'inset(0 0 100% 0 round 1rem)'},{opacity:1,clipPath:'inset(0 0 0% 0 round 1rem)'}],320,'cubic-bezier(.4,0,.2,1)'));
+   const stop=()=>cancel();window.addEventListener('resize',stop);root.current?.addEventListener('scroll',stop,{once:true,passive:true});
+   const scroller=root.current;disposers.push(()=>{window.removeEventListener('resize',stop);scroller?.removeEventListener('scroll',stop);});
+  }
   const reveal=(node:HTMLElement|null,id='album-detail-reveal',spatial=true)=>{if(node)disposers.push(animateOwned(node,id,[{opacity:0,transform:spatial?`translateX(${returning?-6:6}px)`:'none'},{opacity:1,transform:'none'}],180));};
   if(departingToolbar){
    page.closest('.content-column')?.append(departingToolbar);
@@ -57,9 +83,9 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   }
   const album=page.querySelector<HTMLElement>('.library-view:not([hidden]) .album-detail');
   const artist=page.querySelector<HTMLElement>('.library-view:not([hidden]) .artist-detail');
-  if(album){
+  if(album&&!departingPage){
    ['.album-copy h1','.album-artist-credits','.album-footer','.track-table'].forEach(selector=>reveal(album.querySelector(selector)));
-  }else if(artist){
+  }else if(artist&&!departingPage){
    reveal(artist.querySelector('.artist-hero>h1'),'artist-name-reveal');
    ['.artist-about','.artist-statistics','.artist-playback','.album-strip','.track-table'].forEach(selector=>reveal(artist.querySelector(selector),'artist-detail-reveal',selector!=='.album-strip'));
   }
@@ -86,7 +112,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
     movement?.cancel();lastEnd=end;
     Object.assign(image.style,{left:`${end.left}px`,top:`${end.top}px`,width:`${end.width}px`,height:`${end.height}px`,borderRadius:`${radius}px`});
     const startPath=smoothPath(end.width,end.height,captured.radius/Math.max(1,captured.rect.width)*end.width,captured.smoothing),endPath=smoothPath(end.width,end.height,radius,smoothing);
-    const animation=image.animate([{transform:`translate(${from.left-end.left}px,${from.top-end.top}px) scale(${from.width/end.width},${from.height/end.height})`,clipPath:`path('${startPath}')`},{transform:'translate(0,0) scale(1,1)',clipPath:`path('${endPath}')`}],{duration,easing:'cubic-bezier(.22,.8,.24,1)',fill:'both'});
+    const animation=image.animate([{transform:`translate(${from.left-end.left}px,${from.top-end.top}px) scale(${from.width/end.width},${from.height/end.height})`,clipPath:`path('${startPath}')`},{transform:'translate(0,0) scale(1,1)',clipPath:`path('${endPath}')`}],{duration,easing:'cubic-bezier(.4,0,.2,1)',fill:'both'});
     animation.id=`${captured.kind}-cover-transfer`;movement=animation;
     void animation.finished.then(()=>{if(finished||movement!==animation)return;const p=photo();if(p?.complete&&p.naturalWidth)release();else{target?.addEventListener('load',loaded,true);timeout=setTimeout(release,1200);}}).catch(()=>{});
    };

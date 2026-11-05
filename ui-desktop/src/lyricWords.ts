@@ -28,5 +28,13 @@ export function lyricWordState(line:LyricLine,time:number){
  return (line.words??[]).map((word,i)=>time<word.start_ms?'0':lyricWordActive(line,i,time)?'1':'2').join('');
 }
 export function wordProgress(start:number,end:number|undefined,time:number){
- return end===undefined?1:Math.max(0,Math.min(1,(time-start)/Math.max(1,end-start)));
+ return time<start?0:end===undefined?1:Math.max(0,Math.min(1,(time-start)/Math.max(1,end-start)));
+}
+
+/** A short light envelope around real word timing, independent of font geometry. */
+export function wordGlow(start:number,end:number|undefined,time:number){
+ if(time<start)return 0;
+ const duration=Math.max(1,(end??start+350)-start),attack=Math.min(100,duration*.25),release=Math.min(140,duration*.3);
+ const smooth=(v:number)=>{v=Math.max(0,Math.min(1,v));return v*v*(3-2*v);};
+ return .48*smooth((time-start)/attack)*(1-smooth((time-(start+duration-release))/(release+90)));
 }

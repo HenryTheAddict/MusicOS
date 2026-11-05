@@ -207,3 +207,20 @@
 @media(prefers-reduced-motion:reduce){.collection-hub button{transition:none;}}
 
 .album-cover-actions{display:flex;flex-wrap:wrap;gap:.5rem;margin:.75rem 0 1.25rem}.album-art-review>p{max-width:48rem}.album-art-review h3{margin-bottom:.35rem}
+
+/* A comparison presents changed fields; identical records remain available on request. */
+.metadata-details-heading{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:.375rem;margin:1.25rem 0 .625rem;}
+.metadata-details-heading h3{font-size:1rem;margin:0;}.metadata-details-heading>small{font-size:.75rem;color:var(--secondary-ink);}
+.metadata-no-track-changes{display:flex;align-items:center;gap:.625rem;padding:.75rem;border-radius:.75rem;background:var(--control-surface);font-size:.8125rem;}
+.metadata-no-track-changes>.icon{width:1.25rem;height:1.25rem;flex:none;}.metadata-no-track-changes small{display:block;margin-top:.25rem;color:var(--secondary-ink);font-size:.75rem;}
+.album-track-comparison article>header>strong{flex:1;min-width:7rem;font-size:.875rem;}
+.metadata-match-details{flex:0 1 auto;font-size:.75rem;max-width:100%;}
+.metadata-match-details>summary{display:flex;align-items:center;gap:.375rem;padding:.375rem .5rem;border-radius:.5rem;background:var(--control-surface);cursor:pointer;list-style:none;}
+.metadata-match-details>summary::before,.metadata-match-details>summary::after{display:none!important;}.metadata-match-details>summary::-webkit-details-marker{display:none;}
+.metadata-match-details>summary>.icon{width:.625rem;height:.625rem;transform:rotate(-90deg);transition:transform 140ms;}.metadata-match-details[open]>summary>.icon{transform:rotate(90deg);}
+.metadata-match-details>summary>small{font-size:.6875rem;color:var(--secondary-ink);}
+.metadata-match-details>div{display:grid;gap:.5rem;padding:.625rem 0;}.metadata-source-actions{display:flex;flex-wrap:wrap;gap:.375rem;}
+.metadata-match-details>div>button{justify-self:start;}
+.metadata-inspector .metadata-unchanged{align-items:center;margin:.75rem 0;font-size:.75rem;}
+.metadata-inspector .metadata-unchanged input{width:1rem;height:1rem;margin:0;accent-color:var(--accent);}
+@media(prefers-reduced-motion:reduce){.metadata-match-details>summary>.icon{transition:none;}}

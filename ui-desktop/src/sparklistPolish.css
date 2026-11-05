@@ -1,8 +1,8 @@
 /* Sparklist composition follows the existing Figtree / Sketch / artwork palette. */
-.collection-create.spark-create{width:min(48rem,calc(100vw - 1rem));max-width:calc(100vw - 1rem);max-height:calc(100dvh - 1rem);padding:1.25rem;box-sizing:border-box;text-align:left;container:spark-composer/inline-size;overflow:hidden;}
+.collection-create.spark-create{width:min(40rem,calc(100vw - 1rem));max-width:calc(100vw - 1rem);max-height:calc(100dvh - 1rem);padding:1rem;box-sizing:border-box;text-align:left;container:spark-composer/inline-size;overflow:hidden;}
 .collection-create.spark-create>.icon,.collection-create.spark-create>.nevermind{display:none;}
-.spark-create-content{isolation:isolate;position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;max-height:calc(100dvh - 3.5rem - 2px);color:var(--ink);}
-.spark-create-content::before{content:'';position:absolute;inset:-1.25rem;z-index:-1;pointer-events:none;border-radius:inherit;background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--spark-color) 36%,transparent),transparent 70%),radial-gradient(ellipse at 100% 65%,color-mix(in srgb,var(--spark-color-secondary) 28%,transparent),transparent 75%);}
+.spark-create-content{isolation:isolate;position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;max-height:calc(100dvh - 3rem - 2px);color:var(--ink);}
+.spark-create-content::before{content:'';position:absolute;inset:-1rem;z-index:-1;pointer-events:none;border-radius:inherit;background:radial-gradient(ellipse at 0 0,color-mix(in srgb,var(--spark-color) 36%,transparent),transparent 70%),radial-gradient(ellipse at 100% 65%,color-mix(in srgb,var(--spark-color-secondary) 28%,transparent),transparent 75%);}
 .spark-create-content>:is(header,nav,.spark-build-status,.spark-inline-error){flex:none;}
 .spark-create-content .spark-start-body{min-height:0;overflow:auto;overscroll-behavior:contain;padding:2px;}
 .spark-create-content .spark-preview{display:flex;flex-direction:column;min-height:0;}
@@ -102,3 +102,28 @@
   .spark-create-content .spark-preview-play>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);}
  @container spark-composer (max-width:23rem){.spark-composer-mark{display:none;}.spark-composer-heading h2{font-size:1.2rem;}.spark-create-content .spark-track-review>header{margin-bottom:.25rem;}}
 }
+
+/* A compact composer: the artwork carries the gradient, controls keep solid ink. */
+.collection-create.spark-create:focus{outline:none;}
+.spark-create-content .spark-composer-heading{margin-bottom:.75rem;gap:.625rem;}
+.spark-create-content .spark-composer-heading h2{font-size:1.375rem;letter-spacing:-.025em;}
+.spark-create-content .spark-composer-mark{width:2.25rem;height:2.25rem;border-radius:.75rem;}.spark-create-content .spark-composer-mark>.icon{width:1.4rem;height:1.4rem;}
+.spark-create-content .spark-stages{display:flex;justify-content:flex-start;gap:.5rem;padding:0;background:transparent;margin-bottom:.75rem;}
+.spark-create-content .spark-stages>button{flex:0 1 auto;justify-content:flex-start;gap:.375rem;min-height:1.875rem;padding:.25rem .375rem;font-weight:500;}
+.spark-create-content .spark-stages [aria-current=step]{background:var(--control-surface);}
+.spark-create-content .spark-stages>button>span{width:1rem;height:1rem;background:transparent;font-size:.625rem;}
+.spark-create-content .spark-build-status{padding:0 0 .75rem;font-size:.6875rem;}
+.spark-create-content .spark-start-body{display:grid;grid-template-columns:minmax(0,1fr);gap:1rem;align-items:start;}
+.spark-start-art{display:none;min-width:0;}.spark-start-art>img{display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:1.125rem;}.spark-start-art>strong{display:block;margin-top:.625rem;font-size:1rem;line-height:1.3;overflow-wrap:anywhere;}.spark-start-art>span{display:block;font-size:.75rem;color:var(--secondary-ink);margin-top:.25rem;}
+.spark-start-controls{display:grid;gap:1rem;min-width:0;}
+.spark-create-content .spark-seed-toggle{min-height:3.5rem;padding:.5rem .625rem;border:0;background:var(--control-surface);}
+.spark-create-content .spark-seed-toggle>.cover,.spark-create-content .spark-seed-placeholder{width:2.25rem;height:2.25rem;}
+.spark-create-content .spark-moods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.375rem;}
+.collection-create.spark-create .spark-create-content .spark-moods button{min-height:2.5rem;justify-content:flex-start;border:1px solid var(--control-border);background:linear-gradient(120deg,color-mix(in srgb,var(--mood-color) 28%,var(--surface-color)),var(--control-surface));font-size:.75rem;}
+.collection-create.spark-create .spark-create-content .spark-moods button[aria-pressed=true]{border-color:var(--ink);background:linear-gradient(120deg,color-mix(in srgb,var(--mood-color) 55%,var(--surface-color)),var(--control-surface));color:var(--ink);}
+.spark-create-content .spark-length input{border:0;background:transparent;min-height:1.5rem;padding:0;}
+.spark-create-content .spark-step-footer{margin-top:.875rem;padding-top:.875rem;}
+.spark-create-content .spark-create-primary{flex-direction:row-reverse;}
+.spark-create-content .spark-create-primary .sketch-button:disabled{opacity:.65;}
+@container spark-composer (min-width:31rem){.spark-create-content .spark-start-body{grid-template-columns:minmax(0,.78fr) minmax(0,1.5fr);gap:1.25rem;}.spark-start-art{display:block;}}
+@media(max-height:600px){.spark-create-content .spark-start-body{grid-template-columns:minmax(0,1fr);}.spark-start-art{display:none;}.spark-start-controls{gap:.75rem;}.spark-create-content .spark-stages{margin-bottom:.5rem;}}

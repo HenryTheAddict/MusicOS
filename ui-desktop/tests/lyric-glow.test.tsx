@@ -7,11 +7,12 @@ it('keeps active ink outside the mask, coalesces measurement and releases it wit
  vi.stubGlobal('requestAnimationFrame',(cb:FrameRequestCallback)=>{frames.set(++serial,cb);return serial;});vi.stubGlobal('cancelAnimationFrame',(id:number)=>frames.delete(id));
  vi.stubGlobal('ResizeObserver',class{constructor(cb:()=>void){resize=cb;}observe(){}disconnect(){}});
  vi.stubGlobal('matchMedia',()=>({matches:false,addEventListener(){},removeEventListener(){}}));
- const root=document.createElement('div');root.className='app-shell';root.innerHTML='<section class="lyrics-pane"><div class="lyrics-lines"><button class="lyric-line" data-current="true"><span class="lyric-word" data-word-active="true" data-word-start="1000" data-word-end="2000">Hello</span></button></div></section>';document.body.append(root);
+ const root=document.createElement('div');root.className='app-shell';root.innerHTML='<section class="lyrics-pane"><div class="lyrics-lines"><button class="lyric-line" data-current="true"><span class="lyric-word" data-word-active="true" data-word-start="1000" data-word-end="2000">Hello</span> <span class="lyric-word" data-word-start="2000" data-word-end="2400">world</span></button></div></section>';document.body.append(root);
  const pane={current:root.querySelector<HTMLElement>('.lyrics-pane')!},scroll={current:root.querySelector<HTMLDivElement>('.lyrics-lines')!};
  const {result,rerender,unmount}=renderHook(({active})=>useLyricGlow(pane,scroll,active,'song:word','full',null),{initialProps:{active:true}});
  const layer=root.querySelector<HTMLElement>('.lyric-glow-layer')!;expect(layer.parentElement).toBe(root);expect(layer.getAttribute('aria-hidden')).toBe('true');expect(layer.querySelector('.lyric-line')).toBeNull();expect(layer.querySelector('.lyric-glow-clone')).not.toBeNull();
  act(()=>result.current.tick(1500));expect(Number(layer.querySelector<HTMLElement>('.lyric-word')!.style.getPropertyValue('--glow-strength'))).toBeGreaterThan(.4);expect(frames.size).toBe(0);
+ const copy=layer.querySelector('.lyric-glow-clone');act(()=>result.current.tick(2050));expect(layer.querySelector('.lyric-glow-clone')).toBe(copy);expect(Number(layer.querySelectorAll<HTMLElement>('.lyric-word')[1].style.getPropertyValue('--glow-strength'))).toBeGreaterThan(0);expect(Number(layer.querySelectorAll<HTMLElement>('.lyric-word')[0].style.getPropertyValue('--glow-strength'))).toBeLessThan(.1);
  resize();resize();expect(frames.size).toBe(1);const queued=[...frames.values()];frames.clear();act(()=>queued.forEach(cb=>cb(0)));expect(frames.size).toBe(0);
  resize();expect(frames.size).toBe(1);rerender({active:false});expect(frames.size).toBe(0);expect(root.querySelector('.lyric-glow-layer')).toBeNull();unmount();expect(frames.size).toBe(0);
 });
