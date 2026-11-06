@@ -224,3 +224,85 @@
 .metadata-inspector .metadata-unchanged{align-items:center;margin:.75rem 0;font-size:.75rem;}
 .metadata-inspector .metadata-unchanged input{width:1rem;height:1rem;margin:0;accent-color:var(--accent);}
 @media(prefers-reduced-motion:reduce){.metadata-match-details>summary>.icon{transition:none;}}
+
+/* One browser and one editor, sized against the actual Settings workspace. */
+.release-workspace{padding:0;container-type:inline-size}
+.release-workspace .tag-workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:.5rem 1rem;flex-wrap:wrap;margin-bottom:.875rem}
+.tag-workspace-actions,.tag-filter,.tag-pages,.tag-song-heading>div{display:flex;align-items:center;gap:.375rem;flex-wrap:wrap}
+.tag-workspace-actions button,.tag-check button,.tag-browser-back,.tag-song-heading button{display:inline-flex;align-items:center;gap:.375rem}
+.tag-workspace-actions .icon,.tag-check .icon,.tag-browser-back .icon,.tag-song-heading .icon{width:1rem;height:1rem}
+.tag-layout{display:grid;gap:1rem;min-width:0}
+.tag-layout[data-inspector=true]>.tag-browser{display:none}
+.tag-layout[data-inspector=false]>.tag-inspector:has(.release-editor),.tag-layout[data-inspector=false] .tag-browser-back{display:none}
+.tag-inspector{min-width:0;outline:none}
+.tag-browser-back{margin-bottom:.625rem}
+.tag-browser{min-width:0}
+.tag-check{display:grid;justify-items:start;gap:.5rem;margin-bottom:.75rem}
+.tag-check p,.tag-scan span,.tag-pages span{margin:0;font-size:.75rem;color:var(--secondary-ink)}
+.tag-scan{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;width:100%}
+.tag-scan progress{width:min(100%,9rem);accent-color:var(--accent)}
+.tag-search{display:grid;gap:.25rem;font-size:.8125rem}
+.tag-search input{width:100%;min-width:0}
+.tag-filter{margin:.5rem 0}
+.release-workspace .tag-filter button[aria-pressed=true],.release-workspace .tag-workspace-actions button[aria-pressed=true],.release-workspace .tag-song-heading button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.tag-albums{display:grid;max-height:min(28rem,60vh);overflow:auto;overflow-x:hidden;padding:.1875rem;scroll-padding:.1875rem;gap:.1875rem}
+.release-workspace .tag-albums>button{display:grid;grid-template-columns:2.625rem minmax(0,1fr) .875rem;gap:.625rem;align-items:center;min-height:3.25rem;text-align:left;background:transparent;border:1px solid transparent;padding:.375rem;border-radius:.75rem}
+.release-workspace .tag-albums>button:hover,.release-workspace .tag-albums>button[aria-pressed=true]{background:var(--control-surface)}
+.app-shell .release-workspace .tag-albums>button[aria-pressed=true]{background:var(--control-surface);border-color:var(--control-border);color:var(--ink)}
+.tag-albums>button .cover{width:2.625rem;height:2.625rem;border-radius:.5rem;aspect-ratio:1}
+.tag-albums>button>span{min-width:0}
+.tag-albums>button :is(strong,small){display:block;overflow-wrap:anywhere}
+.tag-albums>button small,.tag-suggestion-mark,.tag-status,.tag-inspector-empty{color:var(--secondary-ink);font-size:.75rem}
+.tag-suggestion-mark{display:block;font-weight:600;margin-top:.125rem}
+.tag-albums>button>.icon{width:.875rem;height:.875rem;transform:scaleX(-1)}
+.tag-pages{justify-content:space-between;margin-top:.5rem}
+.tag-result{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.625rem .75rem;margin-bottom:.75rem;border-radius:.75rem;background:var(--control-surface)}
+.tag-result p{margin:0;font-size:.8125rem}
+.release-editor{min-width:0}
+.release-editor .album-review-heading h2,.tag-song-heading h3{overflow-wrap:anywhere}
+.release-editor .album-review-heading .cover{border-radius:.75rem}
+.release-editor>.library-settings-nav{margin-bottom:.75rem}
+.release-editor .metadata-action-footer{justify-content:flex-end;z-index:2}
+.app-shell .release-editor .metadata-action-footer button.primary{background:var(--accent);color:var(--accent-ink)}
+.tag-cover-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;align-items:start}
+.tag-cover-comparison figure{margin:0;min-width:0}
+.tag-cover-comparison .cover{display:block;width:100%;height:auto;aspect-ratio:1;max-width:11rem;border-radius:.875rem;object-fit:cover}
+.tag-cover-comparison figcaption{padding-top:.25rem;font-size:.75rem;line-height:1.4;color:var(--secondary-ink)}
+.tag-cover-options,.tag-fields{padding:0;border:0;min-width:0;margin:.75rem 0}
+.tag-cover-options label{display:flex;align-items:center;gap:.5rem;padding:.375rem 0;font-size:.8125rem}
+.tag-cover-options label .cover{width:2.5rem;height:2.5rem;border-radius:.5rem;aspect-ratio:1}
+.tag-cover-options small{display:block;color:var(--secondary-ink)}
+.tag-fields legend,.tag-cover-options legend{font-weight:650;font-size:.875rem;margin-bottom:.25rem}
+.tag-field{display:flex;align-items:end;gap:.375rem .5rem;flex-wrap:wrap;padding:.5rem 0;border-bottom:1px solid var(--control-border)}
+.tag-field label{display:grid;flex:1 1 8rem;gap:.25rem;min-width:0;font-size:.8125rem}
+.tag-field input{width:100%;min-width:0}
+.tag-field details{flex-basis:100%}
+.release-workspace .tag-revert{background:transparent}
+.tag-matches,.tag-suggestions,.tag-advanced,.tag-field details,.tag-change details{font-size:.8125rem}
+.tag-matches,.tag-suggestions,.tag-advanced{border-top:1px solid var(--control-border);padding:.625rem 0;margin-top:.625rem}
+.tag-matches summary,.tag-suggestions summary,.tag-advanced summary{font-weight:600;cursor:pointer}
+.tag-matches article{display:grid;gap:.375rem;margin-top:.625rem;padding-bottom:.625rem;border-bottom:1px solid var(--control-border)}
+.tag-matches small,.tag-change small{color:var(--secondary-ink)}
+.tag-change{padding:.5rem 0;border-bottom:1px solid var(--control-border)}
+.tag-change label{display:flex;gap:.375rem;align-items:baseline;flex-wrap:wrap;font-size:.8125rem}
+.tag-change label>span{display:flex;align-items:baseline;flex-wrap:wrap;gap:.375rem;overflow-wrap:anywhere;min-width:0}
+.tag-change label>strong{min-width:5.25rem}
+.tag-change input{accent-color:var(--accent)}
+.tag-change small,.tag-change details{display:block;margin-top:.25rem}
+.tag-change ul,.tag-review ul,.tag-field ul{margin:.375rem 0;padding-inline-start:1.25rem;overflow-wrap:anywhere}
+.tag-field li span+span{margin-inline-start:.5rem;color:var(--secondary-ink)}
+.tag-suggestions>button{margin-top:.625rem}
+.tag-review h3,.tag-song-heading h3,.tag-aux h2{margin:.5rem 0;font-size:1.125rem}
+.tag-song-heading{margin:.625rem 0}
+.tag-song-heading button{max-width:100%}
+.tag-songs{display:grid;gap:.25rem}
+.release-workspace .tag-songs>button{display:grid;gap:.125rem;justify-items:start;text-align:left;overflow-wrap:anywhere;background:var(--control-surface);padding:.5rem .625rem}
+.tag-songs>button :is(small,span){color:var(--secondary-ink)}
+.tag-discard{max-width:min(26rem,calc(100vw - 1rem))}
+.tag-discard>div{display:flex;justify-content:flex-end;gap:.5rem;flex-wrap:wrap}
+.tag-aux{padding-top:.25rem}
+@container (min-width:48rem){
+  .tag-layout{grid-template-columns:minmax(14rem, .8fr) minmax(0, 1.4fr)}
+  .tag-layout[data-inspector=true]>.tag-browser{display:block}
+  .tag-browser-back{display:none!important}
+}

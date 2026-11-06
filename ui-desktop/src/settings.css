@@ -193,7 +193,7 @@
 @media(prefers-reduced-motion:reduce){.settings button{transition:none;}}
 .settings .library-organize-row{background:transparent;border-radius:0;}
 .settings .settings-group-row button>.icon{width:1rem;height:1rem;flex:none;}
-.settings .library-tools>.page-heading,.settings .metadata-workspace>header{display:none;}
+.settings .library-tools>.page-heading{display:none;}
 .folder-toolbar-count{display:none;}
 .settings .folder-toolbar-count{display:block;align-self:center;margin-left:auto;color:var(--secondary-ink);font-size:.75rem;}
 .settings .depth-model-details{margin:.75rem 0 0;font-size:.75rem;color:var(--secondary-ink);}
@@ -228,7 +228,7 @@
  .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading{margin-bottom:.625rem;}
  .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading>h1{display:none;}
  .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) .lyric-settings-back{display:inline-flex;align-items:center;gap:.375rem;min-height:2.5rem;padding:.5rem .75rem;border-radius:.75rem;background:var(--control-surface);border:1px solid var(--control-border);font-size:.8125rem;}
- .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) :is(.settings-tabs,.settings-category-heading,.library-settings-nav){display:none;}
+ .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics]) :is(.settings-tabs,.settings-category-heading){display:none;}
 }
 /* The lyric workspace owns its context; avoid a second topic header above it. */
 .settings[data-library-view=review]:has(.settings-panel>div:not([hidden]) .metadata-workspace[data-section=lyrics])>.page-heading{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.75rem;}

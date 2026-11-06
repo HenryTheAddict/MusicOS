@@ -6,7 +6,7 @@ import {nextPlayerView} from './PlayerViewCycle';
 import PlayerViewCycle from './PlayerViewCycle';
 import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
-import {clearLyricEditorRequest,requestLyricEditor} from './lyrics';
+import type {MetadataEntry} from './MetadataWorkspace';
 import {captureBackPage,useBackSwipe,type BackArtwork} from './useBackSwipe';
 import Onboarding from './Onboarding';
 import {product} from './product';
@@ -149,9 +149,26 @@ function contrastInk(hex:string){
 export default function App() {
   usePlayfulControls();
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
-  const [metadataIds,setMetadataIds]=useState<number[]>([]);
-  function openManagement(view:"sources"|"review"|"playlists"|"sparklists",ids:number[]=[],lyrics=false){if(!lyrics)clearLyricEditorRequest();captureScroll();setSettingsLibraryView(view);setMetadataIds(ids);sessionStorage.setItem("musicos-settings-tab","Library");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Library"}));setSection("Settings");}
-  useEffect(()=>{const edit=(event:Event)=>{const id=(event as CustomEvent<number>).detail;setExpandedOpen(false);setQueueOpen(false);requestLyricEditor(id);if(miniMode!=='normal')void changeMini('normal');openManagement('review',[id],true);};window.addEventListener('musicos-open-lyric-editor',edit);return()=>window.removeEventListener('musicos-open-lyric-editor',edit);});
+  const [metadataEntry,setMetadataEntry]=useState<MetadataEntry>();
+  function openMetadata(entry:MetadataEntry) {
+    captureScroll();
+    setSettingsLibraryView('review');
+    setMetadataEntry(entry);
+    sessionStorage.setItem('musicos-settings-tab','Library');
+    window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Library'}));
+    setSection('Settings');
+  }
+  useEffect(()=>{
+    const edit=(event:Event)=>{
+      const trackId=(event as CustomEvent<number>).detail;
+      setExpandedOpen(false);
+      setQueueOpen(false);
+      if(miniMode!=='normal')void changeMini('normal');
+      openMetadata({mode:'lyrics',trackId});
+    };
+    window.addEventListener('musicos-open-lyric-editor',edit);
+    return()=>window.removeEventListener('musicos-open-lyric-editor',edit);
+  });
   const [collections,setCollections]=useState<SavedCollection[]>([]);
   const [rowSelection,setRowSelection]=useState<Set<number>>(new Set());
   const rowAnchor=useRef(0);
@@ -749,13 +766,14 @@ export default function App() {
    {label:'Visualizer',icon:'Visualizer',onSelect:()=>toggleVisualizer()},
     {label:'Now playing',icon:'Song',disabled:!player.track,onSelect:()=>openPlayer('playing')},
     {label:'Lyrics',icon:'Lyrics',onSelect:()=>openPlayer('lyrics',track.id===player.track?.id?null:track)},
+    {label:'Edit lyrics',icon:'Lyrics',onSelect:()=>openMetadata({mode:'lyrics',trackId:track.id})},
    {label:'Show album',icon:'Album',onSelect:()=>albumFor(track)},
    {label:native?'Show in Finder':'Show in file manager',icon:native?'Open In Finder':'Open In Folder',disabled:!track.available,onSelect:()=>void call('reveal_track',{trackId:track.id}).catch(e=>setError(errorText(e)))},
    {label:'Show artist',icon:'Artist',onSelect:()=>artistFor(track)},
   ];}
   function actionsForAlbum(a:Album){return [...playbackItems(a.track_ids),...[
         {label:"Add to playlist…",icon:"Playlist",onSelect:()=>setPlaylistTrack({...library.tracks.find(t=>t.id===a.track_ids[0])!,selectionIds:a.track_ids})},
-        {label:"Edit metadata",icon:"Metadata",onSelect:()=>openManagement("review",a.track_ids)},
+        {label:"Edit metadata",icon:"Metadata",onSelect:()=>openMetadata({mode:'album',albumId:a.id})},
         { label: "Play", icon: "play", onSelect: () => playIds(a.track_ids) },
         {
           label: "Shuffle",
@@ -817,7 +835,7 @@ export default function App() {
       onToggle={()=>void run({type:"toggle"})}
       onArtist={artistFor}
       onAlbum={albumFor}
-      onEdit={(track,ids)=>openManagement("review",ids??[track.id])}
+      onEdit={(track,ids)=>openMetadata(ids&&ids.length>1?{mode:'bulk',ids}:{mode:'song',trackId:ids?.[0]??track.id})}
       onFavorite={track=>void favorite(track)}
       playlistActions={actionsForTrack}
     />
@@ -834,7 +852,7 @@ export default function App() {
       onSelect={selected}
     />
   );
-  const collectionActions = (ids: number[], artistAction?: () => void) => (
+  const collectionActions = (ids: number[], artistAction?: () => void, editAction?: () => void) => (
     <div className="collection-actions">
       <button
         className="play-button"
@@ -871,6 +889,7 @@ export default function App() {
           ...(artistAction
             ? [{ label: "View Artist", icon: "Artist", onSelect: artistAction }]
             : []),
+          ...(editAction ? [{label:"Edit metadata",icon:"Metadata",onSelect:editAction}] : []),
         ]}
       />
     </div>
@@ -902,7 +921,7 @@ export default function App() {
             {collectionActions(album.track_ids, () => {
               const a = library.artists.find((a) => a.id === album.artist_id);
               if (a) openArtist(a);
-            })}</div></div>
+            }, () => openMetadata({mode:"album",albumId:album.id}))}</div></div>
           </div>
         </header>
         {rows(tracks)}
@@ -946,6 +965,8 @@ export default function App() {
         view={route.view}
         library={library}
         busy={task.running}
+        task={task}
+        playing={player.is_playing}
         onAdd={(copy) => void chooseFolder(copy)}
         onTask={startTask}
         onRefresh={refresh}
@@ -1091,7 +1112,7 @@ export default function App() {
     {label:'Show artist',icon:'Artist',onSelect:()=>void showPlaying('artist')},
     {label:'Show album',icon:'Album',onSelect:()=>void showPlaying('album')},
     {label:'Show in Finder',icon:'Open In Finder',disabled:!player.track.available,onSelect:()=>void call('reveal_track',{trackId:player.track!.id}).catch(e=>setError(errorText(e)))},
-    {label:'Edit song details',icon:'Song',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setExpandedOpen(false);openManagement('review',[player.track!.id]);})();}},
+    {label:'Edit song details',icon:'Song',onSelect:()=>{void (async()=>{if(miniMode!=='normal')await changeMini('normal');setExpandedOpen(false);openMetadata({mode:'song',trackId:player.track!.id});})();}},
   ] : [];
 
   const displayScope = (
@@ -1321,9 +1342,9 @@ export default function App() {
                   palette={palette}
                   audioContent={<AudioAnalysis library={library}/>}
                   libraryView={settingsLibraryView}
-                  onLibraryView={view=>{setSettingsLibraryView(view);setMetadataIds([]);}}
+                  onLibraryView={setSettingsLibraryView}
                   onManageCollections={()=>{setSection("Library");goScope("playlists");}}
-                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} initialIds={metadataIds} library={library} busy={task.running} onAdd={copy=>void chooseFolder(copy)} onTask={startTask} onRefresh={refresh} onError={setError}/>}
+                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={startTask} onRefresh={refresh} onError={setError}/>}
 
                 />
               </Suspense></KeepView><KeepView className="search-page-view" active={section==='Library'&&route.view==='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading search"/>}><SuperCommand presentation="page" focusRequest={searchFocus} open recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>chooseDestination(previousDestination.current)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={value=>{if(value==='Settings'||value==='Devices')chooseSection(value);else goScope(value.toLowerCase() as Route['view']);}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense></KeepView><KeepView className="library-view" active={section==='Library'&&route.view!=='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
@@ -1438,7 +1459,7 @@ export default function App() {
       <QuickAudio theme={playingStyle} player={player} preferences={preferences} onChange={changePreferences} onVolume={volume=>void run({type:"volume",volume})} error={saveError}/>
       <ArtworkViewer depth={!!preferences.artwork_depth}/>
       {queuePresent&&!expandedPresent&&<AudioPanel view={queueView} theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
-      {expandedPresent&&<ExpandedPlayer background={preferences.player_background??'flowing'} previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen&&!visualizerOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
+      {expandedPresent&&<ExpandedPlayer background={preferences.player_background??'flowing'} previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);openMetadata({mode:'lyrics',trackId:id});}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen&&!visualizerOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
@@ -1460,6 +1481,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div>}</KeepView></ViewActivity>{visualizerOpen&&<VisualizerPlayer preferences={preferences} onPreferences={changePreferences} open view={visualizerView} onView={setVisualizerView} onClose={()=>setVisualizerOpen(false)} returnFocus={visualizerOpener.current} layout={shell.layout} onWindowError={setError} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={null} onPreviewPlay={async()=>{}} onEditLyrics={id=>{setVisualizerOpen(false);requestLyricEditor(id);openManagement('review',[id],true);}}/>}{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
+    </div>}</KeepView></ViewActivity>{visualizerOpen&&<VisualizerPlayer preferences={preferences} onPreferences={changePreferences} open view={visualizerView} onView={setVisualizerView} onClose={()=>setVisualizerOpen(false)} returnFocus={visualizerOpener.current} layout={shell.layout} onWindowError={setError} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={null} onPreviewPlay={async()=>{}} onEditLyrics={id=>{setVisualizerOpen(false);openMetadata({mode:'lyrics',trackId:id});}}/>}{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
   );
 }

@@ -1173,7 +1173,58 @@ async fn lyrics(app:tauri::AppHandle,request:crate::lyrics::Request)->ApiResult<
 #[tauri::command]
 async fn metadata_files(app:tauri::AppHandle,action:String,ids:Option<Vec<i64>>,id:Option<String>,write_files:Option<bool>)->ApiResult<Value>{blocking(move||{let config=app.state::<AppState>().config();match action.as_str(){"inspect"=>{let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let ids=ids.context("Choose songs")?;let values=ids.iter().map(|id|database.metadata_values(*id)).collect::<Result<Vec<_>>>()?;let files=if write_files.unwrap_or(false){crate::file_tags::preflight(&config.db_path,&ids)?}else{Value::Null};Ok(json!({"values":values,"files":files}))},"status"=>crate::file_tags::status(&config.db_path),"undo_lyrics"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before restoring music files");crate::file_tags::undo_plain_lyrics(&config.db_path,&id.context("Choose a file change")?)?;crate::file_tags::status(&config.db_path)},"recover"=>{let state=app.state::<AppState>();let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before retrying file recovery");crate::file_tags::recover(&config.db_path)?;crate::file_organization::recover(&config.db_path)?;crate::source_forget::recover(&config.db_path)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));crate::file_tags::status(&config.db_path)},"remove"=>{crate::file_tags::remove_backup(&config.db_path,&id.context("Choose a backup")?)?;crate::file_tags::status(&config.db_path)},_=>anyhow::bail!("Unknown backup action")}}).await}
 #[tauri::command]
-async fn album_metadata(app:tauri::AppHandle,request:crate::album_metadata::Request)->ApiResult<Value>{blocking(move||{let state=app.state::<AppState>();let config=state.config();let cached=if request.action=="list"{state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner()).clone()}else{None};let library=if let Some(value)=cached{value}else{load_library(&app)?};if request.action=="list"{let result=crate::album_metadata::list(&config.db_path,&library,request.search.as_deref().unwrap_or(""))?;for album in result["albums"].as_array().unwrap(){if let Some(path)=album["cover"].as_str(){allow_art(&app,path);}for row in album["rows"].as_array().unwrap(){if let Some(path)=row["candidate"]["artwork_path"].as_str(){allow_art(&app,path);}}}Ok(result)}else{anyhow::ensure!(request.action=="apply","Unknown album review action");let guard=request.write_files.unwrap_or(false).then(||state.playback.lock().unwrap_or_else(|e|e.into_inner()));if let Some(service)=&guard{anyhow::ensure!(!service.snapshot().is_playing,"Pause playback before writing music files");}let result=crate::album_metadata::apply(&config.db_path,&library,request)?;let _=app.emit("library-changed",json!({"reason":"metadata"}));Ok(result)}}).await}
+async fn album_metadata(app: tauri::AppHandle, request: crate::album_metadata::Request) -> ApiResult<Value> {
+    blocking(move || {
+        let state = app.state::<AppState>();
+        let config = state.config();
+        let cached = (request.action != "apply")
+            .then(|| state.library_snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone())
+            .flatten();
+        let library = match cached {
+            Some(library) => library,
+            None => load_library(&app)?,
+        };
+        let allow_comparison = |album: &Value| {
+            if let Some(path) = album["cover"].as_str() {
+                allow_art(&app, path);
+            }
+            if let Some(rows) = album["rows"].as_array() {
+                for row in rows {
+                    if let Some(path) = row["candidate"]["artwork_path"].as_str() {
+                        allow_art(&app, path);
+                    }
+                }
+            }
+        };
+        match request.action.as_str() {
+            "summary" => crate::album_metadata::summary(&config.db_path, &library),
+            "detail" => {
+                let id = request.album_id.as_deref().context("Choose an album")?;
+                let album = crate::album_metadata::detail(&config.db_path, &library, id)?;
+                allow_comparison(&album);
+                Ok(json!({"album": album}))
+            }
+            "list" => {
+                let result = crate::album_metadata::list(&config.db_path, &library, request.search.as_deref().unwrap_or(""))?;
+                for album in result["albums"].as_array().into_iter().flatten() {
+                    allow_comparison(album);
+                }
+                Ok(result)
+            }
+            "apply" => {
+                let guard = request.write_files.unwrap_or(false)
+                    .then(|| state.playback.lock().unwrap_or_else(|e| e.into_inner()));
+                if let Some(service) = &guard {
+                    anyhow::ensure!(!service.snapshot().is_playing, "Pause playback before writing music files");
+                }
+                let result = crate::album_metadata::apply(&config.db_path, &library, request)?;
+                let _ = app.emit("library-changed", json!({"reason":"metadata"}));
+                Ok(result)
+            }
+            _ => anyhow::bail!("Unknown album review action"),
+        }
+    }).await
+}
 #[tauri::command]
 async fn metadata_workspace(app:tauri::AppHandle,request:crate::metadata::WorkspaceRequest)->ApiResult<Value>{
     blocking(move||{let state=app.state::<AppState>();let guard=if request.action=="undo"&&crate::file_tags::restores_files(&state.config().db_path,request.id.context("Choose a change")?)?{let guard=state.playback.lock().unwrap_or_else(|e|e.into_inner());anyhow::ensure!(!guard.snapshot().is_playing,"Pause playback before restoring music files");Some(guard)}else{None};let _guard=guard;let mutating=matches!(request.action.as_str(),"apply"|"undo");let mut result=crate::metadata::workspace(&app.state::<AppState>().config().db_path,request)?;

@@ -42,6 +42,7 @@ test('cover parallax moves artwork while captions remain fixed and reduced motio
 });
 test('metadata status offers bounded recovery without exposing provider errors',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
+ await page.getByRole('button',{name:'More metadata tools'}).click();await page.getByRole('menuitem',{name:'Artist profiles',exact:true}).click();
  const status=page.getByRole('region',{name:'Artist metadata status'});await expect(status).toContainText('8 cached · 0 checking · 2 unavailable');await status.getByRole('button',{name:'Retry available lookups'}).click();await expect(status).toContainText('8 cached · 2 checking · 2 unavailable');await expect(status.getByRole('button',{name:'Waiting before retry'})).toBeDisabled();
 });
 

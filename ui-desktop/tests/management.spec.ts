@@ -9,43 +9,117 @@ test('one manager separates saved collection types, searches and preserves Smart
  await page.getByRole('tab',{name:/Smart playlists/}).click();await page.getByRole('button',{name:'Edit rules',exact:true}).click();await expect(page.getByRole('button',{name:'Rule matching'})).toHaveText('Any rule');await expect(page.getByRole('spinbutton',{name:'Song limit'})).toHaveValue('15');await page.getByRole('textbox',{name:'Name',exact:true}).fill('Renamed rules');await page.getByRole('button',{name:'Save Smart playlist'}).click();
  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-collections')!)[2].name)).toBe('Renamed rules');await page.reload();await page.getByRole('button',{name:'More library views',exact:true}).click();await page.getByRole('menuitem',{name:'Playlists',exact:true}).click();await page.getByRole('tab',{name:/Smart playlists/}).click();await expect(page.locator('.hub-collection-open')).toContainText('Renamed rules');await page.screenshot({path:'out/rebuild-qa/collection-manager.png',animations:'disabled'});await page.getByRole('searchbox',{name:'Find collections'}).fill('missing');await expect(page.getByRole('heading',{name:'No matching collections'})).toBeVisible();
 });
+async function openSuggested(page:import('@playwright/test').Page){
+ await page.getByRole('button',{name:'Has suggestions',exact:true}).click();
+ await page.locator('.tag-albums>button').first().click();
+}
+
 test('album suggestions are reviewed field by field and Undo is available',async({page})=>{
- await page.goto('/?fixture=1');await metadata(page);await expect(page.getByRole('tab',{name:'Review',exact:true})).toHaveAttribute('aria-selected','true');await page.locator('.album-metadata .metadata-album-list button').first().click();
- await expect(page.getByRole('checkbox',{name:'Apply album',exact:true})).not.toBeChecked();await page.getByRole('checkbox',{name:'Apply album',exact:true}).check();await page.getByRole('checkbox',{name:'Show unchanged track fields',exact:true}).check();await expect(page.getByRole('checkbox',{name:/^Apply title for/}).first()).toBeDisabled();await expect(page.getByRole('checkbox',{name:'Apply year',exact:true})).not.toBeChecked();
- await page.getByRole('button',{name:'Review selected details',exact:true}).click();await page.getByRole('button',{name:'Apply reviewed details',exact:true}).click();
- await expect(page.getByRole('status').filter({hasText:'Selected details updated'})).toBeVisible();
- const apply=await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').at(-1).args.request);expect(apply.write_files).toBe(false);expect(apply.rows.every((row:any)=>row.fields.includes('album')&&!row.fields.includes('year')&&!row.fields.includes('title'))).toBe(true);
- await page.getByRole('tab',{name:'History',exact:true}).click();await page.getByRole('button',{name:'Undo',exact:true}).first().click();await expect(page.getByRole('button',{name:'Undone',exact:true}).first()).toBeDisabled();await page.getByRole('tab',{name:'Review',exact:true}).click();await page.locator('.metadata-review-filters>details>summary').click();await page.getByRole('button',{name:'Artist profiles',exact:true}).click();await expect(page.getByRole('button',{name:'Retry available lookups'})).toBeVisible();
+ await page.goto('/?fixture=1');
+ await metadata(page);
+ await openSuggested(page);
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ const field=page.getByRole('checkbox',{name:/^Apply album /}).first();
+ await expect(field).not.toBeChecked();
+ await field.check();
+ await page.getByRole('button',{name:'Review selected suggestions',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Review changes'})).toBeVisible();
+ await page.getByRole('button',{name:'Save in musicOS',exact:true}).click();
+ await expect(page.getByRole('status').filter({hasText:'Saved details'})).toBeVisible();
+ const apply=await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').at(-1).args.request);
+ expect(apply.write_files).toBe(false);
+ expect(apply.rows.every((row:any)=>row.fields.length===1&&row.fields[0]==='album')).toBe(true);
+ await page.getByRole('button',{name:'View history',exact:true}).click();
+ await page.getByRole('button',{name:'Undo',exact:true}).first().click();
+ await expect(page.getByRole('button',{name:'Undone',exact:true}).first()).toBeDisabled();
 });
+
 test('cover-only action leaves checked album details untouched',async({page})=>{
- await page.goto('/?fixture=1');await metadata(page);await page.locator('.metadata-album-list button').first().click();
- await expect(page.getByRole('button',{name:'Review selected details',exact:true})).toBeDisabled();
- await page.getByRole('checkbox',{name:'Apply album',exact:true}).check();await page.getByRole('checkbox',{name:'Apply year',exact:true}).check();
- await page.getByRole('button',{name:'Update cover only',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Only the cover changes'})).toBeVisible();
- await page.screenshot({path:'out/rebuild-qa/cover-only-confirmation.png'});
- await page.getByRole('button',{name:'Confirm cover update',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Song and album details unchanged'})).toBeVisible();
- const result=await page.evaluate(async()=>{const {fixtureCall}=await import('/src/fixtures.ts' as string);const history=await fixtureCall('metadata_workspace',{request:{action:'history'}});return history.history[0];});
- expect(result.changes).toHaveLength(12);for(const change of result.changes){for(const key of ['title','artist','album','year','track_number','disc_number'])expect(change.after[key]).toBe(change.before[key]);}
- const request=await page.evaluate(()=>(window as any).__musicosCalls.findLast((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').args.request);expect(request.rows).toEqual([{track_id:1,fields:['artwork']}]);expect(request.write_files).toBe(false);
+ await page.goto('/?fixture=1');
+ await metadata(page);
+ await openSuggested(page);
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await page.getByRole('checkbox',{name:/^Apply album /}).first().check();
+ await page.getByRole('tab',{name:'Cover',exact:true}).click();
+ await page.getByRole('button',{name:'Update cover only',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Review cover update'})).toBeVisible();
+ await page.getByRole('button',{name:'Save in musicOS',exact:true}).click();
+ await expect(page.getByRole('status').filter({hasText:'Cover updated'})).toBeVisible();
+ const result=await page.evaluate(async()=>{const {fixtureCall}=await import('/src/fixtures.ts' as string);return (await fixtureCall('metadata_workspace',{request:{action:'history'}})).history[0];});
+ expect(result.changes).toHaveLength(12);
+ for(const change of result.changes)for(const key of ['title','artist','album','year','track_number','disc_number'])expect(change.after[key]).toBe(change.before[key]);
+ const request=await page.evaluate(()=>(window as any).__musicosCalls.findLast((c:any)=>c.command==='album_metadata'&&c.args?.request?.action==='apply').args.request);
+ expect(request.rows).toHaveLength(1);
+ expect(request.rows[0].fields).toEqual(['artwork']);
+ expect(request.write_files).toBe(false);
+ await expect(page.getByRole('tab',{name:'Cover',exact:true})).toHaveAttribute('aria-selected','true');
 });
-test('cover confirmation fits narrow and wide windows at every interface scale',async({page})=>{
- test.setTimeout(90000);
- for(const width of [480,1280])for(const scale of [80,100,125,150]){
-  await page.setViewportSize({width,height:480});await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();
-  await metadata(page);await page.locator('.metadata-album-list button').first().click();await page.getByRole('button',{name:'Update cover only',exact:true}).click();
-  await expect(page.getByRole('button',{name:'Confirm cover update',exact:true})).toBeVisible();await expect(page.locator('.metadata-action-footer')).toHaveCount(0);
-  expect(await page.locator('.album-metadata').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
-  if(scale===100)await page.screenshot({path:`out/rebuild-qa/cover-only-${width}.png`});
+
+test('narrow album browser restores search, scroll, and focus; replacing a draft asks first',async({page})=>{
+ await page.setViewportSize({width:480,height:480});
+ await page.goto('/?fixture=1');
+ await metadata(page);
+ const query=page.getByRole('searchbox',{name:'Find albums',exact:true});
+ await query.fill('a');
+ const list=page.locator('.tag-albums');
+ const row=list.locator('button').nth(4);
+ const release=await row.getAttribute('data-release-id');
+ await row.scrollIntoViewIfNeeded();
+ const y=await list.evaluate(node=>node.scrollTop);
+ await row.click();
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await page.getByRole('textbox',{name:'Album',exact:true}).fill('Draft release');
+ await page.getByRole('tab',{name:'Cover',exact:true}).click();
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Draft release');
+ await page.getByRole('button',{name:'Back to albums',exact:true}).click();
+ await expect(query).toHaveValue('a');
+ await expect(list.locator(`[data-release-id="${release}"]`)).toBeFocused();
+ expect(await list.evaluate(node=>node.scrollTop)).toBe(y);
+ await list.locator('button').first().click();
+ const dialog=page.getByRole('dialog',{name:'Discard metadata draft?'});
+ await expect(dialog).toBeVisible();
+ await dialog.getByRole('button',{name:'Keep editing'}).click();
+ await row.click();
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Draft release');
+ await page.getByRole('button',{name:'Back to albums',exact:true}).click();
+ await list.locator('button').first().click();
+ await dialog.getByRole('button',{name:'Discard draft'}).click();
+ await expect(page.getByRole('tab',{name:'Cover',exact:true})).toHaveAttribute('aria-selected','true');
+});
+
+test('cover review fits supported window sizes, scales, and modes',async({page})=>{
+ test.setTimeout(240000);
+ for(const [width,height] of [[480,480],[720,480],[1280,800]])for(const scale of [80,100,125,150])for(const mode of ['light','dark']){
+  await page.setViewportSize({width,height});
+  await page.goto('/?fixture=1');
+  await page.evaluate(({scale,mode})=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale,appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}}));sessionStorage.clear();},{scale,mode});
+  await page.reload();
+  await metadata(page);
+  await openSuggested(page);
+  await page.getByRole('button',{name:'Update cover only',exact:true}).click();
+  const save=page.getByRole('button',{name:'Save in musicOS',exact:true});
+  await expect(save).toBeVisible();
+  await save.scrollIntoViewIfNeeded();
+  await expect(save).toBeInViewport();
+  expect(await page.locator('.release-workspace').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
+  if(scale===100)await page.screenshot({path:`out/rebuild-qa/metadata-review-${width}-${mode}.png`,animations:'disabled'});
  }
 });
-test('management screens fit compact and wide windows, scales and palettes',async({page})=>{
- test.setTimeout(300000);page.setDefaultTimeout(5000);
- for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150])for(const palette of ['blue','light','dark','vivid','adaptive']){
-  await page.setViewportSize(size);await page.goto('/?fixture=1');await page.evaluate(({scale,palette})=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,display_name:'Henry',interface_percent:scale,coverflow_colors:palette==='adaptive'}));sessionStorage.clear();}, {scale,palette});await page.reload();if(palette==='adaptive'){await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await expect(page.locator('.app-shell')).toHaveAttribute('data-adaptive','true');}await page.getByRole('button',{name:'More library views',exact:true}).click();await page.getByRole('menuitem',{name:'Playlists',exact:true}).click();
-  const colors:Record<string,string[]>={blue:['#cbf1ff','#111820','#54b9ff','#0064df','#00baff','#ffffff'],light:['#fffaf5','#161616','#e9dfd5','#765c45','#e9dfd5','#ffffff'],dark:['#202329','#f3f6ff','#303c52','#97baff','#202329','#102532'],vivid:['#ffdfeb','#251124','#ff96ca','#b00070','#ff96ca','#ffffff']};
-  const apply=async()=>{if(palette!=='adaptive')await page.locator('.app-shell').evaluate((el,p)=>{['--surface-color','--ink','--blob-color','--accent','--shell-color','--accent-ink'].forEach((key,i)=>{(el as HTMLElement).style.setProperty(key,p[i]);document.documentElement.style.setProperty(key,p[i]);});(el as HTMLElement).style.setProperty('--page-color',p[0]);el.querySelectorAll<HTMLElement>('.theme-layer').forEach(layer=>{layer.style.backgroundColor=p[0];layer.style.backgroundImage='none';});},colors[palette]);};await apply();
-  await expect(page.locator('.collection-hub')).toBeVisible();expect(await page.locator('.collection-hub').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
-  await metadata(page);await apply();await expect(page.locator('.metadata-workspace')).toBeVisible();await expect(page.locator('.album-metadata .metadata-album-list button').first()).toBeVisible();expect(await page.locator('.metadata-workspace').evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
-  if(scale===100&&['blue','dark','adaptive'].includes(palette))await page.screenshot({path:`out/rebuild-qa/management-${size.width}-${palette}.png`,animations:'disabled'});
- }
+
+test('album and song menus open the matching editor',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+ await page.locator('.album-detail').getByRole('button',{name:'More actions',exact:true}).first().click();
+ await page.getByRole('menuitem',{name:'Edit metadata',exact:true}).click();
+ await expect(page.getByRole('tab',{name:'Details',exact:true})).toHaveAttribute('aria-selected','true');
+ await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Discovery');
+ await page.getByRole('tab',{name:'Songs',exact:true}).click();
+ await page.locator('.tag-songs button').nth(1).click();
+ await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Second Light');
+ await page.getByRole('button',{name:'Lyrics',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Edit lyrics',exact:true})).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((call:any)=>call.command==='lyrics'&&call.args.request.action==='load').at(-1)?.args.request.trackId)).toBeTruthy();
 });

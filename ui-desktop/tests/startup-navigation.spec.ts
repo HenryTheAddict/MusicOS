@@ -10,7 +10,7 @@ test('deferred screens and dialogs open during playback without losing navigatio
  await expect(page.getByRole('tab',{name:'Library',exact:true})).toBeVisible();
  await page.getByRole('tab',{name:'Library',exact:true}).click();
  await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
- await expect(page.getByRole('tab',{name:'Review',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'All albums',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();
  await page.getByRole('menuitem',{name:'Devices',exact:true}).click();
  await expect(page.locator('.devices')).toBeVisible();

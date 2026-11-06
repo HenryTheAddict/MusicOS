@@ -5,7 +5,30 @@ test('right click is pointer anchored, bounded, keyboard dismissible, and offers
  await row.getByRole('button',{name:'More actions',exact:true}).click();await expect(menu).toBeVisible();await page.keyboard.press('Escape');await expect(menu).not.toBeVisible();
 });
 test('ignored metadata survives reload and restores to review',async({page})=>{
- await page.goto('/?fixture=1');const open=async()=>{await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();};await open();await page.locator('.metadata-album-list button').first().click();const first=page.locator('.album-track-comparison article').filter({has:page.getByRole('button',{name:'Ignore suggestion',exact:true})}).first();const title=await first.locator('header strong').textContent();await first.getByRole('button',{name:'Ignore suggestion'}).click();await expect(page.locator('.album-track-comparison')).toHaveCount(0);await page.reload();await open();await page.getByRole('tab',{name:'Ignored',exact:true}).click();await expect(page.locator('.suggestion-actions strong').filter({hasText:title!})).toHaveCount(1);await page.getByRole('button',{name:'Restore suggestion'}).click();await expect(page.getByText('Suggestion restored.',{exact:true})).toBeVisible();await page.getByRole('tab',{name:'Suggestions',exact:true}).click();await page.locator('.metadata-album-list button').first().click();await expect(page.locator('.album-track-comparison article').filter({has:page.getByRole('button',{name:'Ignore suggestion',exact:true})}).locator('header').getByText(title!,{exact:true})).toHaveCount(1);
+ await page.goto('/?fixture=1');
+ const workspace=async()=>{
+  await page.getByRole('button',{name:'Choose section',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+  await page.getByRole('tab',{name:'Library',exact:true}).click();
+  await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
+ };
+ const ignored=async()=>{
+  await page.getByRole('button',{name:'More metadata tools'}).click();
+  await page.getByRole('menuitem',{name:'Ignored suggestions',exact:true}).click();
+ };
+ await workspace();
+ await page.getByRole('button',{name:'Has suggestions',exact:true}).click();
+ await page.locator('.tag-albums button').first().click();
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await page.getByText('Recording and release matches',{exact:true}).click();
+ await page.getByRole('button',{name:'Ignore suggestion',exact:true}).first().click();
+ await expect(page.getByRole('status').filter({hasText:'Suggestion moved'})).toBeVisible();
+ await page.reload();
+ await workspace();
+ await ignored();
+ await expect(page.getByRole('button',{name:'Restore suggestion',exact:true})).toHaveCount(1);
+ await page.getByRole('button',{name:'Restore suggestion',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Restore suggestion',exact:true})).toHaveCount(0);
 });
 test('playlist creation selects songs separately and persists their order',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Create playlist',exact:true}).click();const creation=page.getByRole('dialog',{name:'Create playlist',exact:true});await creation.getByRole('textbox',{name:'Name',exact:true}).fill('Picked songs');await creation.getByRole('button',{name:'Choose songs (optional)'}).click();const picker=page.getByRole('dialog',{name:'Choose playlist songs'});await picker.locator('[data-track-id]').nth(1).click();await picker.locator('[data-track-id]').nth(0).click();const expected=await picker.locator('[data-track-id][aria-pressed=true]').evaluateAll(els=>els.map(el=>Number(el.getAttribute('data-track-id'))));await picker.getByRole('button',{name:'Use 2 songs'}).click();await creation.getByRole('button',{name:'Create playlist',exact:true}).click();await expect(page.getByRole('heading',{name:'Picked songs',exact:true})).toBeVisible();const ids=await page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-collections')!).find((c:any)=>c.name==='Picked songs').track_ids);expect(ids).toEqual(expected.reverse());

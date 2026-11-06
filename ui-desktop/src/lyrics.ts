@@ -52,11 +52,6 @@ export function visibleLyricLine(doc:LyricDocument,index:number){const line=doc.
 export function formatStamp(ms:number){return `${Math.floor(ms/60000)}:${((ms%60000)/1000).toFixed(3).padStart(6,'0')}`;}
 export function parseStamp(value:string){const m=/^(\d+):(\d{1,2}(?:\.\d{1,3})?)$/.exec(value);return m&&Number(m[2])<60?Math.round((Number(m[1])*60+Number(m[2]))*1000):null;}
 
-export let requestedLyricEditor:number|undefined;
-export function requestLyricEditor(id:number){requestedLyricEditor=id;window.dispatchEvent(new CustomEvent('musicos-edit-lyrics',{detail:id}));}
-
-export function clearLyricEditorRequest(){requestedLyricEditor=undefined;}
-
 /** A later cue does not end a voice whose explicit interval is still active. */
 const cueEnds=new WeakMap<LyricDocument,number[]>();
 export function activeLyricIndices(doc:LyricDocument,position:number){let ends=cueEnds.get(doc);if(!ends){ends=[];let next=doc.metadata.duration_ms??Infinity,group=Infinity;for(let i=doc.lines.length-1;i>=0;i--){const line=doc.lines[i];if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}ends[i]=line.end_ms??next;}cueEnds.set(doc,ends);}const ms=position*1000-doc.metadata.offset_ms;return doc.lines.flatMap((line,i)=>visibleLyricLine(doc,i)&&ms>=line.start_ms&&ms<ends![i]?[i]:[]);}

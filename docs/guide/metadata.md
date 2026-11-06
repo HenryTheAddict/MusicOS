@@ -4,19 +4,19 @@
 
 Open **Settings → Library → Metadata & artwork**. Changes default to MusicOS-only overrides. Writing to music files is a separate choice for each application.
 
-## Find → Review → Apply
+## Find an album
 
-Indexing prepares suggestions in the existing background worker. **Find metadata & artwork** explicitly checks again, including matches you previously kept. MusicBrainz and Cover Art Archive suggestions do not automatically change song fields or canonical artwork.
+Use **Find albums** to search by album or artist. **All albums** includes releases without a suggestion. **Has suggestions** shows releases with matches ready to review. **Check library for suggestions** starts a background check. Cancel keeps the suggestions already found.
 
-Search Suggestions by album or artist, then open an album to compare shared fields and its recordings. Album Artist, album and year appear above the track comparison. Only changed metadata fields are preselected. Artwork requires its own selection and an album-wide confirmation showing the affected song count. Current and proposed resolution and source appear beside the images. Editions stay separate. Review source links and the edition carefully: a match score is similarity, not verification that a live, Deluxe, or other release is your edition.
+Open a release and choose **Cover**, **Details**, or **Songs**. Album and song menus take you straight to the relevant editor. On smaller windows, **Back to albums** returns you to the same list position.
 
-Choose **Apply selected changes** or **Keep current**. Kept matches do not return in routine unchanged-file lookups. If the song or suggestion changes while you review, MusicOS refuses the stale application and asks for a refreshed comparison.
+## Review and save
 
-## Edit songs
+- **Cover** compares the current image with a proposed cover. Choose a proposal if several are available. **Update cover only** shows how many songs will get the new cover.
+- **Details** shows the current album values and any suggested changes. Choose the suggestions you want to use, or type your own values. Expand **See affected songs** when values differ across the album.
+- **Songs** opens the tags or lyrics for one song. **More metadata tools → Bulk edit** is available for selections across albums.
 
-Open Edit metadata from an album or song menu to start with that selection. Browse Songs or Albums; filtering retains your selection. Each field offers Leave unchanged or Set value. Album Artist, genre, year, track number, and disc number also offer Clear value. Title edits require exactly one song; titles, contributor names, and album names cannot be cleared. Album Artist changes leave individual contributor credits intact.
-
-Shared values appear beside each field, with Multiple values for mixed selections. Review the summary before applying a bulk edit.
+Review the exact changes, then choose **Save in musicOS**. Use **Advanced · original file tags** in the review to write changes to the files as well. Check the recording and release sources when choosing between editions. If the comparison changes while you're editing, review the updated values before saving.
 
 ## History and Undo
 

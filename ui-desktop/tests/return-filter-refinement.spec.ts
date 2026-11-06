@@ -25,11 +25,23 @@ for(const mode of ['words','rtlwords'])test(`revision ${mode} keeps its light la
  await tick(mode==='words'?.7:1.95);await expect(layer).toHaveAttribute('data-continuity','retained');await tick(.1);await expect(layer).toHaveAttribute('data-continuity','retained');
  await page.keyboard.press('Escape');await expect(player).not.toBeVisible();await expect(page.locator('.lyric-glow-layer')).toHaveCount(0);expect(await page.evaluate(()=>document.getAnimations().filter(a=>a.playState==='running'&&a.id.startsWith('lyric')).length)).toBe(0);
 });
-test('revision metadata hides identical song cards and keeps match sources grouped',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();await page.locator('.metadata-album-list button').first().click();await expect(page.getByText('No song-detail changes',{exact:true})).toBeVisible();await expect(page.locator('.album-track-comparison article')).toHaveCount(0);
- await page.getByRole('checkbox',{name:'Show unchanged track fields',exact:true}).check();await expect(page.locator('.album-track-comparison article')).not.toHaveCount(0);const details=page.locator('.metadata-match-details').first();await details.locator('summary').click();await expect(details.getByRole('button',{name:'Ignore suggestion',exact:true})).toBeVisible();expect(await details.evaluate(n=>n.scrollWidth-n.clientWidth)).toBeLessThanOrEqual(1);expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='album_metadata'&&c.args.request.action==='apply').length)).toBe(0);
- await page.screenshot({path:'out/navigation-setup-2026-11-04/revised-metadata.png',animations:'disabled'});
+test('metadata shows changed fields and groups recording sources',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Choose section',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+ await page.getByRole('tab',{name:'Library',exact:true}).click();
+ await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
+ await page.getByRole('button',{name:'Has suggestions',exact:true}).click();
+ await page.locator('.tag-albums>button').first().click();
+ await page.getByRole('tab',{name:'Details',exact:true}).click();
+ await expect(page.getByRole('checkbox',{name:/Apply album/}).first()).not.toBeChecked();
+ await expect(page.getByRole('checkbox',{name:/Apply title/})).toHaveCount(0);
+ await page.getByText('Recording and release matches',{exact:true}).click();
+ const details=page.locator('.tag-matches');
+ await expect(details.getByRole('button',{name:/Recording source/}).first()).toBeVisible();
+ await expect(details.getByRole('button',{name:/Release source/}).first()).toBeVisible();
 });
+
 test('revision restored scroll events do not cancel the Back cover and fade',async({page})=>{
  await page.goto('/?fixture=1&largeAlbums=1');await page.getByRole('button',{name:'Albums',exact:true}).click();const scroller=page.locator('.page-scroll');await scroller.evaluate(n=>n.scrollTop=1800);await page.waitForTimeout(100);
  await scroller.evaluate(root=>{const b=root.getBoundingClientRect();const card=[...root.querySelectorAll<HTMLElement>('.collection-card')].find(n=>{const r=n.getBoundingClientRect();return r.top>b.top+30&&r.bottom<b.bottom-20;});if(!card)throw Error('No visible card');card.dataset.scrollOrigin='true';});await page.locator('[data-scroll-origin=true]').click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:2000});await page.locator('.sidebar-back').click();

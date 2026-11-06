@@ -698,12 +698,12 @@ test("management controls are intrinsic and batch edits change only chosen metad
  await start(page);
  await settings(page);await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Library',exact:true})).toHaveAttribute('aria-selected','true');
- await page.getByRole('tab',{name:'Edit songs',exact:true}).click();
+ await page.getByRole('button',{name:'More metadata tools'}).click();await page.getByRole('menuitem',{name:'Bulk edit',exact:true}).click();
  await page.getByRole('textbox',{name:'Find songs to edit',exact:true}).fill('Plastic Beach');
  await page.getByRole('button',{name:'Select matching songs',exact:true}).click();
  await expect(page.getByText('12 selected',{exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Review changes to 12 songs',exact:true})).toBeDisabled();
- await page.getByRole('combobox',{name:'Artist change',exact:true}).selectOption('set');
+ await page.getByRole('button',{name:'Artist change',exact:true}).click();await page.getByRole('menuitemradio',{name:'Set value',exact:true}).click();
  await page.getByRole('textbox',{name:'New artist',exact:true}).fill('Edited artist');
  await page.getByRole('button',{name:'Review changes to 12 songs',exact:true}).click();
  await page.getByRole('button',{name:'Apply changes to 12 songs',exact:true}).click();
