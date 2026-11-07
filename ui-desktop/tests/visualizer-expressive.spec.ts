@@ -37,7 +37,8 @@ test('welcome setup keeps footer and identity fields usable in a square window',
 test('a real word end clears its highlight and glow during a vocal gap',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed&lyricsCase=wordgap');await page.getByRole('button',{name:'Open visualizer'}).click();await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');await page.mouse.move(300,120);
  const player=page.locator('.expanded-player');await expect(player.locator('.lyrics-lines .lyric-word')).not.toHaveCount(0);await player.getByRole('button',{name:'Play',exact:true}).click();
- await page.waitForTimeout(260);await expect(player.locator('.lyrics-lines .lyric-word[data-word-active=true]')).toHaveCount(0);await expect(player.locator('.lyric-glow-clone')).toHaveCount(0);
+ await page.waitForTimeout(260);await expect(player.locator('.lyrics-lines .lyric-word[data-word-active=true]')).toHaveCount(0);
+ await expect.poll(()=>player.locator('.lyric-glow-clone .lyric-word').evaluateAll(words=>words.some(word=>Number(getComputedStyle(word).opacity)>0))).toBe(false);
  await player.getByRole('button',{name:'Pause',exact:true}).click();await page.keyboard.press('Escape');await expect(page.locator('.lyric-glow-layer')).toHaveCount(0);
 });
 
@@ -49,4 +50,15 @@ test('RTL glyphs and detached glow share exact wrapping, then clean up in Reduce
  expect(await line.evaluate(el=>getComputedStyle(el).fontWeight)).toBe('600');expect(await line.evaluate(el=>getComputedStyle(el).webkitTextStrokeWidth)).toBe('0px');
  const viewport=player.locator('.lyrics-lines');await viewport.evaluate(el=>{el.scrollTop+=25;});await page.waitForTimeout(50);const moved=await line.boundingBox(),glow=await clone.boundingBox();expect(Math.abs(moved!.y-glow!.y)).toBeLessThan(.15);
  await page.addStyleTag({content:':root[data-native-visualizer=true] body{background:#101820!important}.app-shell{visibility:hidden}'});await page.screenshot({path:'out/lyric-glow-rtl.png'});await page.emulateMedia({reducedMotion:'reduce'});await expect(clone).toHaveCount(0);await page.keyboard.press('Escape');await expect(page.locator('.lyric-glow-layer')).toHaveCount(0);
+});
+
+
+test('visualizer chrome picks up an artwork color without a gradient behind the lyrics',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer',exact:true}).click();
+ await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');await page.mouse.move(300,120);
+ const player=page.locator('.expanded-player[data-visualizer=true]');
+ await expect(player).toHaveCSS('--visualizer-source','rgb(222, 167, 43)');
+ await expect(player.locator('.expanded-player-dock')).toHaveCSS('background-image','none');
+ await expect(player.locator('.lyrics-pane[data-variant=visualizer]')).toHaveCSS('background-image','none');
 });
