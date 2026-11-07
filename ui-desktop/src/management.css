@@ -238,6 +238,7 @@
 .tag-browser-back{margin-bottom:.625rem}
 .tag-browser{min-width:0}
 .tag-check{display:grid;justify-items:start;gap:.5rem;margin-bottom:.75rem}
+.tag-check-result{padding:.625rem .75rem;border-radius:.75rem;background:var(--control-surface)}
 .tag-check p,.tag-scan span,.tag-pages span{margin:0;font-size:.75rem;color:var(--secondary-ink)}
 .tag-scan{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;width:100%}
 .tag-scan progress{width:min(100%,9rem);accent-color:var(--accent)}
@@ -264,9 +265,18 @@
 .release-editor>.library-settings-nav{margin-bottom:.75rem}
 .release-editor .metadata-action-footer{justify-content:flex-end;z-index:2}
 .app-shell .release-editor .metadata-action-footer button.primary{background:var(--accent);color:var(--accent-ink)}
-.tag-cover-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;align-items:start}
-.tag-cover-comparison figure{margin:0;min-width:0}
-.tag-cover-comparison .cover{display:block;width:100%;height:auto;aspect-ratio:1;max-width:11rem;border-radius:.875rem;object-fit:cover}
+.tag-cover-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.625rem;align-items:stretch;max-width:26rem}
+.tag-cover-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;margin-block:.875rem .625rem}
+.tag-cover-heading h3{font-size:1rem;margin:0}
+.tag-cover-heading p,.tag-cover-note,.tag-cover-actions>span{font-size:.75rem;color:var(--secondary-ink);margin:.25rem 0;line-height:1.45}
+.tag-cover-heading button{display:inline-flex;align-items:center;gap:.375rem}
+.tag-cover-heading button .icon{width:.875rem;height:.875rem}
+.tag-cover-comparison figure{margin:0;min-width:0;padding:.5rem;border:1px solid var(--control-border);border-radius:1rem;background:var(--control-surface)}
+.release-editor .tag-cover-actions{justify-content:space-between;flex-wrap:wrap}
+.tag-cover-comparison figcaption>*{display:block}
+.tag-cover-comparison figcaption strong{color:var(--ink)}
+.tag-cover-quality{font-weight:650}
+.tag-cover-comparison .cover{display:block;width:100%;height:auto;aspect-ratio:1;border-radius:.625rem;object-fit:contain;background:var(--surface-color)}
 .tag-cover-comparison figcaption{padding-top:.25rem;font-size:.75rem;line-height:1.4;color:var(--secondary-ink)}
 .tag-cover-options,.tag-fields{padding:0;border:0;min-width:0;margin:.75rem 0}
 .tag-cover-options label{display:flex;align-items:center;gap:.5rem;padding:.375rem 0;font-size:.8125rem}

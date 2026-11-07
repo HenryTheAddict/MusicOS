@@ -150,7 +150,7 @@ export default function App() {
   usePlayfulControls();
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataEntry,setMetadataEntry]=useState<MetadataEntry>();
-  function openMetadata(entry:MetadataEntry) {
+  function openMetadata(entry?:MetadataEntry) {
     captureScroll();
     setSettingsLibraryView('review');
     setMetadataEntry(entry);
@@ -368,7 +368,10 @@ export default function App() {
         subscribe<Partial<Playback>>("playback", (update) =>
           setPlayer((old) => mergePlaybackUpdate(old,update)),
         ),
-        subscribe<Task>("task", setTask),
+        subscribe<Task>("task", task=>{
+          if(task.kind==='enrich'&&!task.running)invalidateDisplay('album_metadata');
+          setTask(task);
+        }),
         subscribe<number[]>("lyrics-sidecars-updated",ids=>{for(const id of ids)window.dispatchEvent(new CustomEvent("musicos-lyrics-changed",{detail:id}));}),
         subscribe<LibraryChanged | null>("library-changed", (change) => {
           if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();
@@ -505,11 +508,9 @@ export default function App() {
     favoritePending.current.set(track.id,work);
   }
   const playingAlbum=library.albums.find(a=>a.track_ids.includes(player.track?.id??-1));
-  const playingCover = playingAlbum ? playingAlbum.cover :
+  const playingCover = playingAlbum?.cover ??
     library.tracks.find(t=>t.id===player.track?.id)?.cover_art_path ??
-    player.track?.cover_art_path ??
-    library.albums.find((a) => a.track_ids.includes(player.track?.id ?? -1))
-      ?.cover;
+    player.track?.cover_art_path;
   const [playingArtPalette,setPlayingArtPalette]=useState<Palette|null>(null);
   const playingThemeRequest=JSON.stringify([playingCover??null,playingAlbum?.track_ids[0]??player.track?.id]);
   useEffect(()=>{
@@ -527,7 +528,7 @@ export default function App() {
         ? "album"
         : route.view
       : "albums",
-    route.view === "catalog" ? route.catalog?.cover : album?.cover,
+    route.view === "catalog" ? route.catalog?.cover : album?.cover ?? (album?.id===playingAlbum?.id ? playingCover : null),
     viewedArtistInfo?.portrait ?? artist?.portrait,
     firstArtistAlbum?.cover,
     playingCover,
@@ -543,7 +544,11 @@ export default function App() {
       if(loading)return;
       const [paths,tracks]=JSON.parse(themeRequest) as [(string|null)[],number|number[]|undefined];
       const result=look.source==='artwork'?await resolveArtworkTheme(paths,tracks??undefined):null;
-      if(!gone)setResolvedArtwork({request:themeRequest,result});
+      if(!gone)setResolvedArtwork(previous=>{
+        // Preserve colors if the same artwork is briefly unavailable during a refresh.
+        if(!result&&look.source==='artwork'&&previous?.request===themeRequest&&previous.result)return previous;
+        return {request:themeRequest,result};
+      });
     }
     void resolve();return ()=>{gone=true;};
   }, [loading,look.source,themeRequest,themeEpoch]);
@@ -727,8 +732,8 @@ export default function App() {
       setError(errorText(e));
     }
   }
-  function startTask(kind: string, root?: string) {
-    void call("library_task", { request: { kind, root } }).catch((e) =>
+  function startTask(kind: string, root?: string, albumId?:string) {
+    void call("library_task", { request: { kind, root, album_id:albumId } }).catch((e) =>
       setError(errorText(e)),
     );
   }
@@ -1344,7 +1349,7 @@ export default function App() {
                   libraryView={settingsLibraryView}
                   onLibraryView={setSettingsLibraryView}
                   onManageCollections={()=>{setSection("Library");goScope("playlists");}}
-                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={startTask} onRefresh={refresh} onError={setError}/>}
+                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={(kind,albumId)=>startTask(kind,undefined,albumId)} onRefresh={refresh} onError={setError}/>}
 
                 />
               </Suspense></KeepView><KeepView className="search-page-view" active={section==='Library'&&route.view==='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading search"/>}><SuperCommand presentation="page" focusRequest={searchFocus} open recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>chooseDestination(previousDestination.current)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={value=>{if(value==='Settings'||value==='Devices')chooseSection(value);else goScope(value.toLowerCase() as Route['view']);}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense></KeepView><KeepView className="library-view" active={section==='Library'&&route.view!=='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
@@ -1357,7 +1362,7 @@ export default function App() {
             </div>
           </main>
           </div>
-          {task.message && (
+          {task.message && (task.kind!=='enrich'||section!=='Settings'||settingsLibraryView!=='review'||settingsKey.current!=='Library') && (
             <div
               className={`task-status ${task.error ? "has-error" : ""}`}
               role="status"
@@ -1370,7 +1375,7 @@ export default function App() {
                       ? "Cancelled"
                       : task.error
                         ? "Could not finish"
-                        : "Finished"}
+                        : task.kind==='enrich' ? 'Suggestion check complete' : "Finished"}
                 </strong>{" "}
                 · {task.error ?? task.message}
               </span>
@@ -1385,6 +1390,7 @@ export default function App() {
                   </button>
                 </>
               )}
+              {!task.running&&task.kind==='enrich'&&!task.error&&<button onClick={()=>openMetadata()}>Open suggestions</button>}
               {!task.running && (
                 <button
                   aria-label="Dismiss task"

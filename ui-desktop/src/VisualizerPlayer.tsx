@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState,useId,type ComponentProps} from 'react';
+import {useEffect,useRef,useState,useId,type ComponentProps,type CSSProperties} from 'react';
 import {listen} from '@tauri-apps/api/event';
 import ExpandedPlayer from './ExpandedPlayer';
 import {call,native,errorText} from './bridge';
@@ -19,7 +19,16 @@ export default function VisualizerPlayer({preferences,onPreferences,...props}:{p
  const latest=useRef({preferences,onPreferences});latest.current={preferences,onPreferences};
  const id=props.player.track?.id,offset=id===undefined?undefined:beatOffsets.get(id);
  const colorFilter=useId();
- const {palette:albumPalette,pending:albumPalettePending}=useVisualizerAlbumPalette(!!prefs.album_colors,id,props.cover);
+ const artwork=useVisualizerAlbumPalette(true,id,props.cover);
+ const albumPalette=prefs.album_colors?artwork.palette:undefined;
+ const albumPalettePending=!!prefs.album_colors&&artwork.pending;
+ const chromeColor=useRef<string|undefined>(undefined);
+ if(!artwork.pending){
+  const chroma=(rgb:number[])=>Math.max(...rgb)-Math.min(...rgb);
+  const dominant=artwork.palette?.reduce((best,swatch)=>chroma(swatch)>chroma(best)?swatch:best);
+  chromeColor.current=dominant&&chroma(dominant)>.08?'#'+dominant.map(channel=>Math.round(channel*255).toString(16).padStart(2,'0')).join(''):undefined;
+ }
+ const theme={...props.theme,'--visualizer-source':chromeColor.current??'#858996'} as CSSProperties;
  const beat={trackId:id,bpm:props.bpm,offset,confidence:offset===undefined?0:0.5};
  const configIdentity=useRef(''),requestId=useRef(0),identity=JSON.stringify([prefs,albumPalette,albumPalettePending,beat,reduced,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
  if(configIdentity.current!==identity){configIdentity.current=identity;requestId.current=++nextRequestId;}
@@ -42,5 +51,5 @@ export default function VisualizerPlayer({preferences,onPreferences,...props}:{p
  useEffect(()=>{const media=matchMedia('(prefers-reduced-motion: reduce)'),update=()=>{setReduced(media.matches);settings.current={...settings.current,reduced:media.matches};if(native&&ready)void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(()=>{});};media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[ready]);
  const view=props.view;
  const stills=import.meta.glob<string>('../../assets/visualizers/thumbnails/*.png',{query:'?url',import:'default',eager:true});
- return <ExpandedPlayer {...props} view={view} onView={next=>{props.onView(next);onPreferences({...preferences,visualizer:{...prefs,lyrics:next==='lyrics'}});}} visualizerMode fullscreenManaged visualizerControls={<><VisualizerPicker value={status?.preset||prefs.preset} onChange={preset=>onPreferences({...preferences,visualizer:{...prefs,preset}})}/><VisualizerSettingsPanel value={prefs} fallback={!!status?.beatFallback} onChange={visualizer=>{onPreferences({...preferences,visualizer});if(visualizer.lyrics!==prefs.lyrics)props.onView(visualizer.lyrics?'lyrics':'playing');}}/></>} visualizerStatus={<>{reduced&&<>{albumPalette&&<svg width="0" height="0" aria-hidden="true"><filter id={colorFilter} colorInterpolationFilters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>{(['R','G','B'] as const).map((channel,index)=>{const Component=(`feFunc${channel}`) as 'feFuncR';return <Component key={channel} type="table" tableValues={[0,...albumPalette.map(color=>color[index]),1].join(' ')}/>;})}</feComponentTransfer></filter></svg>}<img className="visualizer-still" style={albumPalette?{filter:`url(#${colorFilter})`}:undefined} src={stills[`../../assets/visualizers/thumbnails/${status?.preset||prefs.preset}.png`]} alt="" aria-hidden="true"/></>}{error?<div className="visualizer-unavailable" role="alert"><strong>Visualizer unavailable</strong><p>{error}</p><button className="soft-action" onClick={()=>{void call('visualizer',{request:{action:'close'}}).finally(()=>setAttempt(v=>v+1));}}>Retry</button></div>:!ready||status?.phase==='starting'?<div className="visualizer-starting" role="status">Preparing visualizer…</div>:null}</>} onToggleFullscreen={props.onClose}/>;
+ return <ExpandedPlayer {...props} theme={theme} view={view} onView={next=>{props.onView(next);onPreferences({...preferences,visualizer:{...prefs,lyrics:next==='lyrics'}});}} visualizerMode fullscreenManaged visualizerControls={<><VisualizerPicker value={status?.preset||prefs.preset} onChange={preset=>onPreferences({...preferences,visualizer:{...prefs,preset}})}/><VisualizerSettingsPanel value={prefs} fallback={!!status?.beatFallback} onChange={visualizer=>{onPreferences({...preferences,visualizer});if(visualizer.lyrics!==prefs.lyrics)props.onView(visualizer.lyrics?'lyrics':'playing');}}/></>} visualizerStatus={<>{reduced&&<>{albumPalette&&<svg width="0" height="0" aria-hidden="true"><filter id={colorFilter} colorInterpolationFilters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>{(['R','G','B'] as const).map((channel,index)=>{const Component=(`feFunc${channel}`) as 'feFuncR';return <Component key={channel} type="table" tableValues={[0,...albumPalette.map(color=>color[index]),1].join(' ')}/>;})}</feComponentTransfer></filter></svg>}<img className="visualizer-still" style={albumPalette?{filter:`url(#${colorFilter})`}:undefined} src={stills[`../../assets/visualizers/thumbnails/${status?.preset||prefs.preset}.png`]} alt="" aria-hidden="true"/></>}{error?<div className="visualizer-unavailable" role="alert"><strong>Visualizer unavailable</strong><p>{error}</p><button className="soft-action" onClick={()=>{void call('visualizer',{request:{action:'close'}}).finally(()=>setAttempt(v=>v+1));}}>Retry</button></div>:!ready||status?.phase==='starting'?<div className="visualizer-starting" role="status">Preparing visualizer…</div>:null}</>} onToggleFullscreen={props.onClose}/>;
 }

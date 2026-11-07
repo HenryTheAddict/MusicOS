@@ -18,7 +18,7 @@ type Selection = {albumId:string; ids:number[]; trackId?:number};
 type InspectorTarget = {album:Album; trackId?:number; tab:InspectorTab; lyrics?:boolean};
 type Props = {
   library:Library; entry?:MetadataEntry; busy:boolean; task?:Task; playing?:boolean;
-  onTask:(kind:string)=>void; onRefresh:()=>Promise<void>;
+  onTask:(kind:string,albumId?:string)=>void; onRefresh:()=>Promise<void>;
 };
 const pageSize = 50;
 const displayFields = ['title','artist','album_artist','album','genre','year','track_number','disc_number','cover_art_path'];
@@ -196,13 +196,10 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
     </header>
     {message&&<div className="tag-result"><p role="status">{message}</p><button onClick={()=>setPage('history')}>View history</button></div>}
     <KeepView active={page==='albums'}>
-      <div className="tag-layout" data-inspector={showInspector&&!!album}>
-        <aside className="tag-browser" aria-label="Albums">
-          <div className="tag-check">
-            <button disabled={busy||saving||bulkSaving} onClick={()=>onTask('enrich')}><Icon name="sync"/>Check library for suggestions</button>
+      {(scanning||taskResult)&&<div className="tag-check tag-check-result">
             {scanning&&<div className="tag-scan">
               <progress aria-label="Checking for suggestions" value={task.total?task.processed:undefined} max={Math.max(1,task.total)}/>
-              <span role="status">{task.total?`${task.processed} of ${task.total}`:'Checking for suggestions…'}</span>
+              <span role="status">{task.total?`${task.processed} of ${task.total} songs checked`:'Checking for suggestions…'}</span>
               <button disabled={cancelling} onClick={()=>{
                 setCancelling(true);
                 setCancelError('');
@@ -211,6 +208,13 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
               {cancelError&&<p role="alert">{cancelError}</p>}
             </div>}
             {taskResult&&<p role={taskResult.error?'alert':'status'}>{taskResult.cancelled?'Check cancelled. Completed suggestions are available.':taskResult.error??taskResult.message}</p>}
+      </div>}
+      <div className="tag-layout" data-inspector={showInspector&&!!album}>
+        <aside className="tag-browser" aria-label="Albums">
+          <div className="tag-check">
+            <button disabled={busy||saving||bulkSaving} onClick={()=>onTask('enrich')}><Icon name="sync"/>Check library for suggestions</button>
+            {!scanning&&!taskResult&&<p>Compare your library with MusicBrainz and Cover Art Archive. Changes are saved only after review.</p>}
+
           </div>
           <label className="tag-search">Find albums
             <input ref={search} type="search" value={query} onChange={event=>{setQuery(event.target.value);resetList();}} placeholder="Album or artist"/>
@@ -241,6 +245,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
           {album ? <>
             <button className="tag-browser-back" onClick={back} disabled={saving}><Icon name="Back"/>Back to albums</button>
             <KeepView active={showInspector}><AlbumMetadata key={editorKey} album={album} track={track} tab={tab} lyrics={lyrics} lyricsRequest={lyricsRequest} epoch={epoch} playing={playing}
+              onCheck={busy||saving||bulkSaving ? undefined : ()=>onTask('enrich',album.id)}
               onTab={setTab} onSong={id=>select({album,trackId:id||undefined,tab:'songs'})}
               onLyrics={setLyrics} onDirty={setDirty} onSaving={setSaving}
               onSaved={text=>setMessage(text)} onRefresh={onRefresh}/></KeepView>

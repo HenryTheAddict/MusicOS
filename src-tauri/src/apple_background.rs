@@ -196,6 +196,7 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
         s.lyrics_ready = 0;
         s.lyrics_failed = 0;
         s.artwork_ready = 0;
+        s.sidecars = None;
         s.message =
             "Caching matched lyrics and artwork in the background. You can leave this page.".into();
     }
@@ -308,31 +309,22 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             "ready"
         }
         .into();
+        s.sidecars = files.as_ref().map(|files| {
+            let count = |field: &str| files[field].as_u64().unwrap_or(0);
+            super::SidecarResult {
+                written: count("written"), unchanged: count("unchanged"),
+                conflicts: count("conflicts"), failed: count("failed"),
+            }
+        });
         s.message = if let Some(error) = stopped {
-            format!("Caching paused: {error}. Cached results are kept; resume explicitly.")
+            format!("Caching paused: {error}. Cached results are kept.")
+        } else if cancelled {
+            "Caching stopped. Completed downloads are kept.".into()
+        } else if files.is_none() {
+            "Caching complete. LyricsFile sync needs attention.".into()
         } else {
-            format!(
-                "{} lyrics and {} artwork matches cached. {} unavailable lyrics. {}",
-                s.lyrics_ready,
-                s.artwork_ready,
-                s.lyrics_failed,
-                if cancelled {
-                    "Cancelled; progress is retained."
-                } else {
-                    if files.is_some() {
-                        "LyricsFile sync finished; existing edits kept."
-                    } else {
-                        "LyricsFile sync needs attention; cached lyrics remain available."
-                    }
-                }
-            )
+            "Caching complete.".into()
         };
-        if let Some(files) = &files {
-            s.message.push_str(&format!(
-                " {} files saved, {} kept edits, {} file errors.",
-                files["written"], files["conflicts"], files["failed"]
-            ));
-        }
         if s.message.contains("HTTP 401") {
             s.signed_in = false;
             s.sign_in = "unavailable".into();

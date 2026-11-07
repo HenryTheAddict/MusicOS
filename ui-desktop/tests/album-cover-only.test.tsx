@@ -45,17 +45,17 @@ test('new comparison invalidates confirmation and preserves a manual draft for a
   onDirty:()=>{},onSaving:()=>{},onSaved:()=>{},onRefresh:async()=>{}};
  const user=userEvent.setup();
  const view=render(<AlbumMetadata {...props} tab="details" epoch={0}/>);
- const year=await screen.findByRole('textbox',{name:'Year',exact:true});
+ const year=await screen.findByRole('textbox',{name:'Year'});
  await user.clear(year);
  await user.type(year,'2023');
- await user.click(screen.getByRole('button',{name:'Review changes',exact:true}));
+ await user.click(screen.getByRole('button',{name:'Review changes'}));
  expect(screen.getByRole('button',{name:'Save in musicOS'})).toBeVisible();
  current={...comparison,token:'version-2',rows:comparison.rows.map(row=>({...row,current:{...row.current,revision:2,year:2022}}))};
  view.rerender(<AlbumMetadata {...props} tab="details" epoch={1}/>);
  await screen.findByText(/This album changed/);
  expect(screen.queryByRole('button',{name:'Save in musicOS'})).toBeNull();
- expect(screen.getByRole('textbox',{name:'Year',exact:true})).toHaveValue('2023');
- await user.click(screen.getByRole('button',{name:'Review changes',exact:true}));
+ expect(screen.getByRole('textbox',{name:'Year'})).toHaveValue('2023');
+ await user.click(screen.getByRole('button',{name:'Review changes'}));
  expect(screen.getByText('2022',{exact:true})).toBeVisible();
  await user.click(screen.getByRole('button',{name:'Save in musicOS'}));
  await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('metadata_edit',{
@@ -73,10 +73,25 @@ test('mixed album values identify their songs and stay out of unrelated edits',a
  await user.click(screen.getByText('See affected songs',{exact:true}));
  expect(screen.getByText('First artist',{exact:true})).toBeVisible();
  expect(screen.getByText('Second artist',{exact:true})).toBeVisible();
- await user.type(screen.getByRole('textbox',{name:'Genre',exact:true}),'Electronic');
- await user.click(screen.getByRole('button',{name:'Review changes',exact:true}));
+ await user.type(screen.getByRole('textbox',{name:'Genre'}),'Electronic');
+ await user.click(screen.getByRole('button',{name:'Review changes'}));
  await user.click(screen.getByRole('button',{name:'Save in musicOS'}));
  await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('metadata_edit',{
   ids:[1,2],patch:{genre:'Electronic'},revisions:[[1,1],[2,1]],writeFiles:false,
  }));
+});
+
+test('lower-resolution cover remains a deliberate cover-only review',async()=>{
+ const match={...comparison,resolution:[1200,1200],rows:comparison.rows.map(row=>({...row,art_resolution:[600,542]}))};
+ mocks.call.mockResolvedValue({album:match});
+ const user=userEvent.setup();
+ render(<AlbumMetadata album={album} lyrics={false} playing={false} tab="cover" epoch={0}
+  onTab={()=>{}} onSong={()=>{}} onLyrics={()=>{}} onDirty={()=>{}} onSaving={()=>{}} onSaved={()=>{}} onRefresh={async()=>{}}/>);
+ await user.click(await screen.findByRole('radio',{name:/Cover 1/}));
+ expect(screen.getByText('Lower resolution')).toBeVisible();
+ expect(screen.getByText('Keep the current cover for higher resolution.')).toBeVisible();
+ await user.click(screen.getByRole('button',{name:'Review lower-resolution cover'}));
+ expect(screen.getByRole('heading',{name:'Review cover update'})).toBeVisible();
+ expect(screen.getByText(/This updates the artwork for 2 songs/)).toBeVisible();
+ expect(mocks.call.mock.calls.every(([,args])=>args.request.action==='detail')).toBe(true);
 });

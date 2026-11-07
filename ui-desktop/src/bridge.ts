@@ -140,7 +140,7 @@ type Commands = {
   save_preferences: { args: { preferences: Preferences }; result: Preferences };
   playback: { args: { action: PlaybackAction }; result: Playback };
   library_task: {
-    args: { request: { kind: string; paths?: string[]; root?: string } };
+    args: { request: { kind: string; paths?: string[]; root?: string; album_id?: string } };
     result: void;
   };
   cancel_task: { args: undefined; result: void };

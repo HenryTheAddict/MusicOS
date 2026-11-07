@@ -8,7 +8,7 @@ import {call,errorText} from './bridge';
 import MetadataWorkspace,{type MetadataEntry} from './MetadataWorkspace';
 import {Icon} from './components';
 import type {Library,Task} from './types';
-export default function LibraryTools({view,entry,library,busy,task,playing,onAdd,onTask,onRefresh}:{view:'sources'|'review';entry?:MetadataEntry;library:Library;busy:boolean;task?:Task;playing?:boolean;onAdd:(copy:boolean)=>void;onTask:(kind:string)=>void;onRefresh:()=>Promise<void>;onError:(error:string)=>void}){
+export default function LibraryTools({view,entry,library,busy,task,playing,onAdd,onTask,onRefresh}:{view:'sources'|'review';entry?:MetadataEntry;library:Library;busy:boolean;task?:Task;playing?:boolean;onAdd:(copy:boolean)=>void;onTask:(kind:string,albumId?:string)=>void;onRefresh:()=>Promise<void>;onError:(error:string)=>void}){
  const dropTarget=dropImportSource(library);
  const [organizing,setOrganizing]=useState(false);
  const forgetDialog=useRef<HTMLDialogElement>(null),forgetOpener=useRef<HTMLElement|null>(null);

@@ -915,6 +915,7 @@ struct TaskRequest {
     #[serde(default)]
     paths: Vec<PathBuf>,
     root: Option<PathBuf>,
+    album_id: Option<String>,
 }
 fn begin_task(state: &AppState, kind: &str) -> Result<()> {
     anyhow::ensure!(!crate::file_organization::pending(&state.config().db_path)?,"Finish interrupted file organization before rescanning or importing. Open Smartly organize my files and retry recovery.");
@@ -1010,8 +1011,12 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 ));
             }
             if kind == "enrich" {
-                let tracks = repo.snapshot(&LibraryQuery::default())?.tracks;
-                let ids: Vec<_> = tracks.iter().map(|t| t.id).collect();
+                let ids = if let Some(id) = request.album_id.as_deref() {
+                    load_library(&app)?.albums.into_iter().find(|album| album.id == id)
+                        .context("This album is no longer in your library")?.track_ids
+                } else {
+                    repo.snapshot(&LibraryQuery::default())?.tracks.into_iter().map(|track| track.id).collect()
+                };
                 let p = musicos_desktop::local::enrichment::find_metadata_suggestions(
                     &config.db_path,
                     &ids,
@@ -1034,8 +1039,8 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                     },
                 )?;
                 return Ok(format!(
-                    "{} updated; {} need review; {} unmatched; {} failed.",
-                    p.applied, p.review, p.unmatched, p.failed
+                    "Suggestions for {} songs · No confident match for {} · {} lookup errors. No changes applied.",
+                    p.review, p.unmatched, p.failed
                 ));
             }
             if kind == "reference" {
@@ -1105,7 +1110,7 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
         emit_task(
             &app,
             Task {
-                kind,
+                kind: kind.clone(),
                 running: false,
                 message,
                 error,
@@ -1113,7 +1118,10 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 ..Default::default()
             },
         );
-        let _ = app.emit("library-changed",json!({"reason":"metadata"}));
+        // Suggestion checks do not change the loaded library or its artwork.
+        if kind != "enrich" {
+            let _ = app.emit("library-changed",json!({"reason":"metadata"}));
+        }
     });
     Ok(())
 }

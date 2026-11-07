@@ -326,7 +326,7 @@ fn search_candidate(
     // release name alone; title, credits and duration still drive review.
     if relaxed != strict && best.as_ref().is_none_or(|candidate|candidate.confidence<0.9) && !cancel.load(Ordering::Relaxed) {
         let fallback=search_recording_query(db,client,limiter,track,&relaxed,cancel)?;
-        if fallback.as_ref().is_some_and(|candidate| text_similarity(&track.title,&candidate.title)>=0.8 && text_similarity(primary_artist(&track.artist),&candidate.artist)>=0.45)
+        if fallback.as_ref().is_some_and(|candidate| text_similarity(&track.title,&candidate.title)>=0.8 && artist_similarity(primary_artist(&track.artist),&candidate.artist)>=0.45)
             && fallback.as_ref().is_some_and(|candidate|best.as_ref().is_none_or(|previous|candidate.confidence>previous.confidence)) {best=fallback;}
     }
     Ok(best)
@@ -384,12 +384,27 @@ fn search_recording_query(db:&Db,client:&Client,limiter:&mut MusicBrainzLimiter,
 fn release_details(db:&Db,client:&Client,limiter:&mut MusicBrainzLimiter,id:&str,cancel:&AtomicBool)->Result<serde_json::Value>{
     anyhow::ensure!(id.len()==36&&id.bytes().all(|b|b.is_ascii_hexdigit()||b==b'-'),"Invalid release identity");let key=format!("musicbrainz-album-v1:{id}");let body=if let Some(body)=db.cached_provider_response(&key,CACHE_MAX_AGE_SECONDS)?{body}else{limiter.wait(cancel)?;anyhow::ensure!(!cancel.load(Ordering::Relaxed),"Lookup canceled");let body=client.get(format!("https://musicbrainz.org/ws/2/release/{id}")).query(&[("inc","recordings+artist-credits+release-groups"),("fmt","json")]).send()?.error_for_status()?.text()?;anyhow::ensure!(body.len()<8*1024*1024,"Release response is too large");db.cache_provider_response(&key,"musicbrainz",&body)?;body};let value:serde_json::Value=serde_json::from_str(&body)?;anyhow::ensure!(value["id"]==id,"Release identity changed");Ok(value)
 }
+/// MusicBrainz and Apple Music use different names for the same artist.
+pub fn ye_artist_credit(credit: &str) -> bool {
+    ["Ye", "Kanye West", "Kanye"].iter().any(|name| credit.trim().eq_ignore_ascii_case(name))
+}
+
+fn artist_similarity(local: &str, provider: &str) -> f32 {
+    if ye_artist_credit(local) && ye_artist_credit(provider) { 1.0 }
+    else { text_similarity(local, provider) }
+}
+
+fn keep_alias(local: &str, provider: String) -> String {
+    if ye_artist_credit(local) && ye_artist_credit(&provider) { local.to_owned() }
+    else { provider }
+}
+
 fn candidate_from_album(track:&Track,release:&serde_json::Value)->Option<MetadataCandidate>{
     let mut candidates=Vec::new();for medium in release["media"].as_array()?{for entry in medium["tracks"].as_array()?{let recording=&entry["recording"];let title=entry["title"].as_str().or(recording["title"].as_str())?;let credits=entry.get("artist-credit").or(recording.get("artist-credit")).or(release.get("artist-credit"))?;let artist=credits.as_array()?.iter().filter_map(|a|a["name"].as_str()).collect::<Vec<_>>().join(" & ");let duration=entry["length"].as_u64().or(recording["length"].as_u64());let title_score=text_similarity(&track.title,title);let duration_score=duration.map(|ms|(1.-(track.duration as f32-ms as f32/1000.).abs()/8.).clamp(0.,1.)).unwrap_or(0.5);let position=entry["position"].as_i64().unwrap_or(0) as i32;let number_score=if track.track_number>0&&track.track_number==position {1.}else{0.};
-    let score=title_score*0.55+text_similarity(&track.artist,&artist)*0.2+duration_score*0.2+number_score*0.05;
+    let score=title_score*0.55+artist_similarity(&track.artist,&artist)*0.2+duration_score*0.2+number_score*0.05;
     // Number alone never identifies a recording, particularly incomplete editions.
     if title_score<0.5||duration.is_some_and(|ms|(track.duration as f32-ms as f32/1000.).abs()>30.){continue;}
-    candidates.push(MetadataCandidate{title:title.into(),artist,album:release["title"].as_str()?.into(),year:parse_year(release["date"].as_str()),artwork_path:None,recording_mbid:recording["id"].as_str()?.into(),release_mbid:release["id"].as_str().map(str::to_owned),release_group_mbid:release["release-group"]["id"].as_str().map(str::to_owned),confidence:score,album_artist:release["artist-credit"].as_array().map(|credits|credits.iter().filter_map(|c|c["name"].as_str()).collect::<Vec<_>>().join(" & ")),track_number:(position>0).then_some(position),disc_number:medium["position"].as_i64().map(|n|n as i32)});}}
+    candidates.push(MetadataCandidate{title:title.into(),artist:keep_alias(&track.artist,artist),album:release["title"].as_str()?.into(),year:parse_year(release["date"].as_str()),artwork_path:None,recording_mbid:recording["id"].as_str()?.into(),release_mbid:release["id"].as_str().map(str::to_owned),release_group_mbid:release["release-group"]["id"].as_str().map(str::to_owned),confidence:score,album_artist:release["artist-credit"].as_array().map(|credits|credits.iter().filter_map(|c|c["name"].as_str()).collect::<Vec<_>>().join(" & ")),track_number:(position>0).then_some(position),disc_number:medium["position"].as_i64().map(|n|n as i32)});}}
     candidates.sort_by(|a,b|b.confidence.total_cmp(&a.confidence));if candidates.len()>1&&(candidates[0].confidence-candidates[1].confidence)<0.03{return None;}candidates.into_iter().next()
 }
 
@@ -417,7 +432,7 @@ fn candidate_from_recording(
         .map(|release| release.title.clone())
         .unwrap_or_default();
     let title_score = text_similarity(&track.title, &recording.title);
-    let artist_score = text_similarity(&track.artist, &artist);
+    let artist_score = artist_similarity(&track.artist, &artist);
     let album_score = if unknown_album(&track.album) || album.is_empty() {
         0.5
     } else {
@@ -435,7 +450,7 @@ fn candidate_from_recording(
     Some(MetadataCandidate {
         artwork_path: None,
         title: recording.title,
-        artist,
+        artist: keep_alias(&track.artist, artist),
         album,
         year: release.and_then(|release| parse_year(release.date.as_deref())),
         recording_mbid: recording.id,
@@ -464,7 +479,12 @@ fn musicbrainz_query(track: &Track) -> String {recording_query(track,true)}
 fn recording_query(track:&Track,strict:bool)->String {
     let mut parts=vec![format!("recording:\"{}\"",escape_query(&track.title))];
     if !track.artist.trim().is_empty()&&!track.artist.eq_ignore_ascii_case("unknown artist") {
-        parts.push(format!("artist:\"{}\"",escape_query(if strict {&track.artist}else{primary_artist(&track.artist)})));
+        let artist = if strict { &track.artist } else { primary_artist(&track.artist) };
+        parts.push(if ye_artist_credit(artist) {
+            r#"(artist:"Ye" OR artist:"Kanye West" OR artist:"Kanye")"#.to_owned()
+        } else {
+            format!("artist:\"{}\"", escape_query(artist))
+        });
     }
     if strict&&!unknown_album(&track.album) {parts.push(format!("release:\"{}\"",escape_query(release_title(&track.album))));}
     parts.join(" AND ")
@@ -666,6 +686,17 @@ fn unix_seconds() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ye_aliases_expand_queries_and_keep_the_local_credit() {
+        let local = track("KING", "Kanye West", "BULLY", 190);
+        let query = musicbrainz_query(&local);
+        assert!(query.contains(r#"(artist:"Ye" OR artist:"Kanye West" OR artist:"Kanye")"#));
+        assert!(query.ends_with(r#"AND release:"BULLY""#));
+        assert_eq!(artist_similarity("Ye", "Kanye West"), 1.0);
+        assert_eq!(keep_alias("Kanye West", "Ye".to_owned()), "Kanye West");
+        assert!(!ye_artist_credit("Ye & JAY-Z"));
+        assert!(!ye_artist_credit("Yeasayer"));
+    }
     #[test]
     fn ignored_match_identity_is_stable_but_changes_with_recording_or_fields(){
         let mut c=MetadataCandidate{title:" Song ".into(),artist:"Artist".into(),album:"Album".into(),year:Some(2020),artwork_path:None,recording_mbid:"recording-1".into(),release_mbid:Some("release-1".into()),release_group_mbid:None,confidence:0.8,album_artist:None,track_number:None,disc_number:None};

@@ -269,4 +269,4 @@ export interface MetadataHistory {id:number;created_at:number;undone:boolean;con
 export interface MetadataWorkspace {lookup?:Record<string,number>;items?:Review[];total?:number;offset?:number;history?:MetadataHistory[]}
 export interface MetadataWorkspaceRequest {action:'list'|'apply'|'dismiss'|'ignore'|'ignored'|'restore'|'history'|'undo';search?:string;offset?:number;id?:number;trackId?:number;revision?:number;token?:string;fingerprint?:string;fields?:string[]}
 
-export interface AlbumReview{album_id:string;title:string;artist:string;cover?:string;resolution?:number[];token:string;rows:{track_id:number;current:Record<string,unknown>;candidate:Record<string,unknown>|null;candidate_token?:string;art_resolution?:number[]}[]}
+export interface AlbumReview{album_id:string;title:string;artist:string;cover?:string;resolution?:number[];token:string;rows:{track_id:number;current:Record<string,unknown>;candidate:Record<string,unknown>|null;candidate_token?:string;status?:string;art_resolution?:number[]}[]}

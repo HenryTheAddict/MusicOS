@@ -17,6 +17,13 @@ use tauri::{Emitter, Manager};
 pub mod background;
 #[path = "apple_transfers.rs"]
 mod transfers;
+#[derive(Clone, Serialize)]
+pub struct SidecarResult {
+    written: u64,
+    unchanged: u64,
+    conflicts: u64,
+    failed: u64,
+}
 #[derive(Default, Clone, Serialize)]
 pub struct Status {
     pub enabled: bool,
@@ -35,6 +42,8 @@ pub struct Status {
     pub lyrics_ready: usize,
     pub lyrics_failed: usize,
     pub artwork_ready: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sidecars: Option<SidecarResult>,
 }
 fn state() -> &'static Mutex<Status> {
     static S: OnceLock<Mutex<Status>> = OnceLock::new();
@@ -318,6 +327,14 @@ fn norm(s: &str) -> String {
         .flat_map(char::to_lowercase)
         .collect()
 }
+fn artist_key(artist: &str) -> String {
+    if musicos_desktop::local::enrichment::ye_artist_credit(artist) {
+        "kanyewest".to_owned()
+    } else {
+        norm(artist)
+    }
+}
+
 fn catalog_record(song: &Value) -> Option<Value> {
     let mut row = song
         .pointer("/relationships/catalog/data/0")
@@ -408,8 +425,13 @@ fn lyric_catalog(db: &Path, id: i64) -> Result<String> {
     let auth=credentials(db)?;
     let track=musicos_init::database::Db::open(&db.to_string_lossy())?
         .get_track_by_id(id)?.context("This local song is unavailable")?;
+    let search_artist = if musicos_desktop::local::enrichment::ye_artist_credit(&track.artist) {
+        "Kanye West"
+    } else {
+        &track.artist
+    };
     let term=url::form_urlencoded::Serializer::new(String::new())
-        .append_pair("term",&format!("{} {}",track.title,track.artist)).finish();
+        .append_pair("term",&format!("{} {}",track.title,search_artist)).finish();
     let value=get(&auth,&format!("/v1/catalog/{}/search?types=songs&limit=25&include=albums&{}",auth.storefront,term))?;
     let rows=value.pointer("/results/songs/data").and_then(Value::as_array)
         .context("Apple Music returned no recording matches for this song")?;
@@ -417,7 +439,7 @@ fn lyric_catalog(db: &Path, id: i64) -> Result<String> {
     for row in rows {
         let a=&row["attributes"];
         if norm(a["name"].as_str().unwrap_or(""))==norm(&track.title)
-            && norm(a["artistName"].as_str().unwrap_or(""))==norm(&track.artist)
+            && artist_key(a["artistName"].as_str().unwrap_or(""))==artist_key(&track.artist)
             && norm(a["albumName"].as_str().unwrap_or(""))==norm(&track.album)
             && a["durationInMillis"].as_f64().is_some_and(|ms|(ms/1000.-track.duration as f64).abs()<=2.) {
             if let Some(catalog)=row["id"].as_str().filter(|v|digits(v).is_ok()) {matches.insert(catalog,row);}
@@ -754,7 +776,7 @@ fn sync(db: &Path) -> Result<Value> {
         index
             .entry((
                 norm(a["name"].as_str().unwrap_or("")),
-                norm(a["artistName"].as_str().unwrap_or("")),
+                artist_key(a["artistName"].as_str().unwrap_or("")),
                 norm(a["albumName"].as_str().unwrap_or("")),
             ))
             .or_default()
@@ -784,7 +806,7 @@ fn sync(db: &Path) -> Result<Value> {
             matched += 1;
             continue;
         }
-        let key = (norm(&track.title), norm(&track.artist), norm(&track.album));
+        let key = (norm(&track.title), artist_key(&track.artist), norm(&track.album));
         let candidates = index
             .get(&key)
             .into_iter()
@@ -1214,8 +1236,21 @@ pub fn action(app: &tauri::AppHandle, db: &Path, req: Request) -> Result<Value> 
                 let c = store(db)?;
                 let mut q =
                     c.prepare("SELECT track_id,catalog_id,payload FROM choices ORDER BY track_id")?;
-                let rows=q.query_map([],|r|Ok(json!({"trackId":r.get::<_,i64>(0)?,"catalogId":r.get::<_,String>(1)?,"item":serde_json::from_str::<Value>(&r.get::<_,String>(2)?).unwrap_or(Value::Null)})))?.collect::<std::result::Result<Vec<_>,_>>()?;
-                Ok(json!({"choices":rows}))
+                let rows = q.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)))?;
+                let library = musicos_init::database::Db::open(&db.to_string_lossy())?;
+                let mut choices = Vec::new();
+                let mut local = std::collections::HashMap::new();
+                for row in rows {
+                    let (id, catalog, raw) = row?;
+                    if let std::collections::hash_map::Entry::Vacant(entry) = local.entry(id) {
+                        entry.insert(library.get_track_by_id(id)?);
+                    }
+                    let Some(track) = local[&id].as_ref() else { continue };
+                    let Ok(item) = serde_json::from_str::<Value>(&raw) else { continue };
+                    choices.push(json!({"trackId":id, "catalogId":catalog, "item":item,
+                        "local":{"title":track.title, "artist":track.artist, "album":track.album}}));
+                }
+                Ok(json!({"choices":choices}))
             }
             "select_match" => {
                 let id = req.track_id.context("Choose a song")?;
@@ -1276,6 +1311,14 @@ fn apply_action_error(s: &mut Status, action: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn artist_alias_is_whole_credit_only() {
+        assert_eq!(artist_key(" Ye "), artist_key("Kanye West"));
+        assert_eq!(artist_key("Kanye"), artist_key("Kanye West"));
+        assert_ne!(artist_key("Ye & JAY-Z"), artist_key("Kanye West"));
+        assert_ne!(artist_key("Yeasayer"), artist_key("Kanye West"));
+        assert_ne!(norm("Ye"), norm("Kanye West"));
+    }
     #[test]
     fn capability_errors_do_not_disconnect_or_end_background_work() {
         let mut s = Status { signed_in: true, sign_in: "available".into(), phase: "background_cache".into(), ..Default::default() };

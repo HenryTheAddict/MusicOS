@@ -26,10 +26,8 @@
 .expanded-player[data-composition] .expanded-header-actions>button>.icon{position:absolute!important;left:50%!important;top:50%!important;right:auto!important;bottom:auto!important;transform:translate(-50%,-50%)!important;margin:0!important;width:20px!important;height:20px!important;display:block!important;}
 .expanded-player[data-composition] .expanded-header-actions>button>.icon>svg{display:block!important;width:100%!important;height:100%!important;}
 /* The rail gives time labels room, without moving its vertical center or seek target. */
-.lyric-scene-art{position:absolute;inset:-15%;width:130%;height:130%;object-fit:cover;filter:blur(45px) saturate(1.15);opacity:.36;transform:rotate(-12deg);}
-.expanded-player[data-composition] .lyrics-liquid{background:var(--surface-color);}
-.expanded-player[data-composition] .lyrics-liquid>canvas{position:absolute;inset:0;mix-blend-mode:normal;opacity:.85;}
-.expanded-player::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:-1;opacity:1!important;background:linear-gradient(110deg,color-mix(in srgb,var(--surface-color) 36%,transparent),color-mix(in srgb,var(--surface-color) 55%,transparent) 56%,color-mix(in srgb,var(--surface-color) 43%,transparent))!important;}
+.expanded-player[data-composition] .lyrics-liquid{background:none;}
+.expanded-player[data-composition] .lyrics-liquid>canvas{position:absolute;inset:0;mix-blend-mode:normal;opacity:.34;}
 .favorites-play-actions{padding:.75rem 0 1rem;}
 @container(max-width:48rem){
  .expanded-player[data-composition=split] .expanded-player-content{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 28px;grid-template-areas:'song' 'side' 'progress';gap:.5rem;padding:3.5rem 0 3.5rem;}
@@ -90,11 +88,7 @@
 
 .song-change-content{display:flex;align-items:center;gap:10px;min-width:0;max-width:100%;}.song-change-content>.cover{width:44px;height:44px;flex:none;border-radius:9px;object-fit:cover;}.song-change-content>span{min-width:0;}.song-change-content small:first-child{font-size:10px;letter-spacing:.025em;}
 
-.expanded-player[data-background=solid]::after{background:none!important;}
-.expanded-player[data-background=flowing]:not([data-visualizer=true]) .lyrics-liquid{background:linear-gradient(145deg,var(--player-scene-surface),color-mix(in srgb,var(--player-scene-blob) 36%,var(--player-scene-surface)));}
-.expanded-player[data-background=flowing]:not([data-visualizer=true])::after{background:linear-gradient(115deg,color-mix(in srgb,var(--player-scene-surface) 35%,transparent),color-mix(in srgb,var(--player-scene-surface) 60%,transparent))!important;}
 
 @property --player-scene-surface{syntax:'<color>';inherits:true;initial-value:#17222a;}
-@property --player-scene-blob{syntax:'<color>';inherits:true;initial-value:#263b49;}
-.expanded-player:not([data-visualizer=true]){background-color:var(--player-scene-surface)!important;transition:--player-scene-surface 320ms ease-in-out,--player-scene-blob 320ms ease-in-out;}
+.expanded-player:not([data-visualizer=true]){background-color:var(--player-scene-surface)!important;transition:--player-scene-surface 320ms ease-in-out;}
 @media(prefers-reduced-motion:reduce){.expanded-player:not([data-visualizer=true]){transition:none;}}

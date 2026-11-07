@@ -39,7 +39,7 @@ pub fn detail(path: &Path, library: &crate::library::Library, id: &str) -> Resul
 
 fn comparison(db: &Db, c: &Connection, library: &crate::library::Library, album: &crate::library::Album) -> Result<Value> {
     use rusqlite::OptionalExtension;
-    let mut query = c.prepare("SELECT candidate_json FROM metadata_enrichment_status WHERE state='review' AND track_id=?")?;
+    let mut query = c.prepare("SELECT state, candidate_json FROM metadata_enrichment_status WHERE track_id=?")?;
     let mut rows = Vec::with_capacity(album.track_ids.len());
     for id in &album.track_ids {
         let mut current = db.metadata_values(*id)?;
@@ -47,7 +47,10 @@ fn comparison(db: &Db, c: &Connection, library: &crate::library::Library, album:
             current["album_artist"] = library.tracks.iter().find(|track| track.id == *id)
                 .and_then(|track| track.album_artist.clone()).into();
         }
-        let candidate_token: Option<String> = query.query_row([id], |row| row.get(0)).optional()?;
+        let (status, cached): (String, Option<String>) = query
+            .query_row([id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?
+            .unwrap_or_else(|| ("unchecked".into(), None));
+        let candidate_token = cached.filter(|_| status == "review");
         let candidate = candidate_token.as_deref().map(serde_json::from_str::<Value>).transpose()?;
         let artwork = candidate.as_ref().and_then(|value| value["artwork_path"].as_str());
         let art_identity = artwork.and_then(|path| std::fs::metadata(path).ok())
@@ -55,7 +58,7 @@ fn comparison(db: &Db, c: &Connection, library: &crate::library::Library, album:
         let art_resolution = artwork.and_then(|path| image::image_dimensions(path).ok())
             .map(|(width, height)| [width, height]);
         rows.push(json!({"track_id": id, "current": current, "candidate": candidate,
-            "candidate_token": candidate_token, "art_identity": art_identity, "art_resolution": art_resolution}));
+            "candidate_token": candidate_token, "status": status, "art_identity": art_identity, "art_resolution": art_resolution}));
     }
     let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, rows]))?));
     let resolution = album.cover.as_deref().and_then(|path| image::image_dimensions(path).ok())

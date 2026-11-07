@@ -79,9 +79,30 @@ function MatchDetails({rows,disabled,onIgnore}: {rows:Row[];disabled:boolean;onI
   </details>;
 }
 
-export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,epoch,playing,onTab,onSong,onLyrics,onDirty,onSaving,onSaved,onRefresh}: {
+function coverResolution(size?:number[]) {
+  return size ? size.join(' × ') : 'Resolution unknown';
+}
+
+function CoverComparison({current,proposed,lowerResolution}: {
+  current:{path?:string|null;size?:number[]};proposed?:{path:string;size?:number[]};lowerResolution?:boolean;
+}) {
+  return <div className="tag-cover-comparison">
+    <figure>
+      <Cover src={current.path} title="Current cover"/>
+      <figcaption><strong>Current cover</strong><span>{current.path?coverResolution(current.size):'No cover saved'}</span></figcaption>
+    </figure>
+    {proposed&&<figure>
+      <Cover src={proposed.path} title="Suggested cover"/>
+      <figcaption><strong>Suggested cover</strong><span>{coverResolution(proposed.size)} · Cover Art Archive</span>
+        {lowerResolution&&<span className="tag-cover-quality">Lower resolution</span>}
+      </figcaption>
+    </figure>}
+  </div>;
+}
+
+export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,epoch,playing,onCheck,onTab,onSong,onLyrics,onDirty,onSaving,onSaved,onRefresh}: {
   album:Album; track?:Track; tab:InspectorTab; lyrics:boolean; lyricsRequest?:number; epoch:number; playing:boolean;
-  onTab:(tab:InspectorTab)=>void; onSong:(id:number)=>void; onLyrics:(show:boolean)=>void;
+  onCheck?:()=>void; onTab:(tab:InspectorTab)=>void; onSong:(id:number)=>void; onLyrics:(show:boolean)=>void;
   onDirty:(dirty:boolean)=>void; onSaving:(saving:boolean)=>void;
   onSaved:(message:string)=>void; onRefresh:()=>Promise<void>;
 }) {
@@ -113,6 +134,11 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
     return typeof cover==='string' && cover!==comparison?.cover ? [[cover,row] as const] : [];
   })).entries()];
   const proposedCover = artwork.find(([cover])=>cover===path) ?? (artwork.length===1 ? artwork[0] : undefined);
+  const lowerResolution = (size?:number[]) => !!comparison?.resolution?.some((pixels,axis)=>size && pixels>size[axis]);
+  const currentCover={path:comparison?.cover??album.cover,size:comparison?.resolution};
+  const failed=rows.filter(row=>row.status==='failed').length;
+  const unmatched=rows.filter(row=>row.status==='unmatched').length;
+  const unchecked=rows.length>0&&rows.every(row=>!row.status||row.status==='unchecked');
   const dirty = Object.values(drafts).some(values=>Object.keys(values).length>0) || choices.size>0 || !!path || lyricDirty || !!review;
   useEffect(()=>onDirty(dirty),[dirty,onDirty]);
   useEffect(()=>onSaving(saving||lyricBusy),[saving,lyricBusy,onSaving]);
@@ -252,10 +278,8 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
         <h3 ref={reviewHeading} tabIndex={-1}>{review.kind==='cover'?'Review cover update':'Review changes'}</h3>
         <p>{album.title} · {songCount(review.ids.length)}</p>
         {review.kind==='cover' ? <>
-          <div className="tag-cover-comparison">
-            <figure><Cover src={comparison?.cover} title="Current cover"/><figcaption>Current</figcaption></figure>
-            <figure><Cover src={review.path} title="New cover"/><figcaption>New cover</figcaption></figure>
-          </div>
+          <CoverComparison current={currentCover} proposed={{path:review.path,size:review.source.art_resolution}} lowerResolution={lowerResolution(review.source.art_resolution)}/>
+          <p className="tag-cover-note">This updates the artwork for {songCount(review.ids.length)}. Song and album details stay as they are.</p>
           <details><summary>See affected songs</summary><ul>{rows.map(row=><li key={row.track_id}>{String(row.current.title)}</li>)}</ul></details>
         </> : <ChangeList changes={review.changes}/>}
         <details className="tag-advanced" onToggle={event=>{if(!event.currentTarget.open)setWrite(false);}}>
@@ -272,10 +296,18 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
       </footer>
     </> : <>
       {tab==='cover' && <section className="tag-cover">
-        <div className="tag-cover-comparison">
-          <figure><Cover src={comparison?.cover ?? album.cover} title="Current cover"/><figcaption>Current{comparison?.resolution && ` · ${comparison.resolution.join(' × ')}`}</figcaption></figure>
-          {proposedCover && <figure><Cover src={proposedCover[0]} title="Proposed cover"/><figcaption>Proposed{proposedCover[1].art_resolution && ` · ${proposedCover[1].art_resolution.join(' × ')}`}{proposedCover[1].candidate?.release_mbid ? ' · Cover Art Archive' : ''}</figcaption></figure>}
+        <div className="tag-cover-heading">
+          <div><h3>Album cover</h3><p>{artwork.length ? 'Compare available artwork before replacing this cover.' :
+            unchecked ? 'Check this album to look for artwork and tag suggestions.' :
+            'There’s no replacement cover in the saved results.'}</p></div>
+          <button disabled={!onCheck||saving||loading} onClick={onCheck}><Icon name="sync"/>Check this album</button>
         </div>
+        {(failed>0||unmatched>0)&&<p className="tag-cover-note">{[
+          unmatched>0&&`No confident match for ${songCount(unmatched)}`,
+          failed>0&&`Lookup failed for ${songCount(failed)}`,
+        ].filter(Boolean).join(' · ')}</p>}
+        <CoverComparison current={currentCover} proposed={proposedCover&&{path:proposedCover[0],size:proposedCover[1].art_resolution}}
+          lowerResolution={lowerResolution(proposedCover?.[1].art_resolution)}/>
         {artwork.length>1 && <fieldset className="tag-cover-options"><legend>Choose a proposed cover</legend>
           {artwork.map(([cover,row],index)=><label key={cover}>
             <input name="metadata-cover" type="radio" checked={cover===path} onChange={()=>setPath(cover)}/>
@@ -283,9 +315,9 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
             <span>Cover {index+1}<small>{row.art_resolution?.join(' × ') ?? String(row.current.title)}</small></span>
           </label>)}
         </fieldset>}
-        {!artwork.length && !loading && !loadError && <p>No cover suggestions for this album.</p>}
-        {!!artwork.length && <footer className="metadata-action-footer">
-          <button className="primary" disabled={!proposedCover||loading||!!loadError} onClick={()=>startReview('cover')}><Icon name="Album"/>Update cover only</button>
+        {!!artwork.length && <footer className="metadata-action-footer tag-cover-actions">
+          <span>{lowerResolution(proposedCover?.[1].art_resolution) ? 'Keep the current cover for higher resolution.' : `Applies to ${songCount(album.track_ids.length)} on this album.`}</span>
+          <button className={lowerResolution(proposedCover?.[1].art_resolution)?undefined:'primary'} disabled={!proposedCover||loading||!!loadError} onClick={()=>startReview('cover')}><Icon name="Album"/>{lowerResolution(proposedCover?.[1].art_resolution)?'Review lower-resolution cover':'Update cover only'}</button>
         </footer>}
         <MatchDetails rows={rows.filter(row=>row.candidate?.artwork_path)} disabled={saving||loading} onIgnore={row=>void ignore(row)}/>
       </section>}
