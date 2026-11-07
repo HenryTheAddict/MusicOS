@@ -189,7 +189,7 @@ pub fn enrich_library<F>(
     preferences: &EnrichmentPreferences,
     artwork_preferences: &ArtworkPreferences,
     cancel: &AtomicBool,
-    mut progress: F,
+    progress: F,
 ) -> Result<EnrichmentRunReport>
 where
     F: FnMut(EnrichmentProgress),
@@ -226,6 +226,9 @@ where
 
     let mut known=HashMap::new();
     if !force {for state in ["review","kept","ignored","applied","protected"] {for status in db.metadata_enrichment_statuses(state,100000)? {known.insert(status.track_id,status.source_modified_at);}}}
+    let album_tracks=db.get_tracks()?;
+    let requested_albums=album_tracks.iter().filter(|t|track_ids.contains(&t.id)).map(|t|t.album.to_lowercase()).collect::<std::collections::HashSet<_>>();
+    let album_keys=album_tracks.iter().filter(|t|requested_albums.contains(&t.album.to_lowercase())).map(|t|{let values=db.metadata_values(t.id)?;let artist=values["album_artist"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or(&t.artist);let mut keyed=t.clone();keyed.artist=artist.into();Ok((t.id,release_cache_key(&keyed,None))) }).collect::<Result<HashMap<_,_>>>()?;
     let mut release_cache=HashMap::<String,Option<serde_json::Value>>::new();
     for track_id in track_ids {
         if cancel.load(Ordering::Relaxed) {
@@ -245,8 +248,14 @@ where
         }
 
         let tagged=lofty::read_from_path(&track.path).ok();let release_id=tagged.as_ref().and_then(|file|lofty::file::TaggedFileExt::primary_tag(file)).and_then(|tag|tag.get_string(&lofty::tag::ItemKey::MusicBrainzReleaseId));
-        let album_key=release_cache_key(&track,release_id);
-        let result=(||->Result<Option<MetadataCandidate>>{if let Some(release)=release_cache.get(&album_key).and_then(Option::as_ref){if let Some(candidate)=candidate_from_album(&track,release){return Ok(Some(candidate));} if release_id.is_some(){return Ok(None);}}
+        let album_key=release_id.map(|id|format!("release:{id}")).unwrap_or_else(||album_keys.get(&track.id).cloned().unwrap_or_else(||release_cache_key(&track,None)));
+        let result=(||->Result<Option<MetadataCandidate>>{
+            if release_id.is_none()&&!unknown_album(&track.album)&&!release_cache.contains_key(&album_key){
+                let group=album_tracks.iter().filter(|t|album_keys.get(&t.id)==Some(&album_key)).collect::<Vec<_>>();
+                if group.len()>1{let release=search_album_release(db_path,&db,&client,&mut limiter,&group,cancel)?;release_cache.insert(album_key.clone(),release);}
+            }
+            if release_cache.contains_key(&album_key)&&release_id.is_none(){return Ok(release_cache.get(&album_key).and_then(Option::as_ref).and_then(|release|candidate_from_album(&track,release)));}
+            if let Some(release)=release_cache.get(&album_key).and_then(Option::as_ref){if let Some(candidate)=candidate_from_album(&track,release){return Ok(Some(candidate));} if release_id.is_some(){return Ok(None);}}
             if let Some(id)=release_id {if !release_cache.contains_key(&album_key){let release=release_details(&db,&client,&mut limiter,id,cancel)?;release_cache.insert(album_key.clone(),Some(release));}return Ok(release_cache.get(&album_key).and_then(Option::as_ref).and_then(|release|candidate_from_album(&track,release)));}
             let seed=search_candidate(&db,&client,&mut limiter,&track,cancel)?;
             if !release_cache.contains_key(&album_key)&&!track.album.trim().is_empty()&&!track.album.eq_ignore_ascii_case("unknown album") {let release=seed.as_ref().filter(|c|c.confidence>=preferences.review_threshold&&text_similarity(&c.album,&track.album)>0.85).and_then(|c|c.release_mbid.as_deref()).map(|id|release_details(&db,&client,&mut limiter,id,cancel)).transpose().ok().flatten();release_cache.insert(album_key.clone(),release);}
@@ -378,6 +387,7 @@ fn search_recording_query(db:&Db,client:&Client,limiter:&mut MusicBrainzLimiter,
         .into_iter()
         .filter(|recording| recording_duration_matches(track,recording))
         .filter_map(|recording| candidate_from_recording(track, recording))
+        .filter(|candidate|same_tagged_album(&track.album,&candidate.album))
         .max_by(|left, right| left.confidence.total_cmp(&right.confidence)))
 }
 
@@ -399,14 +409,69 @@ fn keep_alias(local: &str, provider: String) -> String {
     else { provider }
 }
 
+fn release_choices_table(db_path:&Path)->Result<musicos_init::database::Connection>{
+ let c=musicos_init::database::Connection::open(db_path)?;
+ c.execute_batch("CREATE TABLE IF NOT EXISTS desktop_release_choices_v1(track_id INTEGER PRIMARY KEY,choices TEXT NOT NULL,selected TEXT)")?;Ok(c)
+}
+pub fn saved_release_choices(db_path:&Path,track_id:i64)->Result<serde_json::Value>{
+ use rusqlite::OptionalExtension;
+ let c=release_choices_table(db_path)?;
+ let row:Option<(String,Option<String>)>=c.query_row("SELECT choices,selected FROM desktop_release_choices_v1 WHERE track_id=?",[track_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+ match row{Some((choices,selected))=>Ok(serde_json::json!({"choices":serde_json::from_str::<serde_json::Value>(&choices)?,"selected":selected})),None=>Ok(serde_json::json!({"choices":[],"selected":null}))}
+}
+pub fn select_release_choice(db_path:&Path,track_ids:&[i64],release_id:&str)->Result<()> {
+ let db=Db::open(&db_path.to_string_lossy())?;let Some(first)=track_ids.first()else{anyhow::bail!("Choose an album")};
+ let choices=saved_release_choices(db_path,*first)?;
+ let selected=choices["choices"].as_array().and_then(|items|items.iter().find(|v|v["id"]==release_id)).context("Release choices changed. Check this album again.")?;
+ let release=&selected["release"];let c=release_choices_table(db_path)?;
+ for id in track_ids{let own=saved_release_choices(db_path,*id)?;anyhow::ensure!(own["choices"].as_array().is_some_and(|rows|rows.iter().any(|r|r["id"]==release_id)),"This release no longer covers every song. Check the album again.");}
+ // Selecting a release updates review candidates only. No tags or covers are applied.
+ for id in track_ids {let track=db.get_track_by_id(*id)?.context("Song left this album")?;
+  if let Some(candidate)=candidate_from_album(&track,release){record_status(&db,&track,"review",candidate.confidence,Some(&candidate),None)?;}else{record_status(&db,&track,"unmatched",0.,None,None)?;}
+  c.execute("UPDATE desktop_release_choices_v1 SET selected=? WHERE track_id=?",rusqlite::params![release_id,id])?;
+ }Ok(())
+}
+fn release_alignment(tracks:&[&Track],release:&serde_json::Value)->(f32,usize,Vec<String>){
+ let aligned=tracks.iter().filter_map(|track|candidate_from_album(track,release)).collect::<Vec<_>>();
+ let coverage=aligned.len() as f32/tracks.len().max(1) as f32;
+ let mean=aligned.iter().map(|c|c.confidence).sum::<f32>()/aligned.len().max(1) as f32;
+ (mean*0.7+coverage*0.3,aligned.len(),aligned.iter().map(|c|c.recording_mbid.clone()).collect())
+}
+fn search_album_release(db_path:&Path,db:&Db,client:&Client,limiter:&mut MusicBrainzLimiter,tracks:&[&Track],cancel:&AtomicBool)->Result<Option<serde_json::Value>>{
+ let track=tracks[0];let values=db.metadata_values(track.id)?;let album_artist=values["album_artist"].as_str().filter(|s|!s.trim().is_empty()).unwrap_or(&track.artist);let artist=primary_artist(album_artist);
+ let credit=if ye_artist_credit(artist){r#"(artist:"Ye" OR artist:"Kanye West" OR artist:"Kanye")"#.to_owned()}else{format!("artist:\"{}\"",escape_query(artist))};
+ let query=format!("release:\"{}\" AND {credit}",escape_query(&track.album));let key=format!("musicbrainz-release-search-v1:{}",sha256(&query));
+ let body=if let Some(body)=db.cached_provider_response(&key,CACHE_MAX_AGE_SECONDS)?{body}else{
+  limiter.wait(cancel)?;anyhow::ensure!(!cancel.load(Ordering::Relaxed),"Lookup canceled");
+  let body=client.get("https://musicbrainz.org/ws/2/release/").query(&[("query",query.as_str()),("fmt","json"),("limit","8")]).send()?.error_for_status()?.text()?;anyhow::ensure!(body.len()<2*1024*1024,"Release search response is too large");db.cache_provider_response(&key,"musicbrainz",&body)?;body
+ };
+ let data:serde_json::Value=serde_json::from_str(&body)?;let mut ranked=Vec::new();let mut signatures=std::collections::HashSet::new();
+ for row in data["releases"].as_array().into_iter().flatten().filter(|r|r["title"].as_str().is_some_and(|title|same_tagged_album(&track.album,title))).take(3){
+  if cancel.load(Ordering::Relaxed){anyhow::bail!("Lookup canceled")}
+  let Some(id)=row["id"].as_str()else{continue};let release=release_details(db,client,limiter,id,cancel)?;
+  let (score,aligned,recordings)=release_alignment(tracks,&release);if aligned==0{continue}
+  let signature=serde_json::to_string(&(&release["title"],&release["disambiguation"],&recordings))?;if !signatures.insert(signature){continue}
+  let count=release["media"].as_array().into_iter().flatten().map(|m|m["tracks"].as_array().map_or(0,Vec::len)).sum::<usize>();
+  ranked.push(serde_json::json!({"id":id,"title":release["title"],"edition":release["disambiguation"],"date":release["date"],"country":release["country"],"score":score,"aligned":aligned,"total":tracks.len(),"release_tracks":count,"release":release}));
+ }
+ ranked.sort_by(|a,b|b["score"].as_f64().unwrap_or(0.).total_cmp(&a["score"].as_f64().unwrap_or(0.)));
+ let selected=ranked.first().filter(|best|best["score"].as_f64().unwrap_or(0.)>=0.85&&best["aligned"].as_u64().unwrap_or(0) as usize*4>=tracks.len()*3&&ranked.get(1).is_none_or(|next|best["score"].as_f64().unwrap_or(0.)-next["score"].as_f64().unwrap_or(0.)>0.035)).map(|row|row["id"].as_str().unwrap().to_owned());
+ let c=release_choices_table(db_path)?;let encoded=serde_json::to_string(&ranked)?;
+ for track in tracks{c.execute("INSERT INTO desktop_release_choices_v1 VALUES (?,?,?) ON CONFLICT(track_id) DO UPDATE SET choices=excluded.choices,selected=excluded.selected",rusqlite::params![track.id,encoded,selected])?;}
+ Ok(selected.and_then(|id|ranked.into_iter().find(|r|r["id"]==id).map(|r|r["release"].clone())))
+}
+
 fn candidate_from_album(track:&Track,release:&serde_json::Value)->Option<MetadataCandidate>{
-    let mut candidates=Vec::new();for medium in release["media"].as_array()?{for entry in medium["tracks"].as_array()?{let recording=&entry["recording"];let title=entry["title"].as_str().or(recording["title"].as_str())?;let credits=entry.get("artist-credit").or(recording.get("artist-credit")).or(release.get("artist-credit"))?;let artist=credits.as_array()?.iter().filter_map(|a|a["name"].as_str()).collect::<Vec<_>>().join(" & ");let duration=entry["length"].as_u64().or(recording["length"].as_u64());let title_score=text_similarity(&track.title,title);let duration_score=duration.map(|ms|(1.-(track.duration as f32-ms as f32/1000.).abs()/8.).clamp(0.,1.)).unwrap_or(0.5);let position=entry["position"].as_i64().unwrap_or(0) as i32;let number_score=if track.track_number>0&&track.track_number==position {1.}else{0.};
+    if !same_tagged_album(&track.album,release["title"].as_str()?){return None;}
+    let mut candidates=Vec::new();for medium in release["media"].as_array()?{for entry in medium["tracks"].as_array()?{let recording=&entry["recording"];let title=entry["title"].as_str().or(recording["title"].as_str())?;let credits=entry.get("artist-credit").or(recording.get("artist-credit")).or(release.get("artist-credit"))?;let artist=credits.as_array()?.iter().filter_map(|a|a["name"].as_str()).collect::<Vec<_>>().join(" & ");let duration=entry["length"].as_u64().or(recording["length"].as_u64());let title_score=text_similarity(recording_title(&track.title),recording_title(title));let duration_score=duration.map(|ms|(1.-(track.duration as f32-ms as f32/1000.).abs()/8.).clamp(0.,1.)).unwrap_or(0.5);let position=entry["position"].as_i64().unwrap_or(0) as i32;let number_score=if track.track_number>0&&track.track_number==position {1.}else{0.};
     let score=title_score*0.55+artist_similarity(&track.artist,&artist)*0.2+duration_score*0.2+number_score*0.05;
     // Number alone never identifies a recording, particularly incomplete editions.
-    if title_score<0.5||duration.is_some_and(|ms|(track.duration as f32-ms as f32/1000.).abs()>30.){continue;}
+    if title_score<0.5||artist_similarity(&track.artist,&artist)<0.5||duration.is_some_and(|ms|(track.duration as f32-ms as f32/1000.).abs()>30.){continue;}
     candidates.push(MetadataCandidate{title:title.into(),artist:keep_alias(&track.artist,artist),album:release["title"].as_str()?.into(),year:parse_year(release["date"].as_str()),artwork_path:None,recording_mbid:recording["id"].as_str()?.into(),release_mbid:release["id"].as_str().map(str::to_owned),release_group_mbid:release["release-group"]["id"].as_str().map(str::to_owned),confidence:score,album_artist:release["artist-credit"].as_array().map(|credits|credits.iter().filter_map(|c|c["name"].as_str()).collect::<Vec<_>>().join(" & ")),track_number:(position>0).then_some(position),disc_number:medium["position"].as_i64().map(|n|n as i32)});}}
     candidates.sort_by(|a,b|b.confidence.total_cmp(&a.confidence));if candidates.len()>1&&(candidates[0].confidence-candidates[1].confidence)<0.03{return None;}candidates.into_iter().next()
 }
+
+fn recording_title(value:&str)->&str{let lower=value.to_lowercase();for marker in [" (feat."," (ft."," (featuring", " [feat."]{if let Some(at)=lower.find(marker){return value[..at].trim()}}value}
 
 fn same_tagged_album(tagged: &str, candidate: &str) -> bool {
     let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase();
@@ -473,7 +538,7 @@ fn release_title(album:&str)->&str {
 fn release_cache_key(track:&Track,release_id:Option<&str>)->String {
     if let Some(id)=release_id{return format!("release:{id}");}
     if unknown_album(&track.album){return format!("loose:{}",track.id);}
-    format!("album:{}:{}",primary_artist(&track.artist).to_lowercase(),track.album.to_lowercase())
+    format!("album:{}:{}",if ye_artist_credit(primary_artist(&track.artist)){"kanye-west".into()}else{primary_artist(&track.artist).to_lowercase()},track.album.to_lowercase())
 }
 fn musicbrainz_query(track: &Track) -> String {recording_query(track,true)}
 fn recording_query(track:&Track,strict:bool)->String {
@@ -727,6 +792,20 @@ mod tests {
     }
 
     #[test]fn album_matching_uses_disc_positions_and_rejects_ambiguous_recordings(){let release=serde_json::json!({"id":"release","title":"Album","date":"2020-01-01","artist-credit":[{"name":"Artist"}],"media":[{"position":2,"tracks":[{"position":1,"title":"Song","length":200000,"recording":{"id":"recording","title":"Song"}}]}]});let candidate=candidate_from_album(&track("Song","Artist","Album",200),&release).unwrap();assert_eq!(candidate.disc_number,Some(2));assert_eq!(candidate.track_number,Some(1));let mut duplicate=release.clone();let row=duplicate["media"][0]["tracks"][0].clone();duplicate["media"][0]["tracks"].as_array_mut().unwrap().push(row);assert!(candidate_from_album(&track("Song","Artist","Album",200),&duplicate).is_none());assert!(candidate_from_album(&track("Different","Artist","Album",200),&release).is_none());}
+    #[test]
+    fn release_alignment_preserves_aliases_and_rejects_wrong_editions_and_artists() {
+        let mut a=track("First (feat. Guest)","Kanye West","Album",200);
+        let mut b=track("Second","Ye","Album",180);b.id=2;b.track_number=2;
+        let release=serde_json::json!({"id":"release","title":"Album","artist-credit":[{"name":"Ye"}],"media":[{"position":1,"tracks":[
+          {"position":1,"title":"First","length":200000,"recording":{"id":"first"}},
+          {"position":2,"title":"Second","length":180000,"recording":{"id":"second"}}
+        ]}]});
+        let (score,count,ids)=release_alignment(&[&a,&b],&release);assert_eq!(count,2);assert!(score>0.95);assert_eq!(ids,vec!["first","second"]);
+        assert_eq!(candidate_from_album(&a,&release).unwrap().artist,"Kanye West");
+        let mut unrelated=release.clone();unrelated["artist-credit"][0]["name"]=serde_json::json!("Unrelated Artist");assert_eq!(release_alignment(&[&a,&b],&unrelated).1,0);
+        a.album="Album (Live)".into();assert!(candidate_from_album(&a,&release).is_none());
+    }
+
     #[test]fn singles_queries_and_cache_do_not_merge_loose_releases(){
         let mut loose=track("Song","Artist; Guest","Unknown Album",200);
         assert_eq!(recording_query(&loose,false),"recording:\"Song\" AND artist:\"Artist\"");

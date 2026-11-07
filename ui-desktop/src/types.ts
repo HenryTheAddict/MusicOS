@@ -252,11 +252,15 @@ export interface SparkRecommendation {id:string;reason:string}
 export interface SavedCollection {updated_at?:number;id:string;name:string;track_ids:number[];spark:SparkDefinition|null;kind?:'manual'|'rule'|'audio';description?:string;artwork?:string|null;artwork_choice?:string|null;target_count?:number|null}
 export interface CollectionRequest {action:'length'|'cover'|'create'|'rename'|'describe'|'delete'|'add'|'remove'|'reorder'|'create_spark'|'update_spark';id?:string;name?:string;track_ids?:number[];definition?:SparkDefinition;description?:string;artwork_choice?:string;target_count?:number}
 
-export interface SparkGeneration {seed:number|null;mood:string|null;less_like:number[];variant:number;target_count:number}
+export interface SparkRefinement {
+ seed_ids:number[];moods:string[];variety:number;discovery:number;
+ kept:{track_id:number;position:number}[];excluded_ids:number[];more_like:number[];
+}
+export interface SparkGeneration {seed:number|null;mood:string|null;less_like:number[];variant:number;target_count:number;refinement?:SparkRefinement}
 export interface SparkPreview {track_ids:number[];analyzed:number;available:number;generation_version:string;configuration:SparkGeneration}
 export interface SparkState {
  installed?:boolean;generated_artwork?:string|null;analysis?:{running:boolean;paused:boolean;processed:number;total:number};staged_available?:boolean;beta?:boolean;installation?:{running:boolean;copied:number;total:number;error:string|null};ready:boolean;reason:string|null;download_bytes:number;analyzed:number;available:number;analyzed_ids:number[];preview:SparkPreview|null;items:SavedCollection[];chosen_id:number|null}
-export type SparkRequest={action:'status'|'choose'|'cancel_install'|'remove_model'|'install_staged'}|{action:'install';directory:string}|{action:'preview';generation:SparkGeneration}|{action:'save';generation:SparkGeneration;name:string;artwork_choice:string;preview?:NonNullable<SparkState["preview"]>}|{action:'refresh';id:string}|{action:'as_playlist';id:string;name:string};
+export type SparkRequest={action:'status'|'choose'|'cancel_install'|'remove_model'|'install_staged'}|{action:'install';directory:string}|{action:'preview';generation:SparkGeneration}|{action:'replace';generation:SparkGeneration;preview:SparkPreview;track_id:number}|{action:'save';generation:SparkGeneration;name:string;artwork_choice:string;preview?:NonNullable<SparkState["preview"]>}|{action:'refresh';id:string}|{action:'as_playlist'|'duplicate';id:string;name:string};
 export interface StructuralAnalysis {version:string;duration:number;energy:number;energy_step:number;tempo?:number|null;envelope:number[];beats:number[];beat_confidence:number;phrases:{seconds:number;confidence:number}[];changes:{seconds:number;confidence:number}[];regions:{start:number;end:number;repeated:boolean;confidence:number}[];silence:{start:number;end:number;repeated:boolean;confidence:number}[]}
 
 export type MetadataStatus = {cached:number;checking:number;unavailable:number;retryable:number};
@@ -269,4 +273,4 @@ export interface MetadataHistory {id:number;created_at:number;undone:boolean;con
 export interface MetadataWorkspace {lookup?:Record<string,number>;items?:Review[];total?:number;offset?:number;history?:MetadataHistory[]}
 export interface MetadataWorkspaceRequest {action:'list'|'apply'|'dismiss'|'ignore'|'ignored'|'restore'|'history'|'undo';search?:string;offset?:number;id?:number;trackId?:number;revision?:number;token?:string;fingerprint?:string;fields?:string[]}
 
-export interface AlbumReview{album_id:string;title:string;artist:string;cover?:string;resolution?:number[];token:string;rows:{track_id:number;current:Record<string,unknown>;candidate:Record<string,unknown>|null;candidate_token?:string;status?:string;art_resolution?:number[]}[]}
+export interface AlbumReview{status?:string;changed_fields?:number;release_choices?:{selected?:string;choices:{id:string;title:string;edition?:string;date?:string;country?:string;aligned:number;total:number;release_tracks:number}[]};album_id:string;title:string;artist:string;cover?:string;resolution?:number[];token:string;rows:{track_id:number;current:Record<string,unknown>;candidate:Record<string,unknown>|null;candidate_token?:string;status?:string;changed_fields?:string[];art_comparison?:string;art_resolution?:number[]}[]}

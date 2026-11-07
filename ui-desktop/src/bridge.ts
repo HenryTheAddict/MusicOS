@@ -144,7 +144,7 @@ type Commands = {
     result: void;
   };
   cancel_task: { args: undefined; result: void };
-  album_metadata:{args:{request:{action:string;search?:string;album_id?:string;token?:string;rows?:{track_id:number;fields:string[]}[];write_files?:boolean}};result:{albums?:import('./types').AlbumReview[];album?:import('./types').AlbumReview;album_ids?:string[];count?:number;history_id?:number}};
+  album_metadata:{args:{request:{action:string;search?:string;album_id?:string;release_id?:string;token?:string;rows?:{track_id:number;fields:string[]}[];write_files?:boolean}};result:{states?:Record<string,{state:string;changed_fields:number;checked:number;total:number}>;albums?:import('./types').AlbumReview[];album?:import('./types').AlbumReview;album_ids?:string[];count?:number;history_id?:number}};
   metadata_files:{args:{action:string;ids?:number[];id?:string;writeFiles?:boolean};result:{values?:Record<string,unknown>[];files?:{backup_bytes:number;files:{path:string;format?:string;error?:string}[];supported_fields:string[]};jobs?:{plain_lyrics?:boolean;id:string;history_id?:number;state:string;bytes:number;files:number}[]}};
   metadata_workspace:{args:{request:import("./types").MetadataWorkspaceRequest};result:import("./types").MetadataWorkspace};
   present_shell:{args:{color:string};result:void};

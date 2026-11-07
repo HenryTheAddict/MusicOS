@@ -377,6 +377,7 @@ export default function App() {
           if(change?.reason!=="analysis"&&change?.reason!=="favorites")invalidateDisplay();
           window.dispatchEvent(new CustomEvent("musicos-library-changed",{detail:change}));
           if(change?.reason==='favorites'&&change.favorite_updates?.length){const updates=new Map(change.favorite_updates.map(update=>[update.track_id,update.favorited]));setLibrary(old=>({...old,tracks:old.tracks.map(track=>updates.has(track.id)?{...track,favorited:updates.get(track.id)!}:track)}));}
+          else if(change?.reason==='collections')void call('collections',{}).then(setCollections).catch(e=>setCollectionError(errorText(e)));
           else if(change?.reason!=="analysis")void refresh();
         }),
         subscribe("native-open-queue",()=>nativeQueueAction.current()),
@@ -546,7 +547,7 @@ export default function App() {
       const result=look.source==='artwork'?await resolveArtworkTheme(paths,tracks??undefined):null;
       if(!gone)setResolvedArtwork(previous=>{
         // Preserve colors if the same artwork is briefly unavailable during a refresh.
-        if(!result&&look.source==='artwork'&&previous?.request===themeRequest&&previous.result)return previous;
+        if(!result&&look.source==='artwork'&&previous?.result)return {...previous,request:themeRequest};
         return {request:themeRequest,result};
       });
     }

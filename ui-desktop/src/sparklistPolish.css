@@ -127,3 +127,17 @@
 .spark-create-content .spark-create-primary .sketch-button:disabled{opacity:.65;}
 @container spark-composer (min-width:31rem){.spark-create-content .spark-start-body{grid-template-columns:minmax(0,.78fr) minmax(0,1.5fr);gap:1.25rem;}.spark-start-art{display:block;}}
 @media(max-height:600px){.spark-create-content .spark-start-body{grid-template-columns:minmax(0,1fr);}.spark-start-art{display:none;}.spark-start-controls{gap:.75rem;}.spark-create-content .spark-stages{margin-bottom:.5rem;}}
+.spark-seed-chips{display:flex;flex-wrap:wrap;gap:.375rem;margin:.5rem 0}
+.spark-seed-chips button{display:flex;align-items:center;gap:.375rem;padding:.375rem .5rem;min-width:0;max-width:100%;border:1px solid var(--control-border);border-radius:.75rem;background:var(--control-surface);color:var(--ink)}
+.spark-seed-chips .cover{width:1.75rem;height:1.75rem;border-radius:.375rem;flex:none}
+.spark-seed-chips button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.spark-seed-chips .icon{width:.75rem;height:.75rem;flex:none}
+.spark-refinement-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem;margin-block:.75rem}
+.spark-refinement-controls label{display:grid;grid-template-columns:1fr auto;gap:.5rem;font-size:.8125rem}
+.spark-refinement-controls input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.spark-preview-list>li{grid-template-columns:1.5rem 2.5rem minmax(0,1fr) auto auto auto}
+.spark-preview-list .spark-keep{font-size:.75rem;border-radius:.625rem;padding:.375rem .5rem;background:var(--control-surface);border:1px solid var(--control-border);color:var(--ink)}
+.spark-preview-list .spark-keep[aria-pressed=true]{background:var(--accent);color:var(--accent-ink)}
+.spark-create-content .spark-start-art{background:var(--control-surface)}
+.spark-create-content .spark-moods [aria-pressed=true]{background:linear-gradient(120deg,color-mix(in srgb,var(--mood-color) 38%,var(--surface-color)),color-mix(in srgb,var(--mood-color) 18%,var(--surface-color)));color:var(--ink)}
+@media(max-width:600px){.spark-refinement-controls{grid-template-columns:1fr}.spark-preview-list .spark-track-time{display:none}.spark-preview-list>li{grid-template-columns:1rem 2rem minmax(0,1fr) auto auto}}

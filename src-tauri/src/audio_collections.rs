@@ -18,6 +18,10 @@ pub fn save(db:&Path,id:Option<&str>,name:&str,cover:&str,preview:Preview)->Resu
  let old=items.iter().position(|s|s.id==id);let saved=Saved{updated_at:std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs()as i64,id,name,description:old.map(|i|items[i].description.clone()).unwrap_or_default(),artwork_choice:cover.into(),track_ids:preview.track_ids,generation:preview.configuration,generation_version:preview.generation_version};
  if let Some(i)=old{items[i]=saved.clone();}else{items.push(saved.clone());}atomic_write_json(&path(db),&items)?;Ok(saved)
 }
+pub fn duplicate(db:&Path,id:&str,name:&str)->Result<Saved>{
+ let coordinator=musicos_init::database::Connection::open(db)?;let _writer=coordinator.reserve_writer()?;
+ let mut items=list(db)?;let mut saved=items.iter().find(|s|s.id==id).context("Sparklist no longer exists")?.clone();saved.id=format!("audio/{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos());saved.name=valid_name(name)?;saved.updated_at=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;items.push(saved.clone());atomic_write_json(&path(db),&items)?;Ok(saved)
+}
 pub fn edit(db:&Path,id:&str,name:Option<&str>,description:Option<&str>,cover:Option<&str>,delete:bool)->Result<()> {
  let coordinator=musicos_init::database::Connection::open(db)?;let _writer=coordinator.reserve_writer()?;
  let mut items=list(db)?;let item=items.iter_mut().find(|s|s.id==id).context("Sparklist no longer exists")?;

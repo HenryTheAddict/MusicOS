@@ -189,6 +189,6 @@ html[data-back-swipe-theme=true] {
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview){z-index:2;background:transparent;border-color:transparent;}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview) > .theme-layer{visibility:hidden;}
 .content-column[data-back-swipe=dragging] > :is(.library-toolbar,.list-find):not(.back-swipe-bar){opacity:calc(1 - var(--back-swipe-progress));}
-.page-frame .page-scroll[data-swiping=true]{background:var(--page-color,var(--surface-color));box-shadow:none;overflow-x:clip;will-change:transform,opacity;transform:translate3d(calc(var(--back-swipe-width) * var(--back-swipe-progress)),0,0);opacity:calc(1 - var(--back-swipe-progress));}
+.page-frame .page-scroll[data-swiping=true]{background:var(--page-color,var(--surface-color));box-shadow:none;overflow-x:clip;will-change:transform,opacity;transform:translate3d(calc(var(--back-swipe-width) * var(--back-swipe-progress)),0,0);opacity:1;}
 .content-column[data-back-swipe=handoff] > .back-page-preview{z-index:3;}
 .content-column[data-back-swipe=handoff] > :is(.library-toolbar,.list-find):not(.back-swipe-bar){visibility:hidden;}

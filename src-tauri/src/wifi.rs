@@ -118,6 +118,7 @@ impl Identity {
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Peer {
+    #[serde(default)] sync_changes:bool,
     id: String,
     name: String,
     token_hash: String,
@@ -129,6 +130,7 @@ struct Peer {
 }
 #[derive(Clone)]
 struct Pending {
+    sync_changes:bool,
     id: String,
     name: String,
     token_hash: String,
@@ -159,9 +161,15 @@ pub struct Track {
     pub mime: String,
     pub favorited: bool,
     pub artwork_sha256: Option<String>,
+    pub lyrics_sha256: Option<String>,
 }
 #[derive(Clone, Serialize)]
 pub struct Collection {
+    pub revision:String,
+    pub complete:bool,
+    pub full_track_ids:Vec<i64>,
+    pub artwork_sha256:Option<String>,
+    pub artwork_choice:Option<String>,
     pub id: String,
     pub name: String,
     pub kind: String,
@@ -169,6 +177,8 @@ pub struct Collection {
 }
 #[derive(Clone, Serialize)]
 pub struct Manifest {
+    pub capabilities:Vec<String>,
+    pub portraits:BTreeMap<String,String>,
     pub version: u8,
     pub server_id: String,
     pub server_name: String,
@@ -194,6 +204,7 @@ pub struct Share {
     files: BTreeMap<String, File>,
     art: BTreeMap<String, File>,
     pub skipped: usize,
+    portraits:BTreeMap<String,String>,
     pub display_name: String,
     pub format: CopyFormat,
 }
@@ -294,7 +305,7 @@ pub fn prepare_with(
             sha256: media.sha256.clone(),
             mime: media.mime.clone(),
             favorited: track.favorited,
-            artwork_sha256,
+            artwork_sha256,lyrics_sha256:None,
         });
         share.files.insert(track.id.to_string(), media);
         if format!=CopyFormat::Original||index%25==24 { cache.persist()?; }
@@ -306,15 +317,18 @@ pub fn prepare_with(
         "No available audio files in this selection"
     );
     let available: HashSet<_> = share.tracks.iter().map(|t| t.id).collect();
+    for artist in &library.artists{if let Some(path)=&artist.portrait{if let Ok(asset)=cache.artwork(FsPath::new(path),current){let hash=asset.sha256.clone();share.art.insert(hash.clone(),asset);share.portraits.insert(artist.name.clone(),hash);}}}
     share.collections = collections
         .into_iter()
         .filter_map(|c| {
+            let full_track_ids=c.track_ids.clone();
             let track_ids: Vec<_> = c
                 .track_ids
                 .into_iter()
                 .filter(|id| available.contains(id))
                 .collect();
             (!track_ids.is_empty()).then_some(Collection {
+                artwork_choice:c.artwork_choice.clone(),revision:crate::companion_sync::collection_revision(&c.name,&full_track_ids),complete:track_ids.len()==full_track_ids.len(),full_track_ids,artwork_sha256:c.artwork.as_ref().and_then(|path|cache.artwork(FsPath::new(path),current).ok()).map(|asset|{let hash=asset.sha256.clone();share.art.insert(hash.clone(),asset);hash}),
                 id: c.id,
                 name: c.name,
                 kind: c.kind,
@@ -324,6 +338,14 @@ pub fn prepare_with(
         .collect();
     Ok(share)
 }
+pub fn enrich_assets(share:&mut Share,db:&FsPath,folder:&FsPath)->Result<()> {
+ let assets=folder.join("companion-assets");fs::create_dir_all(&assets)?;
+ for track in &mut share.tracks {
+  let response=crate::lyrics::execute(db,crate::lyrics::Request{action:"load".into(),track_id:Some(track.id),..Default::default()});
+  if let Ok(response)=response {if !response["document"].is_null(){let data=serde_json::to_vec(&response["document"])?;let hash=digest(&data);let path=assets.join(&hash);if !path.exists(){fs::write(&path,&data)?;}let asset=file(&path,"application/json".into())?;track.lyrics_sha256=Some(hash.clone());share.art.insert(hash,asset);}}
+ }
+ Ok(())
+}
 pub struct Service {
     hub: Mutex<Option<Arc<Hub>>>,
     generation: AtomicU64,
@@ -331,6 +353,8 @@ pub struct Service {
     folder: PathBuf,
     preparation: Arc<Mutex<Preparation>>,
     cache_operation:Mutex<()>,
+    database:Mutex<Option<PathBuf>>,
+    changed:Mutex<Option<Arc<dyn Fn(Value)+Send+Sync>>>,
 }
 #[derive(Default,Clone,Serialize)]
 struct Preparation { preparing:bool, completed:usize, total:usize, current:String, error:Option<String>, format:CopyFormat }
@@ -341,6 +365,8 @@ impl Default for Service {
 }
 
 struct Hub {
+    database:Option<PathBuf>,
+    changed:Option<Arc<dyn Fn(Value)+Send+Sync>>,
     identity: Identity,
     name: String,
     folder: PathBuf,
@@ -379,6 +405,8 @@ impl Hub {
     fn manifest(&self) -> Manifest {
         let share = read(&self.share);
         let mut manifest = Manifest {
+            portraits:share.portraits.clone(),
+            capabilities:if self.database.is_some(){vec!["collection-mutations-v1".into(),"lyric-assets-v1".into()]}else{vec![]},
             version: 1,
             server_id: self.identity.id.clone(),
             server_name: self.name.clone(),
@@ -388,6 +416,11 @@ impl Hub {
             collections: share.collections.clone(),
             bytes_total: share.tracks.iter().map(|t| t.size).sum(),copy_format:share.format,
         };
+        if let Some(db)=&self.database {
+            if let Ok(favorites)=crate::companion_sync::favorites(db){for t in &mut manifest.tracks{if let Some((_,value))=favorites.iter().find(|(id,_)|*id==t.id){t.favorited=*value;}}}
+            let repo=musicos_desktop::local::LocalLibraryRepository::new(db,db.parent().unwrap_or(FsPath::new(".")));
+            if let Ok(items)=crate::collections::list(&repo){let available:HashSet<_>=manifest.tracks.iter().map(|t|t.id).collect();manifest.collections=items.into_iter().filter_map(|c|{let ids=c.track_ids.iter().filter(|id|available.contains(id)).copied().collect::<Vec<_>>();if ids.is_empty(){return None}Some(Collection{revision:crate::companion_sync::collection_revision(&c.name,&c.track_ids),complete:ids.len()==c.track_ids.len(),full_track_ids:c.track_ids,id:c.id.clone(),name:c.name,kind:c.kind,track_ids:ids,artwork_choice:c.artwork_choice,artwork_sha256:share.collections.iter().find(|old|old.id==c.id).and_then(|old|old.artwork_sha256.clone())})}).collect();}
+        }
         manifest.revision = digest(&serde_json::to_vec(&manifest).unwrap_or_default());
         manifest
     }
@@ -434,7 +467,7 @@ impl Hub {
                 .unwrap_or_default();
             json!({"link":link,"qr":qr,"expires_at":t.expires_at})
         });
-        json!({"running":self.running.load(Ordering::Relaxed),"server_id":self.identity.id,"name":self.name,"port":self.port,"addresses":self.addresses,"selected_ids":share.tracks.iter().map(|t|t.id).collect::<Vec<_>>(),"track_count":share.tracks.len(),"bytes_total":share.tracks.iter().map(|t|t.size).sum::<u64>(),"skipped":share.skipped,"peers":peers,"pending":pending.iter().map(|p|json!({"id":p.id,"name":p.name,"created_at":p.created_at})).collect::<Vec<_>>(),"pairing":pairing,"error":*lock(&self.error),"format":share.format,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
+        json!({"running":self.running.load(Ordering::Relaxed),"server_id":self.identity.id,"name":self.name,"port":self.port,"addresses":self.addresses,"selected_ids":share.tracks.iter().map(|t|t.id).collect::<Vec<_>>(),"track_count":share.tracks.len(),"bytes_total":share.tracks.iter().map(|t|t.size).sum::<u64>(),"skipped":share.skipped,"peers":peers,"pending":pending.iter().map(|p|json!({"id":p.id,"name":p.name,"created_at":p.created_at,"sync_changes":p.sync_changes})).collect::<Vec<_>>(),"pairing":pairing,"error":*lock(&self.error),"format":share.format,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
     }
 }
 impl Service {
@@ -443,9 +476,10 @@ impl Service {
             hub: Mutex::new(None),
             generation: AtomicU64::new(0),
             operation: tokio::sync::Mutex::new(()),
-            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),
+            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),database:Mutex::new(None),changed:Mutex::new(None),
         }
     }
+    pub fn configure(&self,db:PathBuf,changed:Arc<dyn Fn(Value)+Send+Sync>){*lock(&self.database)=Some(db);*lock(&self.changed)=Some(changed);}
     pub fn begin(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -524,6 +558,7 @@ impl Service {
             .map(|i| i.ip().to_string())
             .collect::<Vec<_>>();
         let hub = Arc::new(Hub {
+            database:lock(&self.database).clone(),changed:lock(&self.changed).clone(),
             identity,
             name: name.chars().filter(|c| !c.is_control()).take(50).collect(),
             folder,
@@ -575,6 +610,8 @@ impl Service {
             .route("/v1/preparation", get(preparation))
             .route("/v1/tracks/{id}", get(audio))
             .route("/v1/artwork/{id}", get(artwork))
+            .route("/v1/assets/{id}", get(artwork))
+            .route("/v1/changes",post(changes).layer(DefaultBodyLimit::max(256*1024)))
             .route("/v1/sync-complete", post(complete))
             .layer(axum::middleware::from_fn(
                 |ConnectInfo(remote): ConnectInfo<SocketAddr>,
@@ -662,6 +699,7 @@ impl Service {
                 );
                 trust.peers.retain(|peer| peer.id != p.id);
                 trust.peers.push(Peer {
+                    sync_changes:p.sync_changes,
                     id: p.id,
                     name: p.name,
                     token_hash: p.token_hash,
@@ -685,11 +723,12 @@ impl Service {
     }
 }
 async fn info(State(hub): State<Arc<Hub>>) -> Json<Value> {
-    Json(json!({"version":1,"server_id":hub.identity.id,"name":hub.name}))
+    Json(json!({"version":1,"server_id":hub.identity.id,"name":hub.name,"capabilities":if hub.database.is_some(){vec!["collection-mutations-v1","lyric-assets-v1"]}else{vec![]}}))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PairRequest {
+    #[serde(default)] capabilities:Vec<String>,
     ticket: String,
     client_id: String,
     client_name: String,
@@ -747,6 +786,7 @@ async fn pair(
     }
     pending.retain(|p| p.id != request.client_id);
     pending.push(Pending {
+        sync_changes:request.capabilities.iter().any(|c|c=="collection-mutations-v1"),
         id: request.client_id.clone(),
         name: request
             .client_name
@@ -789,6 +829,14 @@ async fn pair_status(
     } else {
         Err((StatusCode::UNAUTHORIZED, "Pairing was declined or expired"))
     }
+}
+async fn changes(State(hub):State<Arc<Hub>>,headers:HeaderMap,Json(request):Json<Value>)->Result<Json<Value>,HttpError>{
+ let peer=hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED,"Pair this phone first"))?;
+ if !lock(&hub.trust).peers.iter().any(|p|p.id==peer&&p.sync_changes){return Err((StatusCode::FORBIDDEN,"Approve this phone's favorite and playlist changes in Devices first"))}
+ let db=hub.database.clone().ok_or((StatusCode::SERVICE_UNAVAILABLE,"Collection sync is unavailable"))?;
+ let ids=read(&hub.share).tracks.iter().map(|t|t.id).collect::<Vec<_>>();
+ let value=tokio::task::spawn_blocking(move||crate::companion_sync::apply(&db,&peer,request,&ids)).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"Sync could not finish"))?.map_err(|_|(StatusCode::CONFLICT,"The change could not be applied. Refresh the complete playlist and try again."))?;
+ if value["state"]=="saved"{if let Some(changed)=&hub.changed{changed(value.clone());}}Ok(Json(value))
 }
 async fn preparation(State(hub):State<Arc<Hub>>,headers:HeaderMap)->Result<Json<Value>,HttpError> {
     hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED,"Pair this phone first"))?;
@@ -970,10 +1018,11 @@ mod tests {
                 sha256: media.sha256.clone(),
                 mime: media.mime.clone(),
                 favorited: true,
-                artwork_sha256: None,
+                artwork_sha256: None,lyrics_sha256:None,
             }],
             files: BTreeMap::from([("7".into(), media)]),
             collections: vec![Collection {
+                revision:String::new(),complete:true,full_track_ids:vec![7,7],artwork_sha256:None,artwork_choice:None,
                 id: "sequence".into(),
                 name: "Duplicates".into(),
                 kind: "manual".into(),
@@ -1174,6 +1223,7 @@ mod tests {
             &folder.join("peers.json"),
             &Trust {
                 peers: vec![Peer {
+                    sync_changes:false,
                     id: "phone".into(),
                     name: "Phone".into(),
                     token_hash: digest(b"secret"),

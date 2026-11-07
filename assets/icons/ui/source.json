@@ -155,6 +155,22 @@
       "sha256": "fc3a7c12c52ffcf00e26fc791a398e211e61129d15670ec3bb670b9b73a80d43"
     },
     {
+      "layer": "70F24E47-0DDF-4E11-BF44-808602D40599",
+      "name": "Download",
+      "file": "Download.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "faa2e0168e2e532373280fdc0c0a377a8f37627dc677a0d78435d72a82c0ecc9"
+    },
+    {
+      "layer": "E96D629A-1BA6-44FA-B4E1-80975DB9B952",
+      "name": "Downloaded",
+      "file": "Downloaded.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b7f9e99f099756bfdfc63efa89984f22dbcd6ddef2fd2d7defee390b26cfa4b1"
+    },
+    {
       "layer": "FD87FEEC-A1B0-40AE-A9DA-78FF46070190",
       "name": "Drive",
       "file": "Drive.svg",
@@ -185,6 +201,24 @@
       "width": 32,
       "height": 32,
       "sha256": "06a0f8e94d0ad253c79d82edd7e66d19e5dbc7ab9d823fedae6afd69db6ce55c"
+    },
+    {
+      "layer": "0BC7EB1F-02EC-471A-92F6-1A7EF1BA8029",
+      "name": "Flip-Android",
+      "file": "Flip-Android.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "2d8f969c9730d4eaff63eb24c59d417255c2a346e100d8d6fcf113173b1fb285",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
+      "layer": "40FFA16D-116B-481F-852E-C3321F07FC9C",
+      "name": "Fold-Android",
+      "file": "Fold-Android.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "36f3f881666a4cc95bf027f70c288f6972300f96af5b5c9c890dcb1b5ed52ed8",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
     },
     {
       "layer": "9276F1B7-BB23-43A9-A59F-0769CA403A54",
@@ -227,6 +261,14 @@
       "sha256": "07c23c11e2b7b73236bafcf01ad972b9a15373713cbed5f6caa95784c98c1f9e"
     },
     {
+      "layer": "E4FDE931-A4E1-4E34-B419-3560D9BBEB8C",
+      "name": "Library",
+      "file": "Library.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "167005f4f5487e632733337783edbf50597b6d0d30a8c358af8dfdd102badd7c"
+    },
+    {
       "name": "Light mode",
       "layer": "7C653DDA-9314-4973-B263-04C54C4EBC33",
       "file": "Light mode.svg",
@@ -267,6 +309,23 @@
       "sha256": "2eb6343d9e726795ab00a6c1091ae1777a468a31123d49a418d27724c79fe346"
     },
     {
+      "layer": "F12AEBAD-0A1D-46BC-AF62-EE68232EC757",
+      "name": "Motion",
+      "file": "Motion.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "b78b61a42bfa0bf60236212c72cf041f1b236dc17b754ecb7e1084c2d3aa87aa"
+    },
+    {
+      "layer": "76BAB3E2-725E-4596-A7FE-A51C439789EC",
+      "name": "MrFerb",
+      "file": "MrFerb.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "7e2b9188c39dc3295a61d1882849e06f3478d06fa212c1eca1cf954acbb325c5",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
       "layer": "6928FB71-75D7-44F5-930E-46A41D99C425",
       "name": "Net404",
       "file": "Net404.svg",
@@ -305,6 +364,14 @@
       "width": 32,
       "height": 32,
       "sha256": "293b22e4ade92fb638008d1fa953222e174a2a80731a6ad6c3c9ce2d3f1c6f13"
+    },
+    {
+      "layer": "830AD407-9EA1-4820-948C-2B50969EFE0F",
+      "name": "Phone",
+      "file": "Phone.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "537f7e057719bc239aa37fb3a00796f3d0de8f42f1d84c2a91835f5231b66dfb"
     },
     {
       "name": "Pin",
@@ -436,6 +503,24 @@
       "sha256": "cc60d1cb387e509248e6f9aefca8c21bb61f619c143e1f40960a94b4b2eda521"
     },
     {
+      "layer": "C21A68F4-A394-48E0-B8CA-EF1F1B41BD4C",
+      "name": "Visualizer",
+      "file": "Visualizer.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "661d19732b00871bcd1065d1edca4fe86464051504575bed48e11de86c91a266",
+      "note": "Exported from canonical 32\u00d732 Sketch master; removed only the white export-canvas use. Vector geometry and strokes unchanged."
+    },
+    {
+      "layer": "6043B3D3-745E-4220-84AA-22EF9205F747",
+      "name": "Where",
+      "file": "Where.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8d97e8ff259d6ac6adecfcae206a5f28745b9b1f6254310d684a00c8e8a96b7b",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
       "layer": "833DD92A-9EC3-447D-B566-0402F40460C6",
       "name": "autostart",
       "file": "autostart.svg",
@@ -460,6 +545,14 @@
       "sha256": "8bed4bc933aab1f4f637e73d207113059ed6eecbcb745896724dedd9a9e00c9c"
     },
     {
+      "layer": "1F6956D4-F2BF-49FB-8850-5C627A5BD4B6",
+      "name": "Exit-Fullscreen",
+      "file": "exitFullscreen.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "8571761775d3d29d1ae4d92911609c3bf58e52ae0da2c4c21b3c480c63bcab18"
+    },
+    {
       "layer": "66F378A6-9ABD-46FD-8FEB-AAF3A1524619",
       "name": "filter",
       "file": "filter.svg",
@@ -468,12 +561,56 @@
       "sha256": "bc50f430e685fef0785ccdfcc901a348bbaf4ec280d90bee6f3c05e81fe445e3"
     },
     {
+      "layer": "7EF367C1-94AA-4C52-A62F-573CD646F4C4",
+      "name": "Fullscreen",
+      "file": "fullscreen.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "2d884ba4323234f4ab1960967f9d10695d811edf79f9eea592b92e1e691d46f9"
+    },
+    {
       "layer": "8B72C22E-F415-4CE2-97D7-10655869F9FA",
       "name": "hearted",
       "file": "hearted.svg",
       "width": 32,
       "height": 32,
       "sha256": "9f5db18d906582c129d2a61f71f42ed254d2095b05d64e9ff3cede0ca1c73534"
+    },
+    {
+      "layer": "C8BEE51C-B242-4361-897E-E58B242FA823",
+      "name": "iPhoneDuo",
+      "file": "iPhoneDuo.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "904ce1adba8a817e2db4feab0a752c773aadc7f4dec313e1b6e475b445eca1ab",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
+      "layer": "A09E7560-5E71-4826-BC83-F55B0AA9C589",
+      "name": "iPhoneDynamic",
+      "file": "iPhoneDynamic.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "74822815388c8904bc785894fc5fa511dc9331ab2181022f8b535ba645f6f990",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
+      "layer": "CBA1DDD8-41EA-4F96-B1D4-11403449D05C",
+      "name": "iPhoneHomeButton",
+      "file": "iPhoneHomeButton.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "9a90c422761d82902ede469794d6c2fec0d7f732ac0fa0a0e434eabf89000315",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
+      "layer": "4F1CDFD0-31A2-4F88-8356-B8AC91DD1554",
+      "name": "iPhoneNotch",
+      "file": "iPhoneNotch.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "ad4a9b083553480e511404394d70b1bf3a8422bb614f824222ab0011fde1a949",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
     },
     {
       "layer": "9944F1F5-2758-4225-ACBA-5923FFCBBDFD",
@@ -556,6 +693,15 @@
       "sha256": "1a633331c12e23b6daab7e846b9414e64e559597f60d7ed5859a20aaedbd590f"
     },
     {
+      "layer": "D54B7D59-B50D-46B2-9FE9-F09D75244E90",
+      "name": "sync",
+      "file": "sync.svg",
+      "width": 32,
+      "height": 32,
+      "sha256": "7c7e15d8d98796bb2fd91c6cd36f9da3f4943d4c6a81962f080213f8a60ca3a8",
+      "note": "Exported from current BaseUi master; only the white export canvas was removed. Geometry and strokes preserved."
+    },
+    {
       "layer": "57F76F0B-BC33-4B8C-90A1-F1051224B8B6",
       "name": "that_one_i_in_a_circle_icon",
       "file": "that_one_i_in_a_circle_icon.svg",
@@ -610,71 +756,6 @@
       "width": 32,
       "height": 32,
       "sha256": "5c809c043943ec524c34ee5bd6b9a870d5425ac50dc3ea587b1cd1fce62ff672"
-    },
-    {
-      "layer": "E4FDE931-A4E1-4E34-B419-3560D9BBEB8C",
-      "name": "Library",
-      "file": "Library.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "167005f4f5487e632733337783edbf50597b6d0d30a8c358af8dfdd102badd7c"
-    },
-    {
-      "layer": "830AD407-9EA1-4820-948C-2B50969EFE0F",
-      "name": "Phone",
-      "file": "Phone.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "537f7e057719bc239aa37fb3a00796f3d0de8f42f1d84c2a91835f5231b66dfb"
-    },
-    {
-      "layer": "F12AEBAD-0A1D-46BC-AF62-EE68232EC757",
-      "name": "Motion",
-      "file": "Motion.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "b78b61a42bfa0bf60236212c72cf041f1b236dc17b754ecb7e1084c2d3aa87aa"
-    },
-    {
-      "layer": "70F24E47-0DDF-4E11-BF44-808602D40599",
-      "name": "Download",
-      "file": "Download.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "faa2e0168e2e532373280fdc0c0a377a8f37627dc677a0d78435d72a82c0ecc9"
-    },
-    {
-      "layer": "1F6956D4-F2BF-49FB-8850-5C627A5BD4B6",
-      "name": "Exit-Fullscreen",
-      "file": "exitFullscreen.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "8571761775d3d29d1ae4d92911609c3bf58e52ae0da2c4c21b3c480c63bcab18"
-    },
-    {
-      "layer": "7EF367C1-94AA-4C52-A62F-573CD646F4C4",
-      "name": "Fullscreen",
-      "file": "fullscreen.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "2d884ba4323234f4ab1960967f9d10695d811edf79f9eea592b92e1e691d46f9"
-    },
-    {
-      "layer": "E96D629A-1BA6-44FA-B4E1-80975DB9B952",
-      "name": "Downloaded",
-      "file": "Downloaded.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "b7f9e99f099756bfdfc63efa89984f22dbcd6ddef2fd2d7defee390b26cfa4b1"
-    },
-    {
-      "layer": "C21A68F4-A394-48E0-B8CA-EF1F1B41BD4C",
-      "name": "Visualizer",
-      "file": "Visualizer.svg",
-      "width": 32,
-      "height": 32,
-      "sha256": "661d19732b00871bcd1065d1edca4fe86464051504575bed48e11de86c91a266",
-      "note": "Exported from canonical 32\u00d732 Sketch master; removed only the white export-canvas use. Vector geometry and strokes unchanged."
     }
   ],
   "exported": "2026-10-30",

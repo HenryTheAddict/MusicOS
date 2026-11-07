@@ -49,3 +49,12 @@
 .personal-home .home-section>header>button:active,.personal-home .home-view-all:active{scale:.98;}
 
 .personal-home .home-heading{padding:.25rem 0 .75rem;background:transparent;min-height:0;gap:1rem;}.personal-home .home-heading h1{font-size:clamp(1.5rem,3vw,2.25rem);line-height:1.1;margin:0}.personal-home .home-heading p{font-size:.875rem;margin:.375rem 0 0}.personal-home .home-tabs{padding:.125rem;border:1px solid var(--control-border);border-radius:.75rem;background:var(--control-surface);gap:.125rem}.personal-home .home-tabs>button{border-radius:.625rem;min-height:2rem;padding:.375rem .625rem;}.personal-home .home-section>header>button:hover,.personal-home .home-view-all:hover{background:color-mix(in srgb,var(--ink) 8%,var(--control-surface));}
+
+.personal-home .home-heading{padding:.375rem 0 .75rem;background:none;border-radius:0;min-height:0;gap:.75rem}
+.personal-home .home-heading h1{font-size:clamp(1.25rem,2.5vw,1.75rem);margin:0}
+.personal-home .home-heading p{font-size:.75rem;margin:.2rem 0 0}
+.personal-home .home-favorites{padding:.5rem .75rem;min-height:44px}
+.personal-home .home-favorites>.icon{width:1.25rem;height:1.25rem}
+.personal-home .home-resume{margin-block:0 1rem;padding:.75rem;gap:.75rem}
+.personal-home .home-resume>.cover{width:3.5rem;height:3.5rem}
+.personal-home .home-section{margin-top:1.5rem}

@@ -130,12 +130,15 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const proposals = suggestedChanges(scopedRows);
   const selected = proposals.filter(change=>choices.has(changeKey(change)));
   const artwork = [...new Map(rows.flatMap(row => {
+    if(row.art_comparison==='identical')return [];
     const cover = row.candidate?.artwork_path;
     return typeof cover==='string' && cover!==comparison?.cover ? [[cover,row] as const] : [];
   })).entries()];
   const proposedCover = artwork.find(([cover])=>cover===path) ?? (artwork.length===1 ? artwork[0] : undefined);
   const lowerResolution = (size?:number[]) => !!comparison?.resolution?.some((pixels,axis)=>size && pixels>size[axis]);
   const currentCover={path:comparison?.cover??album.cover,size:comparison?.resolution};
+  const identicalCover=rows.some(row=>row.art_comparison==='identical');
+  const differentCrop=proposedCover?.[1].art_comparison==='different_crop';
   const failed=rows.filter(row=>row.status==='failed').length;
   const unmatched=rows.filter(row=>row.status==='unmatched').length;
   const unchecked=rows.length>0&&rows.every(row=>!row.status||row.status==='unchecked');
@@ -271,6 +274,8 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
     ]} onChange={switchTab}/>
     {loading && !rows.length && <p className="tag-status" role="status">Loading album details…</p>}
     {loadError && <div className="tag-status" role="alert">{loadError} <button onClick={()=>setReload(value=>value+1)}>Retry comparison</button></div>}
+    {comparison&&<p className="tag-comparison-status" role="status">{comparison.status==='changes_available'?`${comparison.changed_fields} suggested field changes · Nothing selected`:comparison.status==='already_matches'?'This album already matches the checked release.':comparison.status==='lookup_failed'?'Lookup failed. Your saved values are unchanged.':comparison.status==='no_confident_match'?'No confident release match. Check recording and edition before choosing.':'This album has not been checked.'}</p>}
+    {!!comparison?.release_choices?.choices.length&&<details className="tag-release-choices" open={!comparison.release_choices.selected}><summary>Release choice · {comparison.release_choices.choices.length} {comparison.release_choices.choices.length===1?'edition':'editions'}</summary>{comparison.release_choices.choices.map(choice=><article key={choice.id}><div><strong>{choice.title}</strong><small>{[choice.edition,choice.date,choice.country].filter(Boolean).join(' · ')}</small><small>{choice.aligned} of {choice.total} local songs aligned · {choice.release_tracks} release tracks</small></div><button disabled={loading||saving||dirty||comparison.release_choices?.selected===choice.id} onClick={()=>{setLoading(true);setError('');void call('album_metadata',{request:{action:'select_release',album_id:album.id,release_id:choice.id}}).then(()=>{invalidateDisplay('album_metadata');setReload(v=>v+1);}).catch(e=>setError(errorText(e))).finally(()=>setLoading(false));}}>{comparison.release_choices?.selected===choice.id?'Selected':'Review this release'}</button></article>)}</details>}
     {notice && <p className="tag-status" role="status">{notice}</p>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     {review && rows.length ? <>
@@ -306,6 +311,8 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
           unmatched>0&&`No confident match for ${songCount(unmatched)}`,
           failed>0&&`Lookup failed for ${songCount(failed)}`,
         ].filter(Boolean).join(' · ')}</p>}
+        {identicalCover&&!proposedCover&&<p className="tag-status">The suggested image is the same cover. Your current image is kept.</p>}
+        {differentCrop&&<p className="tag-status">Different crop or proportions · compare both images before updating.</p>}
         <CoverComparison current={currentCover} proposed={proposedCover&&{path:proposedCover[0],size:proposedCover[1].art_resolution}}
           lowerResolution={lowerResolution(proposedCover?.[1].art_resolution)}/>
         {artwork.length>1 && <fieldset className="tag-cover-options"><legend>Choose a proposed cover</legend>

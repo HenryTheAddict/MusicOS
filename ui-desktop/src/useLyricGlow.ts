@@ -24,9 +24,13 @@ export function useLyricGlow(pane:RefObject<HTMLElement|null>,scroll:RefObject<H
    for(const line of viewport.querySelectorAll<HTMLElement>('.lyric-line[data-current=true]')){
     if(!line.querySelector('.lyric-word'))continue;observer.observe(line);
     const rect=line.getBoundingClientRect(),copy=line.cloneNode(true) as HTMLElement,css=getComputedStyle(line);copy.className='lyric-glow-clone';copy.removeAttribute('id');copy.removeAttribute('aria-label');copy.removeAttribute('aria-current');copy.tabIndex=-1;copy.inert=true;
-    for(const key of ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','direction','white-space','word-break','overflow-wrap','font-feature-settings','font-kerning','box-sizing','padding-top','padding-right','padding-bottom','padding-left'])copy.style.setProperty(key,css.getPropertyValue(key),'important');
+    for(const key of ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','direction','white-space','word-break','overflow-wrap','font-feature-settings','font-kerning','text-transform','text-indent','word-spacing','tab-size','box-sizing','padding-top','padding-right','padding-bottom','padding-left'])copy.style.setProperty(key,css.getPropertyValue(key),'important');
     Object.assign(copy.style,{left:`${rect.left-base.left-root.clientLeft+root.scrollLeft}px`,top:`${rect.top-base.top-root.clientTop+root.scrollTop}px`,width:`${rect.width}px`});
-    layer.append(copy);copies.push({node:copy,top:rect.top,bottom:rect.bottom});
+    copy.querySelectorAll<HTMLElement>('.lyric-word').forEach(word=>{
+    word.style.removeProperty('background-image');
+    word.style.removeProperty('--word-progress');
+   });
+   layer.append(copy);copies.push({node:copy,top:rect.top,bottom:rect.bottom});
     for(const word of copy.querySelectorAll<HTMLElement>('.lyric-word'))words.push({node:word,start:Number(word.dataset.wordStart),end:word.dataset.wordEnd===undefined?undefined:Number(word.dataset.wordEnd)});
    }
    update(time.current);position();

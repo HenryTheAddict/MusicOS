@@ -1,0 +1,1 @@
+{"name":"musicos-iphone","private":true,"version":"0.1.0","scripts":{"tauri":"tauri","build":"vite build --config vite.config.ts","dev":"vite --config vite.config.ts"}}

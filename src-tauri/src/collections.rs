@@ -42,7 +42,7 @@ pub fn list(repo: &LocalLibraryRepository) -> Result<Vec<Collection>> {
     for p in repo.playlists()? {
         use rusqlite::OptionalExtension;
         let (description,artwork)=connection.query_row("SELECT description,artwork FROM desktop_playlist_details_v1 WHERE playlist_id=?1",[p.id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?))).optional()?.unwrap_or_default();
-        items.push(Collection {updated_at:0,id:format!("playlist/{}",p.id),name:p.name,track_ids:db.get_playlist_tracks(p.id)?.iter().map(|t|t.id).collect(),spark:None,kind:"manual".into(),description,artwork,target_count:None,artwork_choice:cover_choice(repo,&format!("playlist/{}",p.id))?});
+        items.push(Collection {updated_at:0,id:format!("playlist/{}",p.id),name:p.name.clone(),track_ids:crate::companion_sync::sequence(repo.db_path(),p.id,&p.name,db.get_playlist_tracks(p.id)?.iter().map(|t|t.id).collect())?,spark:None,kind:"manual".into(),description,artwork,target_count:None,artwork_choice:cover_choice(repo,&format!("playlist/{}",p.id))?});
     }
     let tracks=repo.snapshot(&Default::default())?.tracks;
     for s in read_sparks(repo.db_path())? { items.push(Collection { updated_at:0,id:s.id.clone(), name:s.definition.name.clone(), track_ids:s.definition.evaluate(&tracks).iter().map(|t|t.id).collect(), spark:Some(s.definition),kind:"rule".into(),description:String::new(),artwork:None,target_count:None,artwork_choice:cover_choice(repo,&s.id)? }); }

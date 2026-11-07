@@ -139,6 +139,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  let animation:Animation|null=null,fingers=false,momentum=false,disposed=false,unlisten:(()=>void)|undefined;
  const inertBefore=page.inert;
  let cover:ReturnType<typeof swipeCover>;
+ const pageColors=new Map<string,string>();
  const blocked=()=>!latest.current.enabled||!latest.current.canBack||!!document.querySelector('dialog[open],[role=menu]:not([inert]),.audio-panel');
  const setProgress=(progress:number)=>themeRoot.style.setProperty('--back-swipe-progress',String(progress));
  const clear=()=>{
@@ -147,6 +148,10 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   animation?.cancel();animation=null;
   preview?.frame.remove();preview?.bars.forEach(bar=>bar.remove());preview=undefined;
   themeRoot.style.removeProperty('--back-swipe-progress');
+  for(const [color,value] of pageColors){
+   if(value)page.style.setProperty(color,value);else page.style.removeProperty(color);
+  }
+  pageColors.clear();
   if(theme){
    delete themeRoot.dataset.backSwipeTheme;
    for(const color of swipeColors){
@@ -200,7 +205,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    animation?.cancel();animation=null;
    handoffFrame=requestAnimationFrame(()=>{handoffFrame=requestAnimationFrame(clear);});
   };
-  const duration=commit?160*(1-progress):Math.min(140,70+progress*140);
+  const duration=commit?180*(1-progress):Math.min(140,70+progress*140);
   if(duration<16){if(commit)cover?.seek(1);done();return;}
   animation=themeRoot.animate([{'--back-swipe-progress':progress},{'--back-swipe-progress':commit?1:0}],{duration,easing:'cubic-bezier(.2,.7,.2,1)',fill:'forwards'});
   animation.id='interactive-back-finish';
@@ -221,6 +226,12 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   if(targetTheme&&targetTheme.appearance===latest.current.appearance){
    theme=targetTheme;
    const displayed=getComputedStyle(themeRoot);
+   const outgoing=getComputedStyle(page);
+   for(const name of swipeColors){
+    const property=`--${name}`;
+    pageColors.set(property,page.style.getPropertyValue(property));
+    page.style.setProperty(property,outgoing.getPropertyValue(property));
+   }
    const from=swipeColors.map(color=>displayed.getPropertyValue(`--${color}`));
    swipeColors.forEach((color,index)=>{
     themeRoot.style.setProperty(`--swipe-from-${color}`,from[index]);

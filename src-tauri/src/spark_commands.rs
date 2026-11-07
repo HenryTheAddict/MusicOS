@@ -7,9 +7,11 @@ use crate::{spark_engine::{self,Generation,Preview},collections::{self,Collectio
 pub enum Request {
  Status,Choose,InstallStaged,Install{directory:String},CancelInstall,RemoveModel,
  Preview{generation:Generation},
+ Replace{generation:Generation,preview:Preview,track_id:i64},
  Save{generation:Generation,name:String,artwork_choice:String,#[serde(default)]preview:Option<Preview>},
  Refresh{id:String},
  AsPlaylist{id:String,name:String},
+ Duplicate{id:String,name:String},
 }
 #[derive(Default,Serialize)]pub struct Activity {pub running:bool,pub paused:bool,pub processed:usize,pub total:usize}
 #[derive(Serialize)]pub struct State {
@@ -53,21 +55,36 @@ pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Resul
  };
  let mut state=State{installed:setup.dir.join("manifest.json").is_file(),generated_artwork:None,analysis:Default::default(),staged_available:setup.candidate_source().join("manifest.json").is_file(),installation:crate::spark_install::status(),beta:setup.evaluation,ready:model.is_some(),reason,download_bytes:candidate.files.iter().map(|f|f.bytes).sum(),analyzed:candidates.len(),available,analyzed_ids:candidates.iter().map(|c|c.id).collect(),preview:None,items:collections::list(repo)?,chosen_id:None};
  if matches!(request,Request::Status|Request::InstallStaged|Request::Install{..}|Request::CancelInstall|Request::RemoveModel){return Ok(state);}
+ if let Request::Duplicate{id,name}=&request{let saved=audio_collections::duplicate(repo.db_path(),id,name)?;let _=saved;state.items=collections::list(repo)?;return Ok(state);}
  if let Request::AsPlaylist{id,name}=&request {audio_collections::as_manual(repo,id,name)?;state.items=collections::list(repo)?;return Ok(state);}
  ensure!(state.ready,"{}",state.reason.as_deref().unwrap_or("Audio model is unavailable"));
+ let plays=library.tracks.iter().map(|t|(t.id,t.play_count.max(0) as u32)).collect::<BTreeMap<_,_>>();
  let moods:BTreeMap<String,Vec<f32>>=serde_json::from_slice(&std::fs::read(setup.dir.join("moods.json"))?)?;
  match request {
   Request::Choose=>{ensure!(!candidates.is_empty(),"Analyze local songs before choosing a seed");let favorites=candidates.iter().filter(|c|c.favorite).collect::<Vec<_>>();let pool=if favorites.is_empty(){candidates.iter().collect::<Vec<_>>()}else{favorites};let clock=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.subsec_nanos() as usize;state.chosen_id=Some(pool[clock%pool.len()].id);},
-  Request::Preview{generation}=>{let preview=spark_engine::generate(&candidates,available,generation,&moods)?;
+  Request::Preview{generation}=>{let preview=spark_engine::generate_with_listening(&candidates,available,generation,&moods,&plays)?;
    let tracks=library.tracks.iter().filter(|t|preview.track_ids.contains(&t.id)).collect::<Vec<_>>();
    let features=crate::analysis::cached_many(repo.db_path(),&tracks.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());
    let energies=features.iter().flatten().filter_map(|f|f.structure.as_ref().map(|s|s.energy)).collect::<Vec<_>>();
    let tempos=features.iter().flatten().filter(|f|f.bpm_confidence>=0.5).filter_map(|f|f.bpm).collect::<Vec<_>>();
    let average=|v:&Vec<f32>|if v.is_empty(){None}else{Some(v.iter().sum::<f32>()/v.len()as f32)};
    state.generated_artwork=Some(crate::spark_artwork::generate(&candidates,&preview.track_ids,&moods,preview.configuration.variant,average(&energies),average(&tempos)).choice());state.preview=Some(preview);},
+  Request::Replace{generation,preview,track_id}=>{
+   let mut preview=preserve_preview(Some(preview),&generation,&candidates,available,&moods)?;
+   let position=preview.track_ids.iter().position(|id|*id==track_id).context("This song left the preview")?;
+   let mut temporary=generation.clone();
+   temporary.refinement.kept.clear();
+   temporary.refinement.excluded_ids.extend(preview.track_ids.iter().copied());
+   let replacement=spark_engine::generate_with_listening(&candidates,available,temporary,&moods,&plays)?
+       .track_ids.into_iter().find(|id|!preview.track_ids.contains(id)).context("No other prepared song is available")?;
+   preview.track_ids[position]=replacement;
+   preview.configuration.refinement.excluded_ids.push(track_id);
+   if let Some(kept)=preview.configuration.refinement.kept.iter_mut().find(|kept|kept.track_id==track_id){kept.track_id=replacement;}
+   state.preview=Some(preview);
+  },
   Request::Save{generation,name,artwork_choice,preview}=>{let preview=preserve_preview(preview,&generation,&candidates,available,&moods)?;audio_collections::save(repo.db_path(),None,&name,&artwork_choice,preview)?;state.items=collections::list(repo)?;},
-  Request::Refresh{id}=>{let saved=audio_collections::list(repo.db_path())?.into_iter().find(|s|s.id==id).context("Sparklist no longer exists")?;let preview=spark_engine::generate(&candidates,available,saved.generation,&moods)?;audio_collections::save(repo.db_path(),Some(&id),&saved.name,&saved.artwork_choice,preview)?;state.items=collections::list(repo)?;},
-  Request::Status|Request::InstallStaged|Request::Install{..}|Request::CancelInstall|Request::RemoveModel|Request::AsPlaylist{..}=>{},
+  Request::Refresh{id}=>{let saved=audio_collections::list(repo.db_path())?.into_iter().find(|s|s.id==id).context("Sparklist no longer exists")?;let preview=spark_engine::generate_with_listening(&candidates,available,saved.generation,&moods,&plays)?;audio_collections::save(repo.db_path(),Some(&id),&saved.name,&saved.artwork_choice,preview)?;state.items=collections::list(repo)?;},
+  Request::Status|Request::InstallStaged|Request::Install{..}|Request::CancelInstall|Request::RemoveModel|Request::AsPlaylist{..}|Request::Duplicate{..}=>{},
  }
  Ok(state)
 }

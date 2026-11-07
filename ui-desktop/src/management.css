@@ -316,3 +316,5 @@
   .tag-layout[data-inspector=true]>.tag-browser{display:block}
   .tag-browser-back{display:none!important}
 }
+
+.tag-comparison-status{font-size:.8125rem;color:var(--secondary-ink);margin:.75rem 0}.tag-release-choices{border-block:1px solid color-mix(in srgb,var(--ink) 15%,transparent);padding:.75rem 0;margin:.75rem 0}.tag-release-choices article{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 0}.tag-release-choices article>div{min-width:0;display:grid;gap:.2rem}.tag-release-choices small{color:var(--secondary-ink);font-size:.75rem}.tag-release-choices button{flex:none;padding:.5rem .75rem;border-radius:.75rem;background:var(--control-surface);font-size:.8125rem}.tag-suggestion-mark[data-state]:not([data-state=changes_available]){background:transparent;color:var(--secondary-ink);font-weight:400}

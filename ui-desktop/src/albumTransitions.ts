@@ -67,11 +67,12 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
   const returning=!!captured?.returning;
   if(departingPage){
    document.body.append(departingPage);
-   disposers.push(animateOwned(departingPage,'library-return-out',[{opacity:1},{opacity:0}],320,'cubic-bezier(.4,0,.2,1)'),()=>departingPage.remove());
-   const timer=setTimeout(()=>departingPage.remove(),320);disposers.push(()=>clearTimeout(timer));
-   disposers.push(animateOwned(page,'library-return-in',[{opacity:0},{opacity:1}],320,'cubic-bezier(.4,0,.2,1)'));
+   disposers.push(animateOwned(departingPage,'library-return-out',[{opacity:1},{opacity:0}],180,'cubic-bezier(.4,0,.2,1)'),()=>departingPage.remove());
+   const timer=setTimeout(()=>departingPage.remove(),180);disposers.push(()=>clearTimeout(timer));
+   // Keep the destination opaque beneath the outgoing snapshot.
+
    const toolbar=page.closest('.content-column')?.querySelector<HTMLElement>(':scope > .library-toolbar:not(.library-toolbar-exit)');
-   if(toolbar)disposers.push(animateOwned(toolbar,'library-toolbar-return',[{opacity:0,clipPath:'inset(0 0 100% 0 round 1rem)'},{opacity:1,clipPath:'inset(0 0 0% 0 round 1rem)'}],320,'cubic-bezier(.4,0,.2,1)'));
+   if(toolbar)disposers.push(animateOwned(toolbar,'library-toolbar-return',[{opacity:0,clipPath:'inset(0 0 100% 0 round 1rem)'},{opacity:1,clipPath:'inset(0 0 0% 0 round 1rem)'}],180,'cubic-bezier(.4,0,.2,1)'));
    const scroller=root.current;let settled=false,restoredScroll=0;const settle=requestAnimationFrame(()=>{restoredScroll=scroller?.scrollTop??0;settled=true;});
    const stop=()=>cancel(),scroll=()=>{if(settled&&Math.abs((scroller?.scrollTop??0)-restoredScroll)>1)cancel();};
    window.addEventListener('resize',stop);scroller?.addEventListener('scroll',scroll,{passive:true});
@@ -118,7 +119,7 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
     animation.id=`${captured.kind}-cover-transfer`;movement=animation;
     void animation.finished.then(()=>{if(finished||movement!==animation)return;const p=photo();if(p?.complete&&p.naturalWidth)release();else{target?.addEventListener('load',loaded,true);timeout=setTimeout(release,1200);}}).catch(()=>{});
    };
-   const retarget=()=>{if(finished||!target||!lastEnd)return;const end=target.getBoundingClientRect();if(!end.width||!end.height)return;if(Math.max(Math.abs(end.x-lastEnd.x),Math.abs(end.y-lastEnd.y),Math.abs(end.width-lastEnd.width),Math.abs(end.height-lastEnd.height))<.5)return;const shown=image.getBoundingClientRect();place(end,shown,Math.max(50,deadline-performance.now()));};
+   const retarget=()=>{if(finished||!target||!lastEnd)return;const end=target.getBoundingClientRect();if(!end.width||!end.height)return;if(Math.max(Math.abs(end.x-lastEnd.x),Math.abs(end.y-lastEnd.y),Math.abs(end.width-lastEnd.width),Math.abs(end.height-lastEnd.height))<.5)return;const shown=image.getBoundingClientRect();place(end,shown,Math.max(1,deadline-performance.now()));};
    const transfer=()=>{
     frame=0;if(removed||finished)return;const next=destination();
     if(!next){if(++attempts<4)frame=requestAnimationFrame(transfer);else release();return;}

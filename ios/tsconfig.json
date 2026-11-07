@@ -1,0 +1,1 @@
+{"extends":"../ui-desktop/tsconfig.json","include":["ui"],"exclude":["../ui-desktop/tests"]}

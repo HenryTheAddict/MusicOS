@@ -1206,6 +1206,11 @@ async fn album_metadata(app: tauri::AppHandle, request: crate::album_metadata::R
         };
         match request.action.as_str() {
             "summary" => crate::album_metadata::summary(&config.db_path, &library),
+            "select_release"=>{
+                let id=request.album_id.as_deref().context("Choose an album")?;let album=library.albums.iter().find(|a|a.id==id).context("Album is unavailable")?;
+                musicos_desktop::local::enrichment::select_release_choice(&config.db_path,&album.track_ids,request.release_id.as_deref().context("Choose a release")?)?;
+                let result=crate::album_metadata::detail(&config.db_path,&library,id)?;allow_comparison(&result);Ok(json!({"album":result}))
+            }
             "detail" => {
                 let id = request.album_id.as_deref().context("Choose an album")?;
                 let album = crate::album_metadata::detail(&config.db_path, &library, id)?;
@@ -1590,6 +1595,8 @@ async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>
     if action=="status"{return Ok(app.state::<AppState>().wifi.status());}
     if action!="start"{return app.state::<AppState>().wifi.action(&action,peer_id.as_deref()).map_err(Into::into);}
     let ids=track_ids.context("Choose music to copy")?;if ids.is_empty()||ids.len()>50000{return Err(anyhow::anyhow!("Choose between 1 and 50,000 songs").into());}
+    let notify=app.clone();let db=app.state::<AppState>().config().db_path;
+    app.state::<AppState>().wifi.configure(db,std::sync::Arc::new(move|result|{let event=if let (Some(id),Some(favorited))=(result["track_id"].as_i64(),result["favorited"].as_bool()){json!({"reason":"favorites","favorite_updates":[{"track_id":id,"favorited":favorited}]})}else{json!({"reason":"collections"})};let _=notify.emit("library-changed",event);}));
     let format=copy_format.unwrap_or_default();let generation=app.state::<AppState>().wifi.begin_preparation(format,ids.len());
     // Open the opt-in listener before hashing/conversion; pairing is independent of preparation.
     let mut empty=crate::wifi::Share::default();empty.format=format;
@@ -1597,7 +1604,8 @@ async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>
     tauri::async_runtime::spawn(async move {
         let prepare_app=app.clone();
         let result=blocking(move||{let state=prepare_app.state::<AppState>();let _cache=state.wifi.prepare_guard();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();
-            crate::wifi::prepare_with(&library,collections,&ids,name,format,&state.wifi.cache_folder(),&||state.wifi.current(generation),&|done,total,title|state.wifi.progress(generation,done,total,title))
+            let mut share=crate::wifi::prepare_with(&library,collections,&ids,name,format,&state.wifi.cache_folder(),&||state.wifi.current(generation),&|done,total,title|state.wifi.progress(generation,done,total,title))?;
+            crate::wifi::enrich_assets(&mut share,&config.db_path,&state.wifi.cache_folder())?;Ok(share)
         }).await.map_err(|e|anyhow::anyhow!(e.message));
         let _=app.state::<AppState>().wifi.finish(generation,result);
     });

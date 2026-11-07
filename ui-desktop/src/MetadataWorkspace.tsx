@@ -51,6 +51,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
   const [filter,setFilter] = useState<'all'|'suggestions'>('all');
   const [offset,setOffset] = useState(0);
   const [summary,setSummary] = useState<Set<string>|null>(null);
+  const [albumStates,setAlbumStates]=useState<Record<string,{state:string;changed_fields:number;checked:number;total:number}>>({});
   const [summaryError,setSummaryError] = useState('');
   const [cancelling,setCancelling] = useState(false);
   const [cancelError,setCancelError] = useState('');
@@ -89,7 +90,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
     let current = true;
     setSummaryError('');
     void displayData('album_metadata',{request:{action:'summary'}},true).then(result=>{
-      if (current) setSummary(new Set(result.album_ids??[]));
+      if (current) {setSummary(new Set(result.album_ids??[]));setAlbumStates(result.states??{});}
     }).catch(error=>{if(current)setSummaryError(errorText(error));});
     return ()=>{current=false;};
   },[active,page,epoch,taskResult]);
@@ -229,7 +230,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
               aria-pressed={album?.id===release.id} onClick={()=>select({album:release,tab:'cover'})}>
               <Cover src={release.cover} title={release.title}/>
               <span><strong>{release.title}</strong><small>{[release.artist,release.year||null,release.release_type,songCount(release.track_ids.length)].filter(Boolean).join(' · ')}</small>
-                {summary?.has(release.id)&&<span className="tag-suggestion-mark">Suggestions available</span>}
+                <span className="tag-suggestion-mark" data-state={albumStates[release.id]?.state}>{albumStates[release.id]?.state==='changes_available'?`${albumStates[release.id].changed_fields} suggested changes`:albumStates[release.id]?.state==='already_matches'?'Already matches':albumStates[release.id]?.state==='no_confident_match'?'No confident match':albumStates[release.id]?.state==='lookup_failed'?'Lookup failed':summary?.has(release.id)?'Suggestions available':'Not checked'}</span>
               </span>
               <Icon name="Back"/>
             </button>)}

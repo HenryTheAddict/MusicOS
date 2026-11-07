@@ -79,3 +79,5 @@ pub mod player_shortcuts;
 
 pub mod controller;
 pub mod platform;
+
+mod companion_sync;

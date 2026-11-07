@@ -47,3 +47,7 @@ Additional third-party packages retain their package licenses and existing appli
 Native controller input and force feedback use [Gilrs 0.11.2](https://gitlab.com/gilrs-project/gilrs) and gilrs-core 0.6.8, by the Gilrs contributors, under MIT OR Apache-2.0. Linux device discovery uses libudev-sys 0.1.4 (MIT), and controller storage uses vec_map 0.8.2 (MIT OR Apache-2.0). Complete supplied notices are bundled in `third_party/licenses/controller`. Gilrs bundles the SDL Game Controller Database, under its zlib license; its notice is included alongside the controller licenses. Vibration availability depends on hardware and the operating-system driver.
 
 The Linux build bundles the Microsoft ONNX Runtime 1.31.0 CPU runtime under MIT with its third-party notices, alongside the existing model. Runtime source and checksums are recorded by `scripts/linux/prepare-runtime.py`; complete notices are in `third_party/licenses/onnxruntime-MIT.txt` and `onnxruntime-ThirdPartyNotices.txt`.
+
+## iPhone companion
+
+The iPhone companion uses Tauri 2 (MIT or Apache-2.0), SwiftRs (MIT or Apache-2.0), Symphonia 0.5.5 by the Symphonia contributors (MPL-2.0), and Hound 3.5.1 by Ruud van Asseldonk (Apache-2.0). Supplied notices are in `third_party/licenses/companion`. Symphonia is unmodified; its corresponding source is available at https://github.com/pdeljanov/Symphonia/tree/v0.5.5. musicOS’s decoder integration is in `ios/src-tauri/src/decoder.rs`.

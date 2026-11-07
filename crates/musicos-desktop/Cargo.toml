@@ -20,6 +20,7 @@ default = ["gpui-ui"]
 gpui-ui = ["dep:gpui"]
 
 [dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
 anyhow = "1.0"
 async-channel = "2.5"
 directories = "6.0"
@@ -41,7 +42,6 @@ unicode-segmentation = "1.12"
 walkdir = "2.5"
 
 [dev-dependencies]
-rusqlite = { version = "0.32", features = ["bundled"] }
 tiny_http = "0.12"
 
 [build-dependencies]
@@ -56,3 +56,4 @@ binaries = [
     { path = "musicos-control-center", main = true },
     { path = "musicos-mac", main = false },
 ]
+

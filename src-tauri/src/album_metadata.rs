@@ -1,17 +1,19 @@
 //! Album-scoped comparisons retain each recording's provenance and revision.
 use anyhow::{ensure,Context,Result};use serde::{Deserialize};use serde_json::{json,Value};use sha2::{Digest,Sha256};use std::path::Path;use musicos_init::database::{Db,Connection,MetadataUpdate};
-#[derive(Default,Deserialize)]pub struct Request{pub action:String,pub album_id:Option<String>,pub token:Option<String>,pub rows:Option<Vec<Selection>>,pub search:Option<String>,pub write_files:Option<bool>}
+#[derive(Default,Deserialize)]pub struct Request{pub action:String,pub album_id:Option<String>,pub token:Option<String>,pub rows:Option<Vec<Selection>>,pub search:Option<String>,pub write_files:Option<bool>,pub release_id:Option<String>}
 #[derive(Deserialize)]pub struct Selection{pub track_id:i64,pub fields:Vec<String>}
-pub fn summary(path: &Path, library: &crate::library::Library) -> Result<Value> {
-    let c = Connection::open(path)?;
-    let pending = c.prepare("SELECT track_id FROM metadata_enrichment_status WHERE state='review'")?
-        .query_map([], |row| row.get::<_, i64>(0))?
-        .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
-    let ids: Vec<_> = library.albums.iter()
-        .filter(|album| album.track_ids.iter().any(|id| pending.contains(id)))
-        .map(|album| &album.id)
-        .collect();
-    Ok(json!({"album_ids": ids}))
+pub fn summary(path:&Path,library:&crate::library::Library)->Result<Value>{
+ let c=Connection::open(path)?;let statuses=c.prepare("SELECT track_id,state,candidate_json FROM metadata_enrichment_status")?.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+ let mut states=serde_json::Map::new();let mut ids=Vec::new();
+ for album in &library.albums{let mut count=0;let mut checked=0;let mut failed=0;let mut matched=0;
+  for id in &album.track_ids{if let Some((_,state,candidate))=statuses.iter().find(|(track,_,_)|track==id){checked+=1;if state=="failed"{failed+=1}if state=="review"{if let Some(value)=candidate.as_deref().and_then(|v|serde_json::from_str::<Value>(v).ok()){
+   if let Some(track)=library.tracks.iter().find(|t|t.id==*id){for (field,current) in [("title",json!(track.title)),("artist",json!(track.artist)),("album",json!(track.album)),("year",json!(track.year)),("track_number",json!(track.track_number)),("disc_number",json!(track.disc_number))]{if !value[field].is_null()&&value[field]!=current{count+=1;}}
+    if value["artwork_path"].as_str().is_some_and(|p|Some(p)!=album.cover.as_deref()){count+=1;}
+   }matched+=1;
+  }}}}
+  let state=if count>0{"changes_available"}else if failed>0{"lookup_failed"}else if checked==0{"not_checked"}else if matched>0{"already_matches"}else{"no_confident_match"};
+  if count>0{ids.push(album.id.clone());}states.insert(album.id.clone(),json!({"state":state,"changed_fields":count,"checked":checked,"total":album.track_ids.len()}));
+ }Ok(json!({"album_ids":ids,"states":states}))
 }
 
 pub fn list(path: &Path, library: &crate::library::Library, search: &str) -> Result<Value> {
@@ -24,7 +26,7 @@ pub fn list(path: &Path, library: &crate::library::Library, search: &str) -> Res
     let albums = library.albums.iter()
         .filter(|album| album.track_ids.iter().any(|id| pending.contains(id))
             && format!("{} {}", album.title, album.artist).to_lowercase().contains(&needle))
-        .map(|album| comparison(&db, &c, library, album))
+        .map(|album| comparison(path,&db, &c, library, album))
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({"albums": albums}))
 }
@@ -34,10 +36,10 @@ pub fn detail(path: &Path, library: &crate::library::Library, id: &str) -> Resul
         .context("This album is no longer in the library")?;
     let db = Db::open(&path.to_string_lossy())?;
     let c = Connection::open(path)?;
-    comparison(&db, &c, library, album)
+    comparison(path,&db, &c, library, album)
 }
 
-fn comparison(db: &Db, c: &Connection, library: &crate::library::Library, album: &crate::library::Album) -> Result<Value> {
+fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Library, album: &crate::library::Album) -> Result<Value> {
     use rusqlite::OptionalExtension;
     let mut query = c.prepare("SELECT state, candidate_json FROM metadata_enrichment_status WHERE track_id=?")?;
     let mut rows = Vec::with_capacity(album.track_ids.len());
@@ -57,14 +59,27 @@ fn comparison(db: &Db, c: &Connection, library: &crate::library::Library, album:
             .map(|metadata| format!("{}:{:?}", metadata.len(), metadata.modified().ok()));
         let art_resolution = artwork.and_then(|path| image::image_dimensions(path).ok())
             .map(|(width, height)| [width, height]);
-        rows.push(json!({"track_id": id, "current": current, "candidate": candidate,
+        let mut fields=Vec::new();if let Some(value)=&candidate{for field in ["title","artist","album","album_artist","year","track_number","disc_number"]{if !value[field].is_null()&&value[field]!=current[field]{fields.push(field)}}}
+        let art_comparison=match (album.cover.as_deref(),artwork){(Some(old),Some(new))=>art_comparison(old,new),(_,Some(_))=>"new",_=>"none"};
+        if artwork.is_some()&&art_comparison!="identical"{fields.push("artwork");}
+        rows.push(json!({"changed_fields":fields,"art_comparison":art_comparison,"track_id": id, "current": current, "candidate": candidate,
             "candidate_token": candidate_token, "status": status, "art_identity": art_identity, "art_resolution": art_resolution}));
     }
     let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, rows]))?));
     let resolution = album.cover.as_deref().and_then(|path| image::image_dimensions(path).ok())
         .map(|(width, height)| [width, height]);
-    Ok(json!({"album_id": album.id, "title": album.title, "artist": album.artist,
+    let release_choices=album.track_ids.first().map(|id|musicos_desktop::local::enrichment::saved_release_choices(path,*id)).transpose()?.unwrap_or(json!({"choices":[]}));
+    let changed=rows.iter().map(|r|r["changed_fields"].as_array().map_or(0,Vec::len)).sum::<usize>();
+    let status=if changed>0{"changes_available"}else if rows.iter().any(|r|r["status"]=="failed"){"lookup_failed"}else if rows.iter().all(|r|r["status"]=="unchecked"){"not_checked"}else if rows.iter().any(|r|!r["candidate"].is_null()){"already_matches"}else{"no_confident_match"};
+    Ok(json!({"status":status,"changed_fields":changed,"release_choices":release_choices,"album_id": album.id, "title": album.title, "artist": album.artist,
         "resolution": resolution, "cover": album.cover, "rows": rows, "token": token}))
+}
+
+fn art_comparison(old:&str,new:&str)->&'static str{
+ if old==new{return "identical"}
+ let loaded=(||->Option<bool>{let a=image::open(old).ok()?.thumbnail_exact(32,32).to_rgb8();let b=image::open(new).ok()?.thumbnail_exact(32,32).to_rgb8();Some(a.as_raw().iter().zip(b.as_raw()).map(|(a,b)|(*a as i32-*b as i32).unsigned_abs() as u64).sum::<u64>()<32*32*3*2)})();
+ if loaded==Some(true){return "identical"}
+ match (image::image_dimensions(old),image::image_dimensions(new)){(Ok((a,b)),Ok((c,d)))if ((a as f32/b as f32)-(c as f32/d as f32)).abs()>0.03=>"different_crop",_=>"different"}
 }
 
 pub fn apply(path:&Path,library:&crate::library::Library,request:Request)->Result<Value>{let id=request.album_id.context("Choose an album")?;let album=detail(path,library,&id)?;ensure!(album["token"].as_str()==request.token.as_deref(),"This album changed. Refresh the comparison.");let chosen=request.rows.unwrap_or_default();ensure!(!chosen.is_empty(),"Choose changes to apply");let mut changes=std::collections::BTreeMap::<i64,MetadataUpdate>::new();let mut art=None;
