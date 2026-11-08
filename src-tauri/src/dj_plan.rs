@@ -144,14 +144,17 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
     };
     let mut best: Option<(f32, Plan)> = None;
     let (mut tempo_rejected,mut unstable_rejected,mut drift_rejected)=(0,0,0);
-    for exit in sa.phrases.iter().filter(|p|p.confidence>=0.5&&allowed(p.seconds)) {
+    let exits=transition_boundaries(sa);let entries=transition_boundaries(sb);
+    for exit in exits.iter().filter(|p|p.confidence>=0.5&&allowed(p.seconds)) {
         let Some(ai)=boundary_beat(&sa.beats,exit.seconds) else {continue};
         for count in [4_usize,8,16,32] {
             let Some(&end)=sa.beats.get(ai+count) else {continue};
             let duration=end-sa.beats[ai];
             if !(2. ..=16.).contains(&duration)||end>length||!preserves_section(sa,end) {continue;}
-            let Some(end_boundary)=sa.phrases.iter().find(|p|p.confidence>=0.5&&(p.seconds-end).abs()<=0.05) else {continue};
-            for entry in sb.phrases.iter().filter(|p|p.confidence>=0.5&&p.seconds<=incoming_length/3.&&preserves_section(sb,p.seconds)) {
+            // The overlap starts on measured structural evidence. Its end is
+            // an actual beat of the same stable grid, not a second independently
+            // detected section change that needlessly rejects usable blends.
+            for entry in entries.iter().filter(|p|p.confidence>=0.5&&p.seconds<=incoming_length/3.&&preserves_section(sb,p.seconds)) {
                 let Some(bi)=boundary_beat(&sb.beats,entry.seconds) else {continue};
                 let Some(&incoming_end)=sb.beats.get(bi+count) else {continue};
                 if incoming_end>=incoming_length {continue;}
@@ -169,11 +172,11 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                 let dense_overlap=outgoing_density*incoming_density;
                 let harmonic=harmonic_distance(a.key_index,b.key_index);
                 let confidence=sa.beat_confidence.min(sb.beat_confidence)
-                    .min(exit.confidence).min(entry.confidence).min(end_boundary.confidence);
+                    .min(exit.confidence).min(entry.confidence);
                 let energy=(outgoing_density-incoming_density).abs();
                 let skipped=(length-end)/length+sb.beats[bi]/incoming_length;
                 let score=dense_overlap*0.35+harmonic*0.15+energy*0.2
-                    +(1.-confidence)*0.2+drift/0.05*0.2+skipped*0.25;
+                    +(1.-confidence)*0.2+drift/0.05*0.2+skipped*0.25+(duration-8.).abs()/16.*0.08;
                 let effect=if dense_overlap<0.2 {Effect::CleanBlend}
                     else if config.character==Character::Creative&&outgoing_density>incoming_density*1.5 {Effect::EchoBounce}
                     else if outgoing_density>incoming_density {Effect::EchoTail}else{Effect::ReverbTail};
@@ -184,7 +187,21 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
             }
         }
     }
-    Some(best.map(|(_, p)| p).unwrap_or_else(||fallback(&format!("No compatible supported phrase boundaries (tempo {tempo_rejected}, unstable {unstable_rejected}, drift {drift_rejected})"))))
+    Some(best.map(|(_, p)| p).unwrap_or_else(||fallback(&format!("No compatible measured section boundaries (tempo {tempo_rejected}, unstable {unstable_rejected}, drift {drift_rejected})"))))
+}
+/// A recurring phrase is useful evidence, but not the only evidence: a strong
+/// measured timbre/energy change near an observed beat also supports a cue.
+/// Do not infer a bar phase from BPM or manufacture an evenly spaced beat grid.
+fn transition_boundaries(s:&Structure)->Vec<crate::structure::Boundary>{
+    let mut cues=s.phrases.iter().filter(|p|p.confidence>=0.5).cloned().collect::<Vec<_>>();
+    for change in s.changes.iter().filter(|p|p.confidence>=0.5){
+        let i=s.beats.partition_point(|b|*b<change.seconds);
+        let beat=[i.checked_sub(1),Some(i)].into_iter().flatten().filter_map(|n|s.beats.get(n))
+            .filter(|b|(**b-change.seconds).abs()<=0.15)
+            .min_by(|a,b|(*a-change.seconds).abs().total_cmp(&(*b-change.seconds).abs()));
+        if let Some(&seconds)=beat{if let Some(old)=cues.iter_mut().find(|p|(p.seconds-seconds).abs()<0.04){old.confidence=old.confidence.max(change.confidence);}else{cues.push(crate::structure::Boundary{seconds,confidence:change.confidence});}}
+    }
+    cues.sort_by(|a,b|a.seconds.total_cmp(&b.seconds));cues
 }
 fn preserves_section(s:&Structure,time:f32)->bool{s.regions.iter().all(|r|!r.repeated||r.confidence<0.5||time<=r.start+0.05||time>=r.end-0.05)}
 fn valid_beats(beats:&[f32])->bool {beats.len()>=5&&beats.iter().all(|t|t.is_finite()&&*t>=0.)&&beats.windows(2).all(|p|p[1]>p[0])}
@@ -402,6 +419,13 @@ mod tests {
         a.phrases.retain(|p|p.seconds==128.||p.seconds==136.);
         a.regions=vec![Region{start:128.,end:170.,repeated:true,confidence:0.9}];
         let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false).unwrap();assert_eq!(p.confidence,0.);
+    }
+    #[test]fn measured_changes_support_a_blend_without_a_second_section_at_its_end(){
+        let mut a=measured(0.5);let mut b=measured(0.49);a.phrases.clear();b.phrases.clear();
+        a.changes=vec![Boundary{seconds:128.08,confidence:0.8}];b.changes=vec![Boundary{seconds:7.9,confidence:0.8}];
+        let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(122.),Some(&b)),&config(),false).unwrap();
+        assert!(p.confidence>=0.5);assert_eq!(p.outgoing_cue,128.);assert!((p.incoming_cue-7.84).abs()<0.001);assert!((0.94..=1.06).contains(&p.incoming_tempo));
+        a.changes[0].confidence=0.49;let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(122.),Some(&b)),&config(),false).unwrap();assert_eq!(p.confidence,0.);
     }
     #[test]fn beats_without_structural_evidence_never_force_a_mix(){
         let mut a=measured(0.5);a.phrases.clear();let b=measured(0.5);

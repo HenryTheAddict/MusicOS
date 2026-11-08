@@ -1,0 +1,14 @@
+import type {Palette} from './types';
+type Sample={rgb:number[];lab:number[];weight:number};
+function lab(rgb:number[]){const [r,g,b]=rgb.map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4),l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b),m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b),s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);return [.2104542553*l+.793617785*m-.0040720468*s,1.9779984951*l-2.428592205*m+.4505937099*s,.0259040371*l+.7827717662*m-.808675766*s];}
+const distance=(a:number[],b:number[])=>a.reduce((n,v,i)=>n+(v-b[i])**2,0),chroma=(s:Sample)=>Math.hypot(s.lab[1],s.lab[2]);
+const best=(rows:Sample[],score:(s:Sample)=>number)=>rows.reduce((a,b)=>score(b)>score(a)?b:a);
+/** Bounded perceptual clustering, using the same selection policy as the native
+ * desktop extractor. Dark covers and monochrome art retain their own colors. */
+export function paletteFromPixels(data:ArrayLike<number>):Palette|null{
+ const bins=new Map<number,{weight:number;sum:number[]}>();for(let i=0;i+3<data.length;i+=4){if(data[i+3]<32)continue;const weight=data[i+3]/255,key=(data[i]>>4)*256+(data[i+1]>>4)*16+(data[i+2]>>4),bin=bins.get(key)??{weight:0,sum:[0,0,0]};bin.weight+=weight;for(let j=0;j<3;j++)bin.sum[j]+=data[i+j]/255*weight;bins.set(key,bin);}
+ const samples=[...bins.values()].map(s=>{const rgb=s.sum.map(v=>v/s.weight);return {rgb,lab:lab(rgb),weight:s.weight};});if(!samples.length)return null;const total=samples.reduce((n,s)=>n+s.weight,0);let centers=[best(samples,s=>s.weight)];
+ for(let i=1;i<8;i++){const next=best(samples,s=>s.weight*Math.min(...centers.map(c=>distance(s.lab,c.lab))));if(centers.some(c=>distance(c.lab,next.lab)<.00001))break;centers.push(next);}
+ for(let pass=0;pass<8;pass++){const groups=centers.map(()=>({weight:0,sum:[0,0,0]}));for(const s of samples){let index=0;for(let i=1;i<centers.length;i++)if(distance(s.lab,centers[i].lab)<distance(s.lab,centers[index].lab))index=i;const g=groups[index];g.weight+=s.weight;for(let j=0;j<3;j++)g.sum[j]+=s.rgb[j]*s.weight;}centers=groups.filter(g=>g.weight>0).map(g=>{const rgb=g.sum.map(v=>v/g.weight);return {rgb,lab:lab(rgb),weight:g.weight};});}
+ centers=centers.filter(s=>s.weight>=total*.008);const colorful=centers.filter(s=>chroma(s)>=.045&&s.weight>=total*.015),candidates=colorful.reduce((n,s)=>n+s.weight,0)>=total*.06?colorful:centers;if(!candidates.length)return null;const chosen=[best(candidates,s=>s.weight*(1+Math.min(.2,chroma(s))*4))];while(chosen.length<3){const next=best(candidates,s=>Math.sqrt(s.weight)*Math.min(...chosen.map(c=>distance(s.lab,c.lab))));if(chosen.some(c=>distance(c.lab,next.lab)<.001))break;chosen.push(next);}while(chosen.length<3)chosen.push(chosen[0]);chosen.sort((a,b)=>a.lab[0]-b.lab[0]);const swatches=chosen.map(s=>'#'+s.rgb.map(v=>Math.round(v*255).toString(16).padStart(2,'0')).join(''));return {background:swatches[1],blob:swatches[2],accent:swatches[0],text:'#12202a',swatches};
+}

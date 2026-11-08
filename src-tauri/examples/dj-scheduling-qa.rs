@@ -25,7 +25,7 @@ fn main()->Result<()> {
   accepted|=state.dj_transition.as_ref().is_some_and(|plan|plan.plan_id==request_id&&plan.status=="scheduled");
   active|=state.dj_transition.as_ref().is_some_and(|plan|plan.plan_id==request_id&&plan.active);
   if state.queue_index==Some(1) {
-   ensure!(accepted&&active,"No accepted/active controller overlap");ensure!(state.queue_entry_ids==queue_ids,"Queue identities changed");ensure!((state.position-3.).abs()<0.4,"Wrong incoming source position");service.send(LocalPlaybackCommand::Pause)?;
+   ensure!(accepted&&active,"No accepted/active controller overlap");ensure!(state.queue_entry_ids==queue_ids,"Queue identities changed");ensure!((state.position-1.5).abs()<0.4,"Dominant-deck handoff must publish the real midpoint source position");service.send(LocalPlaybackCommand::Pause)?;
    println!("{}",serde_json::to_string_pretty(&serde_json::json!({"fixtures_only":true,"volume":0,"seeking":false,"accepted":accepted,"active_overlap":active,"promoted":true,"incoming_position":state.position,"elapsed_seconds":started.elapsed().as_secs_f32(),"audible_listening_verified":false,"diagnostics":dj_diagnostics::snapshot()}))?);break;
   }
   ensure!(started.elapsed()<Duration::from_secs(20),"Controller transition failed: {:?}",state.transition_outcome);std::thread::sleep(Duration::from_millis(10));

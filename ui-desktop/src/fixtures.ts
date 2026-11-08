@@ -255,6 +255,7 @@ export async function fixtureCall(
         blob: "#55937a",
         text: "#12202a",
       };
+    case 'audition': {const key='musicos-fixture-audition';if(a.action==='start')sessionStorage.setItem(key,JSON.stringify({track_id:a.trackId,at:Date.now()}));if(a.action==='stop')sessionStorage.removeItem(key);const saved=JSON.parse(sessionStorage.getItem(key)??'null');const position=saved?(Date.now()-saved.at)/1000:0;return {preview:saved&&position<30?{track_id:saved.track_id,position,duration:30,preparing:false}:null,error:null};}
     case "playback": {
       const action = a.action;
       if (action.type === "play") {
@@ -317,7 +318,7 @@ export async function fixtureCall(
       if(action.type==='dj_mode')player={...player,dj_mode:action.enabled,shuffle:action.enabled?false:player.shuffle};
       return player;
     }
-    case 'home_activity': return JSON.parse(localStorage.getItem('musicos-fixture-home-activity')??'{"frequent":[],"recent":[]}');
+    case 'home_activity': return JSON.parse(localStorage.getItem('musicos-fixture-home-activity')??(new URLSearchParams(location.search).has('homeActivity')?'{"frequent":[{"id":1,"plays":7},{"id":13,"plays":3}],"recent":[1,13,2]}':'{"frequent":[],"recent":[]}'));
     case 'spark_recommendations': return savedCollections.filter(c=>c.kind==='audio'&&c.track_ids.some(id=>tracks.some(t=>t.id===id&&t.available))).slice().sort((x,y)=>Number(y.track_ids.includes(a.current))-Number(x.track_ids.includes(a.current))||x.id.localeCompare(y.id)).slice(0,3).map(c=>({id:c.id,reason:c.track_ids.includes(a.current)?'Includes what’s playing':'From your recent listening'}));
     case 'playlist_suggestions': {if(new URLSearchParams(location.search).has('sparkSetup'))return {ids:[],state:fixtureModelInstalled?'analysis':'setup',message:fixtureModelInstalled?'Prepare songs to get suggestions.':'Audio suggestions use the local Sparklist model.'};const item=savedCollections.find(c=>c.id===a.id);return {ids:item?.track_ids.length?tracks.filter(t=>!item.track_ids.includes(t.id)).slice(0,10).map(t=>t.id):[],state:item?.track_ids.length?'ready':'empty',message:item?.track_ids.length?'Suggested from this playlist’s sound.':'Choose a starting song.'};}
     case 'metadata_files': return a.action==='inspect'?{values:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({...t,revision:1})),files:a.writeFiles?{backup_bytes:120000,files:tracks.filter(t=>a.ids.includes(t.id)).map(t=>({path:t.path,format:'FLAC'})),supported_fields:['Title','Artist','Album','Album artist','Genre','Year','Track and disc numbers']}:null}:{jobs:[]};

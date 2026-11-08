@@ -54,6 +54,7 @@ pub struct Clock {
     pub room_active:AtomicBool,
     pub reverb_processed_frames:AtomicU64,
     pub failed:[AtomicU64;2],
+    pub generations:[AtomicU64;2],
     pub parameter_revision:[AtomicU64;2],
     pub levels: [AtomicU32; 3],
     pub audible_frames: [AtomicU64; 2],
@@ -236,6 +237,7 @@ impl Mixer {
                         self.pending[deck] = None;
                         if deck==self.active {self.room.clear();}
                         self.generations[deck] = generation;
+                        self.clock.generations[deck].store(generation,Ordering::Release);
                         self.clock.drained[deck].store(false, Ordering::Relaxed);
                         self.clock.ready[deck].store(false, Ordering::Release);
                         self.positions[deck] = source_frame.max(0.);

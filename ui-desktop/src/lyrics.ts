@@ -54,7 +54,7 @@ export function parseStamp(value:string){const m=/^(\d+):(\d{1,2}(?:\.\d{1,3})?)
 
 /** A later cue does not end a voice whose explicit interval is still active. */
 const cueEnds=new WeakMap<LyricDocument,number[]>();
-export function activeLyricIndices(doc:LyricDocument,position:number){let ends=cueEnds.get(doc);if(!ends){ends=[];let next=doc.metadata.duration_ms??Infinity,group=Infinity;for(let i=doc.lines.length-1;i>=0;i--){const line=doc.lines[i];if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}ends[i]=line.end_ms??next;}cueEnds.set(doc,ends);}const ms=position*1000-doc.metadata.offset_ms;return doc.lines.flatMap((line,i)=>visibleLyricLine(doc,i)&&ms>=line.start_ms&&ms<ends![i]?[i]:[]);}
+export function activeLyricIndices(doc:LyricDocument,position:number){let ends=cueEnds.get(doc);if(!ends){ends=[];let next=doc.metadata.duration_ms??Infinity,group=Infinity;for(let i=doc.lines.length-1;i>=0;i--){const line=doc.lines[i];if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}const wordEnd=line.words?.reduce((end,word)=>Number.isFinite(word.end_ms)&&word.end_ms!>line.start_ms?Math.max(end,word.end_ms!):end,-Infinity);ends[i]=line.end_ms??(wordEnd!==undefined&&wordEnd>-Infinity?wordEnd:next);}cueEnds.set(doc,ends);}const ms=position*1000-doc.metadata.offset_ms;return doc.lines.flatMap((line,i)=>visibleLyricLine(doc,i)&&ms>=line.start_ms&&ms<ends![i]?[i]:[]);}
 
 export function lyricVoice(line:LyricLine){return line['x-musicos']?.voice??(line['x-musicos']?.agents?.length?'unassigned':'lead');}
 export function lossyLrc(doc:LyricDocument){return doc.lines.some((l,i)=>l.words?.length||l['x-musicos']||l.end_ms!==undefined&&doc.lines.slice(i+1).some(n=>n.start_ms<l.end_ms!));}

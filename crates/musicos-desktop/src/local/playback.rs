@@ -16,6 +16,8 @@ use super::library::track_from_init;
 pub enum LocalPlaybackCommand {
     PlayTrack(i64),
     PlayTracks { ids: Vec<i64>, start_index: usize },
+    Audition(i64),
+    EndAudition,
     PlayPause,
     Pause,
     Previous,
@@ -62,6 +64,7 @@ impl LocalPlaybackCommand {
 
 #[derive(Debug, Clone)]
 pub struct LocalPlaybackSnapshot {
+    pub audition:Option<super::deck_playback::AuditionStatus>,
     pub revision: u64,
     pub track: Option<Track>,
     pub queue: Arc<[Track]>,
@@ -97,6 +100,7 @@ impl Default for LocalPlaybackSnapshot {
     fn default() -> Self {
         Self {
             revision: 0,
+            audition:None,
             track: None,
             queue: Arc::from([]),
             queue_revision: 0,
@@ -293,7 +297,7 @@ fn playback_loop(
     );
 
     loop {
-        let timeout = if player.is_playing() {
+        let timeout = if player.is_playing() || player.audition_status().is_some() {
             Duration::from_millis(100)
         } else {
             Duration::from_secs(1)
@@ -348,7 +352,12 @@ fn playback_loop(
 fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackCommand) -> Result<()> {
     if matches!(&command,LocalPlaybackCommand::Previous|LocalPlaybackCommand::Next|LocalPlaybackCommand::SeekAbsolute(_)|LocalPlaybackCommand::SeekRelative(_)|LocalPlaybackCommand::SetDjMode(false)|LocalPlaybackCommand::SelectQueueIndex(_)|LocalPlaybackCommand::RemoveQueueIndex(_)|LocalPlaybackCommand::MoveQueueItem{..}|LocalPlaybackCommand::PlayNext(_)|LocalPlaybackCommand::AddToQueue(_)|LocalPlaybackCommand::InsertQueue{..}|LocalPlaybackCommand::ClearUpcoming|LocalPlaybackCommand::ClearQueue)
         || matches!(&command,LocalPlaybackCommand::SetListening(v) if v.speed!=player.listening.speed||v.transpose()!=player.listening.transpose()) {player.settle_audible()?;}
+    if matches!(&command,LocalPlaybackCommand::SetDjMode(_)|LocalPlaybackCommand::SetShuffle(_)|LocalPlaybackCommand::ToggleShuffle|LocalPlaybackCommand::CycleRepeat){player.end_audition(true);}
+    if command.mutates_queue()&&!matches!(&command,LocalPlaybackCommand::PlayTrack(_)|LocalPlaybackCommand::PlayTracks{..}) {player.end_audition(true);}
+    if matches!(&command,LocalPlaybackCommand::PlayTrack(_)|LocalPlaybackCommand::PlayTracks{..}|LocalPlaybackCommand::PlayPause|LocalPlaybackCommand::Pause|LocalPlaybackCommand::Previous|LocalPlaybackCommand::Next|LocalPlaybackCommand::SeekAbsolute(_)|LocalPlaybackCommand::SeekRelative(_)|LocalPlaybackCommand::SelectQueueIndex(_)|LocalPlaybackCommand::SetListening(_)|LocalPlaybackCommand::ClearQueue|LocalPlaybackCommand::RefreshPaths) {player.end_audition(false);}
     match command {
+        LocalPlaybackCommand::Audition(id)=>{let track=db.get_track_by_id(id)?.context("Song not found")?;anyhow::ensure!(std::path::Path::new(&track.path).is_file(),"This song is unavailable");player.audition(track)?;}
+        LocalPlaybackCommand::EndAudition=>player.end_audition(true),
         LocalPlaybackCommand::PlayTrack(id) => {
             let track = db
                 .get_track_by_id(id)?
@@ -397,11 +406,12 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
             }
         }
         LocalPlaybackCommand::PlanTransition(plan) => {
+            if player.audition_status().is_some(){return Ok(());}
             if let Err(error)=player.prepare(plan){player.plan_revision=player.plan_revision.wrapping_add(1);
                 super::dj_diagnostics::record("rejected",None,None,error.to_string());return Err(error);}
         }
         LocalPlaybackCommand::ArrangeUpcoming(ids) => {
-            player.arrange(ids)?;
+            if player.audition_status().is_none(){player.arrange(ids)?;}
         }
         LocalPlaybackCommand::ToggleShuffle => player.toggle_shuffle(),
         LocalPlaybackCommand::SetShuffle(enabled) => player.set_shuffle(enabled),
@@ -483,6 +493,7 @@ fn publish(
             listening:player.listening.clone(),
             listening_applied:player.listening_applied(),
             applied_listening_revision:player.applied_listening_revision(),requested_listening_revision:player.listening_revision,applied_reverb:player.applied_reverb(),applied_reverb_depth:player.applied_reverb_depth(),reverb_processed_frames:player.reverb_processed_frames(),transition_outcome:player.transition_outcome.clone(),failed_entries:player.failed_entries.iter().copied().collect(),
+            audition:player.audition_status(),
             dj_transition: player.transition_status(),
             queue_index: status.queue_index,
             is_playing: status.is_playing,
@@ -837,6 +848,16 @@ mod tests {
 #[cfg(test)]mod repair_tests {
  use super::*;
  fn wave(path:&PathBuf,seconds:u32){let rate=8000u32;let length=rate*seconds*2;let mut w=Vec::new();w.extend(b"RIFF");w.extend((36+length).to_le_bytes());w.extend(b"WAVEfmt ");w.extend(16u32.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(rate.to_le_bytes());w.extend((rate*2).to_le_bytes());w.extend(2u16.to_le_bytes());w.extend(16u16.to_le_bytes());w.extend(b"data");w.extend(length.to_le_bytes());w.resize(44+length as usize,0);std::fs::write(path,w).unwrap();}
+ fn wait_for(service:&LocalPlaybackService,condition:impl Fn(&LocalPlaybackSnapshot)->bool)->LocalPlaybackSnapshot{let end=std::time::Instant::now()+Duration::from_secs(6);loop{let s=service.snapshot();if condition(&s){return s;}assert!(std::time::Instant::now()<end,"Timed out: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
+ #[test]fn auditions_restore_duplicate_queue_identity_position_and_pause_state(){
+  let temp=tempfile::tempdir().unwrap();let path=temp.path().join("audition.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let main=temp.path().join("main.wav");let excerpt=temp.path().join("excerpt.wav");wave(&main,12);wave(&excerpt,2);
+  let id=db.insert_track(main.to_str().unwrap(),"Main","Artist","Album",12,100,0).unwrap();let preview=db.insert_track(excerpt.to_str().unwrap(),"Preview","Artist","Other",2,100,1).unwrap();drop(db);
+  let service=LocalPlaybackService::start_with_preferences(path,PlaybackPreferences{volume:0.,..Default::default()}).unwrap();service.send(LocalPlaybackCommand::PlayTracks{ids:vec![id,id],start_index:0}).unwrap();let before=wait_for(&service,|s|s.position>0.25&&s.is_playing);let entries=before.queue_entry_ids.clone();
+  service.send(LocalPlaybackCommand::Audition(preview)).unwrap();let during=wait_for(&service,|s|s.audition.as_ref().is_some_and(|a|a.position>0.2));assert!(!during.is_playing);assert_eq!(during.track.as_ref().unwrap().id,id);assert_eq!(during.queue_entry_ids,entries);let frozen=during.position;
+  service.send(LocalPlaybackCommand::PlanTransition(Transition{request_id:700,outgoing:entries[0],incoming:entries[1],outgoing_cue:10.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()})).unwrap();let still=wait_for(&service,|s|s.audition.as_ref().is_some_and(|a|a.position>0.5));assert!(still.error.is_none());
+  let restored=wait_for(&service,|s|s.audition.is_none()&&s.is_playing);assert_eq!(restored.queue_entry_ids,entries);assert!((restored.position-frozen).abs()<0.35);
+  service.send(LocalPlaybackCommand::Pause).unwrap();wait_for(&service,|s|!s.is_playing);service.send(LocalPlaybackCommand::Audition(preview)).unwrap();wait_for(&service,|s|s.audition.is_some());service.send(LocalPlaybackCommand::EndAudition).unwrap();let stopped=wait_for(&service,|s|s.audition.is_none());assert!(!stopped.is_playing);assert_eq!(stopped.queue_entry_ids,entries);assert_eq!(stopped.queue_index,Some(0));
+ }
  #[test]fn automatic_promotions_skip_corrupt_incoming_without_mutating_queue(){
   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("test.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let mut ids=Vec::new();
   for i in 0..4 {let audio=temp.path().join(format!("{i}.wav"));if i==1 {std::fs::write(&audio,b"corrupt audio").unwrap();}else{wave(&audio,3);}ids.push(db.insert_track(audio.to_str().unwrap(),"Automatic test","Artist","Same album",3,100,i).unwrap());}drop(db);

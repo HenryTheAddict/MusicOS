@@ -99,6 +99,7 @@ export const emptyTask: Task = {
   cancelled: false,
 };
 type Commands = {
+  audition:{args:{action:'start'|'stop'|'status';trackId?:number};result:{preview:{track_id:number;position:number;duration:number;preparing:boolean}|null;error:string|null}};
   controller:{args:{request:import("./controller").ControllerRequest};result:import("./controller").ControllerStatus};
   visualizer:{args:{request:{action:"open"|"close"|"refresh"|"status";settings?:import("./visualizer").VisualizerSettings}};result:import("./visualizer").VisualizerStatus};
   wifi_sync:{args:{action:string;trackIds?:number[];peerId?:string;copyFormat?:import("./Devices").CopyFormat};result:import("./Devices").WifiStatus};

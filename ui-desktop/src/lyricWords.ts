@@ -16,8 +16,12 @@ export function lyricWordSegments(line:LyricLine):{text:string;word?:number}[]|n
 }
 export function lyricWordEnd(line:LyricLine,index:number):number|undefined {
  const word=line.words?.[index];if(!word)return;
- const end=word.end_ms??line.words?.[index+1]?.start_ms??line.end_ms;
- return end!==undefined&&Number.isFinite(end)&&end>word.start_ms?end:undefined;
+ const valid=(end:number|undefined)=>end!==undefined&&Number.isFinite(end)&&end>word.start_ms;
+ if(valid(word.end_ms))return word.end_ms;
+ // Simultaneous syllables/voices can share a start. A zero-length neighbour
+ // must not turn genuine word timing into an instantaneous full highlight.
+ const end=line.words?.slice(index+1).find(next=>next.start_ms>word.start_ms)?.start_ms??line.end_ms;
+ return valid(end)?end:undefined;
 }
 export function lyricWordActive(line:LyricLine,index:number,time:number){
  const word=line.words?.[index],end=lyricWordEnd(line,index);

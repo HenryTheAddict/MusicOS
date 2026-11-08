@@ -66,7 +66,11 @@ pub struct Status {
     pub backend: String,
     pub last_error: Option<String>,
 }
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AuditionStatus {pub track_id:i64,pub position:f32,pub duration:f32,pub preparing:bool}
+struct Audition {track_id:i64,generation:u64,deck:usize,start:f32,end:f32,resume:bool,started:std::time::Instant}
 pub struct DesktopPlayer {
+    audition:Option<Audition>,
     output: super::audio_output::AudioOutput,
     control: dj_audio::Control,
     decks: Vec<Deck>,
@@ -242,6 +246,7 @@ impl DesktopPlayer {
         }
         let output = super::audio_output::AudioOutput::new(mixer);
         Self {
+            audition:None,
             output,
             control,
             decks,
@@ -388,6 +393,7 @@ impl DesktopPlayer {
     }
     fn transition_is_accepted(&self)->bool {self.transition.is_some()&&(self.scheduled_reported||self.control.clock.mixing.load(Ordering::Acquire)||(self.control.clock.schedule_id.load(Ordering::Acquire)==self.schedule_id&&self.prepared.is_some_and(|(_,deck)|self.control.clock.ready[deck].load(Ordering::Acquire))))}
     fn prepare_inner(&mut self, mut plan:Transition)->Result<()> {
+        anyhow::ensure!(self.audition.is_none(),"A song preview is using the spare deck");
         super::dj_diagnostics::record("requested",Some(plan.outgoing),Some(plan.incoming),format!("request {}",plan.request_id));
         anyhow::ensure!(!self.transition_is_accepted(),"An accepted transition is already protected");
         let Some(current) = self.current else {
@@ -461,11 +467,54 @@ impl DesktopPlayer {
         self.outcome("preparing","decoder requested; awaiting mixer acknowledgement and ready audio");
         Ok(())
     }
+    /// Auditions borrow the idle deck. The queue, its occurrence identities and
+    /// the suspended deck's source position remain untouched.
+    pub fn audition(&mut self,track:Track)->Result<()> {
+        self.end_audition(true);
+        self.settle_audible()?;
+        anyhow::ensure!(self.output.available(),"Audio output is unavailable");
+        anyhow::ensure!(self.control.commands.slots()>=6,"Audio controls are busy; try again");
+        self.cancel_reason("song audition");
+        let deck=1-self.active;let length=track.duration.max(0) as f32;
+        let start=if length>40. {(length*0.25).min(length-30.)}else{0.};
+        let end=(start+30.).min(length);let id=track.id;let resume=!self.paused;
+        self.load(deck,track,start,1.,0)?;
+        self.loaded[deck]=None; // An excerpt never increments the library's play count.
+        self.paused=true;
+        self.command(Command::Activate(deck));self.command(Command::Pause(false));
+        self.audition=Some(Audition{track_id:id,generation:self.decks[deck].generation.load(Ordering::Acquire),deck,start,end,resume,started:std::time::Instant::now()});
+        Ok(())
+    }
+    pub fn audition_status(&self)->Option<AuditionStatus>{self.audition.as_ref().map(|a|{
+        let applied=self.control.clock.generations[a.deck].load(Ordering::Acquire)==a.generation;
+        let source=if applied{self.control.clock.source_frames[a.deck].load(Ordering::Acquire) as f32/RATE as f32}else{a.start};
+        AuditionStatus{track_id:a.track_id,position:(source-a.start).max(0.),duration:(a.end-a.start).max(0.),preparing:source<=a.start&&a.started.elapsed()<Duration::from_secs(5)}
+    })}
+    pub fn end_audition(&mut self,restore_playing:bool){
+        if let Some(a)=self.audition.take(){
+            self.decks[a.deck].generation.fetch_add(1,Ordering::AcqRel);
+            self.command(Command::Activate(self.active));self.activation_pending=Some(self.active);
+            self.paused=!(restore_playing&&a.resume);self.command(Command::Pause(self.paused));
+            self.retry_after=std::time::Instant::now()+Duration::from_millis(250);
+        }
+    }
     pub fn tick(&mut self) {
         self.output.poll(false);
         // Output outages must not expire a healthy prepared decoder or advance
         // the queue while its sample clock is stopped.
         if !self.output.available(){self.preparing_since=std::time::Instant::now();return;}
+        if let Some(a)=&self.audition {
+            if self.control.clock.generations[a.deck].load(Ordering::Acquire)!=a.generation || self.control.clock.active.load(Ordering::Acquire)!=a.deck as u64 {
+                if a.started.elapsed()>Duration::from_secs(5){self.end_audition(true);}
+                return;
+            }
+            let source=self.control.clock.source_frames[a.deck].load(Ordering::Acquire) as f32/RATE as f32;
+            let generation=self.decks[a.deck].generation.load(Ordering::Acquire);
+            let failed=self.control.clock.failed[a.deck].load(Ordering::Acquire)==generation;
+            let ended=source>=a.end||self.control.clock.drained[a.deck].load(Ordering::Acquire);
+            if failed||ended||a.started.elapsed()>Duration::from_secs(36){self.end_audition(true);}
+            return;
+        }
         let mixing=self.control.clock.mixing.load(Ordering::Acquire);
         if mixing&&!self.was_mixing {super::dj_diagnostics::record("activated",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),format!("source {:.3}s",self.get_position()));}
         if !self.scheduled_reported && self.control.clock.schedule_id.load(Ordering::Acquire)==self.schedule_id && self.prepared.is_some_and(|(_,d)|self.control.clock.ready[d].load(Ordering::Acquire)) {self.scheduled_reported=true;super::dj_diagnostics::record("accepted",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),format!("mixer acknowledged plan {}, deck ready",self.schedule_id));}

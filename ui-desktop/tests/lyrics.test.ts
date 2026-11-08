@@ -11,3 +11,6 @@ it('duplicate empty cues do not add giant gaps; a real instrumental break remain
 
 it('overlapping voices share the acknowledged clock and explicit ends survive later cues',()=>{const duet={...doc,metadata:{...doc.metadata,offset_ms:0,duration_ms:10000},lines:[{text:'lead',start_ms:1000,end_ms:6000},{text:'reply',start_ms:2000,end_ms:4000},{text:'together',start_ms:6000,end_ms:8000}]};expect(activeLyricIndices(duet,2.5)).toEqual([0,1]);expect(activeLyricIndices(duet,4)).toEqual([0]);expect(activeLyricIndices(duet,6)).toEqual([2]);expect(activeLyricIndices(duet,8)).toEqual([]);expect(lossyLrc(duet)).toBe(true);});
 it('equal timestamps remain active together when line ends are absent',()=>{expect(activeLyricIndices(doc,2.2)).toEqual([1,2]);});
+it('keeps a genuinely timed voice active until its final word ends, across a second voice',()=>{
+ const duet:LyricDocument={...doc,metadata:{...doc.metadata,offset_ms:0},lines:[{text:'Hold',start_ms:1000,words:[{text:'Hold',start_ms:1000,end_ms:4000}]},{text:'Second',start_ms:2000,end_ms:3000}]};expect(activeLyricIndices(duet,2.5)).toEqual([0,1]);expect(activeLyricIndices(duet,3.5)).toEqual([0]);expect(activeLyricIndices(duet,4)).toEqual([]);
+});

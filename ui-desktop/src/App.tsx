@@ -1,3 +1,4 @@
+import {SongPreviewProvider} from './SongPreview';
 import {installController,defaultController} from './controller';
 import {useNativePlayerShortcuts,type PlayerShortcut} from './useNativePlayerShortcuts';
 import VisualizerPlayer from './VisualizerPlayer';
@@ -1126,7 +1127,7 @@ export default function App() {
       ? `${route.view}s`
       : route.view
   ) as Scope;
-  return (<><ViewActivity active={!visualizerOpen}>
+  return (<SongPreviewProvider active={miniMode==='normal'&&!visualizerOpen}><><ViewActivity active={!visualizerOpen}>
     {miniMode!=='normal'&&(<div className="app-shell mini-shell" inert={visualizerOpen} style={{...playingStyle,background:"transparent"}} data-theme-mode={look.mode==='system'?(systemDark?'dark':'light'):look.mode}><MiniPlayer onViewChange={view=>{if(view!=='lyrics')changePreferences({...preferences,mini_player_view:view==='queue'?'queue':'artwork'});}} density={preferences.mini_player_density??"standard"} player={player} cover={playingCover} bpm={player.track?tempos.get(player.track.id):undefined} mode={miniMode} onMode={mode=>void changeMini(mode)} onAction={run} onFavorite={()=>{if(player.track)favorite(player.track);}} onAlbum={()=>void showPlaying('album')} onQueue={()=>void changeMini(miniMode==='queue'?'tall':'queue')} onMenuResize={async open=>{if(native)await call('mini_player',{mode:miniMode,menuOpen:open,pinned:miniPinned});}} pinned={miniPinned} onPin={()=>void toggleWindowPin()} onWindowError={setError} items={nowActions}/>{error&&<button className="mini-player-error" onClick={()=>{void changeMini('normal');}}>{error} · Return to musicOS</button>}</div>)}
     <KeepView className="main-view" active={miniMode==='normal'}>{miniMode==='normal'&&<div
       className="app-shell adaptive-shell" inert={visualizerOpen} ref={shell.root} data-layout={shell.layout}
@@ -1488,6 +1489,6 @@ export default function App() {
           Browser preview · Open the desktop app to use your music.
         </div>
       )}
-    </div>}</KeepView></ViewActivity>{visualizerOpen&&<VisualizerPlayer preferences={preferences} onPreferences={changePreferences} open view={visualizerView} onView={setVisualizerView} onClose={()=>setVisualizerOpen(false)} returnFocus={visualizerOpener.current} layout={shell.layout} onWindowError={setError} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={null} onPreviewPlay={async()=>{}} onEditLyrics={id=>{setVisualizerOpen(false);openMetadata({mode:'lyrics',trackId:id});}}/>}{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</>
+    </div>}</KeepView></ViewActivity>{visualizerOpen&&<VisualizerPlayer preferences={preferences} onPreferences={changePreferences} open view={visualizerView} onView={setVisualizerView} onClose={()=>setVisualizerOpen(false)} returnFocus={visualizerOpener.current} layout={shell.layout} onWindowError={setError} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={null} onPreviewPlay={async()=>{}} onEditLyrics={id=>{setVisualizerOpen(false);openMetadata({mode:'lyrics',trackId:id});}}/>}{onboardingOpen&&<Onboarding preferences={preferences} artPalette={artPalette} task={task} songs={library.tracks.length} onImport={setupImport} onFinish={finishSetup} onDismiss={()=>setOnboardingOpen(false)}/>}</></SongPreviewProvider>
   );
 }

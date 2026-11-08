@@ -10,7 +10,7 @@ export function useLyricGlow(pane:RefObject<HTMLElement|null>,scroll:RefObject<H
  useLayoutEffect(()=>{
   const source=pane.current,viewport=scroll.current;if(!active||!source||!viewport||document.hidden)return;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');if(reduced.matches)return;
-  const root=source.closest<HTMLElement>('dialog,.mini-player,.app-shell')??document.body;
+  const root=source.closest<HTMLElement>('dialog,.phone-player,.mini-player,.app-shell')??document.body;
   const layer=document.createElement('div');layer.className='lyric-glow-layer';layer.dataset.variant=variant;layer.dataset.following='false';layer.ariaHidden='true';layer.inert=true;root.append(layer);
   let frame=0,originY=viewport.scrollTop,originX=viewport.scrollLeft,words:GlowWord[]=[],copies:{node:HTMLElement;top:number;bottom:number}[]=[],bounds={top:0,bottom:0};
   const update=(at:number)=>{time.current=at;for(const word of words)word.node.style.setProperty('--glow-strength',String(wordGlow(word.start,word.end,at)));};
@@ -24,7 +24,7 @@ export function useLyricGlow(pane:RefObject<HTMLElement|null>,scroll:RefObject<H
    for(const line of viewport.querySelectorAll<HTMLElement>('.lyric-line[data-current=true]')){
     if(!line.querySelector('.lyric-word'))continue;observer.observe(line);
     const rect=line.getBoundingClientRect(),copy=line.cloneNode(true) as HTMLElement,css=getComputedStyle(line);copy.className='lyric-glow-clone';copy.removeAttribute('id');copy.removeAttribute('aria-label');copy.removeAttribute('aria-current');copy.tabIndex=-1;copy.inert=true;
-    for(const key of ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','direction','white-space','word-break','overflow-wrap','font-feature-settings','font-kerning','text-transform','text-indent','word-spacing','tab-size','box-sizing','padding-top','padding-right','padding-bottom','padding-left'])copy.style.setProperty(key,css.getPropertyValue(key),'important');
+    for(const key of ['font-family','font-size','font-weight','font-style','line-height','letter-spacing','text-align','direction','white-space','word-break','overflow-wrap','font-feature-settings','font-variation-settings','font-stretch','font-kerning','text-transform','text-indent','word-spacing','tab-size','box-sizing','padding-top','padding-right','padding-bottom','padding-left'])copy.style.setProperty(key,css.getPropertyValue(key),'important');
     Object.assign(copy.style,{left:`${rect.left-base.left-root.clientLeft+root.scrollLeft}px`,top:`${rect.top-base.top-root.clientTop+root.scrollTop}px`,width:`${rect.width}px`});
     copy.querySelectorAll<HTMLElement>('.lyric-word').forEach(word=>{
     word.style.removeProperty('background-image');

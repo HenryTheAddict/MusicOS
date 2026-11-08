@@ -504,7 +504,7 @@ fn playback_value(state: &AppState) -> Value {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .snapshot();
-    json!({"track":s.track,"queue":s.queue.as_ref(),"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"queue_entry_ids":s.queue_entry_ids,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend})
+    json!({"audition":s.audition,"track":s.track,"queue":s.queue.as_ref(),"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"queue_entry_ids":s.queue_entry_ids,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend})
 }
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T> + Send + 'static,
@@ -567,7 +567,7 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
     *state.preferences.lock().unwrap_or_else(|e| e.into_inner()) = normalized.clone();
     if previous.sparklist_beta && !normalized.sparklist_beta {let _=state.analysis.control("cancel");crate::spark_install::cancel();}
     if previous.listening != normalized.listening || {let s=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();s.listening!=normalized.listening||!s.listening_applied||(s.applied_reverb-normalized.listening.reverb).abs()>0.001||(s.applied_reverb_depth-normalized.listening.reverb_depth).abs()>0.001} {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
-    if previous.dj_config != normalized.dj_config {
+    if previous.dj_config.enabled != normalized.dj_config.enabled {
         state
             .playback
             .lock()
@@ -579,6 +579,20 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
     }
     Ok(normalized)
 }
+fn analyzed_dj_track(duration:f32,f:Option<&crate::analysis::Features>)->crate::dj_plan::Track<'_>{
+    crate::dj_plan::Track{key_index:f.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:f.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(duration),bpm:f.and_then(|f|f.bpm),structure:f.and_then(|f|f.structure.as_ref())}
+}
+#[tauri::command]
+async fn audition(state:tauri::State<'_,AppState>,action:String,track_id:Option<i64>)->ApiResult<Value>{
+    let service=state.playback.lock().unwrap_or_else(|e|e.into_inner());
+    match action.as_str(){
+        "start"=>service.send(LocalPlaybackCommand::Audition(track_id.ok_or_else(||AppError::from(anyhow::anyhow!("Choose a song to preview")))?)).map_err(AppError::from)?,
+        "stop"=>service.send(LocalPlaybackCommand::EndAudition).map_err(AppError::from)?,
+        "status"=>{},_=>return Err(AppError::from(anyhow::anyhow!("Unknown preview action")))
+    }
+    let snapshot=service.snapshot();Ok(json!({"preview":snapshot.audition,"error":snapshot.error}))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum PlaybackAction {
@@ -1755,7 +1769,7 @@ fn open_provider(url: String) -> ApiResult<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![controller,lyric_edition,trackpad_feedback,
+        .invoke_handler(tauri::generate_handler![audition,controller,lyric_edition,trackpad_feedback,
             audio_analysis, audio_tempos, playlist_file, sparklist,
             present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
@@ -1814,7 +1828,7 @@ pub fn run() {
                     let state=handle.state::<AppState>();
                     let analysis_progress=state.analysis.progress();
                     let mut config=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone();config.enabled=s.dj_mode;
-                    if s.dj_mode {if let Some(current)=s.queue_index {
+                    if s.dj_mode && s.audition.is_none() {if let Some(current)=s.queue_index {
                      let db=state.config().db_path;let upcoming=s.queue.iter().skip(current).take(5).collect::<Vec<_>>();state.analysis.prioritize(upcoming.iter().map(|t|t.id).collect());
                      if state.analysis.auto_allowed()&&!analysis_progress.running&&analysis_check.elapsed()>=Duration::from_secs(1) {
                         analysis_check=std::time::Instant::now();
@@ -1826,13 +1840,14 @@ pub fn run() {
                      let queued_ids=s.queue.iter().skip(current).map(|t|t.id).collect::<Vec<_>>();
                      let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));if config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {arranged=Some(stamp);
                       let features=crate::analysis::cached_many(&db,&s.queue.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());let pins=s.queue_entry_ids.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(i,_)|i).collect();
-                      let order=crate::dj_plan::order_upcoming(s.queue.as_ref(),current+1,&pins,|previous,index|{let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};crate::analysis::compatibility(a,b)+energy+if previous.is_some_and(|p|s.queue[p].artist==s.queue[index].artist){0.3}else{0.}});
-                      let ids=order.iter().map(|i|s.queue_entry_ids[*i]).collect::<Vec<_>>();if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
+                      let window_end=(current+13).min(s.queue.len());let order=crate::dj_plan::order_upcoming(&s.queue[..window_end],current+1,&pins,|previous,index|{let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};let musical=if let Some(previous)=previous{crate::dj_plan::plan(analyzed_dj_track(s.queue[previous].duration as f32,a),analyzed_dj_track(s.queue[index].duration as f32,b),&config,false).filter(|p|p.confidence>=0.5).map(|p|1.+p.confidence).unwrap_or(0.)}else{0.};
+                      crate::analysis::compatibility(a,b)+energy-musical+if previous.is_some_and(|p|s.queue[p].artist==s.queue[index].artist){0.3}else{0.}});
+                      let ids=order.iter().map(|i|s.queue_entry_ids[*i]).chain(s.queue_entry_ids[window_end..].iter().copied()).collect::<Vec<_>>();if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
                      }
                     }}
                     let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
                     let stamp=(s.queue_revision,s.plan_revision,s.queue_index,serde_json::to_string(&config).unwrap_or_default(),state.analysis.pair_revision(&relevant_ids));
-                    if s.dj_transition.is_none()&&(planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3)) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
+                    if s.audition.is_none()&&s.dj_transition.is_none()&&(planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3)) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
                      let outgoing=&s.queue[index];let incoming=&s.queue[next];let db=state.config().db_path;
                      let features=crate::analysis::cached_many(&db,&[(outgoing.id,outgoing.path.as_str()),(incoming.id,incoming.path.as_str())]);
                      let (a,b)=(features[0].as_ref(),features[1].as_ref());
@@ -1843,7 +1858,7 @@ pub fn run() {
                      if let Some(plan)=plan.filter(|p|p.ready_to_schedule(config.mode,s.position,s.listening.speed)){musicos_desktop::local::dj_diagnostics::record("candidate",Some(s.queue_entry_ids[index]),Some(s.queue_entry_ids[next]),format!("{}; confidence {:.2}, cue {:.3}s overlap {:.3}s",plan.reason,plan.confidence,plan.outgoing_cue,plan.duration));if let Err(error)=client.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{request_id:musicos_desktop::local::deck_playback::next_request_id(),outgoing:s.queue_entry_ids[index],incoming:s.queue_entry_ids[next],outgoing_cue:plan.outgoing_cue,incoming_cue:plan.incoming_cue,duration:plan.duration,tempo:plan.incoming_tempo,effect:serde_json::to_value(plan.effect).ok().and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default()})){planned=None;musicos_desktop::local::dj_diagnostics::record("delivery_failed",None,None,error.to_string());}}
                     }}}
 
-                    let mut value = json!({"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
+                    let mut value = json!({"audition":s.audition,"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
                     if value != last_value || s.queue_revision != last_queue_revision {
                         last_value=value.clone();
                         // Send the potentially large queue only when membership/order changes.

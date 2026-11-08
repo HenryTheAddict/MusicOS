@@ -15,3 +15,6 @@ it('uses only available ends, with no invented final word duration',()=>{const o
 it('overlapping words remain active together',()=>{const overlap={...line,words:[{text:'one',start_ms:1000,end_ms:2100},{text:'two',start_ms:1800,end_ms:2200}]};expect(lyricWordState(overlap,1900)).toBe('11');expect(lyricWordState(overlap,2100)).toBe('21');});
 
 it('word light eases across boundaries without changing real highlight timing',()=>{expect(wordProgress(1000,undefined,999)).toBe(0);expect(wordGlow(1000,1500,999)).toBe(0);expect(wordGlow(1000,1500,1000)).toBe(0);expect(wordGlow(1000,1500,1099)).toBeGreaterThan(.4);expect(wordGlow(1000,1500,1500)).toBeGreaterThan(0);expect(wordGlow(1000,1500,1600)).toBe(0);expect(wordGlow(1000,1500,999)).toBe(0);});
+it('simultaneous real word starts share their next valid end instead of snapping fully lit',()=>{
+ const line={text:'One two three',start_ms:1000,end_ms:3000,words:[{text:'One',start_ms:1000},{text:'two',start_ms:1000},{text:'three',start_ms:2000,end_ms:3000}]};expect(lyricWordEnd(line,0)).toBe(2000);expect(lyricWordEnd(line,1)).toBe(2000);
+});

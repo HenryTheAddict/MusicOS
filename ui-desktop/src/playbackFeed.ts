@@ -1,8 +1,9 @@
+import {sourcePosition,sourceCorrection} from './playbackClock';
 import {useCallback,useRef,useState,useSyncExternalStore} from 'react';
 import {useViewActive} from './ViewScope';
 import {mergePlaybackUpdate} from './playbackPresentation';
 import type {Playback} from './types';
-export type Clock={receivedAt:number;playing:boolean;speed:number;trackId:number|undefined;position:number;levels:number[];reverbFrames:number};
+export type Clock={receivedAt:number;playing:boolean;speed:number;trackId:number|undefined;position:number;correction?:number;levels:number[];reverbFrames:number};
 const listeners=new Set<()=>void>();
 let clock:Clock={receivedAt:0,playing:false,speed:1,trackId:undefined,position:0,levels:[],reverbFrames:0};
 const subscribe=(listener:()=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};};
@@ -18,13 +19,15 @@ export function usePlaybackFeed(initial:Playback){
   const value=mergePlaybackUpdate(latest.current,typeof next==='function'?next(latest.current):next);latest.current=value;
   const incoming=value.dj_transition?.active&&value.queue_index!==null&&value.queue_entry_ids?.[value.queue_index]===value.dj_transition.incoming_entry;
   const speed=value.listening_applied===false?clock.speed:(value.listening?.speed??1)*(incoming?value.dj_transition!.tempo:1),sameAnchor=clock.trackId===value.track?.id&&clock.playing===value.is_playing&&clock.speed===speed&&clock.position===value.position;
-  clock={receivedAt:sameAnchor?clock.receivedAt:performance.now(),playing:value.is_playing,speed,trackId:value.track?.id,position:value.position,levels:value.audio_levels??[],reverbFrames:value.reverb_processed_frames??0};listeners.forEach(listener=>listener());
+  const at=performance.now(),anchor={receivedAt:at,playing:value.is_playing,speed,trackId:value.track?.id,position:value.position};
+  const correction=sameAnchor?clock.correction:sourceCorrection(clock,anchor,at);
+  clock={correction,receivedAt:sameAnchor?clock.receivedAt:at,playing:value.is_playing,speed,trackId:value.track?.id,position:value.position,levels:value.audio_levels??[],reverbFrames:value.reverb_processed_frames??0};listeners.forEach(listener=>listener());
   if(!samePlaybackPresentation(shown.current,value)){shown.current=value;setPresentation(value);}
  },[]);
  return [presentation,update] as const;
 }
 
 export function currentPlaybackClock(){return clock;}
-export function clockPosition(value:Clock,at=performance.now()){return value.position+(value.playing?Math.min(.5,Math.max(0,(at-value.receivedAt)/1000))*value.speed:0);}
+export function clockPosition(value:Clock,at=performance.now()){return sourcePosition(value,at);}
 
 export function subscribePlaybackClock(listener:()=>void){return subscribe(listener);}
