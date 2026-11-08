@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>NSCameraUsageDescription</key><string>Scan the pairing code shown in musicOS Devices on your Mac.</string>
+<key>MusicHapticsSupported</key><true/>
+<key>NSSupportsLiveActivities</key><true/>
 <key>UIBackgroundModes</key><array><string>audio</string></array>
 <key>NSLocalNetworkUsageDescription</key><string>Copy your selected music from musicOS on your Mac and sync favorites and playlists over Wi-Fi.</string>
 <key>NSBonjourServices</key><array><string>_musicos-sync._tcp</string></array>

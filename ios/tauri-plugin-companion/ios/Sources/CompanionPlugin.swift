@@ -6,9 +6,16 @@ import AVKit
 import WebKit
 import CryptoKit
 import Security
+import MediaAccessibility
 
 @_silgen_name("musicos_prepare_audio")
 private func prepareAudio(_ source: UnsafePointer<CChar>, _ destination: UnsafePointer<CChar>) -> Int32
+
+@_silgen_name("musicos_read_audio_info")
+private func readAudioInfo(_ source:UnsafePointer<CChar>,_ output:UnsafeMutablePointer<CChar>,_ capacity:Int)->Int32
+
+@_silgen_name("musicos_artwork_colors")
+private func readArtworkColors(_ source:UnsafePointer<CChar>,_ output:UnsafeMutablePointer<CChar>,_ capacity:Int)->Int32
 
 private struct Connection: Codable {
     var host: String; var port: Int; var server: String; var fingerprint: String
@@ -75,17 +82,26 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     var library: [[String:Any]] = []
     var collections: [[String:Any]] = []
     var portraits:[String:String]=[:]
+    var preferences=MobilePreferences()
+    var musicHapticsAvailable=false
+    var infoRead=Set<Int64>()
+    var backgroundRecovery:Task<Void,Never>?
     var libraryChanged:(()->Void)?
     var outbox: [[String:Any]] = []
     var conflicts: [[String:Any]] = []
-    var status: [String:Any] = ["state":"idle", "completed":0, "total":0]
+    var status: [String:Any] = ["state":"idle", "completed":0, "total":0] {didSet{SyncLiveStatus.shared.update(status,enabled:preferences.liveSync)}}
     var queue: [Int64] = []; var queueIndex = 0
     var queueEntryIds:[Int64]=[];var entryCounter:Int64=Int64(Date().timeIntervalSince1970*1000);var repeatMode="none";var shuffled=false;var originalQueue:[(Int64,Int64)]=[]
+    var artworkPalettes:[String:[String:Any]]=[:]
+    var preparationMilliseconds=0.0
     var wantsPlayback=false;var preparing=false;var decodedJobs:[String:Task<Int32,Never>]=[:];var savedPosition=0.0;var lastSaved=0.0
+    var itemObservation:NSKeyValueObservation?
     var cachedArtPath:String?;var cachedArtwork:MPMediaItemArtwork?
     var player = AVPlayer(); var observer: Any?; var notifications: [NSObjectProtocol] = []
     var emit: ((String)->Void)?
     var syncTask: Task<Void,Never>?; var prepareTask: Task<Void,Never>?
+    var preparingMix:Task<Void,Never>?,mixTask:Task<Void,Never>?
+    var preparedMix:(deck:AVPlayer,index:Int,entry:Int64,source:Int64)?,outgoingMix:AVPlayer?
     var generation = 0; var resumeAfterInterruption = false; var playbackError: String?
     var currentID: Int64? { queue.indices.contains(queueIndex) ? queue[queueIndex] : nil }
     var current: [String:Any]? { library.first { number($0["id"]) == currentID } }
@@ -95,6 +111,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         try? FileManager.default.createDirectory(at:root, withIntermediateDirectories:true)
         for name in ["audio", "artwork", "lyrics", "decoded", "partial"] { try? FileManager.default.createDirectory(at:root.appendingPathComponent(name), withIntermediateDirectories:true) }
         if let data = try? Data(contentsOf:root.appendingPathComponent("library.json")), let state = try? JSONSerialization.jsonObject(with:data) as? [String:Any] {
+            preferences=MobilePreferences(state["preferences"] as? [String:Any] ?? [:])
             portraits=state["portraits"] as? [String:String] ?? [:];library = state["tracks"] as? [[String:Any]] ?? []; collections = state["collections"] as? [[String:Any]] ?? []
             outbox = state["outbox"] as? [[String:Any]] ?? []; conflicts = state["conflicts"] as? [[String:Any]] ?? []
             queue = (state["queue"] as? [NSNumber] ?? []).map(\.int64Value); queueIndex = state["queue_index"] as? Int ?? 0
@@ -104,7 +121,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         }
         // iOS can relocate the data container during an update. Persist only library-relative assets.
         library=library.map{restorePaths($0)};collections=collections.map{restorePaths($0)};portraits=portraits.mapValues{restorePath($0)}
-        observer = player.addPeriodicTimeObserver(forInterval:CMTime(seconds:0.2, preferredTimescale:600), queue:.main) { [weak self] _ in Task { @MainActor in self?.publish();if let self=self,self.player.rate>0,Date().timeIntervalSince1970-self.lastSaved>10{self.lastSaved=Date().timeIntervalSince1970;try? self.persist()} } }
+        configureBackgroundTransfers()
+        attachPlaybackObserver()
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in Task { @MainActor in try? await self?.play() }; return .success }
         center.pauseCommand.addTarget { [weak self] _ in Task { @MainActor in self?.pause() }; return .success }
@@ -129,8 +147,120 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         })
         notifications.append(NotificationCenter.default.addObserver(forName:AVAudioSession.routeChangeNotification, object:nil, queue:.main) { [weak self] note in
             let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.uintValue
-            Task { @MainActor in if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }; self?.publish() }
+            Task { @MainActor in self?.cancelMix();if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }; self?.publish() }
         })
+    }
+    func configureBackgroundTransfers(){
+        BackgroundTransfers.shared.approvedPin={[weak self] in self?.connection.map{(host:$0.host,fingerprint:$0.fingerprint)}}
+        BackgroundTransfers.shared.ready={[weak self] in
+            guard let self=self,self.backgroundRecovery==nil else{return}
+            self.backgroundRecovery=Task{try? await Task.sleep(nanoseconds:800_000_000);try? self.recoverBackgroundPlan();self.backgroundRecovery=nil}
+        }
+        BackgroundTransfers.shared.progress={[weak self] done,total in
+            guard let self=self,self.syncTask==nil,total>0 else{return}
+            self.status=["state":done==total ? "complete":"downloading","completed":done,"total":total,"message":done==total ? "Ready offline":"Copying music in the background…"]
+        }
+        try? recoverBackgroundPlan()
+    }
+    func backgroundAssets(_ manifest:[String:Any],connection:Connection)->[BackgroundAsset]{
+        var values:[String:BackgroundAsset]=[:]
+        func add(_ hash:String?,path:String,kind:String,size:Int64?=nil){guard let hash=hash,hash.count==64,hash.allSatisfy(\.isHexDigit)else{return};values[hash]=BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint)}
+        for track in manifest["tracks"] as? [[String:Any]] ?? []{
+            let hash=track["sha256"] as? String;add(hash,path:"tracks/\(number(track["id"]))",kind:"audio",size:number(track["size"]))
+            if let hash=track["artwork_sha256"] as? String{add(hash,path:"artwork/\(hash)",kind:"artwork")}
+            if let hash=track["lyrics_sha256"] as? String{add(hash,path:"assets/\(hash)",kind:"lyrics")}
+        }
+        for hash in (manifest["portraits"] as? [String:String] ?? [:]).values{add(hash,path:"artwork/\(hash)",kind:"artwork")}
+        for row in manifest["collections"] as? [[String:Any]] ?? []{if let hash=row["artwork_sha256"] as? String{add(hash,path:"artwork/\(hash)",kind:"artwork")}}
+        return values.values.sorted{$0.hash<$1.hash}
+    }
+    func recoverBackgroundPlan() throws {
+        guard let connection=connection,let data=try? Data(contentsOf:root.appendingPathComponent("transfer-plan.json")),let manifest=try? JSONSerialization.jsonObject(with:data) as? [String:Any],manifest["server_id"] as? String==connection.server else{return}
+        var changed=false
+        for var row in manifest["tracks"] as? [[String:Any]] ?? []{
+            guard let hash=row["sha256"] as? String else{continue};let path=root.appendingPathComponent("audio/\(hash)")
+            guard FileManager.default.fileExists(atPath:path.path)else{continue}
+            let id=number(row["id"]);row["path"]=path.path;row["server_id"]=connection.server
+            for (field,kind) in [("artwork","artwork"),("lyrics","lyrics")]{if let hash=row[field+"_sha256"] as? String{let file=root.appendingPathComponent("\(kind)/\(hash)");if FileManager.default.fileExists(atPath:file.path){row[field+"_path"]=file.path}}}
+            if let index=library.firstIndex(where:{number($0["id"])==id}){
+                let old=library[index];if outbox.contains(where:{$0["kind"] as? String=="favorite"&&number($0["track_id"])==id}){row["favorited"]=old["favorited"]}
+                row["play_count"]=old["play_count"] ?? 0
+                if old["lyrics_edited"] as? Bool==true{row["lyrics_path"]=old["lyrics_path"];row["lyrics_edited"]=true}
+                if ["path","artwork_path","lyrics_path","sha256"].contains(where:{String(describing:old[$0]) != String(describing:row[$0])}){library[index]=row;changed=true}
+            }else{library.append(row);changed=true}
+        }
+        for (name,hash) in manifest["portraits"] as? [String:String] ?? [:]{let path=root.appendingPathComponent("artwork/\(hash)").path;if FileManager.default.fileExists(atPath:path),portraits[name] != path{portraits[name]=path;changed=true}}
+        for var row in manifest["collections"] as? [[String:Any]] ?? []{
+            let id=row["id"] as? String ?? "";if outbox.contains(where:{$0["collection_id"] as? String==id}){continue}
+            let ids=(row["full_track_ids"] as? [NSNumber] ?? row["track_ids"] as? [NSNumber] ?? []).map(\.int64Value);row["track_ids"]=ids;row["complete"]=ids.allSatisfy{id in library.contains{number($0["id"])==id}}
+            if let hash=row["artwork_sha256"] as? String{let file=root.appendingPathComponent("artwork/\(hash)");if FileManager.default.fileExists(atPath:file.path){row["artwork_path"]=file.path}}
+            let old=collections.first{$0["id"] as? String==id};if old==nil || json(old!) != json(row){collections.removeAll{$0["id"] as? String==id};collections.append(row);changed=true}
+        }
+        if changed{try persist();if UIApplication.shared.applicationState != .background{libraryChanged?()}}
+    }
+    func warmUpcomingAudio(){
+        guard queue.indices.contains(queueIndex+1),let next=library.first(where:{number($0["id"])==queue[queueIndex+1]})else{return}
+        Task{_ = try? await preparedURL(next)}
+    }
+    func attachPlaybackObserver(){
+        observer=player.addPeriodicTimeObserver(forInterval:CMTime(seconds:0.2,preferredTimescale:600),queue:.main){[weak self]_ in Task{@MainActor in
+            guard let self=self else{return};self.publish();self.considerMix()
+            if self.player.rate>0,Date().timeIntervalSince1970-self.lastSaved>10{self.lastSaved=Date().timeIntervalSince1970;try? self.persist()}
+        }}
+    }
+    func cancelMix(){
+        preparingMix?.cancel();preparingMix=nil;mixTask?.cancel();mixTask=nil
+        if let deck=preparedMix?.deck,deck !== player{deck.pause()};preparedMix=nil
+        if let deck=outgoingMix,deck !== player{deck.pause()};outgoingMix=nil;player.volume=1
+    }
+    func preparedURL(_ track:[String:Any]) async throws -> URL {
+        guard let path=track["path"] as? String else{throw CompanionError.message("Download this song first")}
+        let native=["audio/mpeg","audio/mp4","audio/aac","audio/wav","audio/x-wav","audio/aiff","audio/x-m4a"]
+        if native.contains(track["mime"] as? String ?? ""){return URL(fileURLWithPath:path)}
+        let destination=root.appendingPathComponent("decoded/\(track["sha256"] as? String ?? UUID().uuidString).wav"),key=track["sha256"] as? String ?? path
+        if FileManager.default.fileExists(atPath:destination.path){return destination}
+        let job=decodedJobs[key] ?? Task.detached(priority:.userInitiated){path.withCString{s in destination.path.withCString{d in prepareAudio(s,d)}}}
+        decodedJobs[key]=job;let code=await job.value;decodedJobs.removeValue(forKey:key);try Task.checkCancellation()
+        guard code==0 else{throw CompanionError.message("This audio file could not be decoded")};return destination
+    }
+    func considerMix(){
+        guard preferences.automix,player.rate>0,repeatMode != "one",mixTask==nil,let track=current,queue.indices.contains(queueIndex),queueEntryIds.indices.contains(queueIndex)else{return}
+        let duration=(track["duration_ms"] as? Double ?? 0)/1000,remaining=duration-player.currentTime().seconds
+        guard duration>6,remaining>0.12,remaining<=8 else{return}
+        let index=queueIndex+1<queue.count ? queueIndex+1:repeatMode=="all" ? 0:-1
+        guard queue.indices.contains(index),index != queueIndex,let next=library.first(where:{number($0["id"])==queue[index]})else{return}
+        // Contiguous album sequences retain their natural endings.
+        if track["album_id"] as? String==next["album_id"] as? String,number(next["track_number"])==number(track["track_number"])+1{return}
+        let source=queueEntryIds[queueIndex],entry=queueEntryIds[index]
+        if preparedMix==nil,preparingMix==nil{
+            preparingMix=Task{[weak self] in
+                guard let self=self else{return};defer{self.preparingMix=nil}
+                do{let url=try await self.preparedURL(next);try Task.checkCancellation()
+                    guard self.preferences.automix,self.queueEntryIds.indices.contains(self.queueIndex),self.queueEntryIds[self.queueIndex]==source else{return}
+                    let deck=AVPlayer(playerItem:AVPlayerItem(url:url));deck.volume=0
+                    for _ in 0..<50{if deck.currentItem?.status != .unknown{break};try await Task.sleep(nanoseconds:20_000_000)}
+                    guard deck.currentItem?.status == .readyToPlay else{return}
+                    self.preparedMix=(deck,index,entry,source);self.considerMix()
+                }catch{} // A late/failed preparation retains the ordinary ending and skip path.
+            }
+        }
+        guard remaining<=2,let ready=preparedMix,ready.source==source,ready.entry==entry else{return}
+        let from=player,start=from.currentTime().seconds,length=min(2,remaining),to=ready.deck
+        outgoingMix=from;to.play()
+        mixTask=Task{[weak self] in
+            guard let self=self else{return};var committed=false
+            do{while !Task.isCancelled{
+                let phase=min(1,max(0,(from.currentTime().seconds-start)/length))
+                from.volume=Float(cos(phase * .pi/2));to.volume=Float(sin(phase * .pi/2))
+                if phase>=0.5 && !committed{
+                    guard self.queueEntryIds.indices.contains(ready.index),self.queueEntryIds[ready.index]==entry else{self.cancelMix();return}
+                    committed=true;if let observer=self.observer{from.removeTimeObserver(observer)};self.observer=nil
+                    self.player=to;self.queueIndex=ready.index;self.savedPosition=0;self.generation+=1;self.preparedMix=nil;self.attachPlaybackObserver();self.publish();try? self.persist();Task{await self.readRecordingInfo(next)}
+                }
+                if phase>=1{break};try await Task.sleep(nanoseconds:20_000_000)
+            }}catch{}
+            if !Task.isCancelled{from.pause();to.volume=1;self.outgoingMix=nil;self.mixTask=nil;self.publish()}
+        }
     }
     func restorePath(_ path:String)->String {
         if let range=path.range(of:"/Library/Application Support/musicOS/"){return root.appendingPathComponent(String(path[range.upperBound...])).path}
@@ -142,7 +272,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func storePaths(_ row:[String:Any])->[String:Any]{var result=row;for key in ["path","artwork_path","lyrics_path"]{if let path=row[key] as? String{result[key]=storePath(path)}};return result}
     func sceneUpdated(){publish();try? persist()}
     func persist() throws {
-        let value: [String:Any] = ["version":1,"portraits":portraits.mapValues{storePath($0)},"tracks":library.map{storePaths($0)},"collections":collections.map{storePaths($0)},"outbox":outbox,"conflicts":conflicts,"queue":queue,"queue_index":queueIndex,"queue_entries":queueEntryIds,"position":player.currentItem==nil ? savedPosition:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds:0),"repeat":repeatMode]
+        let value: [String:Any] = ["version":1,"preferences":preferences.json,"portraits":portraits.mapValues{storePath($0)},"tracks":library.map{storePaths($0)},"collections":collections.map{storePaths($0)},"outbox":outbox,"conflicts":conflicts,"queue":queue,"queue_index":queueIndex,"queue_entries":queueEntryIds,"position":player.currentItem==nil ? savedPosition:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds:0),"repeat":repeatMode]
         try JSONSerialization.data(withJSONObject:value, options:[.sortedKeys]).write(to:root.appendingPathComponent("library.json"), options:.atomic)
     }
     func json(_ value: Any) -> String { String(data:(try? JSONSerialization.data(withJSONObject:value, options:[.sortedKeys])) ?? Data("{}".utf8), encoding:.utf8)! }
@@ -157,10 +287,32 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         row["available"]=true; row["play_count"] = t["play_count"] ?? 0; row["artist_display"] = t["artist"]
         return row
     }
-    func snapshot() -> [String:Any] { ["portraits":portraits,"nearby_macs":discovery.results,"tracks":library.map(trackPresentation),"collections":collections,"playback":playback(),"sync":status,"paired":connection != nil,"pending_changes":outbox.count,"conflicts":conflicts,"text_scale":UIFont.preferredFont(forTextStyle:.body).pointSize/17,"storage_bytes":library.reduce(Int64(0)) { $0 + number($1["size"]) }] }
+    func snapshot() -> [String:Any] { ["live_sync_supported":SyncLiveStatus.shared.supported,"preferences":preferences.json,"music_haptics_active":musicHapticsActive,"music_haptics_available":musicHapticsAvailable,"portraits":portraits,"nearby_macs":discovery.results,"tracks":library.map(trackPresentation),"collections":collections,"playback":playback(),"sync":status,"paired":connection != nil,"pending_changes":outbox.count,"conflicts":conflicts,"text_scale":UIFont.preferredFont(forTextStyle:.body).pointSize/17,"storage_bytes":library.reduce(Int64(0)) { $0 + number($1["size"]) }] }
+    var musicHapticsActive:Bool {if #available(iOS 18.0,*){return MAMusicHapticsManager.shared.isActive};return false}
+    func readRecordingInfo(_ track:[String:Any]) async {
+        let id=number(track["id"]);guard !infoRead.contains(id),let path=track["path"] as? String else{return};infoRead.insert(id)
+        let values=await Task.detached(priority:.utility){()->[String:String] in
+            var buffer=[CChar](repeating:0,count:512)
+            let count=path.withCString{source in buffer.withUnsafeMutableBufferPointer{readAudioInfo(source,$0.baseAddress!,$0.count)}}
+            guard count>0,let data=String(cString:buffer).data(using:.utf8)else{return [:]}
+            return (try? JSONSerialization.jsonObject(with:data)) as? [String:String] ?? [:]
+        }.value
+        if let index=library.firstIndex(where:{number($0["id"])==id}){for(key,value)in values{library[index][key]=value};try? persist()}
+        guard currentID==id else{return};musicHapticsAvailable=false
+        if #available(iOS 18.0,*),preferences.musicHaptics,MAMusicHapticsManager.shared.isActive,let code=values["isrc"],code.count>=12{musicHapticsAvailable=await MAMusicHapticsManager.shared.isHapticTrackAvailable(forMediaMatching:code)}
+        publish()
+    }
+    func writePlaybackDiagnostics(){
+        func describe(_ error:Error?)->[String:Any]{guard let error=error as NSError? else{return [:]};let underlying=error.userInfo[NSUnderlyingErrorKey] as? NSError;return ["domain":error.domain,"code":error.code,"message":error.localizedDescription,"underlying_domain":underlying?.domain ?? "","underlying_code":underlying?.code ?? 0]}
+        let file=player.currentItem?.asset as? AVURLAsset
+        let session=AVAudioSession.sharedInstance()
+        let info:[String:Any]=["version":3,"preparation_ms":preparationMilliseconds,"category":session.category.rawValue,"options":session.categoryOptions.rawValue,"route":session.currentRoute.outputs.map{$0.portType.rawValue},"rate":player.rate,"device_volume":session.outputVolume,"volume":player.volume,"muted":player.isMuted,"time_control":player.timeControlStatus.rawValue,"waiting":player.reasonForWaitingToPlay?.rawValue ?? "","item_status":player.currentItem?.status.rawValue ?? -1,"player_status":player.status.rawValue,"item_error":describe(player.currentItem?.error),"player_error":describe(player.error),"has_file":file.map{FileManager.default.fileExists(atPath:$0.url.path)} ?? false,"track_id":currentID ?? -1,"position":player.currentTime().seconds.isFinite ? player.currentTime().seconds:0,"wants_playback":wantsPlayback]
+        try? JSONSerialization.data(withJSONObject:info,options:[.sortedKeys,.prettyPrinted]).write(to:root.appendingPathComponent("playback-diagnostics.json"),options:.atomic)
+    }
     func publish() {
         if let t=current {
             var info: [String:Any] = [MPMediaItemPropertyTitle:t["title"] ?? "",MPMediaItemPropertyArtist:t["artist"] ?? "",MPMediaItemPropertyAlbumTitle:t["album"] ?? "",MPMediaItemPropertyPlaybackDuration:(t["duration_ms"] as? Double ?? 0)/1000,MPNowPlayingInfoPropertyElapsedPlaybackTime:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0),MPNowPlayingInfoPropertyPlaybackRate:player.rate]
+            if #available(iOS 18.0,*),preferences.musicHaptics,let isrc=t["isrc"] as? String{info[MPNowPlayingInfoPropertyInternationalStandardRecordingCode]=isrc}
             let artPath=t["artwork_path"] as? String
             if cachedArtPath != artPath{cachedArtPath=artPath;cachedArtwork=artPath.flatMap{UIImage(contentsOfFile:$0)}.map{image in MPMediaItemArtwork(boundsSize:image.size){_ in image}}}
             if let art=cachedArtwork{info[MPMediaItemPropertyArtwork]=art}
@@ -169,32 +321,42 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         if UIApplication.shared.applicationState != .background { emit?(json(playback())) }
     }
     func loadCurrent() async throws {
-        guard let t=current, let path=t["path"] as? String else { throw CompanionError.message("Choose a downloaded song first") }
-        generation += 1; let request=generation
-        var url=URL(fileURLWithPath:path);preparing=true;defer{preparing=false}
-        let native=["audio/mpeg","audio/mp4","audio/aac","audio/wav","audio/x-wav","audio/aiff","audio/x-m4a"]
-        if !native.contains(t["mime"] as? String ?? "") {
-            let destination=root.appendingPathComponent("decoded/\(t["sha256"] as? String ?? UUID().uuidString).wav")
-            let key=destination.path
-            let job=decodedJobs[key] ?? Task.detached(priority:.userInitiated) { path.withCString { s in destination.path.withCString { d in prepareAudio(s,d) } } }
-            decodedJobs[key]=job;let code=await job.value;decodedJobs.removeValue(forKey:key)
-            guard request==generation else { throw CancellationError() }
-            guard code==0 else { throw CompanionError.message("This audio file could not be decoded") }; url=destination
-        }
+        guard let t=current, t["path"] as? String != nil else { throw CompanionError.message("Choose a downloaded song first") }
+        cancelMix();generation += 1; let request=generation
+        preparing=true;publish();let began=ProcessInfo.processInfo.systemUptime;defer{preparing=false;preparationMilliseconds=(ProcessInfo.processInfo.systemUptime-began)*1000}
+        let url=try await preparedURL(t)
         guard request==generation else { return }
-        player.replaceCurrentItem(with:AVPlayerItem(url:url));if savedPosition>0{await player.seek(to:CMTime(seconds:savedPosition,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)};playbackError=nil;publish()
+        let item=AVPlayerItem(url:url);player.replaceCurrentItem(with:item)
+        itemObservation=item.observe(\.status,options:[.initial,.new]){[weak self] item,_ in Task{@MainActor in
+            guard let self=self,item === self.player.currentItem else{return}
+            if item.status == .failed{self.playbackError="This downloaded file couldn’t start playing. Its copy is kept; try another song while musicOS checks the decoder.";self.wantsPlayback=false;self.writePlaybackDiagnostics();self.publish()}
+        }}
+        Task{await readRecordingInfo(t)};if savedPosition>0{await player.seek(to:CMTime(seconds:savedPosition,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)};playbackError=nil;publish()
     }
     func play() async throws {
         wantsPlayback=true
-        try AVAudioSession.sharedInstance().setCategory(.playback, mode:.default, options:[.allowAirPlay])
-        try AVAudioSession.sharedInstance().setActive(true)
-        if player.currentItem==nil { try await loadCurrent() }
-        guard wantsPlayback else{return};player.play();publish()
+        do {
+            // Playback already supports AirPlay. allowAirPlay is only valid for playAndRecord.
+            try AVAudioSession.sharedInstance().setCategory(.playback,mode:.default,options:[])
+            try AVAudioSession.sharedInstance().setActive(true)
+            if player.currentItem==nil {try await loadCurrent()}
+            guard wantsPlayback else{return}
+            if let item=player.currentItem{
+                for _ in 0..<150{if item.status != .unknown || !wantsPlayback{break};try await Task.sleep(nanoseconds:20_000_000)}
+                guard wantsPlayback else{return};guard item.status != .failed else{writePlaybackDiagnostics();throw CompanionError.message("This audio format couldn’t start on the iPhone. The downloaded copy is kept.")}
+            }
+            player.automaticallyWaitsToMinimizeStalling=false;player.play();playbackError=nil;publish();writePlaybackDiagnostics();warmUpcomingAudio()
+            let identity=currentID;Task{try? await Task.sleep(nanoseconds:1_000_000_000);if currentID==identity{writePlaybackDiagnostics()}}
+        } catch {
+            wantsPlayback=false;playbackError=(error as NSError).domain==NSOSStatusErrorDomain ? "The iPhone couldn’t start its audio output. Check the selected output and try Play again.":error.localizedDescription
+            writePlaybackDiagnostics();publish();throw error
+        }
     }
-    func pause() {wantsPlayback=false;generation+=1;player.pause();try? persist();publish()}
+    func pause() {cancelMix();wantsPlayback=false;generation+=1;player.pause();try? persist();publish()}
     func toggle() async throws { if player.rate>0||wantsPlayback { pause() } else { try await play() } }
-    func seek(_ seconds: Double) { player.seek(to:CMTime(seconds:max(0,seconds),preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero) { [weak self] _ in Task { @MainActor in self?.publish() } } }
+    func seek(_ seconds: Double) { cancelMix();player.seek(to:CMTime(seconds:max(0,seconds),preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero) { [weak self] _ in Task { @MainActor in self?.publish() } } }
     func skip(_ by:Int,end:Bool=false) async throws {
+        cancelMix()
         guard !queue.isEmpty else { return }
         if end&&repeatMode=="one"{seek(0);try await play();return}
         if by<0 && player.currentTime().seconds>3 { seek(0); return }
@@ -204,9 +366,19 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     }
     func request(_ payload:[String:Any]) async throws -> Any {
         switch payload["action"] as? String ?? "snapshot" {
+        case "artwork_palette":
+            guard let path=payload["path"] as? String,library.contains(where:{$0["artwork_path"] as? String==path}) || portraits.values.contains(path)else{throw CompanionError.message("This cover is not in your downloaded library")}
+            if let value=artworkPalettes[path]{return value}
+            let colors:[String]=await Task.detached(priority:.utility){var bytes=[CChar](repeating:0,count:512);let count=path.withCString{readArtworkColors($0,&bytes,bytes.count)};guard count>0,let data=String(cString:bytes).data(using:.utf8),let values=try? JSONSerialization.jsonObject(with:data) as? [String] else{return []};return values}.value
+            guard colors.count==3 else{throw CompanionError.message("This cover’s colors are unavailable")}
+            let value:[String:Any]=["background":colors[1],"blob":colors[2],"accent":colors[0],"text":"#12202a","swatches":colors];if artworkPalettes.count>=64{artworkPalettes.removeAll()};artworkPalettes[path]=value;return value
+        case "settings":
+            guard let key=payload["key"] as? String,let value=payload["value"] else{throw CompanionError.message("Choose a setting")}
+            try preferences.set(key,value);if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish();return snapshot()
         case "snapshot": return snapshot()
         case "playback": return playback()
         case "play":
+            cancelMix()
             if let ids=payload["ids"] as? [NSNumber] { let values=ids.map(\.int64Value); guard !values.isEmpty,values.allSatisfy({ id in library.contains { number($0["id"])==id } }) else { throw CompanionError.message("Some songs have not downloaded yet") };generation+=1;player.pause();player.replaceCurrentItem(with:nil);queue=values;queueEntryIds=values.map{_ in entryCounter+=1;return entryCounter};originalQueue=[];shuffled=false;savedPosition=0;queueIndex=payload["index"] as? Int ?? 0;guard queue.indices.contains(queueIndex) else { throw CompanionError.message("Invalid queue position") };try persist() }
             try await play(); return playback()
         case "toggle": try await toggle(); return playback()
@@ -214,31 +386,37 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "next": try await skip(1);return playback()
         case "previous": try await skip(-1);return playback()
         case "seek":
+            cancelMix()
             let seconds=max(0,min(payload["position"] as? Double ?? 0,(current?["duration_ms"] as? Double ?? 0)/1000)),token=generation
             if player.currentItem != nil{_=await player.seek(to:CMTime(seconds:seconds,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)}else{savedPosition=seconds}
             if generation==token{publish()};return playback()
         case "queue_play":
+            cancelMix()
             let index=payload["index"] as? Int ?? -1
             guard queue.indices.contains(index) else {throw CompanionError.message("Queue entry moved")}
             if index != queueIndex{generation+=1;player.pause();player.replaceCurrentItem(with:nil);queueIndex=index;savedPosition=0}
             try await play();try persist();return playback()
         case "queue_move":
+            cancelMix()
             let from=payload["from"] as? Int ?? -1,to=payload["to"] as? Int ?? -1
             guard queue.indices.contains(from),queue.indices.contains(to) else { throw CompanionError.message("Invalid queue position") }
             let currentEntry=queueIndex;let id=queue.remove(at:from),entry=queueEntryIds.remove(at:from);queue.insert(id,at:to);queueEntryIds.insert(entry,at:to)
             if from==currentEntry { queueIndex=to } else if from<currentEntry && to>=currentEntry { queueIndex-=1 } else if from>currentEntry && to<=currentEntry { queueIndex+=1 }
             try persist();return playback()
         case "queue_add":
+            cancelMix()
             let ids=(payload["ids"] as? [NSNumber] ?? []).map(\.int64Value)
             guard !ids.isEmpty,ids.allSatisfy({id in library.contains{number($0["id"])==id}})else{throw CompanionError.message("Download these songs first")}
             let at=payload["next"] as? Bool==true ? min(queueIndex+1,queue.count):queue.count
             queue.insert(contentsOf:ids,at:at);queueEntryIds.insert(contentsOf:ids.map{_ in entryCounter+=1;return entryCounter},at:at);try persist();publish();return playback()
         case "queue_remove":
+            cancelMix()
             let index=payload["index"] as? Int ?? -1;guard queue.indices.contains(index)else{throw CompanionError.message("Queue entry moved")}
             let wasPlaying=player.rate>0;queue.remove(at:index);queueEntryIds.remove(at:index)
             if index<queueIndex{queueIndex-=1}else if index==queueIndex{generation+=1;player.pause();player.replaceCurrentItem(with:nil);savedPosition=0;queueIndex=min(queueIndex,max(0,queue.count-1));if wasPlaying && !queue.isEmpty{try await play()}}
             try persist();publish();return playback()
         case "shuffle":
+            cancelMix()
             let entries=Array(zip(queueEntryIds,queue));if !shuffled{originalQueue=entries;let start=min(queueIndex+1,queue.count);let tail=Array(entries.dropFirst(start)).shuffled();queue=Array(queue.prefix(start))+tail.map{$0.1};queueEntryIds=Array(queueEntryIds.prefix(start))+tail.map{$0.0}}
             else{let start=min(queueIndex+1,queue.count),pending=Set(queueEntryIds.dropFirst(start));let tail=originalQueue.filter{pending.contains($0.0)}+entries.dropFirst(start).filter{entry in !originalQueue.contains{$0.0==entry.0}};queue=Array(queue.prefix(start))+tail.map{$0.1};queueEntryIds=Array(queueEntryIds.prefix(start))+tail.map{$0.0}}
             shuffled.toggle();try persist();publish();return playback()
@@ -247,6 +425,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             let id=number(payload["id"]),value=payload["value"] as? Bool ?? false
             guard let i=library.firstIndex(where:{number($0["id"])==id}) else { throw CompanionError.message("Song is unavailable") }
             let before=library[i]["favorited"] as? Bool ?? false; library[i]["favorited"]=value
+            if preferences.interactionFeedback{UIImpactFeedbackGenerator(style:.soft).impactOccurred()}
             outbox.append(["id":UUID().uuidString,"kind":"favorite","track_id":id,"base":before,"value":value]);try persist();return snapshot()
         case "playlist":
             let id=payload["id"] as? String ?? "phone/\(UUID().uuidString)"
@@ -269,8 +448,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             guard syncTask==nil else { return status }
             syncTask=Task { do { try await sync() } catch is CancellationError { status=["state":"cancelled","message":"Downloads kept. Sync again to resume."] } catch { status=["state":"error","message":error.localizedDescription] };syncTask=nil;if UIApplication.shared.applicationState != .background{libraryChanged?()} }
             return ["state":"starting"]
-        case "cancel": syncTask?.cancel();return ["state":"cancelling"]
-        case "disconnect": syncTask?.cancel();connection=nil;try Credentials.save(nil);return snapshot()
+        case "cancel": syncTask?.cancel();await BackgroundTransfers.shared.cancel();return ["state":"cancelling"]
+        case "disconnect": syncTask?.cancel();await BackgroundTransfers.shared.cancel(keepResume:false);connection=nil;try Credentials.save(nil);return snapshot()
         case "resolve":
             let id=payload["id"] as? String ?? "",phone=payload["phone"] as? Bool ?? false
             if let c=conflicts.first(where:{$0["id"] as? String==id}),phone,var op=c["operation"] as? [String:Any] { op["id"]=UUID().uuidString;op["force"]=true;outbox.append(op) }
@@ -346,6 +525,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func download(_ path:String,hash:String,size:Int64?,kind:String) async throws -> URL {
         guard hash.count==64,hash.allSatisfy(\.isHexDigit) else {throw CompanionError.message("Invalid file fingerprint")}
         let file=root.appendingPathComponent("\(kind)/\(hash)")
+        if preferences.backgroundSync,let connection=connection{return try await BackgroundTransfers.shared.value(BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint))}
         if FileManager.default.fileExists(atPath:file.path) {return file}
         let partial=root.appendingPathComponent("partial/\(hash)")
         if !FileManager.default.fileExists(atPath:partial.path){FileManager.default.createFile(atPath:partial.path,contents:nil)}
@@ -388,7 +568,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         let required=tracks.reduce(Int64(0)) { n,t in n+(library.contains{ $0["sha256"] as? String==t["sha256"] as? String } ? 0:number(t["size"])) }
         let values=try root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
         if let free=values.volumeAvailableCapacityForImportantUsage,required>free {throw CompanionError.message("Not enough space. Choose fewer songs on the Mac, then retry.")}
-        let pendingFavorites=Set(outbox.filter{$0["kind"] as? String=="favorite"}.map{number($0["track_id"])})
+        if preferences.backgroundSync,let connection=connection{
+            try JSONSerialization.data(withJSONObject:manifest,options:[.sortedKeys]).write(to:root.appendingPathComponent("transfer-plan.json"),options:.atomic)
+            await BackgroundTransfers.shared.start(backgroundAssets(manifest,connection:connection),base:connection.base,authorization:"Bearer \(connection.client).\(connection.token)")
+        }
         for (i,var track) in tracks.enumerated() {
             try Task.checkCancellation()
             status=["state":"downloading","completed":i,"total":total,"message":track["title"] ?? "Downloading music"]
@@ -398,7 +581,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             if let h=track["artwork_sha256"] as? String {track["artwork_path"]=try await download("artwork/\(h)",hash:h,size:nil,kind:"artwork").path}
             if let h=track["lyrics_sha256"] as? String {track["lyrics_path"]=try await download("assets/\(h)",hash:h,size:nil,kind:"lyrics").path}
             if let old=library.first(where:{number($0["id"])==id}) {
-                if pendingFavorites.contains(id){track["favorited"]=old["favorited"]}
+                if outbox.contains(where:{$0["kind"] as? String=="favorite"&&number($0["track_id"])==id}){track["favorited"]=old["favorited"]}
                 if old["lyrics_edited"] as? Bool==true {track["lyrics_path"]=old["lyrics_path"];track["lyrics_edited"]=true}
                 track["play_count"]=old["play_count"] ?? 0
             }
@@ -431,7 +614,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
                 outbox.removeAll{$0["id"] as? String==id};try persist()
             }
         }
-        try persist();_ = try? await remote("sync-complete",body:["revision":manifest["revision"] ?? "","track_count":total])
+        try persist();_ = try? await remote("sync-complete",body:["revision":manifest["revision"] ?? "","track_count":total,"bytes":manifest["bytes_total"] ?? 0])
         status=["state":"complete","completed":total,"total":total,"message":!outbox.isEmpty && connection?.syncChanges==false ? "Ready offline. Update musicOS on the computer and pair again to sync favorites and playlists.":conflicts.isEmpty ? "Ready offline":"Ready offline. Review sync conflicts."]
     }
 }
@@ -467,11 +650,21 @@ extension Companion {
         guard !library.isEmpty,library.allSatisfy({($0["path"] as? String ?? "").hasPrefix(root.appendingPathComponent("test-fixtures").path+"/")})else{return}
         do {
             check("startup stays paused",player.rate==0)
+            if let baseText=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_BASE"],let base=URL(string:baseText),let pin=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_PIN"],let hash=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_HASH"]{
+                let service=BackgroundTransfers.shared;service.approvedPin={(host:"127.0.0.1",fingerprint:pin)}
+                let asset=BackgroundAsset(hash:hash,path:"fixture",kind:"artwork",size:nil,fingerprint:pin)
+                try? FileManager.default.removeItem(at:service.destination(asset))
+                await service.start([asset],base:base,authorization:"Bearer isolated-test")
+                let file=try await service.value(asset);check("background URLSession pins and verifies a downloaded asset",try hashFileNonisolated(file)==hash)
+                await service.cancel(keepResume:false)
+            }
+            if let art=library.first?["artwork_path"] as? String{let palette=try await request(["action":"artwork_palette","path":art]) as? [String:Any];check("downloaded cover colors use the native SDR extractor",(palette?["swatches"] as? [String])?.count==3)}
             let relative="test-fixtures/original.flac";check("asset paths survive container relocation",restorePath("/old/Library/Application Support/musicOS/"+relative)==root.appendingPathComponent(relative).path && storePath(root.appendingPathComponent(relative).path)==relative)
             let ids=library.map{number($0["id"])}
             for id in ids {
                 _=try await request(["action":"play","ids":[id]])
                 try await Task.sleep(nanoseconds:700_000_000)
+                check("playback uses a valid device audio session \(id)",AVAudioSession.sharedInstance().category == .playback && !AVAudioSession.sharedInstance().categoryOptions.contains(.allowAirPlay))
                 check("offline audio advances \(id)",player.rate>0&&player.currentTime().seconds>0.1)
                 seek(1);try await Task.sleep(nanoseconds:160_000_000);pause()
                 check("seek acknowledged \(id)",abs(player.currentTime().seconds-1)<0.3)
@@ -489,6 +682,14 @@ extension Companion {
             check("favorite journal is durable",outbox.contains{$0["kind"] as? String=="favorite"})
             _=try await request(["action":"playlist","name":"Offline test sequence","track_ids":[first,last,first]])
             check("manual playlist preserves duplicates",(collections.last?["track_ids"] as? [NSNumber])?.map(\.int64Value)==[first,last,first])
+            if let firstIndex=library.firstIndex(where:{number($0["id"])==first}),let lastIndex=library.firstIndex(where:{number($0["id"])==last}){
+                library[firstIndex]["album_id"]="mix-a";library[lastIndex]["album_id"]="mix-b";preferences.automix=true
+                _=try await request(["action":"play","ids":[first,last]])
+                _=try await request(["action":"seek","position":10.2]);try await Task.sleep(nanoseconds:2_300_000_000)
+                check("Automix publishes the dominant incoming entry once",queueIndex==1 && currentID==last && player.currentTime().seconds>0.2)
+                pause();check("Automix pause releases both temporary decks",mixTask==nil && preparingMix==nil && outgoingMix==nil && preparedMix==nil && player.rate==0)
+                preferences.automix=false
+            }
             let lyric=try await request(["action":"lyrics","id":first]) as? [String:Any]
             check("offline lyric document is reused",lyric?["state"] as? String=="ready")
             try persist()

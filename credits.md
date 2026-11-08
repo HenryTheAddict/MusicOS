@@ -51,3 +51,5 @@ The Linux build bundles the Microsoft ONNX Runtime 1.31.0 CPU runtime under MIT 
 ## iPhone companion
 
 The iPhone companion uses Tauri 2 (MIT or Apache-2.0), SwiftRs (MIT or Apache-2.0), Symphonia 0.5.5 by the Symphonia contributors (MPL-2.0), and Hound 3.5.1 by Ruud van Asseldonk (Apache-2.0). Supplied notices are in `third_party/licenses/companion`. Symphonia is unmodified; its corresponding source is available at https://github.com/pdeljanov/Symphonia/tree/v0.5.5. musicOS’s decoder integration is in `ios/src-tauri/src/decoder.rs`.
+
+The companion’s SDR artwork extraction reuses the desktop color algorithm and image 0.24.9 (MIT or Apache-2.0), with its PNG/JPEG/WebP decoding dependencies. Their supplied complete notices are bundled under `third_party/licenses/companion`.

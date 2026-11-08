@@ -15,7 +15,7 @@ export async function call(command:string,args?:any):Promise<any>{
  case 'depth_artwork':return null;
  case 'library_artwork':{const state=await request({action:'snapshot'});return state.tracks.find((t:any)=>t.id===args.trackId)?.cover_art_path??null;}
  case 'cache_artwork':return args.url;
- case 'artwork_palette':throw new Error('Use the downloaded cover');
+ case 'artwork_palette':return request({action:'artwork_palette',path:args.path});
  default:throw new Error('This operation is available on the Mac');
  }
 }

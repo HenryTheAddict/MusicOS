@@ -15,3 +15,20 @@ strip = true
 
 [patch.crates-io]
 rodio = { path = "third_party/rodio" }
+
+# The companion remains debuggable while its portable audio hot paths run at
+# production speed. Do not make a song wait on unoptimized Vorbis decoding.
+[profile.dev.package.musicos-ios]
+opt-level = 2
+[profile.dev.package.symphonia-core]
+opt-level = 3
+[profile.dev.package.symphonia-codec-vorbis]
+opt-level = 3
+[profile.dev.package.symphonia-format-ogg]
+opt-level = 3
+[profile.dev.package.symphonia-utils-xiph]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-flac]
+opt-level = 3
+[profile.dev.package.hound]
+opt-level = 3

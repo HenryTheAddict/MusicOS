@@ -90,3 +90,80 @@ pub unsafe extern "C" fn musicos_prepare_audio(
     })
     .unwrap_or(-1)
 }
+
+/// Read recording identity from the local file without decoding its audio.
+#[no_mangle]
+pub unsafe extern "C" fn musicos_read_audio_info(
+    source: *const c_char,
+    output: *mut c_char,
+    capacity: usize,
+) -> i32 {
+    if source.is_null() || output.is_null() || capacity < 2 {
+        return -1;
+    }
+    std::panic::catch_unwind(|| {
+        use symphonia::core::meta::StandardTagKey;
+        let Ok(path) = CStr::from_ptr(source).to_str() else {
+            return -1;
+        };
+        let Ok(file) = std::fs::File::open(path) else {
+            return -1;
+        };
+        let mut hint = Hint::new();
+        if let Some(extension) = Path::new(path).extension().and_then(|v| v.to_str()) {
+            hint.with_extension(extension);
+        }
+        let Ok(mut probed) = symphonia::default::get_probe().format(
+            &hint,
+            MediaSourceStream::new(Box::new(file), Default::default()),
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        ) else {
+            return -1;
+        };
+        let mut result = serde_json::Map::new();
+        let mut read = |revision: &symphonia::core::meta::MetadataRevision| {
+            for tag in revision.tags() {
+                let key = match tag.std_key {
+                    Some(StandardTagKey::IdentIsrc) => "isrc",
+                    Some(StandardTagKey::Bpm) => "bpm",
+                    _ => continue,
+                };
+                result.insert(key.into(), serde_json::Value::String(tag.value.to_string()));
+            }
+        };
+        if let Some(metadata) = probed.metadata.get().as_ref().and_then(|m| m.current()) {
+            read(metadata);
+        }
+        if let Some(metadata) = probed.format.metadata().current() {
+            read(metadata);
+        }
+        let Ok(bytes) = serde_json::to_vec(&result) else {
+            return -1;
+        };
+        if bytes.len() + 1 > capacity {
+            return -1;
+        }
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), output.cast::<u8>(), bytes.len());
+        *output.add(bytes.len()) = 0;
+        bytes.len() as i32
+    })
+    .unwrap_or(-1)
+}
+
+// Share the desktop's bounded, SDR perceptual color extraction. WebKit can
+// forbid canvas readback for downloaded file URLs, so canvas is not authoritative.
+#[path = "../../../src-tauri/src/artwork_colors.rs"]
+mod artwork_colors;
+#[no_mangle]
+pub unsafe extern "C" fn musicos_artwork_colors(source:*const c_char,output:*mut c_char,capacity:usize)->i32{
+    if source.is_null()||output.is_null()||capacity==0{return -1;}
+    std::panic::catch_unwind(||{
+        let Ok(path)=CStr::from_ptr(source).to_str()else{return -1;};
+        let Ok(mut reader)=image::io::Reader::open(path).and_then(|r|r.with_guessed_format())else{return -1;};
+        let mut limits=image::io::Limits::default();limits.max_alloc=Some(64*1024*1024);reader.limits(limits);
+        let Ok(image)=reader.decode()else{return -1;};let colors=artwork_colors::swatches(&image.thumbnail(64,64).to_rgba8());
+        let Ok(bytes)=serde_json::to_vec(&colors)else{return -1;};if bytes.len()+1>capacity{return -1;}
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast::<u8>(),bytes.len());*output.add(bytes.len())=0;bytes.len()as i32
+    }).unwrap_or(-1)
+}
