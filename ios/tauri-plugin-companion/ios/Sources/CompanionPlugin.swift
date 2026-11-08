@@ -93,6 +93,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     var queue: [Int64] = []; var queueIndex = 0
     var queueEntryIds:[Int64]=[];var entryCounter:Int64=Int64(Date().timeIntervalSince1970*1000);var repeatMode="none";var shuffled=false;var originalQueue:[(Int64,Int64)]=[]
     var artworkPalettes:[String:[String:Any]]=[:]
+    var warmedAsset:(id:Int64,asset:AVURLAsset)?;var warmTask:Task<Void,Never>?
+    let selectionFeedback=UISelectionFeedbackGenerator();let softFeedback=UIImpactFeedbackGenerator(style:.soft);var lastFeedback:TimeInterval=0
     var preparationMilliseconds=0.0
     var wantsPlayback=false;var preparing=false;var decodedJobs:[String:Task<Int32,Never>]=[:];var savedPosition=0.0;var lastSaved=0.0
     var itemObservation:NSKeyValueObservation?
@@ -199,8 +201,18 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         if changed{try persist();if UIApplication.shared.applicationState != .background{libraryChanged?()}}
     }
     func warmUpcomingAudio(){
-        guard queue.indices.contains(queueIndex+1),let next=library.first(where:{number($0["id"])==queue[queueIndex+1]})else{return}
-        Task{_ = try? await preparedURL(next)}
+        warmTask?.cancel()
+        guard queue.indices.contains(queueIndex+1),let next=library.first(where:{number($0["id"])==queue[queueIndex+1]})else{warmedAsset=nil;return}
+        let id=number(next["id"])
+        if warmedAsset?.id==id{return}
+        warmedAsset=nil
+        warmTask=Task{do{let url=try await preparedURL(next);try Task.checkCancellation();let asset=AVURLAsset(url:url);_ = try await asset.load(.duration);try Task.checkCancellation();warmedAsset=(id,asset)}catch{}}
+    }
+    func feedback(_ kind:String){
+        guard preferences.interactionFeedback else{return}
+        let now=ProcessInfo.processInfo.systemUptime;guard now-lastFeedback>0.055 else{return};lastFeedback=now
+        if kind=="selection"{selectionFeedback.selectionChanged();selectionFeedback.prepare()}
+        else{softFeedback.impactOccurred(intensity:kind=="drop" ? 0.8:kind=="pickup" ? 0.6:0.4);softFeedback.prepare()}
     }
     func attachPlaybackObserver(){
         observer=player.addPeriodicTimeObserver(forInterval:CMTime(seconds:0.2,preferredTimescale:600),queue:.main){[weak self]_ in Task{@MainActor in
@@ -326,7 +338,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         preparing=true;publish();let began=ProcessInfo.processInfo.systemUptime;defer{preparing=false;preparationMilliseconds=(ProcessInfo.processInfo.systemUptime-began)*1000}
         let url=try await preparedURL(t)
         guard request==generation else { return }
-        let item=AVPlayerItem(url:url);player.replaceCurrentItem(with:item)
+        let asset=warmedAsset?.id==number(t["id"]) ? warmedAsset!.asset:AVURLAsset(url:url);if warmedAsset?.id==number(t["id"]){warmedAsset=nil};let item=AVPlayerItem(asset:asset);player.replaceCurrentItem(with:item)
         itemObservation=item.observe(\.status,options:[.initial,.new]){[weak self] item,_ in Task{@MainActor in
             guard let self=self,item === self.player.currentItem else{return}
             if item.status == .failed{self.playbackError="This downloaded file couldn’t start playing. Its copy is kept; try another song while musicOS checks the decoder.";self.wantsPlayback=false;self.writePlaybackDiagnostics();self.publish()}
@@ -341,11 +353,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             try AVAudioSession.sharedInstance().setActive(true)
             if player.currentItem==nil {try await loadCurrent()}
             guard wantsPlayback else{return}
-            if let item=player.currentItem{
-                for _ in 0..<150{if item.status != .unknown || !wantsPlayback{break};try await Task.sleep(nanoseconds:20_000_000)}
-                guard wantsPlayback else{return};guard item.status != .failed else{writePlaybackDiagnostics();throw CompanionError.message("This audio format couldn’t start on the iPhone. The downloaded copy is kept.")}
-            }
-            player.automaticallyWaitsToMinimizeStalling=false;player.play();playbackError=nil;publish();writePlaybackDiagnostics();warmUpcomingAudio()
+            if player.currentItem?.status == .failed{writePlaybackDiagnostics();throw CompanionError.message("This audio format couldn’t start on the iPhone. The downloaded copy is kept.")}
+            // Local verified files do not need the former three-second status poll.
+            // AVPlayer owns readiness; item observation still reports decoder errors.
+            player.automaticallyWaitsToMinimizeStalling=false;player.playImmediately(atRate:1);playbackError=nil;publish();writePlaybackDiagnostics();warmUpcomingAudio()
             let identity=currentID;Task{try? await Task.sleep(nanoseconds:1_000_000_000);if currentID==identity{writePlaybackDiagnostics()}}
         } catch {
             wantsPlayback=false;playbackError=(error as NSError).domain==NSOSStatusErrorDomain ? "The iPhone couldn’t start its audio output. Check the selected output and try Play again.":error.localizedDescription
@@ -375,6 +386,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "settings":
             guard let key=payload["key"] as? String,let value=payload["value"] else{throw CompanionError.message("Choose a setting")}
             try preferences.set(key,value);if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish();return snapshot()
+        case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
         case "snapshot": return snapshot()
         case "playback": return playback()
         case "play":
@@ -409,6 +421,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             guard !ids.isEmpty,ids.allSatisfy({id in library.contains{number($0["id"])==id}})else{throw CompanionError.message("Download these songs first")}
             let at=payload["next"] as? Bool==true ? min(queueIndex+1,queue.count):queue.count
             queue.insert(contentsOf:ids,at:at);queueEntryIds.insert(contentsOf:ids.map{_ in entryCounter+=1;return entryCounter},at:at);try persist();publish();return playback()
+        case "queue_clear_upcoming":
+            cancelMix();let keep=min(queue.count,queueIndex+1);queue=Array(queue.prefix(keep));queueEntryIds=Array(queueEntryIds.prefix(keep));warmTask?.cancel();warmedAsset=nil;feedback("drop");try persist();publish();return playback()
         case "queue_remove":
             cancelMix()
             let index=payload["index"] as? Int ?? -1;guard queue.indices.contains(index)else{throw CompanionError.message("Queue entry moved")}
@@ -430,6 +444,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "playlist":
             let id=payload["id"] as? String ?? "phone/\(UUID().uuidString)"
             let old=collections.first(where:{$0["id"] as? String==id})
+            if let expected=payload["base_revision"] as? String,expected != (old?["revision"] as? String ?? ""){throw CompanionError.message("This playlist changed while you were editing. Your draft is kept. Reopen the playlist to use the latest version.")}
             let ids=payload["track_ids"] as? [NSNumber] ?? []
             guard ids.allSatisfy({ id in library.contains{number($0["id"])==id.int64Value} }) else { throw CompanionError.message("A playlist can only include downloaded songs") }
             let name=String((payload["name"] as? String ?? "Playlist").prefix(120)).trimmingCharacters(in:.whitespacesAndNewlines)
@@ -623,6 +638,9 @@ class CompanionPlugin: Plugin {
         #if DEBUG
         if ProcessInfo.processInfo.environment["MUSICOS_COMPANION_SELF_TEST"]=="1"{Task{@MainActor in await Companion.shared.runNativeChecks()}}
         #endif
+        webview.scrollView.pinchGestureRecognizer?.isEnabled=false
+        webview.scrollView.minimumZoomScale=1;webview.scrollView.maximumZoomScale=1
+        webview.isOpaque=true
         webview.backgroundColor=UIColor{trait in trait.userInterfaceStyle == .dark ? UIColor(red:0.06,green:0.15,blue:0.18,alpha:1):UIColor(red:0.65,green:0.82,blue:0.85,alpha:1)}
         NotificationCenter.default.addObserver(forName:UIApplication.didEnterBackgroundNotification,object:nil,queue:.main){_ in Task{@MainActor in Companion.shared.sceneUpdated()}}
         NotificationCenter.default.addObserver(forName:UIApplication.didBecomeActiveNotification,object:nil,queue:.main){_ in Task{@MainActor in Companion.shared.sceneUpdated()}}
@@ -677,11 +695,17 @@ extension Companion {
             check("duplicate queue identities survive reordering",queue==[first,first,last]&&queueEntryIds==[identities[0],identities[2],identities[1]]&&queueIndex==0)
             _=try await request(["action":"shuffle"]);_=try await request(["action":"shuffle"])
             check("shuffle keeps current entry",queueEntryIds[queueIndex]==identities[0])
+            _=try await request(["action":"queue_clear_upcoming"])
+            check("clearing upcoming preserves current song and entry",queue==[first]&&queueEntryIds==[identities[0]]&&queueIndex==0)
+            preferences.interactionFeedback=true;lastFeedback=0;feedback("selection");let tick=lastFeedback;feedback("drop")
+            check("interaction feedback coalesces simultaneous events",tick>0&&lastFeedback==tick)
+            preferences.interactionFeedback=false;feedback("selection");check("feedback respects the disabled preference",lastFeedback==tick);preferences.interactionFeedback=true
             pause()
             _=try await request(["action":"favorite","id":first,"value":true])
             check("favorite journal is durable",outbox.contains{$0["kind"] as? String=="favorite"})
             _=try await request(["action":"playlist","name":"Offline test sequence","track_ids":[first,last,first]])
             check("manual playlist preserves duplicates",(collections.last?["track_ids"] as? [NSNumber])?.map(\.int64Value)==[first,last,first])
+            if let id=collections.last?["id"] as? String{do{_=try await request(["action":"playlist","id":id,"base_revision":"stale","name":"Should not save","track_ids":[first]]);check("stale playlist draft is rejected",false)}catch{check("stale playlist draft is rejected",collections.last?["name"] as? String=="Offline test sequence")}}
             if let firstIndex=library.firstIndex(where:{number($0["id"])==first}),let lastIndex=library.firstIndex(where:{number($0["id"])==last}){
                 library[firstIndex]["album_id"]="mix-a";library[lastIndex]["album_id"]="mix-b";preferences.automix=true
                 _=try await request(["action":"play","ids":[first,last]])

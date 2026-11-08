@@ -4,7 +4,7 @@ export const assets=Object.fromEntries(Object.entries(import.meta.glob('../../as
 export function asset(path:string){return assets[path]??'';}
 export function artwork(path:string|null|undefined){return !path?asset('assets/icons/ui/noCOVER.svg'):path.startsWith('data:')||path.startsWith('/assets/')?path:native?convertFileSrc(path):path;}
 export const emptyPlayback={track:null,queue:[],queue_index:null,is_playing:false,position:0,volume:1,shuffle:false,repeat:'none',error:null,backend:'ios'};
-export async function request(payload:Record<string,unknown>):Promise<any>{const result=await invoke<string>('plugin:companion|request',{payload});return JSON.parse(result);}
+export async function request(payload:Record<string,unknown>):Promise<any>{if(import.meta.env.DEV&&new URLSearchParams(location.search).has('fixture'))return (await import('./phoneFixtures')).fixtureRequest(payload);const result=await invoke<string>('plugin:companion|request',{payload});return JSON.parse(result);}
 export async function call(command:string,args?:any):Promise<any>{
  switch(command){
  case 'lyrics':return request({action:'lyrics',id:args.request.trackId});
