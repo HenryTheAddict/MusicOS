@@ -95,7 +95,7 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
         let art_comparison=match (album.cover.as_deref(),artwork){(Some(old),Some(new))=>art_comparison(old,new),(_,Some(_))=>"new",_=>"none"};
         if artwork.is_some()&&art_comparison!="identical"{fields.push("artwork");}
         rows.push(json!({"changed_fields":fields,"art_comparison":art_comparison,"track_id": id, "current": current, "candidate": candidate,
-            "candidate_token": candidate_token, "status": status, "lookup_error": error, "art_identity": art_identity, "art_resolution": art_resolution}));
+            "candidate_token": candidate_token, "status": status, "lookup_error": error, "art_identity": art_identity, "art_available": artwork.is_some(), "art_resolution": art_resolution}));
     }
     let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, rows]))?));
     let resolution = album.cover.as_deref().and_then(|path| image::image_dimensions(path).ok())

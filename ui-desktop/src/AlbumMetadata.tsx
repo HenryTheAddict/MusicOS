@@ -132,7 +132,7 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const artwork = [...new Map(rows.flatMap(row => {
     if(row.art_comparison==='identical')return [];
     const cover = row.candidate?.artwork_path;
-    return typeof cover==='string' && row.art_resolution && row.art_comparison!=='identical' && cover!==comparison?.cover ? [[cover,row] as const] : [];
+    return typeof cover==='string' && row.art_available!==false && row.art_comparison!=='identical' && cover!==comparison?.cover ? [[cover,row] as const] : [];
   })).entries()];
   const proposedCover = artwork.find(([cover])=>cover===path) ?? (artwork.length===1 ? artwork[0] : undefined);
   const lowerResolution = (size?:number[]) => !!comparison?.resolution?.some((pixels,axis)=>size && pixels>size[axis]);
