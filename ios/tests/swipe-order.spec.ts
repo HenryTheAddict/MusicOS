@@ -58,3 +58,28 @@ test('edge swipe over a detail song returns to retained library without queueing
  await expect(page.locator('.album-tile').first()).toBeVisible();
  await expect(page.getByRole('button',{name:'Resume',exact:true})).toBeVisible();await expect(page.locator('[data-swiping]')).toHaveCount(0);
 });
+
+test('pull down from the Now Playing artwork or title without changing the song', async ({page}) => {
+ await page.goto('/?fixture=1');
+ const mini=page.locator('.phone-mini'), player=page.getByRole('dialog',{name:'Player'});
+ await mini.locator('.mini-identify').click();
+ await expect(player.getByRole('heading',{name:'Second light'})).toBeVisible();
+ await swipe(player.locator('.phone-playing-art'),0,34);
+ await expect(player).toBeVisible();
+ await expect(player).not.toHaveAttribute('data-pulling');
+ await swipe(player.locator('.phone-playing-art'),-105,4);
+ await expect(player.getByRole('heading',{name:'Soft signal'})).toBeVisible();
+ await swipe(player.locator('.phone-playing-identity'),8,110);
+ await expect(player).toHaveCount(0);
+ await expect(mini).toContainText('Soft signal');
+ await expect(mini.getByRole('button',{name:'Resume'})).toBeVisible();
+});
+
+test('pulling on the Up next list leaves the player open', async ({page}) => {
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Up next',exact:true}).click();
+ const player=page.getByRole('dialog',{name:'Player'});
+ await swipe(player.locator('.phone-queue'),0,110);
+ await expect(player).toBeVisible();
+ await expect(player).not.toHaveAttribute('data-pulling');
+});

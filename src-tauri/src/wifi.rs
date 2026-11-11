@@ -119,6 +119,7 @@ impl Identity {
 #[derive(Clone, Serialize, Deserialize)]
 struct Peer {
     #[serde(default)] sync_changes:bool,
+    #[serde(default)] listening_allowed: bool,
     id: String,
     name: String,
     token_hash: String,
@@ -355,6 +356,7 @@ pub struct Service {
     cache_operation:Mutex<()>,
     database:Mutex<Option<PathBuf>>,
     changed:Mutex<Option<Arc<dyn Fn(Value)+Send+Sync>>>,
+    integrations: Mutex<Option<crate::integrations::IntegrationService>>,
 }
 #[derive(Default,Clone,Serialize)]
 struct Preparation { preparing:bool, completed:usize, total:usize, current:String, error:Option<String>, format:CopyFormat }
@@ -367,6 +369,8 @@ impl Default for Service {
 struct Hub {
     database:Option<PathBuf>,
     changed:Option<Arc<dyn Fn(Value)+Send+Sync>>,
+    integrations: Option<crate::integrations::IntegrationService>,
+    listening_scope: String,
     identity: Identity,
     name: String,
     folder: PathBuf,
@@ -398,6 +402,9 @@ impl Hub {
     fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
         self.handle.shutdown();
+        if let Some(service) = &self.integrations {
+            service.clear_phone(&self.listening_scope, None);
+        }
         if let Some(mdns) = lock(&self.mdns).take() {
             let _ = mdns.shutdown();
         }
@@ -424,6 +431,10 @@ impl Hub {
         manifest.revision = digest(&serde_json::to_vec(&manifest).unwrap_or_default());
         manifest
     }
+    fn listening_allowed(&self, peer: &str) -> bool {
+        self.running.load(Ordering::Relaxed)
+            && lock(&self.trust).peers.iter().any(|p| p.id == peer && p.listening_allowed)
+    }
     fn authorized(&self, headers: &HeaderMap) -> Option<String> {
         let bearer = headers
             .get(header::AUTHORIZATION)?
@@ -444,7 +455,7 @@ impl Hub {
     }
     fn status(&self) -> Value {
         let share = read(&self.share);
-        let peers=lock(&self.trust).peers.iter().map(|p|json!({"id":p.id,"name":p.name,"approved_at":p.approved_at,"last_seen_at":p.last_seen_at,"last_sync_at":p.last_sync_at,"track_count":p.track_count,"bytes_transferred":lock(&self.transferred).get(&p.id).copied().unwrap_or(0)})).collect::<Vec<_>>();
+        let peers=lock(&self.trust).peers.iter().map(|p|json!({"id":p.id,"name":p.name,"listening_allowed":p.listening_allowed,"approved_at":p.approved_at,"last_seen_at":p.last_seen_at,"last_sync_at":p.last_sync_at,"track_count":p.track_count,"bytes_transferred":lock(&self.transferred).get(&p.id).copied().unwrap_or(0)})).collect::<Vec<_>>();
         let mut pending = lock(&self.pending);
         pending.retain(|p| now() - p.created_at <= 120);
         let ticket = lock(&self.ticket);
@@ -476,10 +487,13 @@ impl Service {
             hub: Mutex::new(None),
             generation: AtomicU64::new(0),
             operation: tokio::sync::Mutex::new(()),
-            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),database:Mutex::new(None),changed:Mutex::new(None),
+            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),database:Mutex::new(None),changed:Mutex::new(None),integrations:Mutex::new(None),
         }
     }
     pub fn configure(&self,db:PathBuf,changed:Arc<dyn Fn(Value)+Send+Sync>){*lock(&self.database)=Some(db);*lock(&self.changed)=Some(changed);}
+    pub fn set_integrations(&self, service: crate::integrations::IntegrationService) {
+        *lock(&self.integrations) = Some(service);
+    }
     pub fn begin(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::SeqCst) + 1
     }
@@ -509,7 +523,7 @@ impl Service {
             .ok()
             .and_then(|v| serde_json::from_slice::<Trust>(&v).ok())
             .unwrap_or_default();
-        json!({"running":false,"peers":trust.peers.iter().map(|p|json!({"id":p.id,"name":p.name,"last_sync_at":p.last_sync_at,"track_count":p.track_count})).collect::<Vec<_>>(),"pending":[],"selected_ids":[],"track_count":0,"bytes_total":0,"skipped":0,"pairing":null,"error":null,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
+        json!({"running":false,"peers":trust.peers.iter().map(|p|json!({"id":p.id,"name":p.name,"listening_allowed":p.listening_allowed,"last_sync_at":p.last_sync_at,"track_count":p.track_count})).collect::<Vec<_>>(),"pending":[],"selected_ids":[],"track_count":0,"bytes_total":0,"skipped":0,"pairing":null,"error":null,"preparation":*lock(&self.preparation),"vorbis_available":media::vorbis_available()})
     }
     pub async fn start(&self, share: Share, name: String, generation: u64) -> Result<Value> {
         let _operation = self.operation.lock().await;
@@ -559,6 +573,8 @@ impl Service {
             .collect::<Vec<_>>();
         let hub = Arc::new(Hub {
             database:lock(&self.database).clone(),changed:lock(&self.changed).clone(),
+            integrations:lock(&self.integrations).clone(),
+            listening_scope:random(),
             identity,
             name: name.chars().filter(|c| !c.is_control()).take(50).collect(),
             folder,
@@ -613,6 +629,7 @@ impl Service {
             .route("/v1/assets/{id}", get(artwork))
             .route("/v1/changes",post(changes).layer(DefaultBodyLimit::max(256*1024)))
             .route("/v1/sync-complete", post(complete))
+            .route("/v1/listening", get(listening_status).post(listening_update))
             .layer(axum::middleware::from_fn(
                 |ConnectInfo(remote): ConnectInfo<SocketAddr>,
                  request: axum::extract::Request,
@@ -700,6 +717,7 @@ impl Service {
                 trust.peers.retain(|peer| peer.id != p.id);
                 trust.peers.push(Peer {
                     sync_changes:p.sync_changes,
+                    listening_allowed:false,
                     id: p.id,
                     name: p.name,
                     token_hash: p.token_hash,
@@ -713,9 +731,24 @@ impl Service {
                 hub.persist()?;
             }
             "reject" => lock(&hub.pending).retain(|p| Some(p.id.as_str()) != id),
-            "revoke" => {
-                lock(&hub.trust).peers.retain(|p| Some(p.id.as_str()) != id);
-                hub.persist()?;
+            "revoke" | "allow_listening" | "block_listening" => {
+                let id = id.context("Choose a phone")?;
+                let mut trust = lock(&hub.trust);
+                let mut next = trust.clone();
+                if action == "revoke" {
+                    next.peers.retain(|p| p.id != id);
+                } else {
+                    let peer = next.peers.iter_mut().find(|p| p.id == id).context("Phone is no longer paired")?;
+                    peer.listening_allowed = action == "allow_listening";
+                }
+                save(&hub.folder.join("peers.json"), &next)?;
+                *trust = next;
+                drop(trust);
+                if action != "allow_listening" {
+                    if let Some(service) = &hub.integrations {
+                        service.clear_phone(&hub.listening_scope, Some(id));
+                    }
+                }
             }
             _ => bail!("Unknown Wi-Fi action"),
         };
@@ -838,6 +871,77 @@ async fn changes(State(hub):State<Arc<Hub>>,headers:HeaderMap,Json(request):Json
  let value=tokio::task::spawn_blocking(move||crate::companion_sync::apply(&db,&peer,request,&ids)).await.map_err(|_|(StatusCode::INTERNAL_SERVER_ERROR,"Sync could not finish"))?.map_err(|_|(StatusCode::CONFLICT,"The change could not be applied. Refresh the complete playlist and try again."))?;
  if value["state"]=="saved"{if let Some(changed)=&hub.changed{changed(value.clone());}}Ok(Json(value))
 }
+async fn listening_status(
+    State(hub): State<Arc<Hub>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, HttpError> {
+    let peer = hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED, "Pair this phone first"))?;
+    let service = hub.integrations.clone().ok_or((StatusCode::NOT_FOUND, "Listening sync is unavailable"))?;
+    if !hub.listening_allowed(&peer) {
+        return Ok(Json(json!({"allowed":false,"lastfm_ready":false,"discord_ready":false})));
+    }
+    let status = tokio::task::spawn_blocking(move || service.phone_status())
+        .await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Listening sync is unavailable"))?;
+    Ok(Json(json!({"allowed":hub.listening_allowed(&peer),"lastfm_ready":status.lastfm_ready,"discord_ready":status.discord_ready})))
+}
+
+async fn listening_update(
+    State(hub): State<Arc<Hub>>,
+    headers: HeaderMap,
+    Json(update): Json<crate::integrations::PhoneUpdate>,
+) -> Result<Json<Value>, HttpError> {
+    use musicos_desktop::{local::library::track_from_init, models::Track};
+    let peer = hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED, "Pair this phone first"))?;
+    if !hub.listening_allowed(&peer) {
+        return Err((StatusCode::FORBIDDEN, "Allow listening activity for this phone in Devices on the Mac"));
+    }
+    if !update.valid() {
+        return Err((StatusCode::BAD_REQUEST, "Invalid listening update"));
+    }
+    let service = hub.integrations.clone().ok_or((StatusCode::NOT_FOUND, "Listening sync is unavailable"))?;
+    let db_path = hub.database.clone().ok_or((StatusCode::SERVICE_UNAVAILABLE, "Library unavailable"))?;
+    let result = tokio::task::spawn_blocking(move || -> Result<Value, HttpError> {
+        let ids = update.listens.iter().map(|listen| listen.track_id)
+            .chain(update.presence.iter().map(|state| state.track_id))
+            .collect::<HashSet<_>>();
+        let mut tracks = BTreeMap::new();
+        {
+            let share = read(&hub.share);
+            for track in share.tracks.iter().filter(|track| ids.contains(&track.id)) {
+                tracks.insert(track.id, Track {
+                    id: track.id,
+                    title: track.title.clone(),
+                    artist: track.artist.clone(),
+                    album: track.album.clone(),
+                    duration: (track.duration_ms / 1000).clamp(0, i32::MAX as i64) as i32,
+                    ..Default::default()
+                });
+            }
+        }
+        if tracks.len() != ids.len() {
+            // Older downloads can still refer to a song outside the current sharing selection.
+            let db = musicos_init::database::Db::open(&db_path.to_string_lossy())
+                .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Library unavailable"))?;
+            for id in ids {
+                if let std::collections::btree_map::Entry::Vacant(slot) = tracks.entry(id) {
+                    if let Some(track) = db.get_track_by_id(id)
+                        .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Library unavailable"))? {
+                        slot.insert(track_from_init(track));
+                    }
+                }
+            }
+        }
+        let reply = service.phone_update(&hub.listening_scope, &peer, update, &tracks, || hub.listening_allowed(&peer))
+            .map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Listening changes could not be saved"))?;
+        if !hub.listening_allowed(&peer) {
+            service.clear_phone(&hub.listening_scope, Some(&peer));
+            return Err((StatusCode::FORBIDDEN, "Listening access was turned off"));
+        }
+        serde_json::to_value(reply).map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Listening sync could not finish"))
+    }).await.map_err(|_| (StatusCode::SERVICE_UNAVAILABLE, "Listening sync is unavailable"))??;
+    Ok(Json(result))
+}
+
 async fn preparation(State(hub):State<Arc<Hub>>,headers:HeaderMap)->Result<Json<Value>,HttpError> {
     hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED,"Pair this phone first"))?;
     Ok(Json(json!(*lock(&hub.preparation))))
@@ -1032,6 +1136,64 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn phone_listening_requires_permission_and_acknowledges_a_retry_once() {
+        use crate::integrations::{Config, IntegrationService};
+        let root = tempfile::tempdir().unwrap();
+        let integration_dir = root.path().join("integrations");
+        save(&integration_dir.join("integrations-v1.json"), &Config {
+            lastfm_enabled: true, lastfm_username: Some("fixture".into()), ..Default::default()
+        }).unwrap();
+        let dir = integration_dir.clone();
+        let integrations = tokio::task::spawn_blocking(move || IntegrationService::open(dir).unwrap()).await.unwrap();
+        let service = Service::at(root.path().join("identity"));
+        service.configure(root.path().join("fixture.sqlite"), Arc::new(|_| {}));
+        service.set_integrations(integrations.clone());
+        let mut share = fixture_share(root.path());
+        share.tracks[0].duration_ms = 80_000;
+        service.start(share,"Test".into(),service.begin()).await.unwrap();
+        let hub = lock(&service.hub).as_ref().unwrap().clone();
+        let cert = reqwest::Certificate::from_der(&STANDARD.decode(&hub.identity.certificate).unwrap()).unwrap();
+        let client = reqwest::Client::builder().add_root_certificate(cert).build().unwrap();
+        let url = format!("https://localhost:{}/v1/listening",hub.port);
+        let id = random();
+        let token = random();
+        lock(&hub.pending).push(Pending {
+            sync_changes: false, id: id.clone(), name: "Fixture iPhone".into(),
+            token_hash: digest(token.as_bytes()), created_at: now(),
+        });
+        service.action("approve",Some(&id)).unwrap();
+        let auth = format!("{id}.{token}");
+        let receipt = "5df08ed1-f335-43ca-8c8d-4446ac778500";
+        let update = json!({"listens":[{"id":receipt,"track_id":7,"started_at":now()-80,"listened_seconds":40}]});
+        assert_eq!(client.post(&url).json(&update).send().await.unwrap().status(),401);
+        assert_eq!(client.post(&url).bearer_auth(&auth).json(&update).send().await.unwrap().status(),403);
+        let blocked: Value = client.get(&url).bearer_auth(&auth).send().await.unwrap().json().await.unwrap();
+        assert_eq!(blocked["allowed"],false);
+        service.action("allow_listening",Some(&id)).unwrap();
+        let allowed: Value = client.get(&url).bearer_auth(&auth).send().await.unwrap().json().await.unwrap();
+        assert_eq!(allowed["allowed"],true);
+        assert_eq!(allowed["lastfm_ready"],true);
+        for _ in 0..2 {
+            let reply: Value = client.post(&url).bearer_auth(&auth).json(&update).send().await.unwrap().json().await.unwrap();
+            assert_eq!(reply["accepted"],json!([receipt]));
+        }
+        let saved: Value = serde_json::from_slice(&fs::read(integration_dir.join("lastfm-journal-v2.json")).unwrap()).unwrap();
+        assert_eq!(saved["queue"].as_array().unwrap().len(),1);
+        assert_eq!(saved["receipts"].as_object().unwrap().len(),1);
+        assert_eq!(saved["queue"][0]["track"],"Fixture");
+        let mut short = update.clone();
+        short["listens"][0]["id"] = json!("5df08ed1-f335-43ca-8c8d-4446ac778501");
+        short["listens"][0]["listened_seconds"] = json!(25);
+        let reply: Value = client.post(&url).bearer_auth(&auth).json(&short).send().await.unwrap().json().await.unwrap();
+        assert_eq!(reply["discarded"],json!(["5df08ed1-f335-43ca-8c8d-4446ac778501"]));
+        service.action("block_listening",Some(&id)).unwrap();
+        assert_eq!(client.post(&url).bearer_auth(&auth).json(&update).send().await.unwrap().status(),403);
+        drop(hub);
+        drop(service);
+        tokio::task::spawn_blocking(move || drop(integrations)).await.unwrap();
+    }
+
+    #[tokio::test]
     async fn pairing_is_available_during_preparation_and_stale_completion_cannot_publish() {
         let root=tempfile::tempdir().unwrap();let service=Service::at(root.path().join("identity"));let generation=service.begin_preparation(CopyFormat::Vorbis256,508);
         let started=std::time::Instant::now();service.start(Share::default(),"Test Mac".into(),generation).await.unwrap();assert!(started.elapsed()<std::time::Duration::from_secs(2));
@@ -1224,6 +1386,7 @@ mod tests {
             &Trust {
                 peers: vec![Peer {
                     sync_changes:false,
+                    listening_allowed:false,
                     id: "phone".into(),
                     name: "Phone".into(),
                     token_hash: digest(b"secret"),

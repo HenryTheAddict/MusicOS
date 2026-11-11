@@ -1,4 +1,7 @@
 //! Opt-in desktop integrations. Credentials never cross back into the webview.
+mod phone;
+pub(crate) use phone::PhoneUpdate;
+use phone::{ListenJournal, PhonePresence};
 use anyhow::{bail, Context, Result};
 use musicos_desktop::{
     local::{LocalPlaybackClient, LocalPlaybackSnapshot},
@@ -153,7 +156,8 @@ struct Worker {
     http: reqwest::blocking::Client,
     discord: Discord,
     status: Status,
-    queue: Vec<Scrobble>,
+    journal: ListenJournal,
+    phone_presence: Arc<Mutex<Option<PhonePresence>>>,
     listen: Listen,
     last_tick: Instant,
     last_retry: Instant,
@@ -240,7 +244,7 @@ impl Worker {
     }
     fn response(&mut self, auth_url: Option<String>) -> Response {
         self.status.config = self.config.clone();
-        self.status.queued = self.queue.len();
+        self.status.queued = self.journal.queue.len();
         Response {
             status: self.status.clone(),
             auth_url,
@@ -374,16 +378,14 @@ impl Worker {
                 persist(&self.directory.join("integrations-v1.json"), &self.config)?;
                 self.credentials = None;
                 self.token = None;
-                self.queue.clear();
-                persist(&self.directory.join("lastfm-queue-v1.json"), &self.queue)?;
+                self.journal = ListenJournal::default();
+                self.journal.save(&self.directory)?;
                 self.status.lastfm = "Disconnected".into();
             }
         }
         Ok(self.response(None))
     }
-    fn tick(&mut self, s: LocalPlaybackSnapshot) {
-        let elapsed = self.last_tick.elapsed().as_secs_f32();
-        self.last_tick = Instant::now();
+    fn update_discord(&mut self, s: &LocalPlaybackSnapshot) {
         if self.config.discord_enabled {
             for (key, started, result) in self.cover_receiver.try_iter() {
                 if let Some(lookup)=self.covers.get_mut(&key){accept_cover_result(lookup,started,result);}
@@ -428,7 +430,7 @@ impl Worker {
                 self.discord_retry = Instant::now();
                 match self
                     .discord
-                    .update(&self.config.discord_client_id, &s, cover)
+                    .update(&self.config.discord_client_id, s, cover)
                 {
                     Ok(()) => {
                         self.status.discord_rpc="Acknowledged by Discord · image rendering not verified".into();
@@ -441,7 +443,7 @@ impl Worker {
                         .into();
                     }
                     Err(_) => {
-                        if cover.is_some()&&self.discord.update(&self.config.discord_client_id,&s,None).is_ok(){
+                        if cover.is_some()&&self.discord.update(&self.config.discord_client_id,s,None).is_ok(){
                             self.discord_key=key;self.status.discord="Sharing your music".into();self.status.discord_rpc="Fallback activity acknowledged · image rendering not verified".into();self.status.discord_artwork="Album image not accepted · musicOS icon fallback".into();
                             if let Some(lookup)=album_key.as_ref().and_then(|key|self.covers.get_mut(key)){lookup.url=None;lookup.pending=false;lookup.error=Some("Discord did not accept this image".into());lookup.checked=Instant::now();}
                         }else{
@@ -451,6 +453,16 @@ impl Worker {
                 }
             }
         }
+    }
+
+    fn tick(&mut self, s: LocalPlaybackSnapshot) {
+        let elapsed = self.last_tick.elapsed().as_secs_f32();
+        self.last_tick = Instant::now();
+        let phone = if s.is_playing { None } else {
+            self.phone_presence.lock().unwrap_or_else(|e| e.into_inner())
+                .as_ref().and_then(PhonePresence::snapshot)
+        };
+        self.update_discord(phone.as_ref().unwrap_or(&s));
         if !self.config.lastfm_enabled {
             return;
         }
@@ -482,27 +494,28 @@ impl Worker {
                     timestamp: self.listen.started,
                     username: self.credentials.as_ref().unwrap().username.clone(),
                 };
-                let mut queue = self.queue.clone();
-                queue.push(item);
-                if queue.len() > 500 {
-                    queue.remove(0);
-                }
-                match persist(&self.directory.join("lastfm-queue-v1.json"), &queue) {
-                    Ok(()) => {
-                        self.queue = queue;
-                        self.listen.sent = true;
-                    }
-                    Err(_) => {
-                        self.status.lastfm =
-                            "Could not save listen history. Check available disk space.".into();
-                        return;
+                let mut journal = self.journal.clone();
+                if journal.queue.len() >= 500 {
+                    self.status.lastfm = "Listening queue is full. Waiting to send saved listens.".into();
+                } else {
+                    journal.queue.push(item);
+                    match journal.save(&self.directory) {
+                        Ok(()) => {
+                            self.journal = journal;
+                            self.listen.sent = true;
+                        }
+                        Err(_) => {
+                            self.status.lastfm =
+                                "Could not save listen history. Check available disk space.".into();
+                            return;
+                        }
                     }
                 }
             }
         }
-        if !self.queue.is_empty() && self.last_retry.elapsed() > Duration::from_secs(30) {
+        if !self.journal.queue.is_empty() && self.last_retry.elapsed() > Duration::from_secs(30) {
             self.last_retry = Instant::now();
-            let item = self.queue[0].clone();
+            let item = self.journal.queue[0].clone();
             if self.credentials.as_ref().unwrap().username != item.username {
                 self.status.lastfm =
                     "Queued listens belong to another account. Disconnect to clear them.".into();
@@ -520,9 +533,10 @@ impl Worker {
                     let accepted = v["scrobbles"]["@attr"]["accepted"].as_str() == Some("1");
                     let ignored = v["scrobbles"]["@attr"]["ignored"].as_str() == Some("1");
                     if accepted || ignored {
-                        let queue = self.queue[1..].to_vec();
-                        if persist(&self.directory.join("lastfm-queue-v1.json"), &queue).is_ok() {
-                            self.queue = queue;
+                        let mut journal = self.journal.clone();
+                        journal.queue.remove(0);
+                        if journal.save(&self.directory).is_ok() {
+                            self.journal = journal;
                             self.status.lastfm = if accepted {
                                 "Last listen scrobbled"
                             } else {
@@ -538,26 +552,24 @@ impl Worker {
                 Err(e) => self.status.lastfm = e.to_string(),
             }
         }
-        self.status.queued = self.queue.len();
+        self.status.queued = self.journal.queue.len();
     }
 }
 #[derive(Clone)]
 pub struct IntegrationService {
     active: Arc<AtomicBool>,
     worker: Arc<Mutex<Worker>>,
+    phone_presence: Arc<Mutex<Option<PhonePresence>>>,
     stopped: Arc<AtomicBool>,
 }
 impl IntegrationService {
-    pub fn start(client: LocalPlaybackClient) -> Result<Self> {
-        let directory = storage::desktop_data_dir();
+    pub(crate) fn open(directory: PathBuf) -> Result<Self> {
         let config: Config = std::fs::read(directory.join("integrations-v1.json"))
             .ok()
             .and_then(|b| serde_json::from_slice(&b).ok())
             .unwrap_or_default();
-        let queue: Vec<Scrobble> = std::fs::read(directory.join("lastfm-queue-v1.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice(&b).ok())
-            .unwrap_or_default();
+        let journal = ListenJournal::load(&directory);
+        let phone_presence = Arc::new(Mutex::new(None));
         let status = Status {
             config: config.clone(),
             discord: if config.discord_enabled {
@@ -574,7 +586,7 @@ impl IntegrationService {
             .into(),
             discord_artwork: "Waiting for playback".into(),
             discord_rpc: "Not connected".into(),
-            queued: queue.len(),
+            queued: journal.queue.len(),
         };
         let (cover_sender, cover_receiver) = std::sync::mpsc::channel();
         let worker = Arc::new(Mutex::new(Worker {
@@ -588,7 +600,8 @@ impl IntegrationService {
                 .build()?,
             discord: Discord::default(),
             status,
-            queue,
+            journal,
+            phone_presence: phone_presence.clone(),
             listen: Listen::default(),
             last_tick: Instant::now(),
             last_retry: Instant::now() - Duration::from_secs(30),
@@ -600,9 +613,14 @@ impl IntegrationService {
         }));
         let stopped = Arc::new(AtomicBool::new(false));
         let active=Arc::new(AtomicBool::new(false));
-        let enabled=active.clone();
-        let w = worker.clone();
-        let stop = stopped.clone();
+        Ok(Self { worker, stopped, active, phone_presence })
+    }
+
+    pub fn start(client: LocalPlaybackClient) -> Result<Self> {
+        let service = Self::open(storage::desktop_data_dir())?;
+        let enabled = service.active.clone();
+        let w = service.worker.clone();
+        let stop = service.stopped.clone();
         std::thread::spawn(move || {
             while !stop.load(Ordering::Relaxed) {
                 if !enabled.load(Ordering::Relaxed){std::thread::sleep(Duration::from_millis(100));continue;}
@@ -613,7 +631,7 @@ impl IntegrationService {
             }
             w.lock().unwrap_or_else(|e| e.into_inner()).discord.clear();
         });
-        Ok(Self { worker, stopped, active })
+        Ok(service)
     }
     pub fn activate(&self){self.active.store(true,Ordering::Relaxed);}
     pub fn status(&self) -> Status {

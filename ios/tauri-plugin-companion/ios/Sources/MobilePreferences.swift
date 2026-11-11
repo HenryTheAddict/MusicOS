@@ -10,6 +10,8 @@ struct MobilePreferences {
     var backgroundSync = true
     var liveSync = true
     var autoSync = false
+    var lastfmListening = false
+    var discordPresence = false
 
     init(_ values: [String: Any] = [:]) {
         if let value = values["appearance"] as? String, ["system", "light", "dark"].contains(value) { appearance = value }
@@ -21,11 +23,14 @@ struct MobilePreferences {
         backgroundSync = values["backgroundSync"] as? Bool ?? true
         liveSync = values["liveSync"] as? Bool ?? true
         autoSync = values["autoSync"] as? Bool ?? false
+        lastfmListening = values["lastfmListening"] as? Bool ?? false
+        discordPresence = values["discordPresence"] as? Bool ?? false
     }
     var json: [String: Any] {
         ["appearance": appearance, "colors": colors, "animations": animations,
          "interactionFeedback": interactionFeedback, "musicHaptics": musicHaptics,
-         "automix": automix, "backgroundSync": backgroundSync, "liveSync": liveSync, "autoSync": autoSync]
+         "automix": automix, "backgroundSync": backgroundSync, "liveSync": liveSync, "autoSync": autoSync,
+         "lastfmListening": lastfmListening, "discordPresence": discordPresence]
     }
     mutating func set(_ key: String, _ value: Any) throws {
         guard json[key] != nil else { throw NSError(domain: "musicOS", code: 1, userInfo: [NSLocalizedDescriptionKey: "This setting is unavailable"]) }

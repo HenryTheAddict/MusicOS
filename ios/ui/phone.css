@@ -94,3 +94,14 @@
 .computer-sync-status[data-phase="downloading"] p{
  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden
 }
+
+.phone-player-content.normal,.phone-playing{touch-action:none}
+.phone-player-content.normal .phone-playing{transform:translateX(var(--swipe-x,0px))}
+.phone-player-content.normal[data-swiping] .phone-playing{transition:none}
+.phone-player .player-top{transform:none}
+.phone-player{translate:0 var(--player-pull,0px);transition:translate 140ms cubic-bezier(.2,.75,.2,1)}
+.phone-player[data-pulling]{transition:none}
+.phone-player[data-swipe-closing]{pointer-events:none}
+.phone-listening .phone-setting-row:first-of-type{margin-top:12px}
+.phone-listening-status{display:grid;gap:8px;margin:12px 0}
+.phone-listening-status p{margin:0}

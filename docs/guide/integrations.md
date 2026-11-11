@@ -17,3 +17,11 @@ Create a [Last.fm API account](https://www.last.fm/api/account/create). Expand *
 When enabled, listening history sends track metadata after half a song or four minutes. Offline listens wait in a queue. **Disconnect & clear queued listens** removes the connection and its pending listens; local music and playback remain intact.
 
 These are guided setups with user-supplied application credentials, rather than one-click service connections. Never share credentials in bug reports; connection errors belong in Details.
+
+## Listening from an iPhone
+
+1. Connect Last.fm or enable Discord presence in **Settings → Integrations** on the Mac. For Vesktop, enable Rich Presence via arRPC and leave Vesktop open.
+2. Start Wi-Fi sharing in **Devices**. Beside your paired iPhone, choose **Allow listening activity**.
+3. Open **Settings → Listening sync** on the iPhone and turn on either service. **Check connection** shows whether the Mac is reachable and the services are enabled.
+
+The iPhone keeps eligible Last.fm listens offline and sends them to the paired Mac when it is reachable. Turning off Last.fm on the iPhone clears the listens still waiting there. Discord presence is live while the Mac is reachable and clears on pause or when the connection expires. Playback on the Mac takes priority for Discord. Service credentials stay on the Mac.

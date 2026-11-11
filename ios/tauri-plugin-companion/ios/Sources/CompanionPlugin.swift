@@ -77,6 +77,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
 @MainActor private final class Companion {
     static let shared = Companion()
     let root: URL
+    lazy var listening = ListeningRelay(root: root)
     let discovery=MacDiscovery();var discoveryStop:Task<Void,Never>?
     var connection = Credentials.load()
     var library: [[String:Any]] = []
@@ -343,6 +344,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             if let art=cachedArtwork{info[MPMediaItemPropertyArtwork]=art}
             MPNowPlayingInfoCenter.default().nowPlayingInfo=info
         } else {MPNowPlayingInfoCenter.default().nowPlayingInfo=nil}
+        observeListening()
         if UIApplication.shared.applicationState != .background { emit?(json(playback())) }
     }
     func loadCurrent() async throws {
@@ -382,12 +384,71 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func skip(_ by:Int,end:Bool=false) async throws {
         cancelMix()
         guard !queue.isEmpty else { return }
+        if end { listening.resetOccurrence() }
         if end&&repeatMode=="one"{seek(0);try await play();return}
         if by<0 && player.currentTime().seconds>3 { seek(0); return }
         let candidate=queueIndex+by;let next=(candidate>=queue.count&&repeatMode=="all") ? 0:candidate
         guard queue.indices.contains(next) else { if end { pause();seek(0) };return }
         queueIndex=next;savedPosition=0;player.pause();player.replaceCurrentItem(with:nil);try persist();try await play()
     }
+    private func observeListening() {
+        let sample: ListeningSample?
+        if let id = currentID, let row = current, queueEntryIds.indices.contains(queueIndex) {
+            let position = player.currentTime().seconds
+            sample = ListeningSample(entry: queueEntryIds[queueIndex], trackID: id,
+                position: position.isFinite ? position : savedPosition,
+                duration: Double(number(row["duration_ms"])) / 1000,
+                playing: player.rate > 0 && player.timeControlStatus == .playing,
+                uptime: ProcessInfo.processInfo.systemUptime, date: Date())
+        } else { sample = nil }
+        let server = connection?.server
+        listening.update(server: server, lastfm: preferences.lastfmListening,
+                         discord: preferences.discordPresence, sample: sample) { [weak self] body in
+            guard let self = self, self.connection?.server == server else { throw ListeningConnectionIssue.unpaired }
+            return try await self.listeningRequest(body)
+        }
+    }
+
+    private func listeningRequest(_ body: [String: Any]? = nil) async throws -> [String: Any] {
+        guard connection != nil else { throw ListeningConnectionIssue.unpaired }
+        do {
+            return try await remote("listening", body: body) as? [String: Any] ?? [:]
+        } catch CompanionError.server(404, _) {
+            throw ListeningConnectionIssue.updateMac
+        } catch CompanionError.server(403, _) {
+            throw ListeningConnectionIssue.approval
+        } catch CompanionError.server(401, _) {
+            throw ListeningConnectionIssue.unpaired
+        } catch {
+            if let error = error as? URLError,
+               [.cannotFindHost, .cannotConnectToHost, .networkConnectionLost, .timedOut].contains(error.code) {
+                startDiscovery()
+            }
+            throw error
+        }
+    }
+
+    private func startDiscovery() {
+        discovery.finish = { [weak self] mac in
+            guard let self = self, var connection = self.connection, mac["id"] == connection.server,
+                  mac["fingerprint"] == connection.fingerprint,
+                  let host = mac["host"], let port = Int(mac["port"] ?? ""),
+                  host != connection.host || port != connection.port else { return }
+            connection.host = host
+            connection.port = port
+            self.connection = connection
+            try? Credentials.save(connection)
+            self.observeListening()
+            self.listening.tryAgain()
+        }
+        discovery.start()
+        discoveryStop?.cancel()
+        discoveryStop = Task {
+            try? await Task.sleep(nanoseconds:5_000_000_000)
+            if !Task.isCancelled { discovery.stop() }
+        }
+    }
+
     func request(_ payload:[String:Any]) async throws -> Any {
         switch payload["action"] as? String ?? "snapshot" {
         case "artwork_palette":
@@ -398,9 +459,23 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             let value:[String:Any]=["background":colors[1],"blob":colors[2],"accent":colors[0],"text":"#12202a","swatches":colors];if artworkPalettes.count>=64{artworkPalettes.removeAll()};artworkPalettes[path]=value;return value
         case "settings":
             guard let key=payload["key"] as? String,let value=payload["value"] else{throw CompanionError.message("Choose a setting")}
-            try preferences.set(key,value);if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish();return snapshot()
+            try preferences.set(key,value)
+            if key=="lastfmListening" && !preferences.lastfmListening { listening.stopCollecting() }
+            if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish()
+            if key=="discordPresence" { listening.tryAgain() }
+            return snapshot()
         case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
         case "snapshot": return snapshot()
+        case "listening_status":
+            observeListening()
+            if payload["refresh"] as? Bool == true {
+                do {
+                    let result = try await listeningRequest()
+                    listening.updateStatus(result)
+                    if result["allowed"] as? Bool == true { listening.tryAgain() }
+                } catch { listening.failed(error) }
+            }
+            return listening.status
         case "sync_status":
             return [
                 "paired":connection != nil, "nearby_macs":discovery.results, "sync":status,
@@ -503,6 +578,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "disconnect":
             await stopSync(keepResume:false)
             connection = nil
+            observeListening()
             try Credentials.save(nil)
             status = ["state":"idle"]
             return snapshot()
@@ -515,11 +591,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             }
             conflicts.removeAll{$0["id"] as? String==id};try persist();return snapshot()
         case "discover":
-            discovery.start();discoveryStop?.cancel();discoveryStop=Task{try? await Task.sleep(nanoseconds:5_000_000_000);if !Task.isCancelled{discovery.stop()}}
-            discovery.finish={ [weak self] mac in
-                guard let self=self,var connection=self.connection,mac["id"]==connection.server,mac["fingerprint"]==connection.fingerprint,let host=mac["host"],let port=Int(mac["port"] ?? "") else{return}
-                connection.host=host;connection.port=port;self.connection=connection;try? Credentials.save(connection)
-            }
+            startDiscovery()
             return discovery.results
         case "stop_discovery":discoveryStop?.cancel();discovery.stop();return [:] as [String:String]
         case "scan":
@@ -538,7 +610,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func fetch(_ path:String,body:[String:Any]?=nil,range:String?=nil,etag:String?=nil) async throws -> (Data,HTTPURLResponse) {
         guard let c=connection else { throw CompanionError.message("Pair with your Mac first") }
         let shared = syncSession.flatMap { $0.base == c.base && $0.fingerprint == c.fingerprint ? $0.session : nil }
-        let session = shared ?? makeSyncSession(fingerprint:c.fingerprint)
+        let session = shared ?? makeSyncSession(fingerprint:c.fingerprint, listening:path=="listening")
         defer { if shared == nil { session.finishTasksAndInvalidate() } }
         var r=URLRequest(url:c.base.appendingPathComponent(path));r.setValue("Bearer \(c.client).\(c.token)",forHTTPHeaderField:"Authorization")
         if let body=body { r.httpMethod="POST";r.httpBody=try JSONSerialization.data(withJSONObject:body);r.setValue("application/json",forHTTPHeaderField:"Content-Type") }
@@ -609,10 +681,11 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         while let data=try handle.read(upToCount:1<<20),!data.isEmpty {hash.update(data:data)}
         return hash.finalize().map{String(format:"%02x",$0)}.joined()
     }
-    private func makeSyncSession(fingerprint: String) -> URLSession {
+    private func makeSyncSession(fingerprint: String, listening: Bool = false) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 120
+        configuration.timeoutIntervalForRequest = listening ? 5 : 30
+        configuration.timeoutIntervalForResource = listening ? 8 : 120
+        configuration.allowsCellularAccess = !listening
         return URLSession(configuration:configuration,delegate:PinnedConnection(fingerprint),delegateQueue:nil)
     }
 
@@ -874,6 +947,54 @@ extension Companion {
                 _ = try await request(["action":"cancel"])
                 check("stopping preparation preserves verified songs",wasPreparing && status["state"] as? String == "cancelled" && syncTask == nil &&
                     FileManager.default.fileExists(atPath:fixtureAudio.path))
+                let date = Date().addingTimeInterval(-120)
+                func sample(_ tick: Int, _ position: Double, _ playing: Bool = true, _ entry: Int64 = 11) -> ListeningSample {
+                    ListeningSample(entry:entry,trackID:9001,position:position,duration:60,playing:playing,
+                                    uptime:Double(tick),date:date.addingTimeInterval(Double(tick)))
+                }
+                var occurrence = ListeningOccurrence()
+                for second in 0...20 { _ = occurrence.advance(sample(second,Double(second)),server:connection!.server) }
+                let skipped = occurrence.advance(sample(21,38),server:connection!.server)
+                _ = occurrence.advance(sample(22,38,false),server:connection!.server)
+                _ = occurrence.advance(sample(64,38,false),server:connection!.server)
+                _ = occurrence.advance(sample(65,38),server:connection!.server)
+                var eligible: PhoneListen?
+                for second in 1...10 { eligible = occurrence.advance(sample(65+second,Double(38+second)),server:connection!.server) }
+                check("phone listens exclude seeks and paused time",skipped == nil && eligible?.listenedSeconds == 30)
+                occurrence.queued = true
+                check("a duplicate queue entry starts a fresh listen",
+                      occurrence.advance(sample(76,0,true,12),server:connection!.server) == nil && !occurrence.queued)
+
+                let relayRoot = root.appendingPathComponent("test-fixtures/listening-relay")
+                try FileManager.default.createDirectory(at:relayRoot,withIntermediateDirectories:true)
+                try? FileManager.default.removeItem(at:relayRoot.appendingPathComponent("listening-outbox-v1.json"))
+                let localRelay = ListeningRelay(root:relayRoot)
+                for second in 0...31 {
+                    localRelay.update(server:connection?.server,lastfm:true,discord:false,
+                        sample:sample(second,Double(second))) { _ in throw URLError(.notConnectedToInternet) }
+                }
+                check("eligible listens are durable while the Mac is unavailable",localRelay.status["pending"] as? Int == 1)
+                localRelay.update(server:nil,lastfm:false,discord:false,sample:nil) { _ in [:] }
+
+                let restarted = ListeningRelay(root:relayRoot)
+                let send: ListeningRelay.Sender = { body in try await self.listeningRequest(body) }
+                restarted.update(server:connection?.server,lastfm:true,discord:false,sample:nil,send:send)
+                for _ in 0..<75 {
+                    if restarted.status["pending"] as? Int == 0 { break }
+                    try await Task.sleep(nanoseconds:30_000_000)
+                }
+                check("pinned Wi-Fi relay acknowledges the saved listen after restart",
+                      restarted.status["pending"] as? Int == 0 && restarted.status["lastfm_ready"] as? Bool == true)
+                let live = ListeningSample(entry:11,trackID:9001,position:3,duration:60,playing:true,
+                    uptime:ProcessInfo.processInfo.systemUptime,date:Date())
+                restarted.update(server:connection?.server,lastfm:false,discord:true,sample:live,send:send)
+                // Pausing while the first request is in flight still sends the clear.
+                let paused = ListeningSample(entry:11,trackID:9001,position:3,duration:60,playing:false,
+                    uptime:ProcessInfo.processInfo.systemUptime,date:Date())
+                restarted.update(server:connection?.server,lastfm:false,discord:true,sample:paused,send:send)
+                try await Task.sleep(nanoseconds:450_000_000)
+                check("phone relay keeps the two service settings private by default",
+                      !MobilePreferences().lastfmListening && !MobilePreferences().discordPresence)
             }
         }catch{checks.append(["name":"native service execution","passed":false,"error":error.localizedDescription])}
         pause()

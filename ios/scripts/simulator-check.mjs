@@ -43,6 +43,7 @@ delete newSong.lyrics_path;
 const songPayload=readFileSync(tracks[0].path);
 const manifest={version:1,server_id:'isolated-simulator-fixture',revision:'fixture-1',bytes_total:songPayload.length,tracks:[newSong],collections:[{id:'partial-sync-fixture',kind:'manual',name:'Partial transfer',full_track_ids:[9001,9002,9001]}]};
 let audioRequests=0,syncRuns=0,preparationChecks=0;
+const listeningUpdates=[];
 const server=createServer({key:readFileSync(resolve(tls,'key.pem')),cert:readFileSync(resolve(tls,'cert.pem'))},(request,response)=>{
  if(request.url==='/v1/fixture'&&request.headers.authorization==='Bearer isolated-test'){
   response.writeHead(200,{'Content-Type':'application/octet-stream','Content-Length':payload.length,'ETag':`"${hash}"`});response.end(payload);return;
@@ -53,6 +54,18 @@ const server=createServer({key:readFileSync(resolve(tls,'key.pem')),cert:readFil
   case '/v1/pair/status':syncRuns++;json({state:'approved'});break;
   case '/v1/preparation':json({preparing:syncRuns>=3||preparationChecks++===0,completed:0,total:1});break;
   case '/v1/manifest':json(manifest);break;
+  case '/v1/listening':
+   if(request.method==='GET'){json({allowed:true,lastfm_ready:true,discord_ready:true});break;}
+   {
+    const chunks=[];
+    request.on('data',chunk=>chunks.push(chunk));
+    request.on('end',()=>{
+     const update=JSON.parse(Buffer.concat(chunks).toString());
+     listeningUpdates.push(update);
+     json({allowed:true,lastfm_ready:true,discord_ready:true,accepted:update.listens.map(listen=>listen.id),discarded:[]});
+    });
+   }
+   break;
   case '/v1/sync-complete':json({state:'saved'});break;
   case '/v1/tracks/9001':
    audioRequests++;
@@ -63,7 +76,10 @@ const server=createServer({key:readFileSync(resolve(tls,'key.pem')),cert:readFil
 run('xcrun',['simctl','launch','--terminate-running-process',id,'com.musicos.companion'],{SIMCTL_CHILD_MUSICOS_COMPANION_SELF_TEST:'1',SIMCTL_CHILD_MUSICOS_TEST_SYNC_BASE:`https://127.0.0.1:${port}/v1`,SIMCTL_CHILD_MUSICOS_TEST_SYNC_PIN:pin,SIMCTL_CHILD_MUSICOS_TEST_SYNC_HASH:hash});
 let value;
 for(let n=0;n<120;n++){if(existsSync(report)){value=JSON.parse(readFileSync(report));break;}await new Promise(r=>setTimeout(r,500));}
-server.close();if(!value)throw Error('Native checks did not finish');console.log(JSON.stringify(value,null,2));if(value.error||value.checks?.some(c=>!c.passed))throw Error('Native companion checks failed');if(audioRequests!==1)throw Error(`Expected one audio transfer across two syncs, got ${audioRequests}`);run('xcrun',['simctl','launch','--terminate-running-process',id,'com.musicos.companion']);
+server.close();if(!value)throw Error('Native checks did not finish');console.log(JSON.stringify(value,null,2));if(value.error||value.checks?.some(c=>!c.passed))throw Error('Native companion checks failed');if(listeningUpdates.flatMap(update=>update.listens).length!==1
+   ||!listeningUpdates.some(update=>update.presence?.track_id===9001)
+   ||listeningUpdates.at(-1)?.presence!==null)throw Error('Listening relay did not flush once and clear presence');
+if(audioRequests!==1)throw Error(`Expected one audio transfer across two syncs, got ${audioRequests}`);run('xcrun',['simctl','launch','--terminate-running-process',id,'com.musicos.companion']);
 await new Promise(r=>setTimeout(r,1500));
 run('xcrun',['simctl','io',id,'screenshot','/tmp/musicos-phone-native-check.png']);
 if(value.checks.some(c=>!c.passed))process.exitCode=1;

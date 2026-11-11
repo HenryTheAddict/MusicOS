@@ -117,6 +117,8 @@ impl AppState {
         };
         let preference_error=preference_error.or(recovery_error);
         let integrations = IntegrationService::start(playback.client())?;
+        let wifi = crate::wifi::Service::default();
+        wifi.set_integrations(integrations.clone());
         Ok(Self {
             #[cfg(target_os="macos")]
             visualizer:Mutex::new(None),
@@ -126,7 +128,7 @@ impl AppState {
             mini_sizes: Mutex::new(Default::default()),
             mini_menu_size: Mutex::new(None),
             player_window_operation: tokio::sync::Mutex::new(()),
-            wifi: Default::default(),
+            wifi,
             analysis: Default::default(),
             integrations,
             config: Mutex::new(config),

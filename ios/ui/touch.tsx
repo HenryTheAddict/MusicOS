@@ -2,58 +2,101 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {request} from './bridge';
 export function feedback(kind='selection'){void request({action:'haptic',kind}).catch(()=>{});}
 /** One native touch owner locks only its intended axis; vertical lists keep native scrolling. */
-export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all'){
+export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all',pullSheet=false){
  const [node,ref]=useState<HTMLElement|null>(null);
- const options=useRef({onSwipe,axis,mode});options.current={onSwipe,axis,mode};
+ const options=useRef({onSwipe,axis,mode,pullSheet});options.current={onSwipe,axis,mode,pullSheet};
  const suppress=useRef(0);
  useEffect(()=>{
   if(!node)return;
-  let start:{x:number;y:number;id:number;locked:boolean}|null=null,frame=0,x=0,y=0;
-  const clear=()=>{cancelAnimationFrame(frame);frame=0;start=null;node.removeAttribute('data-swiping');node.style.removeProperty('--swipe-x');node.style.removeProperty('--swipe-y');};
-  const draw=()=>{frame=0;node.style.setProperty('--swipe-x',`${x}px`);node.style.setProperty('--swipe-y',`${y}px`);};
+  type Axis = 'horizontal' | 'vertical';
+  let start:{x:number;y:number;id:number;axis?:Axis}|null=null;
+  let frame=0,x=0,y=0,motion=true,sheet:HTMLElement|null=null;
+  let exit:Animation|null=null,exitingSheet:HTMLElement|null=null;
+  const clear=()=>{
+   cancelAnimationFrame(frame);frame=0;start=null;
+   node.removeAttribute('data-swiping');node.style.removeProperty('--swipe-x');node.style.removeProperty('--swipe-y');
+   sheet?.removeAttribute('data-pulling');
+   sheet?.style.removeProperty('--player-pull');
+   sheet=null;
+   exit?.cancel();
+   exit=null;
+   exitingSheet?.removeAttribute('data-swipe-closing');
+   exitingSheet=null;
+  };
+  const draw=()=>{
+   frame=0;
+   if(!motion)return;
+   node.style.setProperty('--swipe-x',`${x}px`);
+   node.style.setProperty('--swipe-y',`${y}px`);
+   if(sheet){
+    sheet.setAttribute('data-pulling','true');
+    sheet.style.setProperty('--player-pull',`${Math.max(0,y)}px`);
+   }
+  };
   const begin=(e:TouchEvent)=>{
+   if(node.closest('[data-swipe-closing]'))return;
    suppress.current=0;
+   clear();
    const {mode}=options.current,target=e.target instanceof Element?e.target:null;
-   if(e.touches.length!==1){clear();return;}
+   if(e.touches.length!==1)return;
    const t=e.touches[0];
    if(mode==='off'||!target||target.closest('.icon-button,input,textarea,select,[data-no-swipe],.reorder-handle'))return;
    if(mode==='edge'&&(t.clientX>32||target.closest('.phone-categories')))return;
-   // A row yields its leading edge to detail Back. Nested owners otherwise handle their own touch.
    if(mode!=='edge'&&t.clientX<=32&&node.closest('[data-edge-back=true]'))return;
-   const owner=target.closest('[data-swipe-owner]');
-   if(mode!=='edge'&&owner!==node)return;
-   start={x:t.clientX,y:t.clientY,id:t.identifier,locked:false};
+   if(mode!=='edge'&&target.closest('[data-swipe-owner]')!==node)return;
+   motion=!matchMedia('(prefers-reduced-motion: reduce)').matches&&!node.closest('[data-reduced-motion=true]');
+   start={x:t.clientX,y:t.clientY,id:t.identifier};
   };
   const move=(e:TouchEvent)=>{
    if(!start)return;
-   if(options.current.mode==='off'){clear();return;}
-   if(e.touches.length!==1){clear();return;}
+   if(options.current.mode==='off'||e.touches.length!==1){clear();return;}
    const t=e.touches[0];
    if(t.identifier!==start.id)return;
-   const dx=t.clientX-start.x,dy=t.clientY-start.y,{axis,mode}=options.current;
-   if(!start.locked){
+   const dx=t.clientX-start.x,dy=t.clientY-start.y,{axis,mode,pullSheet}=options.current;
+   if(!start.axis){
     if(Math.hypot(dx,dy)<12)return;
-    if(axis==='horizontal'&&Math.abs(dy)>=Math.abs(dx)||axis==='vertical'&&Math.abs(dx)>=Math.abs(dy)||mode==='edge'&&dx<0){clear();return;}
-    start.locked=true;node.setAttribute('data-swiping','true');if(mode==='edge')node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
+    const chosen=Math.abs(dy)>=Math.abs(dx)?'vertical':'horizontal';
+    if((axis!=='both'&&axis!==chosen)||(mode==='edge'&&dx<0)||(pullSheet&&chosen==='vertical'&&dy<0)){clear();return;}
+    start.axis=chosen;
+    node.setAttribute('data-swiping','true');
+    if(mode==='edge')node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
+    if(pullSheet&&chosen==='vertical')sheet=node.closest<HTMLElement>('.phone-player');
    }
    if(e.cancelable)e.preventDefault();
    suppress.current=performance.now()+400;
    const row=node.classList.contains('phone-swipe-song');
-   x=axis==='vertical'?0:mode==='edge'?Math.max(0,Math.min(node.clientWidth,dx)):row?Math.max(-100,Math.min(100,dx)):Math.max(-60,Math.min(60,dx*.6));
-   y=axis==='horizontal'?0:Math.max(-60,Math.min(60,dy*.6));
+   x=start.axis==='vertical'?0:mode==='edge'?Math.max(0,Math.min(node.clientWidth,dx)):row?Math.max(-100,Math.min(100,dx)):Math.max(-60,Math.min(60,dx*.6));
+   y=start.axis==='horizontal'?0:sheet?Math.min(Math.max(0,dy),window.innerHeight*.5):Math.max(-60,Math.min(60,dy*.6));
    if(!frame)frame=requestAnimationFrame(draw);
   };
   const end=(e:TouchEvent)=>{
-   const s=start;if(!s)return;
-   const t=e.changedTouches[0];
-   if(!t||t.identifier!==s.id)return;
-   const dx=t.clientX-s.x,dy=t.clientY-s.y,locked=s.locked;
+   const s=start,t=e.changedTouches[0];
+   if(!s||!t||t.identifier!==s.id)return;
+   const distance=s.axis==='horizontal'?t.clientX-s.x:t.clientY-s.y;
+   const movingSheet=sheet;
+   const displacement=motion&&movingSheet ? Number.parseFloat(movingSheet.style.getPropertyValue('--player-pull'))||0 : 0;
    clear();
-   if(!locked)return;
+   if(!s.axis)return;
    suppress.current=performance.now()+400;
    if(e.cancelable)e.preventDefault();
-   if(Math.max(Math.abs(dx),Math.abs(dy))<54)return;
-   feedback();options.current.onSwipe(Math.abs(dx)>Math.abs(dy)?dx<0?'left':'right':dy<0?'up':'down');
+   if(Math.abs(distance)<54)return;
+   const direction=s.axis==='horizontal'?(distance<0?'left':'right'):(distance<0?'up':'down');
+   if(options.current.pullSheet&&direction==='up')return;
+   feedback();
+   if(direction==='down'&&movingSheet&&motion&&typeof movingSheet.animate==='function'){
+    exitingSheet=movingSheet;
+    movingSheet.setAttribute('data-swipe-closing','true');
+    const animation=movingSheet.animate(
+     [{translate:`0 ${displacement}px`},{translate:'0 100%'}],
+     {duration:160,easing:'cubic-bezier(.2,.72,.26,1)',fill:'forwards'}
+    );
+    exit=animation;
+    void animation.finished.then(()=>{
+     if(exit===animation)options.current.onSwipe(direction);
+    }).catch(()=>{});
+   }else{
+    options.current.onSwipe(direction);
+   }
   };
   node.addEventListener('touchstart',begin,{passive:true});
   node.addEventListener('touchmove',move,{passive:false});
