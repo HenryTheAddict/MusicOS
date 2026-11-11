@@ -39,3 +39,14 @@
 
 .phone-page{transform:translateX(var(--swipe-x,0px))}
 .phone-app button,.phone-app .phone-cover{-webkit-touch-callout:none}.phone-app button{-webkit-user-select:none;user-select:none}.phone-app .asset-icon[data-icon=sync]{animation:phone-loading 900ms linear infinite}.phone-app .heart>.asset-icon{transition:scale 140ms}.phone-app .heart:active>.asset-icon{scale:.9}@keyframes phone-loading{to{rotate:360deg}}
+/* Touch movement stays on one layer; list scrolling never owns a horizontal action. */
+.phone-app>main{touch-action:pan-y}
+.phone-page{transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
+[data-swiping]>.phone-page,.phone-mini[data-swiping],.phone-playing[data-swiping],.player-top[data-swiping],.phone-swipe-song[data-swiping]>.swipe-song-content{transition:none}
+.phone-mini,.phone-playing{transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
+.player-top{touch-action:none;transform:translateY(var(--swipe-y,0px));transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
+.phone-mini{transform:translate(var(--swipe-x,0px),var(--swipe-y,0px))}
+.swipe-song-content,.phone-swipe-song[data-open]>.swipe-song-content{transform:translateX(clamp(-90px,calc(var(--swipe-rest,0px) + var(--swipe-x,0px)),0px))}
+.phone-swipe-song[data-open]{--swipe-rest:-90px}
+.swipe-next[aria-hidden=true]{visibility:hidden;pointer-events:none}
+.phone-swipe-song[data-swiping]>.swipe-next{visibility:visible}
