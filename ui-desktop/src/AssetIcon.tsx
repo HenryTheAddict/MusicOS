@@ -44,7 +44,7 @@ export function solidIcon(svg:string, name:string) {
 // white export canvas. Its surrounding surface is owned by the active theme.
 export const portraitPlaceholder='data:image/svg+xml,'+encodeURIComponent(solidIcon(icons.noARTIST,'noARTIST'));
 
-export function AssetIcon({ name, className = "" }: { name: string; className?: string }) {
+export function AssetIcon({ name, className = "", motion = true }: { name: string; className?: string; motion?: boolean }) {
   const element = useRef<HTMLElement>(null);
   const previous = useRef(name);
   const prefix = useId().replace(/[^a-zA-Z0-9]/g, "");
@@ -63,19 +63,19 @@ export function AssetIcon({ name, className = "" }: { name: string; className?: 
     const old = previous.current;
     previous.current = name;
     let cancel = () => {};
-    if(old!==name&&cycleNames.includes(old)&&cycleNames.includes(name)){if(reduced.matches){host.innerHTML=markup;resetCycleShape(host,name as CycleGlyph);}else cancel=playerViewMorph(host,old as CycleGlyph,name as CycleGlyph,markup);
+    if(old!==name&&cycleNames.includes(old)&&cycleNames.includes(name)){if(!motion||reduced.matches){host.innerHTML=markup;resetCycleShape(host,name as CycleGlyph);}else cancel=playerViewMorph(host,old as CycleGlyph,name as CycleGlyph,markup);
     }else if(old!==name&&['ShuffleON','ShuffleOFF'].includes(old)&&['ShuffleON','ShuffleOFF'].includes(name)){
-      if(reduced.matches){host.innerHTML=markup;host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}else cancel=shuffleMorph(host,name==='ShuffleON',markup);
-    } else if (old !== name && host.innerHTML && !reduced.matches && groups.some(group => group.includes(old) && group.includes(name))) {
+      if(!motion||reduced.matches){host.innerHTML=markup;host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}else cancel=shuffleMorph(host,name==='ShuffleON',markup);
+    } else if (old !== name && host.innerHTML && motion && !reduced.matches && groups.some(group => group.includes(old) && group.includes(name))) {
       cancel = [old,name].every(value=>['3dots_(nocircle)','3dots(incircle)','menuDotsClose'].includes(value)) ? menuDotsMorph(host,name==='menuDotsClose',markup)
         : [old,name].every(value=>value==='menuPlus'||value==='menuClose') ? menuCrossMorph(host,name==='menuClose',markup)
         : [old,name].includes('rowLevels') ? playLevelsMorph(host,name==='rowLevels',markup,(name==='pause'||old==='pause')?'pause':'play')
         : [old,name].every(value=>value==='play'||value==='pause') ? playPauseMorph(host,name==='pause',markup)
         : morphSvg(host, host.innerHTML, markup, ['queue','controlClose','menuDotsClose','tinyX','menuPlus','3dots_(nocircle)','3dots(incircle)'].includes(name)?140:180);
     } else {host.innerHTML = markup;if(cycleNames.includes(name))resetCycleShape(host,name as CycleGlyph);host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0);}
-    const finish = () => { if (reduced.matches) { cancel(); host.innerHTML = markup;if(cycleNames.includes(name))resetCycleShape(host,name as CycleGlyph);host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0); } };
+    const finish = () => { if (!motion || reduced.matches) { cancel(); host.innerHTML = markup;if(cycleNames.includes(name))resetCycleShape(host,name as CycleGlyph);host.dataset.morphProgress=String(name==='rowLevels'?1:0);host.dataset.transportMorphProgress=String(name==='pause'?1:0);host.dataset.crossProgress=String(name==='menuClose'?1:0);host.dataset.dotsProgress=String(name==='menuDotsClose'?1:0);host.dataset.shuffleProgress=String(name==='ShuffleON'?1:0); } };
     reduced.addEventListener("change", finish);
     return () => { cancel(); reduced.removeEventListener("change", finish); };
-  }, [name, prefix]);
+  }, [name, prefix, motion]);
   return <i ref={element} className={`icon asset-icon ${className}`} data-icon={name} aria-hidden="true" />;
 }

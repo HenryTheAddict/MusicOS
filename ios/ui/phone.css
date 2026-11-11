@@ -44,7 +44,7 @@
 .phone-page{transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
 [data-swiping]>.phone-page,.phone-mini[data-swiping],.phone-playing[data-swiping],.player-top[data-swiping],.phone-swipe-song[data-swiping]>.swipe-song-content{transition:none}
 .phone-mini,.phone-playing{transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
-.player-top{touch-action:none;transform:translateY(var(--swipe-y,0px));transition:transform 140ms cubic-bezier(.2,.75,.2,1)}
+.player-top{touch-action:none}
 .phone-mini{transform:translate(var(--swipe-x,0px),var(--swipe-y,0px))}
 .swipe-song-content,.phone-swipe-song[data-open]>.swipe-song-content{transform:translateX(clamp(-90px,calc(var(--swipe-rest,0px) + var(--swipe-x,0px)),0px))}
 .phone-swipe-song[data-open]{--swipe-rest:-90px}
@@ -98,10 +98,14 @@
 .phone-player-content.normal,.phone-playing{touch-action:none}
 .phone-player-content.normal .phone-playing{transform:translateX(var(--swipe-x,0px))}
 .phone-player-content.normal[data-swiping] .phone-playing{transition:none}
-.phone-player .player-top{transform:none}
-.phone-player{translate:0 var(--player-pull,0px);transition:translate 140ms cubic-bezier(.2,.75,.2,1)}
+.phone-player{animation:none;translate:0 var(--player-pull,0px);transition:translate 140ms cubic-bezier(.2,.75,.2,1)}
 .phone-player[data-pulling]{transition:none}
-.phone-player[data-swipe-closing]{pointer-events:none}
+.phone-player[data-swipe-closing]{pointer-events:none;transition:none}
 .phone-listening .phone-setting-row:first-of-type{margin-top:12px}
 .phone-listening-status{display:grid;gap:8px;margin:12px 0}
 .phone-listening-status p{margin:0}
+
+.phone-player .icon-button>.asset-icon,.phone-mini>.icon-button>.asset-icon,.phone-app nav .asset-icon{
+ transition:scale 140ms cubic-bezier(.2,.72,.26,1);
+}
+.phone-player .icon-button:active>.asset-icon,.phone-mini>.icon-button:active>.asset-icon,.phone-app nav button:active>.asset-icon{scale:.97}

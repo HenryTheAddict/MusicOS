@@ -1,8 +1,9 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {request} from './bridge';
+import {displayedPlayerOffset,playerEntrance} from './playerMotion';
 export function feedback(kind='selection'){void request({action:'haptic',kind}).catch(()=>{});}
 /** One native touch owner locks only its intended axis; vertical lists keep native scrolling. */
-export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all',pullSheet=false){
+export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOffset?:number)=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all',pullSheet=false){
  const [node,ref]=useState<HTMLElement|null>(null);
  const options=useRef({onSwipe,axis,mode,pullSheet});options.current={onSwipe,axis,mode,pullSheet};
  const suppress=useRef(0);
@@ -11,17 +12,14 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,ax
   type Axis = 'horizontal' | 'vertical';
   let start:{x:number;y:number;id:number;axis?:Axis}|null=null;
   let frame=0,x=0,y=0,motion=true,sheet:HTMLElement|null=null;
-  let exit:Animation|null=null,exitingSheet:HTMLElement|null=null;
+  let initialSheetOffset=0;
   const clear=()=>{
    cancelAnimationFrame(frame);frame=0;start=null;
    node.removeAttribute('data-swiping');node.style.removeProperty('--swipe-x');node.style.removeProperty('--swipe-y');
    sheet?.removeAttribute('data-pulling');
    sheet?.style.removeProperty('--player-pull');
    sheet=null;
-   exit?.cancel();
-   exit=null;
-   exitingSheet?.removeAttribute('data-swipe-closing');
-   exitingSheet=null;
+   initialSheetOffset=0;
   };
   const draw=()=>{
    frame=0;
@@ -60,16 +58,25 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,ax
     start.axis=chosen;
     node.setAttribute('data-swiping','true');
     if(mode==='edge')node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
-    if(pullSheet&&chosen==='vertical')sheet=node.closest<HTMLElement>('.phone-player');
+    if(pullSheet&&chosen==='vertical'){
+     sheet=node.closest<HTMLElement>('.phone-player');
+     if(sheet&&motion){
+      initialSheetOffset=displayedPlayerOffset(sheet);
+      sheet.getAnimations().find(animation=>animation.id===playerEntrance)?.cancel();
+      sheet.setAttribute('data-pulling','true');
+      sheet.style.setProperty('--player-pull',`${initialSheetOffset}px`);
+     }
+    }
    }
    if(e.cancelable)e.preventDefault();
    suppress.current=performance.now()+400;
    const row=node.classList.contains('phone-swipe-song');
    x=start.axis==='vertical'?0:mode==='edge'?Math.max(0,Math.min(node.clientWidth,dx)):row?Math.max(-100,Math.min(100,dx)):Math.max(-60,Math.min(60,dx*.6));
-   y=start.axis==='horizontal'?0:sheet?Math.min(Math.max(0,dy),window.innerHeight*.5):Math.max(-60,Math.min(60,dy*.6));
+   y=start.axis==='horizontal'?0:sheet?Math.min(Math.max(0,dy+initialSheetOffset),window.innerHeight*.7):Math.max(-60,Math.min(60,dy*.6));
    if(!frame)frame=requestAnimationFrame(draw);
   };
   const end=(e:TouchEvent)=>{
+   if(options.current.mode==='off'){clear();return;}
    const s=start,t=e.changedTouches[0];
    if(!s||!t||t.identifier!==s.id)return;
    const distance=s.axis==='horizontal'?t.clientX-s.x:t.clientY-s.y;
@@ -83,20 +90,7 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down')=>void,ax
    const direction=s.axis==='horizontal'?(distance<0?'left':'right'):(distance<0?'up':'down');
    if(options.current.pullSheet&&direction==='up')return;
    feedback();
-   if(direction==='down'&&movingSheet&&motion&&typeof movingSheet.animate==='function'){
-    exitingSheet=movingSheet;
-    movingSheet.setAttribute('data-swipe-closing','true');
-    const animation=movingSheet.animate(
-     [{translate:`0 ${displacement}px`},{translate:'0 100%'}],
-     {duration:160,easing:'cubic-bezier(.2,.72,.26,1)',fill:'forwards'}
-    );
-    exit=animation;
-    void animation.finished.then(()=>{
-     if(exit===animation)options.current.onSwipe(direction);
-    }).catch(()=>{});
-   }else{
-    options.current.onSwipe(direction);
-   }
+   options.current.onSwipe(direction,direction==='down'&&movingSheet?displacement:undefined);
   };
   node.addEventListener('touchstart',begin,{passive:true});
   node.addEventListener('touchmove',move,{passive:false});
