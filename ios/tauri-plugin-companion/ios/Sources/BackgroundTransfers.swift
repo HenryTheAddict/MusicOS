@@ -55,9 +55,10 @@ struct BackgroundAsset: Codable {
     }
     func destination(_ asset: BackgroundAsset) -> URL { root.appendingPathComponent("\(asset.kind)/\(asset.hash)") }
     func start(_ assets: [BackgroundAsset], base: URL, authorization: String) async {
+        let existing = await session.allTasks
+        guard !Task.isCancelled else { return }
         retainResume=true
         results.removeAll()
-        let existing = await session.allTasks
         activeTasks=Dictionary(existing.compactMap{task in decode(task).map{($0.hash,task.taskIdentifier)}},uniquingKeysWith:{a,_ in a})
         let active=Set(activeTasks.keys)
         planned = Set(assets.map(\.hash)); completed = []

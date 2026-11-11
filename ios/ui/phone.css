@@ -50,3 +50,47 @@
 .phone-swipe-song[data-open]{--swipe-rest:-90px}
 .swipe-next[aria-hidden=true]{visibility:hidden;pointer-events:none}
 .phone-swipe-song[data-swiping]>.swipe-next{visibility:visible}
+
+/* Keep control columns fixed when metadata has long words or large type. */
+.phone-page,.phone-sheet,.song-actions-sheet,.phone-error,.phone-player .lyric-line,.phone-player .lyric-plain{
+ overflow-wrap:anywhere;
+}
+.collection-list{grid-template-columns:minmax(0,1fr)}
+.collection-list>button>span,.collection-list>button>strong,
+.continue-card>button:not(.icon-button)>*,.phone-error>span{min-width:0}
+.continue-card small,.collection-list>button strong{
+ display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden
+}
+.phone-playing{
+ display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto;
+ width:min(100%,420px);height:min(100%,calc(45svh + 8rem));margin-inline:auto
+}
+.phone-playing-art{display:grid;place-items:center;container-type:size;min-height:0}
+.phone-playing-art>.phone-cover{width:min(100cqw,100cqh,45svh);max-height:none;margin:0}
+.phone-playing-identity{min-width:0;overflow-wrap:anywhere}
+.phone-playing-identity p{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+@media (max-height:540px){
+ .phone-playing-identity :is(h1,p){-webkit-line-clamp:1}
+}
+.computer-sync-card,.computer-offline{
+ padding:16px;border-radius:20px;background:color-mix(in srgb,var(--accent) 9%,var(--surface))
+}
+.computer-sync-heading{display:flex;align-items:center;gap:10px}
+.computer-sync-heading>.asset-icon{color:var(--accent)}
+.computer-sync-status{margin-top:14px}
+.computer-sync-status p,.computer-offline p{margin:6px 0 0}
+.computer-sync-card .actions{margin-bottom:0}
+.computer-sync-progress{display:grid;gap:6px;margin-top:12px}
+.computer-offline,.computer-manage{margin-top:16px}
+.computer-offline small{display:block;margin-top:6px}
+.computer-manage summary{padding:12px 0;cursor:pointer}
+.computer-manage label{margin:8px 0}
+.computer-manage>.filled{margin-top:8px}
+.computer-error{padding:12px;border-radius:12px;background:var(--control-surface)}
+
+.phone-app,.phone-player{grid-template-columns:minmax(0,1fr)}
+.phone-app>main,.phone-app>footer{min-width:0}
+.computer-sync-card .filled .asset-icon{animation:none}
+.computer-sync-status[data-phase="downloading"] p{
+ display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden
+}

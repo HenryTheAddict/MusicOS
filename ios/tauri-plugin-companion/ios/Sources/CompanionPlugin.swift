@@ -102,6 +102,9 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     var player = AVPlayer(); var observer: Any?; var notifications: [NSObjectProtocol] = []
     var emit: ((String)->Void)?
     var syncTask: Task<Void,Never>?; var prepareTask: Task<Void,Never>?
+    private var syncSession: (base: URL, fingerprint: String, session: URLSession)?
+    private var stoppingSync = false
+    private var transferPlan: URL { root.appendingPathComponent("transfer-plan.json") }
     var preparingMix:Task<Void,Never>?,mixTask:Task<Void,Never>?
     var preparedMix:(deck:AVPlayer,index:Int,entry:Int64,source:Int64)?,outgoingMix:AVPlayer?
     var generation = 0; var resumeAfterInterruption = false; var playbackError: String?
@@ -156,11 +159,17 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         BackgroundTransfers.shared.approvedPin={[weak self] in self?.connection.map{(host:$0.host,fingerprint:$0.fingerprint)}}
         BackgroundTransfers.shared.ready={[weak self] in
             guard let self=self,self.backgroundRecovery==nil else{return}
-            self.backgroundRecovery=Task{try? await Task.sleep(nanoseconds:800_000_000);try? self.recoverBackgroundPlan();self.backgroundRecovery=nil}
+            self.backgroundRecovery=Task {
+                try? await Task.sleep(nanoseconds:800_000_000)
+                if self.syncTask == nil && !self.stoppingSync { try? self.recoverBackgroundPlan() }
+                self.backgroundRecovery=nil
+            }
         }
         BackgroundTransfers.shared.progress={[weak self] done,total in
-            guard let self=self,self.syncTask==nil,total>0 else{return}
-            self.status=["state":done==total ? "complete":"downloading","completed":done,"total":total,"message":done==total ? "Ready offline":"Copying music in the background…"]
+            guard let self=self,self.syncTask==nil,!self.stoppingSync,total>0 else{return}
+            self.status = done == total
+                ? ["state":"updating","message":"Adding verified files to your offline library."]
+                : ["state":"downloading","completed":done,"total":total,"unit":"files","message":"Copying files in the background."]
         }
         try? recoverBackgroundPlan()
     }
@@ -177,7 +186,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         return values.values.sorted{$0.hash<$1.hash}
     }
     func recoverBackgroundPlan() throws {
-        guard let connection=connection,let data=try? Data(contentsOf:root.appendingPathComponent("transfer-plan.json")),let manifest=try? JSONSerialization.jsonObject(with:data) as? [String:Any],manifest["server_id"] as? String==connection.server else{return}
+        guard let connection=connection,let data=try? Data(contentsOf:transferPlan),let manifest=try? JSONSerialization.jsonObject(with:data) as? [String:Any],manifest["server_id"] as? String==connection.server else{return}
         var changed=false
         for var row in manifest["tracks"] as? [[String:Any]] ?? []{
             guard let hash=row["sha256"] as? String else{continue};let path=root.appendingPathComponent("audio/\(hash)")
@@ -199,6 +208,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             let old=collections.first{$0["id"] as? String==id};if old==nil || json(old!) != json(row){collections.removeAll{$0["id"] as? String==id};collections.append(row);changed=true}
         }
         if changed{try persist();if UIApplication.shared.applicationState != .background{libraryChanged?()}}
+        let assets = backgroundAssets(manifest,connection:connection)
+        if !assets.isEmpty, assets.allSatisfy({ FileManager.default.fileExists(atPath:BackgroundTransfers.shared.destination($0).path) }) {
+            status = ["state":"complete","message":outbox.isEmpty ? "Your downloads are ready." : "Your downloads are ready. Sync again to send changes to your Mac."]
+        }
     }
     func warmUpcomingAudio(){
         warmTask?.cancel()
@@ -388,6 +401,12 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             try preferences.set(key,value);if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish();return snapshot()
         case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
         case "snapshot": return snapshot()
+        case "sync_status":
+            return [
+                "paired":connection != nil, "nearby_macs":discovery.results, "sync":status,
+                "offline_songs":library.count, "storage_bytes":library.reduce(Int64(0)) { $0 + number($1["size"]) },
+                "pending_changes":outbox.count, "conflicts":conflicts
+            ] as [String:Any]
         case "playback": return playback()
         case "play":
             cancelMix()
@@ -460,11 +479,33 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "pair": return try await pair(payload["link"] as? String ?? "")
         case "approval": return try await remote("pair/status")
         case "sync":
-            guard syncTask==nil else { return status }
-            syncTask=Task { do { try await sync() } catch is CancellationError { status=["state":"cancelled","message":"Downloads kept. Sync again to resume."] } catch { status=["state":"error","message":error.localizedDescription] };syncTask=nil;if UIApplication.shared.applicationState != .background{libraryChanged?()} }
-            return ["state":"starting"]
-        case "cancel": syncTask?.cancel();await BackgroundTransfers.shared.cancel();return ["state":"cancelling"]
-        case "disconnect": syncTask?.cancel();await BackgroundTransfers.shared.cancel(keepResume:false);connection=nil;try Credentials.save(nil);return snapshot()
+            guard syncTask == nil, !stoppingSync else { return status }
+            status = ["state":"starting"]
+            syncTask = Task {
+                do { try await sync() }
+                catch {
+                    if Task.isCancelled || error is CancellationError {
+                        status = ["state":"cancelled","message":"Downloaded songs are kept. Retry to continue."]
+                    } else if let networkError = error as? URLError,
+                              [.notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost].contains(networkError.code) {
+                        status = ["state":"error","message":"Couldn’t reach your Mac. Check Wi-Fi and make sure sharing is on in Devices."]
+                    } else {
+                        status = ["state":"error","message":error.localizedDescription]
+                    }
+                }
+                syncTask = nil
+                if UIApplication.shared.applicationState != .background { libraryChanged?() }
+            }
+            return status
+        case "cancel":
+            await stopSync(keepResume:true)
+            return status
+        case "disconnect":
+            await stopSync(keepResume:false)
+            connection = nil
+            try Credentials.save(nil)
+            status = ["state":"idle"]
+            return snapshot()
         case "resolve":
             let id=payload["id"] as? String ?? "",phone=payload["phone"] as? Bool ?? false
             if let c=conflicts.first(where:{$0["id"] as? String==id}),phone,var op=c["operation"] as? [String:Any] { op["id"]=UUID().uuidString;op["force"]=true;outbox.append(op) }
@@ -496,10 +537,9 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     }
     func fetch(_ path:String,body:[String:Any]?=nil,range:String?=nil,etag:String?=nil) async throws -> (Data,HTTPURLResponse) {
         guard let c=connection else { throw CompanionError.message("Pair with your Mac first") }
-        let delegate=PinnedConnection(c.fingerprint),configuration=URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest=30;configuration.timeoutIntervalForResource=120
-        let session=URLSession(configuration:configuration,delegate:delegate,delegateQueue:nil)
-        defer{session.invalidateAndCancel()}
+        let shared = syncSession.flatMap { $0.base == c.base && $0.fingerprint == c.fingerprint ? $0.session : nil }
+        let session = shared ?? makeSyncSession(fingerprint:c.fingerprint)
+        defer { if shared == nil { session.finishTasksAndInvalidate() } }
         var r=URLRequest(url:c.base.appendingPathComponent(path));r.setValue("Bearer \(c.client).\(c.token)",forHTTPHeaderField:"Authorization")
         if let body=body { r.httpMethod="POST";r.httpBody=try JSONSerialization.data(withJSONObject:body);r.setValue("application/json",forHTTPHeaderField:"Content-Type") }
         if let range=range {r.setValue(range,forHTTPHeaderField:"Range")};if let etag=etag {r.setValue("\"\(etag)\"",forHTTPHeaderField:"If-Match")}
@@ -528,7 +568,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             catch CompanionError.server(422,let detail) where supported && detail.contains("capabilities"){
                 body.removeValue(forKey:"capabilities");connection?.syncChanges=false;result=try await remote("pair",body:body)
             }
-            try Credentials.save(connection);return result
+            try Credentials.save(connection)
+            let approved = (result as? [String:Any])?["state"] as? String == "approved"
+            status = approved ? ["state":"idle"] : ["state":"approval","message":"Approve this iPhone in Devices on your Mac, then retry sync."]
+            return result
         }
         catch {connection=old;throw error}
     }
@@ -566,42 +609,103 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         while let data=try handle.read(upToCount:1<<20),!data.isEmpty {hash.update(data:data)}
         return hash.finalize().map{String(format:"%02x",$0)}.joined()
     }
+    private func makeSyncSession(fingerprint: String) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 120
+        return URLSession(configuration:configuration,delegate:PinnedConnection(fingerprint),delegateQueue:nil)
+    }
+
+    private func stopSync(keepResume: Bool) async {
+        guard !stoppingSync else { return }
+        stoppingSync = true
+        defer { stoppingSync = false }
+        status = ["state":"cancelling"]
+        let job = syncTask
+        job?.cancel()
+        await BackgroundTransfers.shared.cancel(keepResume:keepResume)
+        await job?.value
+        try? FileManager.default.removeItem(at:transferPlan)
+        status = ["state":"cancelled","message":"Downloaded songs are kept. Retry to continue."]
+    }
+
     func sync() async throws {
-        status=["state":"connecting","message":"Connecting to your Mac…"]
-        let approval=try await remote("pair/status") as? [String:Any]
-        guard approval?["state"] as? String=="approved" else {throw CompanionError.message("Approve this iPhone in Devices on your Mac first")}
-        status=["state":"preparing","message":"Checking prepared copies…"]
+        guard let mac = connection else { throw CompanionError.message("Pair with your Mac first") }
+        let session = makeSyncSession(fingerprint:mac.fingerprint)
+        syncSession = (mac.base,mac.fingerprint,session)
+        defer { syncSession = nil; session.invalidateAndCancel() }
+        status = ["state":"connecting"]
+        let approval = try await remote("pair/status") as? [String:Any]
+        guard approval?["state"] as? String == "approved" else {
+            status = ["state":"approval","message":"Approve this iPhone in Devices on your Mac, then retry sync."]
+            return
+        }
+        status = ["state":"preparing"]
         var attempts=0
         while let progress=try await remote("preparation") as? [String:Any],progress["preparing"] as? Bool==true {
             try Task.checkCancellation();attempts+=1;guard attempts<1500 else{throw CompanionError.message("The Mac is still preparing music. Sync again when it finishes.")}
-            status=["state":"preparing","completed":progress["completed"] ?? 0,"total":progress["total"] ?? 0,"message":progress["current"] ?? "Preparing copies on the Mac…"]
+            status=["state":"preparing","completed":progress["completed"] ?? 0,"total":progress["total"] ?? 0,"message":progress["current"] ?? "You can keep listening while your Mac prepares copies."]
             try await Task.sleep(nanoseconds:400_000_000)
         }
         let manifest=try await remote("manifest") as? [String:Any] ?? [:]
         guard manifest["version"] as? Int==1,manifest["server_id"] as? String==connection?.server,let tracks=manifest["tracks"] as? [[String:Any]] else {throw CompanionError.message("This Mac's library format is unavailable")}
-        let total=tracks.count
-        let required=tracks.reduce(Int64(0)) { n,t in n+(library.contains{ $0["sha256"] as? String==t["sha256"] as? String } ? 0:number(t["size"])) }
-        let values=try root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
-        if let free=values.volumeAvailableCapacityForImportantUsage,required>free {throw CompanionError.message("Not enough space. Choose fewer songs on the Mac, then retry.")}
-        if preferences.backgroundSync,let connection=connection{
-            try JSONSerialization.data(withJSONObject:manifest,options:[.sortedKeys]).write(to:root.appendingPathComponent("transfer-plan.json"),options:.atomic)
-            await BackgroundTransfers.shared.start(backgroundAssets(manifest,connection:connection),base:connection.base,authorization:"Bearer \(connection.client).\(connection.token)")
+        try Task.checkCancellation()
+        let total = tracks.count
+        var missingAudio = Set<String>()
+        var required: Int64 = 0
+        for track in tracks {
+            guard let hash = track["sha256"] as? String, hash.count == 64, hash.allSatisfy(\.isHexDigit) else {
+                throw CompanionError.message("The Mac sent an invalid song fingerprint. Refresh sharing on the Mac and retry.")
+            }
+            let path = root.appendingPathComponent("audio/\(hash)").path
+            if !FileManager.default.fileExists(atPath:path), missingAudio.insert(hash).inserted {
+                required += number(track["size"])
+            }
         }
-        for (i,var track) in tracks.enumerated() {
+        let copyCount = missingAudio.count
+        let values = try root.resourceValues(forKeys:[.volumeAvailableCapacityForImportantUsageKey])
+        if let free = values.volumeAvailableCapacityForImportantUsage, required > free {
+            throw CompanionError.message("Not enough space. Choose fewer songs on the Mac, then retry.")
+        }
+        status = copyCount == 0 ? ["state":"updating","message":"Your music is already on this iPhone. Checking artwork, lyrics and collections."]
+            : ["state":"downloading","completed":0,"total":copyCount]
+        if preferences.backgroundSync {
+            try JSONSerialization.data(withJSONObject:manifest,options:[.sortedKeys]).write(to:transferPlan,options:.atomic)
+            await BackgroundTransfers.shared.start(backgroundAssets(manifest,connection:mac),base:mac.base,authorization:"Bearer \(mac.client).\(mac.token)")
+        }
+        for var track in tracks {
             try Task.checkCancellation()
-            status=["state":"downloading","completed":i,"total":total,"message":track["title"] ?? "Downloading music"]
-            let id=number(track["id"]),hash=track["sha256"] as? String ?? ""
-            let path=try await download("tracks/\(id)",hash:hash,size:number(track["size"]),kind:"audio")
-            track["path"]=path.path;track["server_id"]=connection!.server
+            let id = number(track["id"])
+            guard let hash = track["sha256"] as? String else { continue }
+            if missingAudio.contains(hash) {
+                status = ["state":"downloading","completed":copyCount-missingAudio.count,"total":copyCount,"message":track["title"] ?? "Downloading music"]
+            }
+            let path = try await download("tracks/\(id)",hash:hash,size:number(track["size"]),kind:"audio")
+            track["path"]=path.path;track["server_id"]=mac.server
             if let h=track["artwork_sha256"] as? String {track["artwork_path"]=try await download("artwork/\(h)",hash:h,size:nil,kind:"artwork").path}
             if let h=track["lyrics_sha256"] as? String {track["lyrics_path"]=try await download("assets/\(h)",hash:h,size:nil,kind:"lyrics").path}
-            if let old=library.first(where:{number($0["id"])==id}) {
-                if outbox.contains(where:{$0["kind"] as? String=="favorite"&&number($0["track_id"])==id}){track["favorited"]=old["favorited"]}
-                if old["lyrics_edited"] as? Bool==true {track["lyrics_path"]=old["lyrics_path"];track["lyrics_edited"]=true}
-                track["play_count"]=old["play_count"] ?? 0
+            try Task.checkCancellation()
+            if let index = library.firstIndex(where:{ number($0["id"]) == id }) {
+                let old = library[index]
+                if outbox.contains(where:{ $0["kind"] as? String == "favorite" && number($0["track_id"]) == id }) { track["favorited"] = old["favorited"] }
+                if old["lyrics_edited"] as? Bool == true {
+                    track["lyrics_path"] = old["lyrics_path"]
+                    track["lyrics_edited"] = true
+                }
+                track["play_count"] = old["play_count"] ?? 0
+                if !NSDictionary(dictionary:old).isEqual(to:track) {
+                    library[index] = track
+                    try persist()
+                }
+            } else {
+                library.append(track)
+                try persist()
             }
-            library.removeAll{number($0["id"])==id};library.append(track);try persist()
+            if missingAudio.remove(hash) != nil {
+                status = ["state":"downloading","completed":copyCount-missingAudio.count,"total":copyCount]
+            }
         }
+        status = ["state":"updating","message":"Finishing artwork, lyrics and collections."]
         for (name,hash) in manifest["portraits"] as? [String:String] ?? [:]{try Task.checkCancellation();portraits[name]=try await download("artwork/\(hash)",hash:hash,size:nil,kind:"artwork").path}
         // Never delete downloads merely because the Mac shared a smaller selection.
         for collection in manifest["collections"] as? [[String:Any]] ?? [] {
@@ -630,7 +734,21 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             }
         }
         try persist();_ = try? await remote("sync-complete",body:["revision":manifest["revision"] ?? "","track_count":total,"bytes":manifest["bytes_total"] ?? 0])
-        status=["state":"complete","completed":total,"total":total,"message":!outbox.isEmpty && connection?.syncChanges==false ? "Ready offline. Update musicOS on the computer and pair again to sync favorites and playlists.":conflicts.isEmpty ? "Ready offline":"Ready offline. Review sync conflicts."]
+        try Task.checkCancellation()
+        try? FileManager.default.removeItem(at:transferPlan)
+        let message: String
+        if !outbox.isEmpty && connection?.syncChanges == false {
+            message = "Update musicOS on the Mac and pair again to sync favorites and playlists."
+        } else if !conflicts.isEmpty {
+            message = "Review sync conflicts below."
+        } else if total == 0 {
+            message = "No songs are shared. Choose music in Devices on your Mac."
+        } else if copyCount == 0 {
+            message = "Library checked. No new songs to copy."
+        } else {
+            message = "\(copyCount) \(copyCount == 1 ? "song" : "songs") copied."
+        }
+        status = ["state":"complete","completed":copyCount,"total":copyCount,"message":message]
     }
 }
 class CompanionPlugin: Plugin {
@@ -718,6 +836,45 @@ extension Companion {
             check("offline lyric document is reused",lyric?["state"] as? String=="ready")
             try persist()
             check("lock screen title follows current song",MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPMediaItemPropertyTitle] as? String==current?["title"] as? String)
+            if let baseText = ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_BASE"],
+               let base = URL(string:baseText), let port = base.port,
+               let pin = ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_PIN"],
+               let firstHash = library.first?["sha256"] as? String {
+                let savedLibrary = library, savedCollections = collections, savedConnection = connection
+                let backgroundPreference = preferences.backgroundSync
+                let fixtureAudio = root.appendingPathComponent("audio/\(firstHash)")
+                try? FileManager.default.removeItem(at:fixtureAudio)
+                defer {
+                    library = savedLibrary; collections = savedCollections; connection = savedConnection
+                    preferences.backgroundSync = backgroundPreference
+                    status = ["state":"idle"]
+                    try? FileManager.default.removeItem(at:fixtureAudio)
+                    try? persist()
+                }
+                connection = Connection(host:"127.0.0.1",port:port,server:"isolated-simulator-fixture",fingerprint:pin,client:"fixture-client",token:"fixture-token")
+                preferences.backgroundSync = false
+                _ = try await request(["action":"sync"])
+                await syncTask?.value
+                let firstStatus = try await request(["action":"sync_status"]) as? [String:Any]
+                check("sync status is small and reports one verified download",
+                    (firstStatus?["sync"] as? [String:Any])?["completed"] as? Int == 1 && firstStatus?["tracks"] == nil &&
+                    library.contains(where:{ number($0["id"]) == 9001 }) && (try? hashFileNonisolated(fixtureAudio)) == firstHash)
+                let partial = collections.first { $0["id"] as? String == "partial-sync-fixture" }
+                check("partly downloaded collection keeps the complete saved sequence",
+                    partial?["complete"] as? Bool == false && (partial?["track_ids"] as? [Int64]) == [9001,9002,9001])
+                _ = try await request(["action":"sync"])
+                await syncTask?.value
+                check("repeat sync reports no songs to copy",status["state"] as? String == "complete" && status["total"] as? Int == 0)
+                _ = try await request(["action":"sync"])
+                for _ in 0..<30 {
+                    if status["state"] as? String == "preparing" { break }
+                    try await Task.sleep(nanoseconds:30_000_000)
+                }
+                let wasPreparing = status["state"] as? String == "preparing"
+                _ = try await request(["action":"cancel"])
+                check("stopping preparation preserves verified songs",wasPreparing && status["state"] as? String == "cancelled" && syncTask == nil &&
+                    FileManager.default.fileExists(atPath:fixtureAudio.path))
+            }
         }catch{checks.append(["name":"native service execution","passed":false,"error":error.localizedDescription])}
         pause()
         try? JSONSerialization.data(withJSONObject:["checks":checks],options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("native-checks.json"),options:.atomic)
