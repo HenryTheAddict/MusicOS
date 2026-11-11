@@ -17,7 +17,7 @@ use tauri::{Emitter, Manager};
 pub mod background;
 #[path = "apple_transfers.rs"]
 mod transfers;
-#[derive(Clone, Serialize)]
+#[derive(Default, Clone, Serialize)]
 pub struct SidecarResult {
     written: u64,
     unchanged: u64,
@@ -44,6 +44,8 @@ pub struct Status {
     pub artwork_ready: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sidecars: Option<SidecarResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cover_files: Option<SidecarResult>,
 }
 fn state() -> &'static Mutex<Status> {
     static S: OnceLock<Mutex<Status>> = OnceLock::new();
@@ -328,30 +330,41 @@ fn norm(s: &str) -> String {
         .collect()
 }
 fn artist_key(artist: &str) -> String {
-    if musicos_desktop::local::enrichment::ye_artist_credit(artist) {
-        "kanyewest".to_owned()
-    } else {
-        norm(artist)
+    artist.replace(" + ", " & ").replace(';', " & ").split(" & ")
+        .map(|credit| if musicos_desktop::local::enrichment::ye_artist_credit(credit) {
+            "kanyewest".to_owned()
+        } else {
+            norm(credit)
+        }).collect::<Vec<_>>().join("&")
+}
+
+fn apple_title_key(title: &str) -> String {
+    let trimmed = title.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    for suffix in [" [explicit]", " (explicit)", " [clean]", " (clean)"] {
+        if lower.ends_with(suffix) {
+            return norm(&trimmed[..trimmed.len()-suffix.len()]);
+        }
     }
+    norm(trimmed)
 }
 
 fn catalog_record(song: &Value) -> Option<Value> {
-    let mut row = song
-        .pointer("/relationships/catalog/data/0")
-        .unwrap_or(song)
-        .clone();
-    let id = row["id"]
-        .as_str()
-        .filter(|id| digits(id).is_ok())
-        .map(str::to_owned)
-        .or_else(|| {
-            song.pointer("/attributes/playParams/catalogId")
-                .and_then(|v| v.as_str())
-                .filter(|id| digits(id).is_ok())
-                .map(str::to_owned)
-        })?;
-    row.as_object_mut()?.insert("id".into(), json!(id));
-    Some(row)
+    let catalog = song.pointer("/relationships/catalog/data/0");
+    let catalog_id = catalog.and_then(|row| row["id"].as_str())
+        .or_else(|| song.pointer("/attributes/playParams/catalogId").and_then(Value::as_str))
+        .or_else(|| (song["type"] == "songs" || song["type"].is_null()).then(|| song["id"].as_str()).flatten())?;
+    digits(catalog_id).ok()?;
+    // Apple sometimes returns just a relationship ID. The library row still
+    // carries recording metadata, and catalog attributes win when present.
+    let mut attributes = song["attributes"].as_object().cloned().unwrap_or_default();
+    if let Some(catalog_attributes) = catalog.and_then(|row| row["attributes"].as_object()) {
+        for (key,value) in catalog_attributes.iter().filter(|(_,value)| !value.is_null()) {
+            attributes.insert(key.clone(),value.clone());
+        }
+    }
+    Some(json!({"id":catalog_id,"attributes":attributes,
+        "relationships":catalog.map(|row| &row["relationships"]).unwrap_or(&Value::Null)}))
 }
 fn signature(t: &musicos_init::database::Track) -> String {
     format!("{}|{}|{}|{}", t.title, t.artist, t.album, t.duration)
@@ -775,7 +788,7 @@ fn sync(db: &Path) -> Result<Value> {
         let a = &row["attributes"];
         index
             .entry((
-                norm(a["name"].as_str().unwrap_or("")),
+                apple_title_key(a["name"].as_str().unwrap_or("")),
                 artist_key(a["artistName"].as_str().unwrap_or("")),
                 norm(a["albumName"].as_str().unwrap_or("")),
             ))
@@ -806,7 +819,7 @@ fn sync(db: &Path) -> Result<Value> {
             matched += 1;
             continue;
         }
-        let key = (norm(&track.title), artist_key(&track.artist), norm(&track.album));
+        let key = (apple_title_key(&track.title), artist_key(&track.artist), norm(&track.album));
         let candidates = index
             .get(&key)
             .into_iter()
@@ -1311,6 +1324,19 @@ fn apply_action_error(s: &mut Status, action: &str, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn catalog_relationship_stub_keeps_library_match_metadata() {
+        let song = json!({"id":"i.local","type":"library-songs",
+            "attributes":{"name":"Song [Explicit]","artistName":"Ye & Guest","albumName":"Release","durationInMillis":180000},
+            "relationships":{"catalog":{"data":[{"id":"123","type":"songs"}]}}});
+        let row = catalog_record(&song).unwrap();
+        assert_eq!(row["id"],"123");
+        assert_eq!(row["attributes"]["durationInMillis"],180000);
+        assert_eq!(apple_title_key(row["attributes"]["name"].as_str().unwrap()),"song");
+        assert_eq!(artist_key("Kanye West; Guest"),artist_key("Ye & Guest"));
+        assert_ne!(apple_title_key("Song (Live)"),apple_title_key("Song"));
+        assert!(catalog_record(&json!({"id":"123","type":"library-songs"})).is_none());
+    }
     #[test]
     fn artist_alias_is_whole_credit_only() {
         assert_eq!(artist_key(" Ye "), artist_key("Kanye West"));

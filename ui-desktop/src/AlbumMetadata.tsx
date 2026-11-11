@@ -132,7 +132,7 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const artwork = [...new Map(rows.flatMap(row => {
     if(row.art_comparison==='identical')return [];
     const cover = row.candidate?.artwork_path;
-    return typeof cover==='string' && cover!==comparison?.cover ? [[cover,row] as const] : [];
+    return typeof cover==='string' && row.art_resolution && row.art_comparison!=='identical' && cover!==comparison?.cover ? [[cover,row] as const] : [];
   })).entries()];
   const proposedCover = artwork.find(([cover])=>cover===path) ?? (artwork.length===1 ? artwork[0] : undefined);
   const lowerResolution = (size?:number[]) => !!comparison?.resolution?.some((pixels,axis)=>size && pixels>size[axis]);
@@ -274,7 +274,10 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
     ]} onChange={switchTab}/>
     {loading && !rows.length && <p className="tag-status" role="status">Loading album details…</p>}
     {loadError && <div className="tag-status" role="alert">{loadError} <button onClick={()=>setReload(value=>value+1)}>Retry comparison</button></div>}
-    {comparison&&<p className="tag-comparison-status" role="status">{comparison.status==='changes_available'?`${comparison.changed_fields} suggested field changes · Nothing selected`:comparison.status==='already_matches'?'This album already matches the checked release.':comparison.status==='lookup_failed'?'Lookup failed. Your saved values are unchanged.':comparison.status==='no_confident_match'?'No confident release match. Check recording and edition before choosing.':'This album has not been checked.'}</p>}
+    {comparison&&<p className="tag-comparison-status" role="status">{comparison.status==='changes_available'?`${comparison.changed_fields} suggested field changes · Nothing selected`:comparison.status==='choose_release'?'Choose the edition that matches your files.':comparison.status==='partially_matched'?`${comparison.matched_tracks??0} of ${rows.length} songs matched this release.`:comparison.status==='already_matches'?'This album already matches the checked release.':comparison.status==='lookup_failed'?'Lookup failed. Your saved values are unchanged.':comparison.status==='no_confident_match'?'No confident release match. Check recording and edition before choosing.':'This album has not been checked.'}</p>}
+    {failed>0&&<details className="tag-matches"><summary>Lookup errors · {failed} {failed===1?'song':'songs'}</summary>
+      {[...new Set(rows.flatMap(row=>row.lookup_error?[row.lookup_error]:[]))].map(message=><p key={message}>{message}</p>)}
+    </details>}
     {!!comparison?.release_choices?.choices.length&&<details className="tag-release-choices" open={!comparison.release_choices.selected}><summary>Release choice · {comparison.release_choices.choices.length} {comparison.release_choices.choices.length===1?'edition':'editions'}</summary>{comparison.release_choices.choices.map(choice=><article key={choice.id}><div><strong>{choice.title}</strong><small>{[choice.edition,choice.date,choice.country].filter(Boolean).join(' · ')}</small><small>{choice.aligned} of {choice.total} local songs aligned · {choice.release_tracks} release tracks</small></div><button disabled={loading||saving||dirty||comparison.release_choices?.selected===choice.id} onClick={()=>{setLoading(true);setError('');void call('album_metadata',{request:{action:'select_release',album_id:album.id,release_id:choice.id}}).then(()=>{invalidateDisplay('album_metadata');setReload(v=>v+1);}).catch(e=>setError(errorText(e))).finally(()=>setLoading(false));}}>{comparison.release_choices?.selected===choice.id?'Selected':'Review this release'}</button></article>)}</details>}
     {notice && <p className="tag-status" role="status">{notice}</p>}
     {error && <p className="inline-error" role="alert">{error}</p>}

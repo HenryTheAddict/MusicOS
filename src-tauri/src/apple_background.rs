@@ -4,7 +4,7 @@ use rusqlite::OptionalExtension;
 use std::path::PathBuf;
 fn sql(db: &Path) -> Result<rusqlite::Connection> {
     let c = store(db)?;
-    c.execute_batch("CREATE TABLE IF NOT EXISTS background_settings(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS static_covers(album_id TEXT PRIMARY KEY,path TEXT NOT NULL,bytes INTEGER NOT NULL,checked INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS cache_outcomes(track_id INTEGER PRIMARY KEY,lyrics TEXT,artwork TEXT,checked INTEGER NOT NULL)")?;
+    c.execute_batch("CREATE TABLE IF NOT EXISTS sidecar_export_request(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS static_covers(album_id TEXT PRIMARY KEY,path TEXT NOT NULL,bytes INTEGER NOT NULL,checked INTEGER NOT NULL);CREATE TABLE IF NOT EXISTS cache_outcomes(track_id INTEGER PRIMARY KEY,lyrics TEXT,artwork TEXT,checked INTEGER NOT NULL)")?;
     Ok(c)
 }
 fn now() -> i64 {
@@ -164,6 +164,42 @@ pub fn cached_cover(db: &Path, id: i64) -> Option<String> {
     let path=c.query_row("SELECT static_covers.path FROM asset_links JOIN static_covers ON asset_links.album_id=static_covers.album_id WHERE asset_links.track_id=? AND asset_links.catalog_id=?",rusqlite::params![id,catalog],|r|r.get::<_,String>(0)).optional().ok().flatten()?;
     Path::new(&path).is_file().then_some(path)
 }
+// Use a separate name per catalog release even if several albums share a folder.
+fn save_cover_file(source: &Path, audio: &Path, album: &str) -> Result<&'static str> {
+    let folder = audio.parent().filter(|_| audio.is_file()).context("Original music file unavailable")?;
+    let target = folder.join(format!("musicOS-cover-{}.jpg", digits(album)?));
+    let bytes = std::fs::read(source)?;
+    let existing = || -> Result<&'static str> {
+        if target.is_symlink() { return Ok("conflict"); }
+        Ok(if std::fs::read(&target)? == bytes { "unchanged" } else { "conflict" })
+    };
+    if target.exists() || target.is_symlink() { return existing(); }
+    let staged = folder.join(format!(".musicos-cover-{}.tmp", rand::random::<u64>()));
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&staged)?;
+    use std::io::Write;
+    let result = (|| -> Result<&'static str> {
+        file.write_all(&bytes)?;
+        file.sync_all()?;
+        match std::fs::hard_link(&staged,&target) {
+            Ok(()) => Ok("written"),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => existing(),
+            Err(error) => Err(error.into()),
+        }
+    })();
+    let _ = std::fs::remove_file(staged);
+    result
+}
+
+fn cover_for_export(c: &rusqlite::Connection, track: &musicos_init::database::Track) -> Result<(String,PathBuf)> {
+    let (album,path): (String,String) = c.query_row(
+        "SELECT asset_links.album_id,static_covers.path FROM asset_links JOIN static_covers
+         ON asset_links.album_id=static_covers.album_id WHERE asset_links.track_id=? AND asset_links.signature=?",
+        rusqlite::params![track.id, signature(track)],
+        |row| Ok((row.get(0)?,row.get(1)?))
+    )?;
+    Ok((album,PathBuf::from(path)))
+}
+
 pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
     ensure!(
         !JOB.swap(true, Ordering::SeqCst),
@@ -177,7 +213,7 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             .query_map([], |r| r.get::<_, i64>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ensure!(!ids.is_empty(), "Match your local songs first");
-        c.execute("INSERT OR REPLACE INTO background_settings VALUES(1,1)", [])?;
+        c.execute("INSERT OR REPLACE INTO sidecar_export_request VALUES(1,1)", [])?;
         Ok(ids)
     })();
     let ids = match prepared {
@@ -197,14 +233,20 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
         s.lyrics_failed = 0;
         s.artwork_ready = 0;
         s.sidecars = None;
+        s.cover_files = None;
         s.message =
-            "Caching matched lyrics and artwork in the background. You can leave this page.".into();
+            "Saving LyricsFiles and cover images beside your music.".into();
     }
     let app = app.clone();
     let db = db.to_owned();
     std::thread::spawn(move || {
         let _job = Job;
         let mut stopped = None;
+        let mut lyrics_to_save = Vec::new();
+        let mut cover_files = super::SidecarResult::default();
+        let mut saved_cover_targets = std::collections::HashSet::new();
+        let library = musicos_init::database::Db::open_background(&db.to_string_lossy()).ok();
+        let cover_index = sql(&db).ok();
         for id in &ids {
             if CANCEL.load(Ordering::SeqCst) {
                 break;
@@ -236,6 +278,7 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
                 lyric(&db, *id)
             };
             let lyric_ok = result.is_ok();
+            if lyric_ok { lyrics_to_save.push(*id); }
             if let Err(e) = &result {
                 if fatal(&e.to_string()) {
                     stopped = Some(e.to_string());
@@ -258,6 +301,20 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             }
             if art.is_ok() {
                 crate::app::publish_cached_cover(&app, *id);
+                let exported = (|| -> Result<&'static str> {
+                    let track = library.as_ref().context("Library unavailable")?.get_track_by_id(*id)?.context("Song left the library")?;
+                    let (album,cover) = cover_for_export(cover_index.as_ref().context("Artwork index unavailable")?,&track)?;
+                    let audio = Path::new(&track.path);
+                    if !saved_cover_targets.insert((audio.parent().map(Path::to_path_buf),album.clone())) { return Ok("duplicate"); }
+                    save_cover_file(&cover,audio,&album)
+                })();
+                match exported {
+                    Ok("written") => cover_files.written += 1,
+                    Ok("unchanged") => cover_files.unchanged += 1,
+                    Ok("conflict") => cover_files.conflicts += 1,
+                    Ok(_) => {},
+                    Err(_) => cover_files.failed += 1,
+                }
             }
             // Motion descriptors are optional. Unsupported motion never blocks static covers.
             if art.is_ok() && !CANCEL.load(Ordering::SeqCst) {
@@ -289,16 +346,13 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             std::thread::sleep(Duration::from_millis(400));
         }
         let cancelled = CANCEL.load(Ordering::SeqCst);
-        let files = if !cancelled {
-            crate::lyric_sidecars::sync_tracks(&db, Some(&ids)).ok()
-        } else {
-            None
-        };
-        if let Some(ids) = files.as_ref().and_then(|f| f["ready_ids"].as_array()) {
+        // Save everything completed so far, including after a cancellation or outage.
+        let files = crate::lyric_sidecars::sync_tracks(&db, Some(&lyrics_to_save));
+        if let Some(ids) = files.as_ref().ok().and_then(|f| f["ready_ids"].as_array()) {
             let _ = app.emit_to("main", "lyrics-sidecars-updated", ids);
         }
         if let Ok(c) = sql(&db) {
-            let _ = c.execute("INSERT OR REPLACE INTO background_settings VALUES(1,0)", []);
+            let _ = c.execute("INSERT OR REPLACE INTO sidecar_export_request VALUES(1,0)", []);
         }
         let mut s = state().lock().unwrap();
         s.phase = if cancelled {
@@ -309,7 +363,8 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             "ready"
         }
         .into();
-        s.sidecars = files.as_ref().map(|files| {
+        s.cover_files = Some(cover_files);
+        s.sidecars = files.as_ref().ok().map(|files| {
             let count = |field: &str| files[field].as_u64().unwrap_or(0);
             super::SidecarResult {
                 written: count("written"), unchanged: count("unchanged"),
@@ -317,13 +372,13 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
             }
         });
         s.message = if let Some(error) = stopped {
-            format!("Caching paused: {error}. Cached results are kept.")
+            format!("Saving paused: {error}. Completed files are kept.")
         } else if cancelled {
-            "Caching stopped. Completed downloads are kept.".into()
-        } else if files.is_none() {
-            "Caching complete. LyricsFile sync needs attention.".into()
+            "Saving stopped. Completed files are kept.".into()
+        } else if let Err(error) = files {
+            format!("Cover export finished. Could not write LyricsFiles: {error}.")
         } else {
-            "Caching complete.".into()
+            "Finished saving lyrics and artwork.".into()
         };
         if s.message.contains("HTTP 401") {
             s.signed_in = false;
@@ -337,12 +392,12 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
 }
 pub(super) fn stop(db: &Path) -> Result<()> {
     CANCEL.store(true, Ordering::SeqCst);
-    sql(db)?.execute("INSERT OR REPLACE INTO background_settings VALUES(1,0)", [])?;
+    sql(db)?.execute("INSERT OR REPLACE INTO sidecar_export_request VALUES(1,0)", [])?;
     Ok(())
 }
 pub(super) fn clear(db:&Path)->Result<()> {
     // Disconnect cancels account work; downloaded library assets stay local.
-    sql(db)?.execute_batch("DELETE FROM cache_outcomes;UPDATE background_settings SET enabled=0")?;
+    sql(db)?.execute_batch("DELETE FROM cache_outcomes;UPDATE sidecar_export_request SET enabled=0")?;
     Ok(())
 }
 pub fn resume(app: tauri::AppHandle, db: PathBuf) {
@@ -352,7 +407,7 @@ pub fn resume(app: tauri::AppHandle, db: PathBuf) {
         };
         let enabled = c
             .query_row(
-                "SELECT enabled FROM background_settings WHERE id=1",
+                "SELECT enabled FROM sidecar_export_request WHERE id=1",
                 [],
                 |r| r.get::<_, bool>(0),
             )
@@ -459,6 +514,19 @@ mod cache_tests {
 
 #[cfg(test)] mod cover_tests {
  use super::*;
+ #[test] fn cover_export_keeps_existing_images_and_is_idempotent() {
+  let temp = tempfile::tempdir().unwrap();
+  let song = temp.path().join("song.flac");
+  let source = temp.path().join("download.jpg");
+  std::fs::write(&song,b"audio").unwrap();
+  std::fs::write(&source,b"cover").unwrap();
+  assert_eq!(save_cover_file(&source,&song,"123").unwrap(),"written");
+  assert_eq!(save_cover_file(&source,&song,"123").unwrap(),"unchanged");
+  std::fs::write(temp.path().join("musicOS-cover-123.jpg"),b"user cover").unwrap();
+  assert_eq!(save_cover_file(&source,&song,"123").unwrap(),"conflict");
+  assert_eq!(std::fs::read(temp.path().join("musicOS-cover-123.jpg")).unwrap(),b"user cover");
+  assert_eq!(std::fs::read(song).unwrap(),b"audio");
+ }
  #[test] fn expanded_covers_never_upscale_or_lose_aspect() {
   let small=bounded_cover(image::DynamicImage::new_rgb8(800,600));assert_eq!(small.dimensions(),(800,600));
   let large=bounded_cover(image::DynamicImage::new_rgb8(4096,2048));assert_eq!(large.dimensions(),(2048,1024));

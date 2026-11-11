@@ -51,7 +51,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
   const [filter,setFilter] = useState<'all'|'suggestions'>('all');
   const [offset,setOffset] = useState(0);
   const [summary,setSummary] = useState<Set<string>|null>(null);
-  const [albumStates,setAlbumStates]=useState<Record<string,{state:string;changed_fields:number;checked:number;total:number}>>({});
+  const [albumStates,setAlbumStates]=useState<Record<string,{state:string;changed_fields:number;cover_review?:boolean;checked:number;total:number}>>({});
   const [summaryError,setSummaryError] = useState('');
   const [cancelling,setCancelling] = useState(false);
   const [cancelError,setCancelError] = useState('');
@@ -230,7 +230,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
               aria-pressed={album?.id===release.id} onClick={()=>select({album:release,tab:'cover'})}>
               <Cover src={release.cover} title={release.title}/>
               <span><strong>{release.title}</strong><small>{[release.artist,release.year||null,release.release_type,songCount(release.track_ids.length)].filter(Boolean).join(' · ')}</small>
-                <span className="tag-suggestion-mark" data-state={albumStates[release.id]?.state}>{albumStates[release.id]?.state==='changes_available'?`${albumStates[release.id].changed_fields} suggested changes`:albumStates[release.id]?.state==='already_matches'?'Already matches':albumStates[release.id]?.state==='no_confident_match'?'No confident match':albumStates[release.id]?.state==='lookup_failed'?'Lookup failed':summary?.has(release.id)?'Suggestions available':'Not checked'}</span>
+                <span className="tag-suggestion-mark" data-state={albumStates[release.id]?.state}>{albumStates[release.id]?.state==='changes_available'?`${albumStates[release.id].changed_fields||''}${albumStates[release.id].changed_fields?' tag changes':''}${albumStates[release.id].cover_review?(albumStates[release.id].changed_fields?' · Cover to compare':'Cover to compare'):''}`:albumStates[release.id]?.state==='already_matches'?'Already matches':albumStates[release.id]?.state==='choose_release'?'Choose a release':albumStates[release.id]?.state==='partially_matched'?'Some songs matched':albumStates[release.id]?.state==='no_confident_match'?'No confident match':albumStates[release.id]?.state==='lookup_failed'?'Lookup failed':summary?.has(release.id)?'Suggestions available':'Not checked'}</span>
               </span>
               <Icon name="Back"/>
             </button>)}

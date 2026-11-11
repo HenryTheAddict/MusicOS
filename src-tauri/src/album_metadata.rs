@@ -3,17 +3,49 @@ use anyhow::{ensure,Context,Result};use serde::{Deserialize};use serde_json::{js
 #[derive(Default,Deserialize)]pub struct Request{pub action:String,pub album_id:Option<String>,pub token:Option<String>,pub rows:Option<Vec<Selection>>,pub search:Option<String>,pub write_files:Option<bool>,pub release_id:Option<String>}
 #[derive(Deserialize)]pub struct Selection{pub track_id:i64,pub fields:Vec<String>}
 pub fn summary(path:&Path,library:&crate::library::Library)->Result<Value>{
- let c=Connection::open(path)?;let statuses=c.prepare("SELECT track_id,state,candidate_json FROM metadata_enrichment_status")?.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
- let mut states=serde_json::Map::new();let mut ids=Vec::new();
- for album in &library.albums{let mut count=0;let mut checked=0;let mut failed=0;let mut matched=0;
-  for id in &album.track_ids{if let Some((_,state,candidate))=statuses.iter().find(|(track,_,_)|track==id){checked+=1;if state=="failed"{failed+=1}if state=="review"{if let Some(value)=candidate.as_deref().and_then(|v|serde_json::from_str::<Value>(v).ok()){
-   if let Some(track)=library.tracks.iter().find(|t|t.id==*id){for (field,current) in [("title",json!(track.title)),("artist",json!(track.artist)),("album",json!(track.album)),("year",json!(track.year)),("track_number",json!(track.track_number)),("disc_number",json!(track.disc_number))]{if !value[field].is_null()&&value[field]!=current{count+=1;}}
-    if value["artwork_path"].as_str().is_some_and(|p|Some(p)!=album.cover.as_deref()){count+=1;}
-   }matched+=1;
-  }}}}
-  let state=if count>0{"changes_available"}else if failed>0{"lookup_failed"}else if checked==0{"not_checked"}else if matched>0{"already_matches"}else{"no_confident_match"};
-  if count>0{ids.push(album.id.clone());}states.insert(album.id.clone(),json!({"state":state,"changed_fields":count,"checked":checked,"total":album.track_ids.len()}));
- }Ok(json!({"album_ids":ids,"states":states}))
+    use std::collections::{HashMap,HashSet};
+    let c = Connection::open(path)?;
+    let statuses = c.prepare("SELECT track_id,state,candidate_json FROM metadata_enrichment_status")?
+        .query_map([],|r|Ok((r.get::<_,i64>(0)?,(r.get::<_,String>(1)?,r.get::<_,Option<String>>(2)?))))?
+        .collect::<rusqlite::Result<HashMap<_,_>>>()?;
+    let tracks = library.tracks.iter().map(|track|(track.id,track)).collect::<HashMap<_,_>>();
+    let choices_exist = c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='desktop_release_choices_v1')",[],|r|r.get::<_,bool>(0))?;
+    let choices = if choices_exist {
+        c.prepare("SELECT track_id FROM desktop_release_choices_v1 WHERE selected IS NULL AND choices <> '[]'")?
+            .query_map([],|r|r.get::<_,i64>(0))?.collect::<rusqlite::Result<HashSet<_>>>()?
+    } else { HashSet::new() };
+    let mut states = serde_json::Map::new();
+    let mut ids = Vec::new();
+    for album in &library.albums {
+        let (mut changed,mut checked,mut failed,mut matched) = (0,0,0,0);
+        let mut different_cover = false;
+        for id in &album.track_ids {
+            let Some((state,candidate)) = statuses.get(id) else { continue };
+            checked += 1;
+            failed += usize::from(state=="failed");
+            if state=="applied" { matched += 1; }
+            if state!="review" { continue; }
+            let Some(value) = candidate.as_deref().and_then(|v|serde_json::from_str::<Value>(v).ok()) else { continue };
+            matched += 1;
+            if let Some(track) = tracks.get(id) {
+                for (field,current) in [("title",json!(track.title)),("artist",json!(track.artist)),("album",json!(track.album)),
+                    ("album_artist",json!(track.album_artist)),("year",json!(track.year)),("track_number",json!(track.track_number)),("disc_number",json!(track.disc_number))] {
+                    if !value[field].is_null() && value[field]!=current { changed += 1; }
+                }
+            }
+            if let Some(proposed) = value["artwork_path"].as_str().filter(|p|Path::new(p).is_file()) {
+                different_cover |= Some(proposed)!=album.cover.as_deref();
+            }
+        }
+        let needs_choice = album.track_ids.iter().any(|id|choices.contains(id));
+        let state = if changed>0 || different_cover {"changes_available"} else if needs_choice {"choose_release"}
+            else if failed>0 {"lookup_failed"} else if checked==0 {"not_checked"}
+            else if matched==album.track_ids.len() {"already_matches"}
+            else if matched>0 {"partially_matched"} else {"no_confident_match"};
+        if changed>0 || different_cover || needs_choice { ids.push(album.id.clone()); }
+        states.insert(album.id.clone(),json!({"state":state,"changed_fields":changed,"cover_review":different_cover,"checked":checked,"matched":matched,"total":album.track_ids.len()}));
+    }
+    Ok(json!({"album_ids":ids,"states":states}))
 }
 
 pub fn list(path: &Path, library: &crate::library::Library, search: &str) -> Result<Value> {
@@ -41,7 +73,7 @@ pub fn detail(path: &Path, library: &crate::library::Library, id: &str) -> Resul
 
 fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Library, album: &crate::library::Album) -> Result<Value> {
     use rusqlite::OptionalExtension;
-    let mut query = c.prepare("SELECT state, candidate_json FROM metadata_enrichment_status WHERE track_id=?")?;
+    let mut query = c.prepare("SELECT state, candidate_json, error FROM metadata_enrichment_status WHERE track_id=?")?;
     let mut rows = Vec::with_capacity(album.track_ids.len());
     for id in &album.track_ids {
         let mut current = db.metadata_values(*id)?;
@@ -49,12 +81,12 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
             current["album_artist"] = library.tracks.iter().find(|track| track.id == *id)
                 .and_then(|track| track.album_artist.clone()).into();
         }
-        let (status, cached): (String, Option<String>) = query
-            .query_row([id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?
-            .unwrap_or_else(|| ("unchecked".into(), None));
+        let (status, cached, error): (String, Option<String>, Option<String>) = query
+            .query_row([id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).optional()?
+            .unwrap_or_else(|| ("unchecked".into(), None, None));
         let candidate_token = cached.filter(|_| status == "review");
         let candidate = candidate_token.as_deref().map(serde_json::from_str::<Value>).transpose()?;
-        let artwork = candidate.as_ref().and_then(|value| value["artwork_path"].as_str());
+        let artwork = candidate.as_ref().and_then(|value| value["artwork_path"].as_str()).filter(|path|Path::new(path).is_file());
         let art_identity = artwork.and_then(|path| std::fs::metadata(path).ok())
             .map(|metadata| format!("{}:{:?}", metadata.len(), metadata.modified().ok()));
         let art_resolution = artwork.and_then(|path| image::image_dimensions(path).ok())
@@ -63,15 +95,21 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
         let art_comparison=match (album.cover.as_deref(),artwork){(Some(old),Some(new))=>art_comparison(old,new),(_,Some(_))=>"new",_=>"none"};
         if artwork.is_some()&&art_comparison!="identical"{fields.push("artwork");}
         rows.push(json!({"changed_fields":fields,"art_comparison":art_comparison,"track_id": id, "current": current, "candidate": candidate,
-            "candidate_token": candidate_token, "status": status, "art_identity": art_identity, "art_resolution": art_resolution}));
+            "candidate_token": candidate_token, "status": status, "lookup_error": error, "art_identity": art_identity, "art_resolution": art_resolution}));
     }
     let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, rows]))?));
     let resolution = album.cover.as_deref().and_then(|path| image::image_dimensions(path).ok())
         .map(|(width, height)| [width, height]);
     let release_choices=album.track_ids.first().map(|id|musicos_desktop::local::enrichment::saved_release_choices(path,*id)).transpose()?.unwrap_or(json!({"choices":[]}));
-    let changed=rows.iter().map(|r|r["changed_fields"].as_array().map_or(0,Vec::len)).sum::<usize>();
-    let status=if changed>0{"changes_available"}else if rows.iter().any(|r|r["status"]=="failed"){"lookup_failed"}else if rows.iter().all(|r|r["status"]=="unchecked"){"not_checked"}else if rows.iter().any(|r|!r["candidate"].is_null()){"already_matches"}else{"no_confident_match"};
-    Ok(json!({"status":status,"changed_fields":changed,"release_choices":release_choices,"album_id": album.id, "title": album.title, "artist": album.artist,
+    let cover_change=rows.iter().any(|r| r["changed_fields"].as_array().is_some_and(|f|f.iter().any(|f|f=="artwork")));
+    let changed=usize::from(cover_change)+rows.iter().flat_map(|r|r["changed_fields"].as_array().into_iter().flatten()).filter(|f|*f!="artwork").count();
+    let matched=rows.iter().filter(|r|!r["candidate"].is_null() || r["status"]=="applied").count();
+    let needs_choice=release_choices["selected"].is_null() && release_choices["choices"].as_array().is_some_and(|choices|!choices.is_empty());
+    let status=if changed>0 {"changes_available"} else if needs_choice {"choose_release"}
+        else if rows.iter().any(|r|r["status"]=="failed") {"lookup_failed"}
+        else if rows.iter().all(|r|r["status"]=="unchecked") {"not_checked"}
+        else if matched==rows.len() {"already_matches"} else if matched>0 {"partially_matched"} else {"no_confident_match"};
+    Ok(json!({"status":status,"matched_tracks":matched,"changed_fields":changed,"release_choices":release_choices,"album_id": album.id, "title": album.title, "artist": album.artist,
         "resolution": resolution, "cover": album.cover, "rows": rows, "token": token}))
 }
 

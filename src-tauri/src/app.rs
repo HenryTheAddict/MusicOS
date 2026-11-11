@@ -1027,15 +1027,20 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 ));
             }
             if kind == "enrich" {
-                let ids = if let Some(id) = request.album_id.as_deref() {
-                    load_library(&app)?.albums.into_iter().find(|album| album.id == id)
-                        .context("This album is no longer in your library")?.track_ids
+                let library = load_library(&app)?;
+                let (ids, albums) = if let Some(id) = request.album_id.as_deref() {
+                    let ids = library.albums.into_iter().find(|album| album.id == id)
+                        .context("This album is no longer in your library")?.track_ids;
+                    (ids.clone(),vec![ids])
                 } else {
-                    repo.snapshot(&LibraryQuery::default())?.tracks.into_iter().map(|track| track.id).collect()
+                    let ids = library.tracks.into_iter().map(|track|track.id).collect();
+                    let albums = library.albums.into_iter().map(|album|album.track_ids).collect();
+                    (ids,albums)
                 };
-                let p = musicos_desktop::local::enrichment::find_metadata_suggestions(
+                let p = musicos_desktop::local::enrichment::find_metadata_suggestions_for_albums(
                     &config.db_path,
                     &ids,
+                    &albums,
                     &config.enrichment,
                     &config.artwork,
                     &state.cancel,
@@ -1224,7 +1229,7 @@ async fn album_metadata(app: tauri::AppHandle, request: crate::album_metadata::R
             "summary" => crate::album_metadata::summary(&config.db_path, &library),
             "select_release"=>{
                 let id=request.album_id.as_deref().context("Choose an album")?;let album=library.albums.iter().find(|a|a.id==id).context("Album is unavailable")?;
-                musicos_desktop::local::enrichment::select_release_choice(&config.db_path,&album.track_ids,request.release_id.as_deref().context("Choose a release")?)?;
+                musicos_desktop::local::enrichment::select_release_choice(&config.db_path,&album.track_ids,request.release_id.as_deref().context("Choose a release")?,config.enrichment.download_artwork,&config.artwork)?;
                 let result=crate::album_metadata::detail(&config.db_path,&library,id)?;allow_comparison(&result);Ok(json!({"album":result}))
             }
             "detail" => {

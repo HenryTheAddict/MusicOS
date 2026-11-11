@@ -5,7 +5,7 @@ import{Icon}from'./components';
 import{useViewActive}from'./ViewScope';
 import{requestAppleLyricReview,type LyricDocument}from'./lyrics';
 import'./appleEnrichment.css';
-export type AppleStatus={enabled:boolean;signed_in:boolean;sign_in:string;library:string;lyrics:string;artwork:string;phase:string;message:string;scanned:number;matched:number;ambiguous:number;completed:number;total:number;lyrics_ready:number;lyrics_failed:number;artwork_ready?:number;sidecars?:{written:number;unchanged:number;conflicts:number;failed:number}};
+export type AppleStatus={enabled:boolean;signed_in:boolean;sign_in:string;library:string;lyrics:string;artwork:string;phase:string;message:string;scanned:number;matched:number;ambiguous:number;completed:number;total:number;lyrics_ready:number;lyrics_failed:number;artwork_ready?:number;sidecars?:{written:number;unchanged:number;conflicts:number;failed:number};cover_files?:{written:number;unchanged:number;conflicts:number;failed:number}};
 export type Transfer={id:string;name:string;kind:string;total:number;matched:number;missing:number;ambiguous:number;duplicates:number;available:boolean;ready:boolean;imported:boolean;missingAlbums?:{album:string;artist:string;needed:number;songs:string[]}[];reason?:string;checked?:boolean;resources?:{title:string;artist:string;kind:string}[]|null};
 export type AppleResponse={sidecarTrackIds?:number[];playlistTotal?:number;transfers?:Transfer[];mostPlayed?:{trackId:number;title:string;artist:string;plays:number}[];status?:AppleStatus;choices?:RecordingChoice[];matches?:{trackId:number;catalogId:string;title:string;artist:string;album:string;cached:boolean}[];document?:LyricDocument;catalogId?:string;cached?:boolean;url?:string|null;staticPath?:string|null;state?:string;lowPower?:boolean};
 type RecordingChoice = {
@@ -76,18 +76,21 @@ export default function AppleEnrichment(){
  <div className="apple-connection-actions">{(step===0||status.phase==='unavailable'||status.phase==='reconnect_required'||status.phase==='signing_in')&&<><button className="apple-primary" disabled={busy} onClick={()=>void action('begin')}><Icon name="Library"/>{status.phase==='signing_in'?'Return to Apple sign-in':status.signed_in?'Reconnect':'Open Apple sign-in'}</button>{status.phase==='signing_in'&&<button disabled={busy} onClick={()=>void action('verify')}>Check connection</button>}</>}</div>
  <h4 className="apple-group-heading">Lyrics &amp; artwork</h4><LyricEditionControl/>
  <div className="apple-setup-actions">{step!==0&&<><button className="apple-primary" disabled={busy||working} onClick={()=>void action(step===1?'sync':'start_cache')}><Icon name="sync"/>{step===1?'Find matches':'Save lyrics & artwork'}</button>{step===2&&<button disabled={busy||working} onClick={()=>void action('sync')}>Refresh matches</button>}</>}{(working||status.phase==='signing_in')&&<button onClick={()=>void action(status.phase==='background_cache'?'stop_cache':'cancel')}>Cancel</button>}</div>
+ {step===2&&<p className="apple-save-note">Saves .lyricsfile.yaml and cover images next to your music. Existing edits and audio files are kept.</p>}
  <div className="apple-sync-status" role="status">
   {status.signed_in&&<dl>
    <div><dt>Matched songs</dt><dd>{status.matched}</dd></div>
    {(status.artwork_ready!==undefined||status.lyrics_ready>0)&&<>
-    <div><dt>Lyrics cached</dt><dd>{status.lyrics_ready}</dd></div>
-    <div><dt>Artwork cached</dt><dd>{status.artwork_ready??0}</dd></div>
+    <div><dt>Lyrics found</dt><dd>{status.lyrics_ready}</dd></div>
+    <div><dt>Songs with artwork</dt><dd>{status.artwork_ready??0}</dd></div>
     {status.lyrics_failed>0&&<div><dt>Lyrics unavailable</dt><dd>{status.lyrics_failed}</dd></div>}
    </>}
   </dl>}
   <p>{working?(status.phase==='matching'?`Finding matches · ${status.scanned} Apple Music songs checked`:status.total?`${status.completed} of ${status.total} songs checked`:'Preparing…'):status.message}</p>
   {status.sidecars&&<p>LyricsFiles · {status.sidecars.written} saved · {status.sidecars.unchanged} current
     {status.sidecars.conflicts>0&&` · ${status.sidecars.conflicts} edits kept`}{status.sidecars.failed>0&&` · ${status.sidecars.failed} errors`}</p>}
+  {status.cover_files&&<p>Cover files · {status.cover_files.written} saved · {status.cover_files.unchanged} current
+    {status.cover_files.conflicts>0&&` · ${status.cover_files.conflicts} existing covers kept`}{status.cover_files.failed>0&&` · ${status.cover_files.failed} errors`}</p>}
   {working&&<progress aria-label="Apple lyric sync progress" max={status.total||undefined} value={status.phase!=='matching'&&status.total?status.completed:undefined}/>}
  </div>
  {error&&<div className="apple-error" role="alert"><strong>Couldn’t complete this action</strong><p>{error}</p><p>Local files and LRCLIB remain available.</p></div>}

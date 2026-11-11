@@ -163,6 +163,19 @@ pub struct Track {
     pub favorited: bool,
     pub artwork_sha256: Option<String>,
     pub lyrics_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub isrc: Option<String>,
+}
+fn source_isrc(path: &FsPath) -> Option<String> {
+    use lofty::{file::TaggedFileExt,probe::Probe,config::ParseOptions,tag::ItemKey};
+    let tagged = Probe::open(path).ok()?.guess_file_type().ok()?
+        .options(ParseOptions::new().read_properties(false).read_cover_art(false)).read().ok()?;
+    let value = tagged.tags().iter().find_map(|tag|tag.get_string(&ItemKey::Isrc))?;
+    let normalized = value.trim().replace('-', "").to_ascii_uppercase();
+    let bytes = normalized.as_bytes();
+    (bytes.len()==12 && bytes[..2].iter().all(u8::is_ascii_uppercase)
+        && bytes[2..5].iter().all(u8::is_ascii_alphanumeric)
+        && bytes[5..].iter().all(u8::is_ascii_digit)).then_some(normalized)
 }
 #[derive(Clone, Serialize)]
 pub struct Collection {
@@ -291,6 +304,9 @@ pub fn prepare_with(
             art_cache.insert(path.clone(), value.clone());
             value
         });
+        // Vorbis copies intentionally omit file tags. Carry the recording code
+        // from the original so the iPhone can identify the same recording.
+        let isrc = source_isrc(path);
         share.tracks.push(Track {
             id: track.id,
             title: track.title.clone(),
@@ -306,7 +322,7 @@ pub fn prepare_with(
             sha256: media.sha256.clone(),
             mime: media.mime.clone(),
             favorited: track.favorited,
-            artwork_sha256,lyrics_sha256:None,
+            artwork_sha256,lyrics_sha256:None,isrc,
         });
         share.files.insert(track.id.to_string(), media);
         if format!=CopyFormat::Original||index%25==24 { cache.persist()?; }
@@ -1122,7 +1138,7 @@ mod tests {
                 sha256: media.sha256.clone(),
                 mime: media.mime.clone(),
                 favorited: true,
-                artwork_sha256: None,lyrics_sha256:None,
+                artwork_sha256: None,lyrics_sha256:None,isrc:None,
             }],
             files: BTreeMap::from([("7".into(), media)]),
             collections: vec![Collection {
