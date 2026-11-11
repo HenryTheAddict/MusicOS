@@ -4,7 +4,7 @@ import type {Playback} from './types';
 import {duration as formatTime} from './components';
 import {animateOwned,cancelOwned} from './presentationMotion';
 type Drag={pointerId:number;left:number;width:number;maximum:number};
-export default function PlaybackProgress({trackId,entryId,position,duration,seek,showTime=true,revealTime=false,transition,live=true}:{revealTime?:boolean;live?:boolean;showTime?:boolean;transition?:Playback['dj_transition'];trackId?:number;entryId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>}){
+export default function PlaybackProgress({trackId,entryId,position,duration,seek,showTime=true,revealTime=false,transition,live=true,roundedFill=false}:{revealTime?:boolean;live?:boolean;roundedFill?:boolean;showTime?:boolean;transition?:Playback['dj_transition'];trackId?:number;entryId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>}){
  const clock=usePlaybackClock(live);if(live&&clock.trackId===trackId)position=clock.position;
  const [draft,setDraft]=useState<number|null>(null),[pending,setPending]=useState(false),[scrubbing,setScrubbing]=useState(false),[error,setError]=useState('');
  const input=useRef<HTMLInputElement>(null),host=useRef<HTMLDivElement>(null),slot=useRef<HTMLDivElement>(null),rail=useRef<HTMLDivElement>(null),time=useRef<HTMLOutputElement>(null),drag=useRef<Drag|null>(null),operation=useRef(0);
@@ -15,7 +15,7 @@ export default function PlaybackProgress({trackId,entryId,position,duration,seek
  useLayoutEffect(()=>{
   operation.current++;cancel();setPending(false);setError('');
   const previous=last.current;last.current=identity;
-  if(previous!==identity&&previous.split(':')[0]&&trackId&&rail.current)animateOwned(rail.current,'song-progress-handoff',[{clipPath:'inset(0 100% 0 0)',opacity:.4},{clipPath:'inset(0 0% 0 0)',opacity:1}],180);
+  if(!roundedFill&&previous!==identity&&previous.split(':')[0]&&trackId&&rail.current)animateOwned(rail.current,'song-progress-handoff',[{clipPath:'inset(0 100% 0 0)',opacity:.4},{clipPath:'inset(0 0% 0 0)',opacity:1}],180);
  },[identity]);
  useLayoutEffect(()=>()=>{operation.current++;if(rail.current)cancelOwned(rail.current);},[]);
  useLayoutEffect(()=>{
@@ -30,7 +30,7 @@ export default function PlaybackProgress({trackId,entryId,position,duration,seek
  }
  function pointerValue(event:PointerEvent<HTMLInputElement>){const held=drag.current;return held&&held.width>0&&Number.isFinite(event.clientX)?Math.max(0,Math.min(held.maximum,(event.clientX-held.left)/held.width*held.maximum)):Number(event.currentTarget.value);}
  return <div ref={host} className="playback-progress" data-reveal-time={revealTime&&showTime&&!!trackId||undefined} data-seeking={pending||scrubbing||undefined} data-scrubbing={scrubbing||undefined}>
-  <div ref={slot} className="playback-rail-slot"><div ref={rail} className="progress-rail" aria-hidden="true"><span style={{width:'100%',transform:`scaleX(${fraction})`}}/></div>
+  <div ref={slot} className="playback-rail-slot"><div ref={rail} className="progress-rail" aria-hidden="true"><span style={roundedFill?{width:`${fraction*100}%`}:{width:'100%',transform:`scaleX(${fraction})`}}/></div>
    <input ref={input} className="seek" type="range" aria-label="Playback position" aria-valuetext={`${formatTime(value)} of ${formatTime(maximum)}`} min={0} max={Math.max(1,maximum)} step={.1} value={value} disabled={!trackId||maximum===0} style={{'--progress':`${fraction*100}%`} as CSSProperties}
     onPointerDown={event=>{
      if(event.button!==undefined&&event.button!==0)return;

@@ -1,3 +1,5 @@
+import MusicOSBackgroundHooks
+import BackgroundTasks
 import Tauri
 import UIKit
 import AVFoundation
@@ -85,9 +87,15 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     var portraits:[String:String]=[:]
     var preferences=MobilePreferences()
     var musicHapticsAvailable=false
-    var infoRead=Set<Int64>()
-    var backgroundRecovery:Task<Void,Never>?
+    private var infoRead = Set<String>()
+    private var hapticCode: String?
+    private var hapticLookup: Task<Void, Never>?
+    private var hapticResults: [String: Bool] = [:]
+    private nonisolated static let refreshID = "com.musicos.companion.library-refresh"
+    private var refreshCompletion: ((Bool) -> Void)?
+    private var preparationLease = UIBackgroundTaskIdentifier.invalid
     var libraryChanged:(()->Void)?
+    var syncLinkPending = false
     var outbox: [[String:Any]] = []
     var conflicts: [[String:Any]] = []
     var status: [String:Any] = ["state":"idle", "completed":0, "total":0] {didSet{SyncLiveStatus.shared.update(status,enabled:preferences.liveSync)}}
@@ -128,6 +136,11 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         // iOS can relocate the data container during an update. Persist only library-relative assets.
         library=library.map{restorePaths($0)};collections=collections.map{restorePaths($0)};portraits=portraits.mapValues{restorePath($0)}
         configureBackgroundTransfers()
+        if #available(iOS 18.0, *) {
+            notifications.append(NotificationCenter.default.addObserver(forName:MAMusicHapticsManager.activeStatusDidChangeNotification,object:nil,queue:.main) { [weak self] _ in
+                Task { @MainActor in self?.updateMusicHaptics(); self?.libraryChanged?() }
+            })
+        }
         attachPlaybackObserver()
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in Task { @MainActor in try? await self?.play() }; return .success }
@@ -156,27 +169,83 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             Task { @MainActor in self?.cancelMix();if reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue { self?.pause() }; self?.publish() }
         })
     }
-    func configureBackgroundTransfers(){
-        BackgroundTransfers.shared.approvedPin={[weak self] in self?.connection.map{(host:$0.host,fingerprint:$0.fingerprint)}}
-        BackgroundTransfers.shared.ready={[weak self] in
-            guard let self=self,self.backgroundRecovery==nil else{return}
-            self.backgroundRecovery=Task {
-                try? await Task.sleep(nanoseconds:800_000_000)
-                if self.syncTask == nil && !self.stoppingSync { try? self.recoverBackgroundPlan() }
-                self.backgroundRecovery=nil
+    func configureBackgroundTransfers() {
+        let transfers = BackgroundTransfers.shared
+        transfers.approvedPin = { [weak self] in self?.connection.map { (host:$0.host,fingerprint:$0.fingerprint) } }
+        transfers.ready = { [weak self] in
+            guard let self, self.syncTask == nil, !self.stoppingSync else { return }
+            try? self.recoverBackgroundPlan()
+        }
+        transfers.progress = { [weak self] done,total,failed in
+            guard let self, !self.stoppingSync, total > 0 else { return }
+            if self.syncTask == nil && done + failed == total && failed > 0 {
+                self.status = ["state":"error","message":"Some files couldn’t copy. Verified downloads are kept. Retry when your Mac is sharing."]
+            } else if self.status["state"] as? String == "downloading" || self.syncTask == nil {
+                self.status = ["state":"downloading","completed":done,"total":total,"unit":"files","message":"Copying offline files."]
             }
         }
-        BackgroundTransfers.shared.progress={[weak self] done,total in
-            guard let self=self,self.syncTask==nil,!self.stoppingSync,total>0 else{return}
-            self.status = done == total
-                ? ["state":"updating","message":"Adding verified files to your offline library."]
-                : ["state":"downloading","completed":done,"total":total,"unit":"files","message":"Copying files in the background."]
+        if let mac = connection, let manifest = savedTransferPlan(for: mac) {
+            let assets = backgroundAssets(manifest,connection:mac)
+            transfers.restore(assets,base:mac.base)
+            status = ["state":"downloading","unit":"files","total":assets.count,"completed":assets.filter { FileManager.default.fileExists(atPath: transfers.destination($0).path) }.count]
+            try? recoverBackgroundPlan()
         }
-        try? recoverBackgroundPlan()
+        transfers.activate()
     }
+
+    private func savedTransferPlan(for connection: Connection) -> [String: Any]? {
+        guard let data = try? Data(contentsOf:transferPlan),
+              let manifest = try? JSONSerialization.jsonObject(with:data) as? [String:Any],
+              manifest["server_id"] as? String == connection.server else { return nil }
+        return manifest
+    }
+
+    nonisolated static func registerRefresh() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier:refreshID,using:nil) { task in
+            Task { @MainActor in Companion.shared.runScheduledRefresh(task) }
+        }
+    }
+
+    private func scheduleRefresh() {
+        guard preferences.backgroundSync, preferences.autoSync, connection != nil else {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.refreshID)
+            return
+        }
+        let request = BGAppRefreshTaskRequest(identifier:Self.refreshID)
+        request.earliestBeginDate = Date().addingTimeInterval(30 * 60)
+        try? BGTaskScheduler.shared.submit(request)
+    }
+
+    private func runScheduledRefresh(_ task: BGTask) {
+        scheduleRefresh()
+        guard preferences.backgroundSync, preferences.autoSync, connection != nil, syncTask == nil, !stoppingSync else {
+            task.setTaskCompleted(success:true)
+            return
+        }
+        refreshCompletion = { task.setTaskCompleted(success:$0) }
+        task.expirationHandler = { [weak self] in Task { @MainActor in
+            guard let self, self.refreshCompletion != nil else { return }
+            self.syncTask?.cancel()
+            self.finishScheduledRefresh(false)
+        }}
+        beginSync()
+    }
+
+    private func finishScheduledRefresh(_ success: Bool) {
+        let completion = refreshCompletion
+        refreshCompletion = nil
+        completion?(success)
+    }
+
+    private func endPreparationLease() {
+        guard preparationLease != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(preparationLease)
+        preparationLease = .invalid
+    }
+
     func backgroundAssets(_ manifest:[String:Any],connection:Connection)->[BackgroundAsset]{
         var values:[String:BackgroundAsset]=[:]
-        func add(_ hash:String?,path:String,kind:String,size:Int64?=nil){guard let hash=hash,hash.count==64,hash.allSatisfy(\.isHexDigit)else{return};values[hash]=BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint)}
+        func add(_ hash:String?,path:String,kind:String,size:Int64?=nil){guard let hash=hash,hash.count==64,hash.allSatisfy(\.isHexDigit)else{return};values["\(kind)/\(hash)"]=BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint)}
         for track in manifest["tracks"] as? [[String:Any]] ?? []{
             let hash=track["sha256"] as? String;add(hash,path:"tracks/\(number(track["id"]))",kind:"audio",size:number(track["size"]))
             if let hash=track["artwork_sha256"] as? String{add(hash,path:"artwork/\(hash)",kind:"artwork")}
@@ -184,10 +253,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         }
         for hash in (manifest["portraits"] as? [String:String] ?? [:]).values{add(hash,path:"artwork/\(hash)",kind:"artwork")}
         for row in manifest["collections"] as? [[String:Any]] ?? []{if let hash=row["artwork_sha256"] as? String{add(hash,path:"artwork/\(hash)",kind:"artwork")}}
-        return values.values.sorted{$0.hash<$1.hash}
+        return values.values.sorted { ($0.kind, $0.hash) < ($1.kind, $1.hash) }
     }
     func recoverBackgroundPlan() throws {
-        guard let connection=connection,let data=try? Data(contentsOf:transferPlan),let manifest=try? JSONSerialization.jsonObject(with:data) as? [String:Any],manifest["server_id"] as? String==connection.server else{return}
+        guard let connection, let manifest = savedTransferPlan(for: connection) else { return }
         var changed=false
         for var row in manifest["tracks"] as? [[String:Any]] ?? []{
             guard let hash=row["sha256"] as? String else{continue};let path=root.appendingPathComponent("audio/\(hash)")
@@ -197,6 +266,9 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             if let index=library.firstIndex(where:{number($0["id"])==id}){
                 let old=library[index];if outbox.contains(where:{$0["kind"] as? String=="favorite"&&number($0["track_id"])==id}){row["favorited"]=old["favorited"]}
                 row["play_count"]=old["play_count"] ?? 0
+                if old["sha256"] as? String == hash {
+                    for key in ["isrc","bpm"] where row[key] == nil { row[key] = old[key] }
+                }
                 if old["lyrics_edited"] as? Bool==true{row["lyrics_path"]=old["lyrics_path"];row["lyrics_edited"]=true}
                 if ["path","artwork_path","lyrics_path","sha256"].contains(where:{String(describing:old[$0]) != String(describing:row[$0])}){library[index]=row;changed=true}
             }else{library.append(row);changed=true}
@@ -211,7 +283,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         if changed{try persist();if UIApplication.shared.applicationState != .background{libraryChanged?()}}
         let assets = backgroundAssets(manifest,connection:connection)
         if !assets.isEmpty, assets.allSatisfy({ FileManager.default.fileExists(atPath:BackgroundTransfers.shared.destination($0).path) }) {
-            status = ["state":"complete","message":outbox.isEmpty ? "Your downloads are ready." : "Your downloads are ready. Sync again to send changes to your Mac."]
+            status = ["state":"complete","completed":assets.count,"total":assets.count,"unit":"files","message":outbox.isEmpty ? "Your downloads are ready." : "Your downloads are ready. Sync again to send changes to your Mac."]
+            try? FileManager.default.removeItem(at:transferPlan)
         }
     }
     func warmUpcomingAudio(){
@@ -233,6 +306,13 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             guard let self=self else{return};self.publish();self.considerMix()
             if self.player.rate>0,Date().timeIntervalSince1970-self.lastSaved>10{self.lastSaved=Date().timeIntervalSince1970;try? self.persist()}
         }}
+    }
+    static func mixGains(_ phase: Double) -> (outgoing: Float, incoming: Float) {
+        let phase = min(1,max(0,phase))
+        let outgoing = cos(phase * .pi/2)
+        let incoming = sin(phase * .pi/2)
+        let headroom = max(1,outgoing + incoming)
+        return (Float(outgoing / headroom),Float(incoming / headroom))
     }
     func cancelMix(){
         preparingMix?.cancel();preparingMix=nil;mixTask?.cancel();mixTask=nil
@@ -277,7 +357,15 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             guard let self=self else{return};var committed=false
             do{while !Task.isCancelled{
                 let phase=min(1,max(0,(from.currentTime().seconds-start)/length))
-                from.volume=Float(cos(phase * .pi/2));to.volume=Float(sin(phase * .pi/2))
+                let incoming = to.currentTime().seconds
+                if !committed && (!incoming.isFinite || incoming < 0.015) {
+                    if phase >= 0.7 { self.cancelMix(); return }
+                    try await Task.sleep(nanoseconds:20_000_000)
+                    continue
+                }
+                let gains = Self.mixGains(phase)
+                from.volume = gains.outgoing
+                to.volume = gains.incoming
                 if phase>=0.5 && !committed{
                     guard self.queueEntryIds.indices.contains(ready.index),self.queueEntryIds[ready.index]==entry else{self.cancelMix();return}
                     committed=true;if let observer=self.observer{from.removeTimeObserver(observer)};self.observer=nil
@@ -296,7 +384,11 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func restorePaths(_ row:[String:Any])->[String:Any]{var result=row;for key in ["path","artwork_path","lyrics_path"]{if let path=row[key] as? String{result[key]=restorePath(path)}};return result}
     func storePath(_ path:String)->String {let prefix=root.path+"/";return path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)):path}
     func storePaths(_ row:[String:Any])->[String:Any]{var result=row;for key in ["path","artwork_path","lyrics_path"]{if let path=row[key] as? String{result[key]=storePath(path)}};return result}
-    func sceneUpdated(){publish();try? persist()}
+    func sceneUpdated() {
+        if UIApplication.shared.applicationState != .background { scheduleRefresh(); updateMusicHaptics() }
+        publish()
+        try? persist()
+    }
     func persist() throws {
         let value: [String:Any] = ["version":1,"preferences":preferences.json,"portraits":portraits.mapValues{storePath($0)},"tracks":library.map{storePaths($0)},"collections":collections.map{storePaths($0)},"outbox":outbox,"conflicts":conflicts,"queue":queue,"queue_index":queueIndex,"queue_entries":queueEntryIds,"position":player.currentItem==nil ? savedPosition:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds:0),"repeat":repeatMode]
         try JSONSerialization.data(withJSONObject:value, options:[.sortedKeys]).write(to:root.appendingPathComponent("library.json"), options:.atomic)
@@ -313,20 +405,72 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         row["available"]=true; row["play_count"] = t["play_count"] ?? 0; row["artist_display"] = t["artist"]
         return row
     }
-    func snapshot() -> [String:Any] { ["live_sync_supported":SyncLiveStatus.shared.supported,"preferences":preferences.json,"music_haptics_active":musicHapticsActive,"music_haptics_available":musicHapticsAvailable,"portraits":portraits,"nearby_macs":discovery.results,"tracks":library.map(trackPresentation),"collections":collections,"playback":playback(),"sync":status,"paired":connection != nil,"pending_changes":outbox.count,"conflicts":conflicts,"text_scale":UIFont.preferredFont(forTextStyle:.body).pointSize/17,"storage_bytes":library.reduce(Int64(0)) { $0 + number($1["size"]) }] }
+    func snapshot() -> [String:Any] { ["live_sync_supported":SyncLiveStatus.shared.supported,"preferences":preferences.json,"music_haptics_active":musicHapticsActive,"music_haptics_status":musicHapticsStatus,"music_haptics_available":musicHapticsAvailable,"portraits":portraits,"nearby_macs":discovery.results,"tracks":library.map(trackPresentation),"collections":collections,"playback":playback(),"sync":status,"paired":connection != nil,"pending_changes":outbox.count,"conflicts":conflicts,"text_scale":UIFont.preferredFont(forTextStyle:.body).pointSize/17,"storage_bytes":library.reduce(Int64(0)) { $0 + number($1["size"]) }] }
     var musicHapticsActive:Bool {if #available(iOS 18.0,*){return MAMusicHapticsManager.shared.isActive};return false}
+    static func normalizedISRC(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let code = value.uppercased().replacingOccurrences(of:"-",with:"").trimmingCharacters(in:.whitespacesAndNewlines)
+        guard code.range(of:"^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$",options:.regularExpression) != nil else { return nil }
+        return code
+    }
+    private var currentISRC: String? { Self.normalizedISRC(current?["isrc"] as? String) }
+    var musicHapticsStatus: String {
+        if !preferences.musicHaptics { return "off" }
+        if !musicHapticsActive { return "system_off" }
+        if currentID == nil { return "no_song" }
+        guard let code = currentISRC else { return "no_isrc" }
+        guard let available = hapticResults[code] else { return "checking" }
+        return available ? "available" : "unavailable"
+    }
+
+    func updateMusicHaptics() {
+        let code = preferences.musicHaptics && musicHapticsActive ? currentISRC : nil
+        guard code != hapticCode else { return }
+        hapticLookup?.cancel()
+        hapticCode = code
+        musicHapticsAvailable = code.flatMap { hapticResults[$0] } ?? false
+        guard #available(iOS 18.0,*), let code, hapticResults[code] == nil else { return }
+        hapticLookup = Task { [weak self] in
+            let available = await MAMusicHapticsManager.shared.isHapticTrackAvailable(forMediaMatching:code)
+            guard let self, !Task.isCancelled, self.hapticCode == code else { return }
+            self.hapticResults[code] = available
+            self.musicHapticsAvailable = available
+            self.libraryChanged?()
+        }
+    }
+
     func readRecordingInfo(_ track:[String:Any]) async {
-        let id=number(track["id"]);guard !infoRead.contains(id),let path=track["path"] as? String else{return};infoRead.insert(id)
-        let values=await Task.detached(priority:.utility){()->[String:String] in
-            var buffer=[CChar](repeating:0,count:512)
-            let count=path.withCString{source in buffer.withUnsafeMutableBufferPointer{readAudioInfo(source,$0.baseAddress!,$0.count)}}
-            guard count>0,let data=String(cString:buffer).data(using:.utf8)else{return [:]}
+        let id = number(track["id"])
+        guard let path = track["path"] as? String else { return }
+        if Self.normalizedISRC(track["isrc"] as? String) != nil {
+            if currentID == id { updateMusicHaptics(); publish() }
+            return
+        }
+        guard infoRead.insert("\(id):\(path)").inserted else { return }
+        var values = await Task.detached(priority:.utility) { () -> [String:String] in
+            var buffer = [CChar](repeating:0,count:512)
+            let count = path.withCString { source in
+                buffer.withUnsafeMutableBufferPointer { readAudioInfo(source,$0.baseAddress!,$0.count) }
+            }
+            guard count>0,let data=String(cString:buffer).data(using:.utf8) else { return [:] }
             return (try? JSONSerialization.jsonObject(with:data)) as? [String:String] ?? [:]
         }.value
-        if let index=library.firstIndex(where:{number($0["id"])==id}){for(key,value)in values{library[index][key]=value};try? persist()}
-        guard currentID==id else{return};musicHapticsAvailable=false
-        if #available(iOS 18.0,*),preferences.musicHaptics,MAMusicHapticsManager.shared.isActive,let code=values["isrc"],code.count>=12{musicHapticsAvailable=await MAMusicHapticsManager.shared.isHapticTrackAvailable(forMediaMatching:code)}
+        if Self.normalizedISRC(values["isrc"]) == nil {
+            let asset = AVURLAsset(url:URL(fileURLWithPath:path))
+            if let metadata = try? await asset.load(.metadata),
+               let item = metadata.first(where: { $0.identifier == .id3MetadataInternationalStandardRecordingCode }) {
+                values["isrc"] = try? await item.load(.stringValue)
+            }
+        }
+        values["isrc"] = Self.normalizedISRC(values["isrc"])
+        if let index=library.firstIndex(where:{number($0["id"])==id && $0["path"] as? String == path}) {
+            for (key,value) in values { library[index][key] = value }
+            if !values.isEmpty { try? persist() }
+        }
+        guard currentID == id else { return }
+        updateMusicHaptics()
         publish()
+        libraryChanged?()
     }
     func writePlaybackDiagnostics(){
         func describe(_ error:Error?)->[String:Any]{guard let error=error as NSError? else{return [:]};let underlying=error.userInfo[NSUnderlyingErrorKey] as? NSError;return ["domain":error.domain,"code":error.code,"message":error.localizedDescription,"underlying_domain":underlying?.domain ?? "","underlying_code":underlying?.code ?? 0]}
@@ -336,9 +480,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         try? JSONSerialization.data(withJSONObject:info,options:[.sortedKeys,.prettyPrinted]).write(to:root.appendingPathComponent("playback-diagnostics.json"),options:.atomic)
     }
     func publish() {
+        updateMusicHaptics()
         if let t=current {
             var info: [String:Any] = [MPMediaItemPropertyTitle:t["title"] ?? "",MPMediaItemPropertyArtist:t["artist"] ?? "",MPMediaItemPropertyAlbumTitle:t["album"] ?? "",MPMediaItemPropertyPlaybackDuration:(t["duration_ms"] as? Double ?? 0)/1000,MPNowPlayingInfoPropertyElapsedPlaybackTime:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0),MPNowPlayingInfoPropertyPlaybackRate:player.rate]
-            if #available(iOS 18.0,*),preferences.musicHaptics,let isrc=t["isrc"] as? String{info[MPNowPlayingInfoPropertyInternationalStandardRecordingCode]=isrc}
+            if #available(iOS 18.0,*),preferences.musicHaptics,let isrc=currentISRC{info[MPNowPlayingInfoPropertyInternationalStandardRecordingCode]=isrc}
             let artPath=t["artwork_path"] as? String
             if cachedArtPath != artPath{cachedArtPath=artPath;cachedArtwork=artPath.flatMap{UIImage(contentsOfFile:$0)}.map{image in MPMediaItemArtwork(boundsSize:image.size){_ in image}}}
             if let art=cachedArtwork{info[MPMediaItemPropertyArtwork]=art}
@@ -364,8 +509,11 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         wantsPlayback=true
         do {
             // Playback already supports AirPlay. allowAirPlay is only valid for playAndRecord.
-            try AVAudioSession.sharedInstance().setCategory(.playback,mode:.default,options:[])
-            try AVAudioSession.sharedInstance().setActive(true)
+            let session = AVAudioSession.sharedInstance()
+            if session.category != .playback || session.mode != .default {
+                try session.setCategory(.playback,mode:.default,options:[])
+            }
+            try session.setActive(true)
             if player.currentItem==nil {try await loadCurrent()}
             guard wantsPlayback else{return}
             if player.currentItem?.status == .failed{writePlaybackDiagnostics();throw CompanionError.message("This audio format couldn’t start on the iPhone. The downloaded copy is kept.")}
@@ -460,12 +608,18 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "settings":
             guard let key=payload["key"] as? String,let value=payload["value"] else{throw CompanionError.message("Choose a setting")}
             try preferences.set(key,value)
+            if ["backgroundSync","autoSync"].contains(key) { scheduleRefresh() }
+            if key == "musicHaptics" { updateMusicHaptics() }
             if key=="lastfmListening" && !preferences.lastfmListening { listening.stopCollecting() }
             if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish()
             if key=="discordPresence" { listening.tryAgain() }
             return snapshot()
         case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
-        case "snapshot": return snapshot()
+        case "snapshot":
+            var result = snapshot()
+            result["open_computer"] = syncLinkPending
+            syncLinkPending = false
+            return result
         case "listening_status":
             observeListening()
             if payload["refresh"] as? Bool == true {
@@ -554,23 +708,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "pair": return try await pair(payload["link"] as? String ?? "")
         case "approval": return try await remote("pair/status")
         case "sync":
-            guard syncTask == nil, !stoppingSync else { return status }
-            status = ["state":"starting"]
-            syncTask = Task {
-                do { try await sync() }
-                catch {
-                    if Task.isCancelled || error is CancellationError {
-                        status = ["state":"cancelled","message":"Downloaded songs are kept. Retry to continue."]
-                    } else if let networkError = error as? URLError,
-                              [.notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost].contains(networkError.code) {
-                        status = ["state":"error","message":"Couldn’t reach your Mac. Check Wi-Fi and make sure sharing is on in Devices."]
-                    } else {
-                        status = ["state":"error","message":error.localizedDescription]
-                    }
-                }
-                syncTask = nil
-                if UIApplication.shared.applicationState != .background { libraryChanged?() }
-            }
+            beginSync()
             return status
         case "cancel":
             await stopSync(keepResume:true)
@@ -580,6 +718,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             connection = nil
             observeListening()
             try Credentials.save(nil)
+            scheduleRefresh()
             status = ["state":"idle"]
             return snapshot()
         case "resolve":
@@ -641,6 +780,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
                 body.removeValue(forKey:"capabilities");connection?.syncChanges=false;result=try await remote("pair",body:body)
             }
             try Credentials.save(connection)
+            scheduleRefresh()
             let approved = (result as? [String:Any])?["state"] as? String == "approved"
             status = approved ? ["state":"idle"] : ["state":"approval","message":"Approve this iPhone in Devices on your Mac, then retry sync."]
             return result
@@ -652,10 +792,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         while let chunk=try handle.read(upToCount:1<<20),!chunk.isEmpty {hash.update(data:chunk)}
         return hash.finalize().map{String(format:"%02x",$0)}.joined()
     }
-    func download(_ path:String,hash:String,size:Int64?,kind:String) async throws -> URL {
+    func download(_ path:String,hash:String,size:Int64?,kind:String,background:Bool) async throws -> URL {
         guard hash.count==64,hash.allSatisfy(\.isHexDigit) else {throw CompanionError.message("Invalid file fingerprint")}
         let file=root.appendingPathComponent("\(kind)/\(hash)")
-        if preferences.backgroundSync,let connection=connection{return try await BackgroundTransfers.shared.value(BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint))}
+        if background,let connection=connection{return try await BackgroundTransfers.shared.value(BackgroundAsset(hash:hash,path:path,kind:kind,size:size,fingerprint:connection.fingerprint))}
         if FileManager.default.fileExists(atPath:file.path) {return file}
         let partial=root.appendingPathComponent("partial/\(hash)")
         if !FileManager.default.fileExists(atPath:partial.path){FileManager.default.createFile(atPath:partial.path,contents:nil)}
@@ -685,8 +825,35 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = listening ? 5 : 30
         configuration.timeoutIntervalForResource = listening ? 8 : 120
-        configuration.allowsCellularAccess = !listening
+        configuration.allowsCellularAccess = false
         return URLSession(configuration:configuration,delegate:PinnedConnection(fingerprint),delegateQueue:nil)
+    }
+
+    private func beginSync() {
+        guard syncTask == nil, !stoppingSync else { return }
+        status = ["state":"starting"]
+        if preferences.backgroundSync, UIApplication.shared.applicationState == .active {
+            preparationLease = UIApplication.shared.beginBackgroundTask(withName:"Prepare offline music") { [weak self] in
+                Task { @MainActor in self?.syncTask?.cancel(); self?.endPreparationLease() }
+            }
+        }
+        syncTask = Task {
+            do { try await sync() }
+            catch {
+                if Task.isCancelled || error is CancellationError {
+                    status = ["state":"cancelled","message":"Downloaded songs are kept. Retry to continue."]
+                } else if let networkError = error as? URLError,
+                          [.notConnectedToInternet, .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost].contains(networkError.code) {
+                    status = ["state":"error","message":"Couldn’t reach your Mac. Check Wi-Fi and make sure sharing is on in Devices."]
+                } else {
+                    status = ["state":"error","message":error.localizedDescription]
+                }
+            }
+            endPreparationLease()
+            finishScheduledRefresh(!Task.isCancelled && status["state"] as? String != "error")
+            syncTask = nil
+            if UIApplication.shared.applicationState != .background { libraryChanged?() }
+        }
     }
 
     private func stopSync(keepResume: Bool) async {
@@ -742,21 +909,25 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         }
         status = copyCount == 0 ? ["state":"updating","message":"Your music is already on this iPhone. Checking artwork, lyrics and collections."]
             : ["state":"downloading","completed":0,"total":copyCount]
-        if preferences.backgroundSync {
+        let useBackground = preferences.backgroundSync
+        if useBackground {
             try JSONSerialization.data(withJSONObject:manifest,options:[.sortedKeys]).write(to:transferPlan,options:.atomic)
             await BackgroundTransfers.shared.start(backgroundAssets(manifest,connection:mac),base:mac.base,authorization:"Bearer \(mac.client).\(mac.token)")
+            try Task.checkCancellation()
+            endPreparationLease()
+            finishScheduledRefresh(true)
         }
         for var track in tracks {
             try Task.checkCancellation()
             let id = number(track["id"])
             guard let hash = track["sha256"] as? String else { continue }
-            if missingAudio.contains(hash) {
+            if !useBackground && missingAudio.contains(hash) {
                 status = ["state":"downloading","completed":copyCount-missingAudio.count,"total":copyCount,"message":track["title"] ?? "Downloading music"]
             }
-            let path = try await download("tracks/\(id)",hash:hash,size:number(track["size"]),kind:"audio")
+            let path = try await download("tracks/\(id)",hash:hash,size:number(track["size"]),kind:"audio",background:useBackground)
             track["path"]=path.path;track["server_id"]=mac.server
-            if let h=track["artwork_sha256"] as? String {track["artwork_path"]=try await download("artwork/\(h)",hash:h,size:nil,kind:"artwork").path}
-            if let h=track["lyrics_sha256"] as? String {track["lyrics_path"]=try await download("assets/\(h)",hash:h,size:nil,kind:"lyrics").path}
+            if let h=track["artwork_sha256"] as? String {track["artwork_path"]=try await download("artwork/\(h)",hash:h,size:nil,kind:"artwork",background:useBackground).path}
+            if let h=track["lyrics_sha256"] as? String {track["lyrics_path"]=try await download("assets/\(h)",hash:h,size:nil,kind:"lyrics",background:useBackground).path}
             try Task.checkCancellation()
             if let index = library.firstIndex(where:{ number($0["id"]) == id }) {
                 let old = library[index]
@@ -766,6 +937,9 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
                     track["lyrics_edited"] = true
                 }
                 track["play_count"] = old["play_count"] ?? 0
+                if old["sha256"] as? String == hash {
+                    for key in ["isrc","bpm"] where track[key] == nil { track[key] = old[key] }
+                }
                 if !NSDictionary(dictionary:old).isEqual(to:track) {
                     library[index] = track
                     try persist()
@@ -774,18 +948,18 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
                 library.append(track)
                 try persist()
             }
-            if missingAudio.remove(hash) != nil {
+            if missingAudio.remove(hash) != nil && !useBackground {
                 status = ["state":"downloading","completed":copyCount-missingAudio.count,"total":copyCount]
             }
         }
         status = ["state":"updating","message":"Finishing artwork, lyrics and collections."]
-        for (name,hash) in manifest["portraits"] as? [String:String] ?? [:]{try Task.checkCancellation();portraits[name]=try await download("artwork/\(hash)",hash:hash,size:nil,kind:"artwork").path}
+        for (name,hash) in manifest["portraits"] as? [String:String] ?? [:]{try Task.checkCancellation();portraits[name]=try await download("artwork/\(hash)",hash:hash,size:nil,kind:"artwork",background:useBackground).path}
         // Never delete downloads merely because the Mac shared a smaller selection.
         for collection in manifest["collections"] as? [[String:Any]] ?? [] {
             let id=collection["id"] as? String ?? ""
             if outbox.contains(where:{$0["collection_id"] as? String==id}){continue}
             var row=collection
-            if let hash=row["artwork_sha256"] as? String{row["artwork_path"]=try await download("artwork/\(hash)",hash:hash,size:nil,kind:"artwork").path}
+            if let hash=row["artwork_sha256"] as? String{row["artwork_path"]=try await download("artwork/\(hash)",hash:hash,size:nil,kind:"artwork",background:useBackground).path}
             let ids=(row["full_track_ids"] as? [NSNumber] ?? row["track_ids"] as? [NSNumber] ?? []).map(\.int64Value)
             row["track_ids"]=ids
             row["complete"]=ids.allSatisfy{id in library.contains{number($0["id"])==id}}
@@ -826,6 +1000,13 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
 }
 class CompanionPlugin: Plugin {
     override func load(webview:WKWebView){
+        MusicOSSetSyncLinkCallback {
+            Task { @MainActor in
+                let service = Companion.shared
+                service.syncLinkPending = true
+                service.libraryChanged?()
+            }
+        }
         #if DEBUG
         if ProcessInfo.processInfo.environment["MUSICOS_COMPANION_SELF_TEST"]=="1"{Task{@MainActor in await Companion.shared.runNativeChecks()}}
         #endif
@@ -848,7 +1029,7 @@ class CompanionPlugin: Plugin {
     }
 }
 @_cdecl("init_plugin_companion")
-func initPlugin() -> Plugin { CompanionPlugin() }
+func initPlugin() -> Plugin { Companion.registerRefresh(); return CompanionPlugin() }
 
 #if DEBUG
 extension Companion {
@@ -859,12 +1040,19 @@ extension Companion {
         guard !library.isEmpty,library.allSatisfy({($0["path"] as? String ?? "").hasPrefix(root.appendingPathComponent("test-fixtures").path+"/")})else{return}
         do {
             check("startup stays paused",player.rate==0)
+            check("ISRC normalization retains edition identity",Self.normalizedISRC("us-abc-24-01234")=="USABC2401234" && Self.normalizedISRC("USABC24abcd5")==nil)
+            check("Automix does not sum correlated decks above unity",(0...100).allSatisfy {
+                let gains=Self.mixGains(Double($0)/100)
+                return gains.outgoing>=0 && gains.incoming>=0 && gains.outgoing+gains.incoming<=1.00001
+            })
             if let baseText=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_BASE"],let base=URL(string:baseText),let pin=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_PIN"],let hash=ProcessInfo.processInfo.environment["MUSICOS_TEST_SYNC_HASH"]{
                 let service=BackgroundTransfers.shared;service.approvedPin={(host:"127.0.0.1",fingerprint:pin)}
                 let asset=BackgroundAsset(hash:hash,path:"fixture",kind:"artwork",size:nil,fingerprint:pin)
                 try? FileManager.default.removeItem(at:service.destination(asset))
                 await service.start([asset],base:base,authorization:"Bearer isolated-test")
-                let file=try await service.value(asset);check("background URLSession pins and verifies a downloaded asset",try hashFileNonisolated(file)==hash)
+                service.forgetTaskIndexForTesting()
+                let file=try await service.value(asset)
+                check("background URLSession adopts and verifies an authorized task without an in-memory task index",try hashFileNonisolated(file)==hash)
                 await service.cancel(keepResume:false)
             }
             if let art=library.first?["artwork_path"] as? String{let palette=try await request(["action":"artwork_palette","path":art]) as? [String:Any];check("downloaded cover colors use the native SDR extractor",(palette?["swatches"] as? [String])?.count==3)}

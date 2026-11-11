@@ -3,18 +3,21 @@ import {request} from './bridge';
 import {displayedPlayerOffset,playerEntrance} from './playerMotion';
 export function feedback(kind='selection'){void request({action:'haptic',kind}).catch(()=>{});}
 /** One native touch owner locks only its intended axis; vertical lists keep native scrolling. */
-export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOffset?:number)=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all',pullSheet=false){
+export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOffset?:number)=>void,axis:'horizontal'|'vertical'|'both'='horizontal',mode:'all'|'edge'|'off'='all',pullSheet=false,backPreview?:()=>{page:HTMLElement;scroll:number;width:number}|null){
  const [node,ref]=useState<HTMLElement|null>(null);
- const options=useRef({onSwipe,axis,mode,pullSheet});options.current={onSwipe,axis,mode,pullSheet};
+ const options=useRef({onSwipe,axis,mode,pullSheet,backPreview});options.current={onSwipe,axis,mode,pullSheet,backPreview};
  const suppress=useRef(0);
  useEffect(()=>{
   if(!node)return;
   type Axis = 'horizontal' | 'vertical';
-  let start:{x:number;y:number;id:number;axis?:Axis}|null=null;
+  let start:{x:number;y:number;id:number;time:number;axis?:Axis}|null=null;
+  let edgeExit:Animation|null=null,preview:HTMLElement|null=null;
   let frame=0,x=0,y=0,motion=true,sheet:HTMLElement|null=null;
   let initialSheetOffset=0;
   const clear=()=>{
    cancelAnimationFrame(frame);frame=0;start=null;
+   edgeExit?.cancel();edgeExit=null;
+   preview?.remove();preview=null;
    node.removeAttribute('data-swiping');node.style.removeProperty('--swipe-x');node.style.removeProperty('--swipe-y');
    sheet?.removeAttribute('data-pulling');
    sheet?.style.removeProperty('--player-pull');
@@ -43,7 +46,7 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
    if(mode!=='edge'&&t.clientX<=32&&node.closest('[data-edge-back=true]'))return;
    if(mode!=='edge'&&target.closest('[data-swipe-owner]')!==node)return;
    motion=!matchMedia('(prefers-reduced-motion: reduce)').matches&&!node.closest('[data-reduced-motion=true]');
-   start={x:t.clientX,y:t.clientY,id:t.identifier};
+   start={x:t.clientX,y:t.clientY,id:t.identifier,time:performance.now()};
   };
   const move=(e:TouchEvent)=>{
    if(!start)return;
@@ -57,7 +60,19 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
     if((axis!=='both'&&axis!==chosen)||(mode==='edge'&&dx<0)||(pullSheet&&chosen==='vertical'&&dy<0)){clear();return;}
     start.axis=chosen;
     node.setAttribute('data-swiping','true');
-    if(mode==='edge')node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
+    if(mode==='edge'){
+     node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
+     const previous=motion?options.current.backPreview?.():null;
+     if(previous&&previous.width===node.clientWidth){
+      preview=document.createElement('div');preview.className='phone-back-preview';
+      preview.setAttribute('aria-hidden','true');preview.inert=true;
+      preview.style.top=`${node.scrollTop}px`;
+      preview.style.height=`${node.clientHeight}px`;
+      preview.append(previous.page);
+      previous.page.style.translate=`0 -${previous.scroll}px`;
+      node.prepend(preview);
+     }
+    }
     if(pullSheet&&chosen==='vertical'){
      sheet=node.closest<HTMLElement>('.phone-player');
      if(sheet&&motion){
@@ -82,6 +97,36 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
    const distance=s.axis==='horizontal'?t.clientX-s.x:t.clientY-s.y;
    const movingSheet=sheet;
    const displacement=motion&&movingSheet ? Number.parseFloat(movingSheet.style.getPropertyValue('--player-pull'))||0 : 0;
+   if(options.current.mode==='edge'&&s.axis==='horizontal'){
+    const width=node.clientWidth;
+    const committed=distance>=width*.23||(distance>=62&&distance/Math.max(1,performance.now()-s.time)>=.32);
+    suppress.current=performance.now()+400;
+    if(e.cancelable)e.preventDefault();
+    const page=node.querySelector<HTMLElement>('.phone-page');
+    cancelAnimationFrame(frame);frame=0;start=null;
+    if(!committed){
+     if(!motion||!page){clear();return;}
+     const offset=Math.max(0,Math.min(distance,width));
+     const retract=page.animate([{transform:`translateX(${offset}px)`},{transform:'translateX(0)'}],
+      {duration:140,easing:'cubic-bezier(.18,.65,.3,1)',fill:'forwards'});
+     edgeExit=retract;
+     void retract.finished.then(()=>{if(edgeExit===retract)clear();}).catch(()=>{});
+     return;
+    }
+    if(!motion||!page){clear();feedback();options.current.onSwipe('right');return;}
+    // Keep the release position until the outgoing page has left the viewport.
+    const offset=Math.max(0,Math.min(distance,width));
+    node.style.setProperty('--swipe-x',`${offset}px`);
+    const exit=page.animate([{transform:`translateX(${offset}px)`},{transform:`translateX(${width}px)`}],
+     {duration:Math.max(85,150*(1-offset/width)),easing:'cubic-bezier(.18,.65,.3,1)',fill:'forwards'});
+    edgeExit=exit;
+    void exit.finished.then(()=>{
+     if(edgeExit!==exit)return;
+     if(options.current.mode==='edge'){feedback();options.current.onSwipe('right');}
+     clear();
+    }).catch(()=>{});
+    return;
+   }
    clear();
    if(!s.axis)return;
    suppress.current=performance.now()+400;

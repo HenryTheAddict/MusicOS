@@ -53,3 +53,25 @@ test('turning off animations also skips player glyph morphs', async ({page})=>{
  await player.getByRole('button',{name:'Close player'}).click();
  await expect(page.locator('.phone-player')).toHaveCount(0);
 });
+
+test('landscape fits the artwork, seek bar and all three player views',async({page})=>{
+ await page.setViewportSize({width:852,height:393});
+ await page.goto('/?fixture=1');
+ await page.locator('.mini-identify').click();
+ const player=page.getByRole('dialog',{name:'Player'});
+ const cover=await player.locator('.phone-playing-art .phone-cover').boundingBox();
+ expect(cover?.width).toBeGreaterThan(100);
+ expect(Math.abs(cover!.width-cover!.height)).toBeLessThan(2);
+ const seek=player.getByRole('slider',{name:'Playback position'});
+ await expect(seek).toBeVisible();
+ const rail=await player.locator('.progress-rail').boundingBox();
+ const fill=await player.locator('.progress-rail > span').evaluate(node=>getComputedStyle(node).transform);
+ expect(rail?.width).toBeGreaterThan(90);
+ expect(fill).toBe('none');
+ for(const view of ['Up next','Lyrics','Now playing']){
+  await player.getByRole('button',{name:`Show ${view}`}).click();
+  await expect(seek).toBeVisible();
+  const bounds=await seek.boundingBox();
+  expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(393);
+ }
+});

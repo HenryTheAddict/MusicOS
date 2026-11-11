@@ -6,6 +6,28 @@
 static MusicOSBackgroundCallback callback;
 static NSMutableDictionary<NSString *, void (^)(void)> *pending;
 static IMP original;
+static IMP originalOpenURL;
+static void (^syncLinkCallback)(void);
+static BOOL pendingSyncLink;
+
+static BOOL handleOpenURL(id self, SEL selector, UIApplication *application, NSURL *url, NSDictionary *options) {
+    if ([url.scheme.lowercaseString isEqualToString:@"musicos"] && [url.host.lowercaseString isEqualToString:@"sync"]) {
+        if (syncLinkCallback) syncLinkCallback();
+        else pendingSyncLink = YES;
+        return YES;
+    }
+    return originalOpenURL
+        ? ((BOOL (*)(id,SEL,UIApplication *,NSURL *,NSDictionary *))originalOpenURL)(self,selector,application,url,options)
+        : NO;
+}
+
+void MusicOSSetSyncLinkCallback(void (^value)(void)) {
+    syncLinkCallback = [value copy];
+    if (pendingSyncLink) {
+        pendingSyncLink = NO;
+        syncLinkCallback();
+    }
+}
 static void handleBackground(id self, SEL selector, UIApplication *application, NSString *identifier, void (^completion)(void)) {
     if ([identifier hasPrefix:@"com.musicos.companion.transfers."]) {
         if (callback) callback(identifier, completion);
@@ -26,9 +48,15 @@ __attribute__((constructor)) static void registerBackgroundForwarder(void) {
         SEL selector = @selector(application:handleEventsForBackgroundURLSession:completionHandler:);
         Method existing = class_getInstanceMethod(type,selector);
         if (existing) original = method_getImplementation(existing);
-        if (!class_addMethod(type,selector,(IMP)handleBackground,"v@:@@@?")) {
-            Method own = class_getInstanceMethod(type,selector);
-            if (own) method_setImplementation(own,(IMP)handleBackground);
+        if (!class_addMethod(type,selector,(IMP)handleBackground,"v@:@@@?") && existing) {
+            method_setImplementation(existing,(IMP)handleBackground);
+        }
+        SEL openURL = @selector(application:openURL:options:);
+        Method existingOpenURL = class_getInstanceMethod(type,openURL);
+        if (existingOpenURL) originalOpenURL = method_getImplementation(existingOpenURL);
+        const char *types = existingOpenURL ? method_getTypeEncoding(existingOpenURL) : "B@:@@@";
+        if (!class_addMethod(type,openURL,(IMP)handleOpenURL,types) && existingOpenURL) {
+            method_setImplementation(existingOpenURL,(IMP)handleOpenURL);
         }
     }];
 }

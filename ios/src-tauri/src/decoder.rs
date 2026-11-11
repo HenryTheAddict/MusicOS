@@ -127,6 +127,8 @@ pub unsafe extern "C" fn musicos_read_audio_info(
                 let key = match tag.std_key {
                     Some(StandardTagKey::IdentIsrc) => "isrc",
                     Some(StandardTagKey::Bpm) => "bpm",
+                    _ if tag.key.eq_ignore_ascii_case("ISRC")
+                        || tag.key.eq_ignore_ascii_case("TSRC") => "isrc",
                     _ => continue,
                 };
                 result.insert(key.into(), serde_json::Value::String(tag.value.to_string()));

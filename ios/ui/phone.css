@@ -109,3 +109,117 @@
  transition:scale 140ms cubic-bezier(.2,.72,.26,1);
 }
 .phone-player .icon-button:active>.asset-icon,.phone-mini>.icon-button:active>.asset-icon,.phone-app nav button:active>.asset-icon{scale:.97}
+
+/* Keep both ends round while the fill advances. The transparent range has its own 44px target. */
+.phone-player .playback-progress { gap: 12px; }
+.phone-player .playback-rail-slot { height: 44px; }
+.phone-player .playback-progress input[type=range] { inset: 0; touch-action: none; }
+.phone-player .progress-rail { height: 5px; overflow: hidden; }
+.phone-player [data-scrubbing] .progress-rail { height: 7px; }
+.phone-player .playback-rail-slot:has(input:focus-visible) .progress-rail {
+ outline: 2px solid var(--accent);
+ outline-offset: 4px;
+}
+.phone-player .playback-time { min-width: 7ch; text-align: right; }
+.mini-progress, .mini-progress::after { border-radius: 4px; }
+
+/* Avoid compositing a filtered moving line inside a WebKit scroll mask. */
+.phone-player .lyrics-lines,
+.phone-player .lyrics-pane[data-following=false] .lyrics-lines {
+ mask-image: none !important;
+}
+.phone-player .lyrics-pane .lyric-line { filter: none !important; }
+.phone-player .lyrics-pane .lyric-glow-layer { display: none !important; }
+
+@media (orientation: landscape) and (max-height: 600px) {
+ .phone-player {
+  grid-template-areas: "top" "body" "controls";
+  grid-template-rows: 48px minmax(0, 1fr) auto;
+  gap: 0;
+  padding-inline: calc(env(safe-area-inset-left) + 20px) calc(env(safe-area-inset-right) + 20px);
+ }
+ .phone-player[data-view=normal] {
+  grid-template-areas: "top top" "body controls";
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 48px minmax(0, 1fr);
+  column-gap: clamp(18px, 4vw, 48px);
+ }
+ .phone-player .player-top { grid-area: top; }
+ .phone-player .phone-player-content { grid-area: body; }
+ .phone-player .player-bottom {
+  grid-area: controls;
+  align-self: center;
+  width: min(100%, 38rem);
+  margin-inline: auto;
+  padding: 0 0 4px;
+ }
+ .phone-playing {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: clamp(10px, 2vw, 24px);
+  align-items: center;
+ }
+ .phone-playing-art { align-self: stretch; }
+ .phone-playing-art > .phone-cover { width: min(100cqw, 100cqh, 52svh); }
+ .phone-playing-identity :is(h1,p) { -webkit-line-clamp: 2; }
+ .phone-player .phone-transport { gap: clamp(0px, 2vw, 14px); padding-top: 0; }
+ .phone-player .phone-transport > .play { width: 48px; height: 48px; }
+ .phone-player .phone-transport > .play > .asset-icon { width: 40px; height: 40px; }
+ .phone-player .phone-playback-options { margin-bottom: 0; }
+ .phone-player:not([data-view=normal]) .player-bottom {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+ }
+ .phone-player .lyrics-pane[data-variant=panel] .lyric-line {
+  font-size: clamp(1.15rem, 4.5svh, 1.65rem) !important;
+ }
+}
+
+.phone-app > main { position: relative; }
+.phone-app > main[data-swiping] { overflow-x: clip; }
+.phone-app > main[data-swiping] > .phone-page:not(.phone-back-preview *) {
+ position: relative;
+ z-index: 1;
+ background: var(--surface);
+ box-shadow: -8px 0 22px #0002;
+}
+.phone-back-preview {
+ position: absolute;
+ inset-inline: 0;
+ z-index: 0;
+ overflow: hidden;
+ background: var(--surface);
+ pointer-events: none;
+ padding: inherit;
+}
+.phone-back-preview > .phone-page { transform: none; transition: none; }
+
+.computer-sync-progress progress {
+ appearance: none;
+ height: 6px;
+ overflow: hidden;
+ border: 0;
+ border-radius: 5px;
+ background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+.computer-sync-progress progress::-webkit-progress-bar { background: transparent; }
+.computer-sync-progress progress::-webkit-progress-value {
+ background: var(--accent);
+ border-radius: 5px;
+}
+.computer-sync-progress progress:indeterminate::after {
+ content: "";
+ display: block;
+ width: 35%;
+ height: 100%;
+ border-radius: 5px;
+ background: var(--accent);
+ animation: phone-sync-progress 1.2s ease-in-out infinite alternate;
+}
+@keyframes phone-sync-progress { to { transform: translateX(185%); } }

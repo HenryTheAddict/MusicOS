@@ -19,8 +19,12 @@ struct BackgroundAsset: Codable {
     var approvedPin:(()->(host:String,fingerprint:String)?)?
     private var activeTasks:[String:Int]=[:]
     private var cancellationEpoch=0
+    private var expected: [String: BackgroundAsset] = [:]
+    private var baseURL: URL?
+    private var restoredReady = false
+    private var failed = Set<String>()
     var ready: (() -> Void)?
-    var progress: ((Int,Int) -> Void)?
+    var progress: ((Int,Int,Int) -> Void)?
     private var waiters: [String: [CheckedContinuation<URL, Error>]] = [:]
     private var results: [String: Result<URL, Error>] = [:]
     private var planned = Set<String>()
@@ -47,11 +51,34 @@ struct BackgroundAsset: Codable {
             Task { @MainActor in
                 guard identifier == Self.identifier else { completion(); return }
                 Self.shared.completionHandlers.append(completion)
-                _ = Self.shared.session
+                Self.shared.activate()
                 Self.shared.finishEventsIfReady()
             }
         }
-        _ = session
+    }
+    func activate() { _ = session }
+    #if DEBUG
+    func forgetTaskIndexForTesting() { activeTasks.removeAll() }
+    #endif
+    private func key(_ asset: BackgroundAsset) -> String { "\(asset.kind)/\(asset.hash)" }
+    func restore(_ assets: [BackgroundAsset], base: URL) {
+        baseURL = base
+        expected = Dictionary(assets.map { (key($0), $0) }, uniquingKeysWith: { first, _ in first })
+        planned = Set(expected.keys)
+        completed = Set(assets.filter { FileManager.default.fileExists(atPath: destination($0).path) }.map(key))
+        failed.removeAll()
+    }
+    private func owns(_ asset: BackgroundAsset, task: URLSessionTask) -> Bool {
+        let id = key(asset)
+        if let active = activeTasks[id] { return active == task.taskIdentifier }
+        // Background URLSession can redeliver a finished task before allTasks sees it.
+        // Reclaim it only if the saved plan and current pairing authorize its exact request.
+        guard !failed.contains(id), let saved = expected[id], saved.path == asset.path,
+              saved.fingerprint == asset.fingerprint,
+              task.originalRequest?.url == baseURL?.appendingPathComponent(saved.path)
+        else { return false }
+        activeTasks[id] = task.taskIdentifier
+        return true
     }
     func destination(_ asset: BackgroundAsset) -> URL { root.appendingPathComponent("\(asset.kind)/\(asset.hash)") }
     func start(_ assets: [BackgroundAsset], base: URL, authorization: String) async {
@@ -59,13 +86,22 @@ struct BackgroundAsset: Codable {
         guard !Task.isCancelled else { return }
         retainResume=true
         results.removeAll()
-        activeTasks=Dictionary(existing.compactMap{task in decode(task).map{($0.hash,task.taskIdentifier)}},uniquingKeysWith:{a,_ in a})
+        restore(assets, base: base)
+        activeTasks=Dictionary(existing.compactMap{ task in
+            guard let asset = decode(task), let saved = expected[key(asset)],
+                  saved.fingerprint == asset.fingerprint,
+                  task.originalRequest?.url == base.appendingPathComponent(saved.path),
+                  task.state == .running || task.state == .suspended
+            else { return nil }
+            if task.state == .suspended { task.resume() }
+            return (key(asset),task.taskIdentifier)
+        },uniquingKeysWith:{a,_ in a})
         let active=Set(activeTasks.keys)
-        planned = Set(assets.map(\.hash)); completed = []
         for asset in assets {
-            if FileManager.default.fileExists(atPath: destination(asset).path) { completed.insert(asset.hash); continue }
-            guard !active.contains(asset.hash) else { continue }
-            results.removeValue(forKey:asset.hash)
+            let id = key(asset)
+            if completed.contains(id) { continue }
+            guard !active.contains(id) else { continue }
+            results.removeValue(forKey:id)
             var request = URLRequest(url: base.appendingPathComponent(asset.path))
             request.setValue(authorization, forHTTPHeaderField:"Authorization")
             request.setValue("\"\(asset.hash)\"", forHTTPHeaderField:"If-Match")
@@ -73,20 +109,20 @@ struct BackgroundAsset: Codable {
             if let data = resumeData(asset.hash,endpoint:request.url!.absoluteString,fingerprint:asset.fingerprint) { task=session.downloadTask(withResumeData:data) }
             else { task=session.downloadTask(with:request) }
             task.taskDescription=String(data:try! JSONEncoder().encode(asset),encoding:.utf8)
-            activeTasks[asset.hash]=task.taskIdentifier
+            activeTasks[id]=task.taskIdentifier
             task.resume()
         }
-        progress?(completed.count,planned.count)
+        progress?(completed.count,planned.count,failed.count)
     }
     func value(_ asset: BackgroundAsset) async throws -> URL {
         let file=destination(asset)
         if FileManager.default.fileExists(atPath:file.path) {return file}
-        if let result=results[asset.hash] {return try result.get()}
-        return try await withCheckedThrowingContinuation { waiters[asset.hash,default:[]].append($0) }
+        if let result=results[key(asset)] {return try result.get()}
+        return try await withCheckedThrowingContinuation { waiters[key(asset),default:[]].append($0) }
     }
     func cancel(keepResume:Bool=true) async {
         retainResume=keepResume;cancellationEpoch+=1;let epoch=cancellationEpoch
-        activeTasks.removeAll()
+        activeTasks.removeAll(); expected.removeAll(); planned.removeAll(); completed.removeAll(); failed.removeAll(); restoredReady=false
         if !keepResume{SecItemDelete([kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"com.musicos.companion.resume"] as CFDictionary)}
         for task in await session.allTasks {
             if let download=task as? URLSessionDownloadTask,let asset=decode(task) {
@@ -98,20 +134,23 @@ struct BackgroundAsset: Codable {
     private func decode(_ task: URLSessionTask) -> BackgroundAsset? {
         task.taskDescription?.data(using:.utf8).flatMap{try? JSONDecoder().decode(BackgroundAsset.self,from:$0)}
     }
-    private func finish(_ hash: String,_ result: Result<URL,Error>) {
-        results[hash]=result
+    private func finish(_ id: String,_ result: Result<URL,Error>) {
+        let hash = String(id.split(separator: "/").last ?? "")
+        results[id]=result
         if case let .failure(error)=result,[401,403,409,412].contains((error as NSError).code){Self.storeResume(nil,hash:hash)}
-        if case .success = result {completed.insert(hash);Self.storeResume(nil,hash:hash);ready?()}
-        let list=waiters.removeValue(forKey:hash) ?? [];for waiter in list{waiter.resume(with:result)}
-        progress?(completed.count,planned.count)
+        if case .success = result {completed.insert(id);Self.storeResume(nil,hash:hash);restoredReady=true}
+        else if planned.contains(id) {failed.insert(id)}
+        let list=waiters.removeValue(forKey:id) ?? [];for waiter in list{waiter.resume(with:result)}
+        progress?(completed.count,planned.count,failed.count)
     }
     nonisolated func urlSession(_ session:URLSession,downloadTask:URLSessionDownloadTask,didFinishDownloadingTo location:URL) {
         guard let description=downloadTask.taskDescription?.data(using:.utf8),let asset=try? JSONDecoder().decode(BackgroundAsset.self,from:description),["audio","artwork","lyrics"].contains(asset.kind),asset.hash.count==64,asset.hash.allSatisfy(\.isHexDigit) else{return}
         let stage=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        do {try FileManager.default.moveItem(at:location,to:stage)}catch{Task{@MainActor in self.finish(asset.hash,.failure(error))};return}
+        do {try FileManager.default.moveItem(at:location,to:stage)}catch{Task{@MainActor in if self.owns(asset, task: downloadTask){let id=self.key(asset);self.activeTasks.removeValue(forKey:id);self.finish(id,.failure(error))}};return}
         let http=downloadTask.response as? HTTPURLResponse
         Task{@MainActor in
-            guard activeTasks[asset.hash]==downloadTask.taskIdentifier else{try? FileManager.default.removeItem(at:stage);return}
+            let id = key(asset)
+            guard owns(asset, task: downloadTask) else{try? FileManager.default.removeItem(at:stage);return}
             verifying+=1
             let result=await Task.detached(priority:.utility){()->Result<URL,Error> in
                 do{
@@ -128,15 +167,16 @@ struct BackgroundAsset: Codable {
                     return .success(target)
                 }catch{try? FileManager.default.removeItem(at:stage);return .failure(error)}
             }.value
-            if activeTasks[asset.hash]==downloadTask.taskIdentifier{activeTasks.removeValue(forKey:asset.hash);finish(asset.hash,result)};verifying-=1;finishEventsIfReady()
+            if activeTasks[id]==downloadTask.taskIdentifier{activeTasks.removeValue(forKey:id);finish(id,result)};verifying-=1;finishEventsIfReady()
         }
     }
     nonisolated func urlSession(_ session:URLSession,task:URLSessionTask,didCompleteWithError error:Error?){
         guard let error=error,let description=task.taskDescription?.data(using:.utf8),let asset=try? JSONDecoder().decode(BackgroundAsset.self,from:description)else{return}
         Task{@MainActor in
-            guard self.activeTasks[asset.hash]==task.taskIdentifier else{return}
+            let id = self.key(asset)
+            guard self.owns(asset, task: task) else{return}
             if self.retainResume,let data=(error as NSError).userInfo[NSURLSessionDownloadTaskResumeData] as? Data{Self.storeResume(data,hash:asset.hash,endpoint:task.originalRequest?.url?.absoluteString ?? "",fingerprint:asset.fingerprint)}
-            self.activeTasks.removeValue(forKey:asset.hash);self.finish(asset.hash,.failure(error))
+            self.activeTasks.removeValue(forKey:id);self.finish(id,.failure(error))
         }
     }
     nonisolated func urlSession(_ session:URLSession,didReceive challenge:URLAuthenticationChallenge,completionHandler:@escaping(URLSession.AuthChallengeDisposition,URLCredential?)->Void){
@@ -154,7 +194,16 @@ struct BackgroundAsset: Codable {
     }
     nonisolated func urlSession(_ session:URLSession,task:URLSessionTask,willPerformHTTPRedirection response:HTTPURLResponse,newRequest request:URLRequest,completionHandler:@escaping(URLRequest?)->Void){completionHandler(nil)}
     nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session:URLSession){Task{@MainActor in self.eventsFinished=true;self.finishEventsIfReady()}}
-    private func finishEventsIfReady(){guard eventsFinished,verifying==0 else{return};let callbacks=completionHandlers;completionHandlers=[];eventsFinished=false;for callback in callbacks{callback()}}
+    private func finishEventsIfReady() {
+        guard eventsFinished, verifying == 0 else { return }
+        if restoredReady { restoredReady = false; ready?() }
+        // The OS handler can arrive just after the delegate's final event.
+        guard !completionHandlers.isEmpty else { return }
+        let callbacks = completionHandlers
+        completionHandlers = []
+        eventsFinished = false
+        for callback in callbacks { callback() }
+    }
     private func resumeData(_ hash:String,endpoint:String,fingerprint:String)->Data? {
         var value:CFTypeRef?
         let query:[String:Any]=[kSecClass as String:kSecClassGenericPassword,kSecAttrService as String:"com.musicos.companion.resume",kSecAttrAccount as String:hash,kSecReturnData as String:true]
