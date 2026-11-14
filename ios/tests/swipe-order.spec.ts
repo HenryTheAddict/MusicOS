@@ -56,6 +56,8 @@ test('edge swipe over a detail song returns to retained library without queueing
  await page.locator('main').evaluate(n=>n.scrollTop=280);
  await swipe(page.locator('.phone-swipe-song').first(),100,0,true);
  await expect(page.locator('.album-tile').first()).toBeVisible();
+ await expect(page.locator('.album-tile').first()).toBeFocused();
+ await expect(page.locator('.phone-back-preview')).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Resume',exact:true})).toBeVisible();await expect(page.locator('[data-swiping]')).toHaveCount(0);
 });
 

@@ -62,6 +62,9 @@ test('landscape fits the artwork, seek bar and all three player views',async({pa
  const cover=await player.locator('.phone-playing-art .phone-cover').boundingBox();
  expect(cover?.width).toBeGreaterThan(100);
  expect(Math.abs(cover!.width-cover!.height)).toBeLessThan(2);
+ const next=player.getByRole('button',{name:'Next song'});
+ await expect.poll(()=>player.evaluate(node=>node.getAnimations({subtree:true}).filter(a=>a.id.startsWith('phone-player')).length)).toBe(0);
+ const control=await next.boundingBox();
  const seek=player.getByRole('slider',{name:'Playback position'});
  await expect(seek).toBeVisible();
  const rail=await player.locator('.progress-rail').boundingBox();
@@ -71,7 +74,33 @@ test('landscape fits the artwork, seek bar and all three player views',async({pa
  for(const view of ['Up next','Lyrics','Now playing']){
   await player.getByRole('button',{name:`Show ${view}`}).click();
   await expect(seek).toBeVisible();
+  expect(await next.boundingBox()).toEqual(control);
   const bounds=await seek.boundingBox();
   expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(393);
  }
+});
+
+
+test('Computer returns to its row in Settings',async({page})=>{
+ await page.goto('/?fixture=sync');
+ await page.getByRole('button',{name:'Settings',exact:true}).click();
+ await page.getByRole('button',{name:/^Computer/}).click();
+ await page.getByRole('button',{name:'Close Computer'}).click();
+ await expect(page.getByRole('dialog',{name:'Settings'})).toBeVisible();
+ await expect(page.getByRole('button',{name:/^Computer/})).toBeFocused();
+});
+
+test('the mini-player displays a seek on the same entry',async({page})=>{
+ await page.goto('/?fixture=1');
+ const mini=page.locator('.mini-identify');
+ await mini.click();
+ const player=page.getByRole('dialog',{name:'Player'});
+ await expect.poll(()=>player.evaluate(node=>node.getAnimations({subtree:true}).filter(a=>a.id.startsWith('phone-player')).length)).toBe(0);
+ const rail=await page.getByRole('slider',{name:'Playback position'}).boundingBox();
+ await page.mouse.click(rail!.x+rail!.width*.6,rail!.y+rail!.height/2);
+ await expect(page.getByRole('slider',{name:'Playback position'})).toHaveAttribute('aria-valuetext',/2:0[56] of 3:30/);
+ await page.getByRole('button',{name:'Close player'}).click();
+ await expect(player).toHaveCount(0);
+ const fill=page.locator('.mini-progress');
+ expect(await fill.evaluate(node=>parseFloat(node.style.getPropertyValue('--mini-progress')))).toBeCloseTo(60,0);
 });

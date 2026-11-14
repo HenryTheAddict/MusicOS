@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {flushSync} from 'react-dom';
 import {request} from './bridge';
 import {displayedPlayerOffset,playerEntrance} from './playerMotion';
 export function feedback(kind='selection'){void request({action:'haptic',kind}).catch(()=>{});}
@@ -14,6 +15,8 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
   let edgeExit:Animation|null=null,preview:HTMLElement|null=null;
   let frame=0,x=0,y=0,motion=true,sheet:HTMLElement|null=null;
   let initialSheetOffset=0;
+  const detailPage=()=>node.querySelector<HTMLElement>(':scope > .phone-page');
+  const edgeWidth=()=>Math.max(32,node.getBoundingClientRect().left+32);
   const clear=()=>{
    cancelAnimationFrame(frame);frame=0;start=null;
    edgeExit?.cancel();edgeExit=null;
@@ -35,14 +38,14 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
    }
   };
   const begin=(e:TouchEvent)=>{
-   if(node.closest('[data-swipe-closing]'))return;
+   if(node.closest('[data-swipe-closing]')||edgeExit)return;
    suppress.current=0;
    clear();
    const {mode}=options.current,target=e.target instanceof Element?e.target:null;
    if(e.touches.length!==1)return;
    const t=e.touches[0];
    if(mode==='off'||!target||target.closest('.icon-button,input,textarea,select,[data-no-swipe],.reorder-handle'))return;
-   if(mode==='edge'&&(t.clientX>32||target.closest('.phone-categories')))return;
+   if(mode==='edge'&&(t.clientX>edgeWidth()||target.closest('.phone-categories')))return;
    if(mode!=='edge'&&t.clientX<=32&&node.closest('[data-edge-back=true]'))return;
    if(mode!=='edge'&&target.closest('[data-swipe-owner]')!==node)return;
    motion=!matchMedia('(prefers-reduced-motion: reduce)').matches&&!node.closest('[data-reduced-motion=true]');
@@ -56,12 +59,16 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
    const dx=t.clientX-start.x,dy=t.clientY-start.y,{axis,mode,pullSheet}=options.current;
    if(!start.axis){
     if(Math.hypot(dx,dy)<12)return;
+    if(mode==='edge'&&Math.abs(dx)<Math.abs(dy)*1.3){
+     if(Math.abs(dy)>=12)clear();
+     return;
+    }
     const chosen=Math.abs(dy)>=Math.abs(dx)?'vertical':'horizontal';
     if((axis!=='both'&&axis!==chosen)||(mode==='edge'&&dx<0)||(pullSheet&&chosen==='vertical'&&dy<0)){clear();return;}
     start.axis=chosen;
     node.setAttribute('data-swiping','true');
     if(mode==='edge'){
-     node.querySelector('.phone-page')?.getAnimations().forEach(animation=>animation.cancel());
+     detailPage()?.getAnimations().forEach(animation=>animation.cancel());
      const previous=motion?options.current.backPreview?.():null;
      if(previous&&previous.width===node.clientWidth){
       preview=document.createElement('div');preview.className='phone-back-preview';
@@ -96,13 +103,15 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
    if(!s||!t||t.identifier!==s.id)return;
    const distance=s.axis==='horizontal'?t.clientX-s.x:t.clientY-s.y;
    const movingSheet=sheet;
-   const displacement=motion&&movingSheet ? Number.parseFloat(movingSheet.style.getPropertyValue('--player-pull'))||0 : 0;
+   const displacement=motion&&movingSheet
+    ? Math.min(Math.max(0,distance+initialSheetOffset),window.innerHeight*.7)
+    : 0;
    if(options.current.mode==='edge'&&s.axis==='horizontal'){
     const width=node.clientWidth;
     const committed=distance>=width*.23||(distance>=62&&distance/Math.max(1,performance.now()-s.time)>=.32);
     suppress.current=performance.now()+400;
     if(e.cancelable)e.preventDefault();
-    const page=node.querySelector<HTMLElement>('.phone-page');
+    const page=detailPage();
     cancelAnimationFrame(frame);frame=0;start=null;
     if(!committed){
      if(!motion||!page){clear();return;}
@@ -122,7 +131,10 @@ export function useSwipe(onSwipe:(direction:'left'|'right'|'up'|'down',pulledOff
     edgeExit=exit;
     void exit.finished.then(()=>{
      if(edgeExit!==exit)return;
-     if(options.current.mode==='edge'){feedback();options.current.onSwipe('right');}
+     if(options.current.mode==='edge'){
+      feedback();
+      flushSync(()=>options.current.onSwipe('right'));
+     }
      clear();
     }).catch(()=>{});
     return;
