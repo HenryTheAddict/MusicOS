@@ -243,3 +243,29 @@ test('all four header playback shortcuts fit smaller windows',async({page})=>{
   expect(overflow).toBeLessThanOrEqual(1);
  }
 });
+
+test('navigation icons press independently and respect Reduce Motion',async({page})=>{
+ await page.goto('/?fixture=1');
+ const icons=['Albums','Artists','Songs','More library views'];
+ for(const name of icons){
+  const button=page.getByRole('button',{name,exact:true});
+  await button.hover();
+  await page.mouse.down();
+  const icon=button.locator('> .icon');
+  if(name!=='More library views'){
+   await expect.poll(()=>icon.evaluate(el=>getComputedStyle(el).transform)).not.toBe('none');
+  }
+  await page.mouse.up();
+  if(name==='More library views')await page.keyboard.press('Escape');
+ }
+ const find=page.getByRole('button',{name:'Find in this list'});
+ await find.hover();await page.mouse.down();
+ await expect.poll(()=>find.locator('> .icon').evaluate(el=>getComputedStyle(el).transform)).not.toBe('none');
+ await page.mouse.up();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Choose section'}).click();
+ await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+ const sectionIcon=page.locator('.section-category-glyph');
+ await expect(sectionIcon).toHaveCSS('animation-name','section-icon-enter');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(sectionIcon).toHaveCSS('animation-name','none');
+});

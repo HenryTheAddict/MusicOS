@@ -106,14 +106,6 @@
 .expanded-player[data-visualizer=true] .progress-rail{box-shadow:0 1px 3px #0004;}
 @media(prefers-reduced-motion:reduce){.expanded-player[data-visualizer=true]{transition:none;}}
 .lyrics-pane[data-variant=visualizer]{--visualizer-lyric-idle:#e7e3ea;--visualizer-lyric-lit:#fff;}
-/* Full-scene contrast so the lyrics column never cuts a visible rectangle. */
-.expanded-player[data-visualizer=true][data-view=lyrics]::before {
-  content:'';
-  position:absolute;
-  inset:0;
-  pointer-events:none;
-  background:radial-gradient(ellipse 62% 52% at 50% 42%,#09080e62 10%,#09080e32 56%,transparent 100%);
-}
 .lyrics-pane[data-variant=visualizer] .lyric-line:has(> .lyric-activity) {
   font-size:clamp(1rem,2.3vw,1.5rem)!important;
   padding-block:.5em!important;

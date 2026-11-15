@@ -23,3 +23,22 @@ test('empty queue fits compact windows at each interface size',async({page})=>{
   await page.screenshot({animations:'disabled',path:`out/rebuild-qa/queue-clean-720-${percent}.png`});
  }
 });
+
+test('the open panel floats below the dock threshold and both layouts reach the workspace edge',async({page})=>{
+ await page.setViewportSize({width:1280,height:560});
+ await page.goto('/?fixture=1&scale=100');
+ await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+ const panel=page.getByRole('complementary',{name:'Up next'});
+ await expect(panel).toHaveClass(/audio-docked/);
+ const panelBottom=()=>panel.evaluate(el=>el.getBoundingClientRect().bottom);
+ const workspace=page.locator('.workspace');
+ const workspaceBottom=()=>workspace.evaluate(el=>el.getBoundingClientRect().bottom);
+ expect(await workspaceBottom()-await panelBottom()).toBeLessThan(7);
+ await page.setViewportSize({width:840,height:480});
+ await expect(panel).toHaveClass(/audio-floating/);
+ expect(await workspaceBottom()-await panelBottom()).toBeLessThan(7);
+ await page.getByRole('button',{name:'Show Lyrics',exact:true}).click();
+ await expect(page.getByRole('complementary',{name:'Lyrics'})).toBeVisible();
+ await page.getByRole('button',{name:'Close lyrics',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Open Up next',exact:true})).toBeVisible();
+});

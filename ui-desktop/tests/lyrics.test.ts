@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {activeLyricIndices,lossyLrc,lyricIndex,changeLyricLine,editLyricText,lyricText,visibleLyricLine,parseStamp,formatStamp,type LyricDocument} from '../src/lyrics';
+import {activeLyricIndices,lossyLrc,lyricIndex,lyricPauses,lyricPauseAt,changeLyricLine,editLyricText,lyricText,visibleLyricLine,parseStamp,formatStamp,type LyricDocument} from '../src/lyrics';
 import {shouldCommitSwipe,acceptsBackAxis} from '../src/useBackSwipe';
 import {clockPosition,type Clock} from '../src/playbackFeed';
 const doc:LyricDocument={version:'1.0',metadata:{title:'',artist:'',album:'',offset_ms:200,instrumental:false},plain:'',lines:[{text:'a',start_ms:1000},{text:'b',start_ms:2000},{text:'c',start_ms:2000}]};
@@ -13,4 +13,24 @@ it('overlapping voices share the acknowledged clock and explicit ends survive la
 it('equal timestamps remain active together when line ends are absent',()=>{expect(activeLyricIndices(doc,2.2)).toEqual([1,2]);});
 it('keeps a genuinely timed voice active until its final word ends, across a second voice',()=>{
  const duet:LyricDocument={...doc,metadata:{...doc.metadata,offset_ms:0},lines:[{text:'Hold',start_ms:1000,words:[{text:'Hold',start_ms:1000,end_ms:4000}]},{text:'Second',start_ms:2000,end_ms:3000}]};expect(activeLyricIndices(duet,2.5)).toEqual([0,1]);expect(activeLyricIndices(duet,3.5)).toEqual([0]);expect(activeLyricIndices(duet,4)).toEqual([]);
+});
+
+it('keeps duets active until both voices finish, then marks long rests on the source clock',()=>{
+ const duet={...doc,lines:[
+  {text:'Lead',start_ms:1000,end_ms:8000},
+  {text:'Reply',start_ms:2000,end_ms:4000},
+  {text:'Return',start_ms:16000,words:[{text:'Return',start_ms:16000,end_ms:17500}]},
+  {text:'♪',start_ms:19000},
+  {text:'Final',start_ms:26000,end_ms:28000},
+ ]};
+ const rests=lyricPauses(duet,37);
+ expect(rests).toEqual([{before:2,start:8200,end:16200},{before:5,start:28200,end:37000}]);
+ expect(lyricPauseAt(rests,6)).toBeUndefined();
+ expect(lyricPauseAt(rests,10)).toBe(rests[0]);
+ expect(lyricPauseAt(rests,16.2)).toBeUndefined();
+});
+
+it('estimates a pause only when line-only cues are far apart',()=>{
+ const simple={...doc,lines:[{text:'First line',start_ms:0},{text:'Second',start_ms:5000},{text:'Back',start_ms:23000}]};
+ expect(lyricPauses(simple,27)).toEqual([{before:2,start:9200,end:23200}]);
 });

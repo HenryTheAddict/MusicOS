@@ -39,3 +39,20 @@ test('Back keeps one live toolbar and restores the grid without shifting it',asy
  await expect(page.getByRole('button',{name:'Filter',exact:true})).toBeVisible();
  expect((await page.locator('#library-content').boundingBox())!.y).toBeCloseTo(initialTop,0);
 });
+
+test('final WebKit sample can arrive after phase end and resized pages still preview',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.setViewportSize({width:840,height:530});
+ const target=page.locator('#library-content');
+ await phase(page,1);
+ await target.evaluate(node=>node.dispatchEvent(new WheelEvent('wheel',{deltaX:-35,bubbles:true,cancelable:true})));
+ await expect(page.locator('.back-page-preview')).toHaveCount(1);
+ await target.evaluate(node=>{
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2}));
+  node.dispatchEvent(new WheelEvent('wheel',{deltaX:-440,bubbles:true,cancelable:true}));
+ });
+ await expect(target.locator('.collection-grid')).toBeVisible();
+ await expect(page.locator('.back-page-preview')).toHaveCount(0);
+});

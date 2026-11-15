@@ -4,7 +4,7 @@ import type {LyricDocument} from './lyrics';
 /** Keep cues mounted. Only the scroll offset moves; no text scales or reflows. */
 export function useLyricFollow(host:RefObject<HTMLDivElement|null>,{
  active,following,doc,trackId,variant,focus,last,layoutEpoch,onPosition,
-}:{active:boolean;following:boolean;doc:LyricDocument|null|undefined;trackId:number|undefined;variant:string;focus:number;last:number;layoutEpoch:number;onPosition?:()=>void}){
+}:{active:boolean;following:boolean;doc:LyricDocument|null|undefined;trackId:number|undefined;variant:string;focus:number|string;last:number|string;layoutEpoch:number;onPosition?:()=>void}){
  const sync=useRef(onPosition);sync.current=onPosition;
  const previous=useRef({doc,trackId,variant,initialized:false});
  useLayoutEffect(()=>{

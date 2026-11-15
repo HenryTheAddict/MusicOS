@@ -59,7 +59,7 @@ test('RTL glyphs and detached glow share exact wrapping, then clean up in Reduce
 });
 
 
-test('visualizer contrast spans the scene and leaves the lyrics column transparent',async({page})=>{
+test('visualizer keeps the scene transparent behind its lyrics and pauses',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');
  await page.getByRole('button',{name:'Open visualizer',exact:true}).click();
  await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');await page.mouse.move(300,120);
@@ -70,10 +70,20 @@ test('visualizer contrast spans the scene and leaves the lyrics column transpare
  const scrim=await player.evaluate(node=>{
   const column=node.querySelector('.lyrics-pane[data-variant=visualizer]')!;
   const full=getComputedStyle(node,'::before');
-  return {inset:full.inset,background:full.backgroundImage,column:getComputedStyle(column,'::before').backgroundImage};
+  return {background:full.backgroundImage,column:getComputedStyle(column,'::before').backgroundImage};
  });
- expect(scrim.inset).toBe('0px');
- expect(scrim.background).toContain('radial-gradient');
+ expect(scrim.background).toBe('none');
  expect(scrim.column).toBe('none');
  await page.screenshot({path:'out/musicos-polish-visualizer.png'});
+});
+
+test('visualizer zooms a long pause in place and honors Reduced Motion',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed&lyricsCase=intro');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');
+ const marker=page.locator('.lyric-pause[data-current=true] .lyric-activity');
+ await expect(marker).toBeVisible();
+ await expect(marker).toHaveCSS('animation-name','lyric-zoom-out');
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(marker).toHaveCSS('animation-name','none');
 });

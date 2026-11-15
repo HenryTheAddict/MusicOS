@@ -39,10 +39,16 @@ test('desktop lyric management at 125 percent removes repeated topic navigation'
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:125})));await page.goto('/?fixture=1&lyrics=1');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await page.mouse.move(240,180);await page.getByRole('region',{name:'Lyrics',exact:true}).click({button:'right'});await page.getByRole('menuitem',{name:'Edit lyrics',exact:true}).click();await expect(page.getByRole('textbox',{name:'Plain lyrics',exact:true})).toBeVisible();await expect(page.locator('.settings-category-heading')).not.toBeVisible();await expect(page.getByRole('group',{name:'Library management',exact:true})).not.toBeVisible();await expect(page.getByRole('button',{name:'Lyrics',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Library settings',exact:true})).toBeVisible();await page.getByRole('button',{name:'Library settings',exact:true}).click();await expect(page.getByRole('group',{name:'Library management',exact:true})).toBeVisible();
 });
 
-test('the first lyric is centered during an intro before its first timestamp',async({page})=>{
+test('a long timed intro centers its pause and resumes normal lyric following',async({page})=>{
  await page.goto('/?fixture=1&lyrics=1&lyricsCase=intro');await page.getByRole('button',{name:'Open lyrics',exact:true}).click();await page.mouse.move(240,180);await expect(page.locator('.lyric-line')).toHaveCount(4);
- await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-line')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.5);})).toBeLessThan(.05);
+ const pane=page.getByRole('region',{name:'Lyrics',exact:true});
+ await expect(pane).toHaveAttribute('data-lyric-pause','true');
+ await expect(pane.locator('.lyric-pause[data-current=true]')).toBeVisible();
+ await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-pause[data-current=true]')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.5);})).toBeLessThan(.06);
  expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toHaveLength(0);
+ await pane.getByRole('button',{name:/Lead: A room full of color/}).evaluate(el=>(el as HTMLButtonElement).click());
+ await expect(pane).not.toHaveAttribute('data-lyric-pause','true');
+ await expect(pane.locator('.lyric-line[data-current=true]')).toContainText('A room full of color');
 });
 
 test('editor Find uses the exact-first path and keeps broader versions explicit',async({page})=>{

@@ -84,3 +84,37 @@ export function requestAppleLyricReview(trackId:number,document:LyricDocument){p
 export function takeAppleLyricDraft(trackId:number,consume?:LyricDocument){if(pendingAppleDraft?.trackId!==trackId)return;const doc=pendingAppleDraft.document;if(consume===doc)pendingAppleDraft=undefined;return doc;}
 
 export function lyricSpeaker(doc:LyricDocument,line:LyricLine){const names=line['x-musicos']?.agents?.map(id=>doc['x-musicos']?.singers?.[id]?.name??id).filter(Boolean);return names?.length?names.join(' & '):lyricVoice(line)==='second'?'Second voice':lyricVoice(line)==='both'?'Both voices':'Lead';}
+
+export type LyricPause={before:number;start:number;end:number};
+export function lyricPauses(doc:LyricDocument,duration:number):LyricPause[]{
+ if(doc.metadata.instrumental||!doc.lines.length)return [];
+ const offset=doc.metadata.offset_ms;
+ const songEnd=Number.isFinite(duration)&&duration>0?duration*1000:doc.metadata.duration_ms??0;
+ const pauses:LyricPause[]=[];
+ let coveredUntil=0;
+ const add=(before:number,end:number)=>{
+  if(songEnd>0)end=Math.min(end,songEnd);
+  if(end-coveredUntil>=6000)pauses.push({before,start:coveredUntil,end});
+ };
+ const lines=doc.lines.map((line,index)=>({line,index})).filter(({index})=>visibleLyricLine(doc,index));
+ for(let i=0;i<lines.length;i++){
+  const {line,index}=lines[i],start=line.start_ms+offset;
+  add(index,start);
+  const after=(lines[i+1]?.line.start_ms??songEnd-offset)+offset;
+  const marker=!line.text.trim()||/^[\s♪♫♬♩]+$/.test(line.text);
+  const wordEnd=(line.words??[]).reduce((end,word)=>Math.max(end,word.end_ms??0),0);
+  // A line-only file has no vocal end. Only estimate one for unusually
+  // distant cues, leaving ordinary line timing and explicit rests intact.
+  const estimated=Math.min(8000,Math.max(4000,line.text.trim().split(/\s+/).length*450));
+  const fallback=after-start>=Math.max(12000,estimated+6000)?start+estimated:after;
+  const end=line.end_ms!==undefined?line.end_ms+offset:wordEnd>line.start_ms?wordEnd+offset:marker?after:fallback;
+  coveredUntil=Math.max(coveredUntil,start,end);
+ }
+ add(doc.lines.length,songEnd);
+ return pauses;
+}
+
+export function lyricPauseAt(pauses:LyricPause[],position:number){
+ const ms=position*1000;
+ return pauses.find(pause=>pause.start<=ms&&ms<pause.end);
+}

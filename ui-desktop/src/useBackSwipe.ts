@@ -13,7 +13,6 @@ type Snapshot = {
  html:string;
  scroll:number;
  theme?:BackTheme;
- columnWidth:number;
  frame:{left:number;top:number;right:number;bottom:number};
  size:number;
 };
@@ -66,7 +65,7 @@ export function captureBackPage(root:HTMLElement|null,key:string,appearance:stri
  const size=html.length;
  total-=snapshots.get(key)?.size??0;
  snapshots.delete(key);
- snapshots.set(key,{html,theme,scroll:root.scrollTop,columnWidth:columnBox.width,size,
+ snapshots.set(key,{html,theme,scroll:root.scrollTop,size,
   frame:{left:frameBox.left-columnBox.left,top:frameBox.top-columnBox.top,right:columnBox.right-frameBox.right,bottom:columnBox.bottom-frameBox.bottom}});
  total+=size;
  while(snapshots.size>8||total>4_000_000){
@@ -98,13 +97,13 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  const latest=useRef({enabled,canBack,onBack,previousKey,appearance});
  latest.current={enabled,canBack,onBack,previousKey,appearance};
  const cue=useRef<HTMLDivElement>(null);
- const prepared=useRef<{key:string;preview:ReturnType<typeof preparePreview>}|null>(null);
+ const prepared=useRef<{saved:Snapshot;preview:ReturnType<typeof preparePreview>}|null>(null);
  useEffect(()=>{
   const key=locationKey(previousKey);
   prepared.current=null;
   const job=window.setTimeout(()=>{
    const saved=snapshots.get(key);
-   if(saved)prepared.current={key,preview:preparePreview(saved)};
+   if(saved)prepared.current={saved,preview:preparePreview(saved)};
   },0);
   return()=>clearTimeout(job);
  },[previousKey]);
@@ -120,11 +119,12 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  let axis:'pending'|'horizontal'|'ignored'='pending';
  let locked=false,timer=0,frame=0,amount=0,handoffFrame=0;
  let preview:ReturnType<typeof preparePreview>|undefined,theme:BackTheme|undefined;
- let animation:Animation|null=null,fingers=false,momentum=false,disposed=false,unlisten:(()=>void)|undefined;
+ let animation:Animation|null=null,fingers=false,momentum=false,ending=false,disposed=false,unlisten:(()=>void)|undefined;
+ let release=0;
  const inertBefore=page.inert;
  let cover:ReturnType<typeof swipeCover>;
  const pageColors=new Map<string,string>();
- const blocked=()=>!latest.current.enabled||!latest.current.canBack||!!document.querySelector('dialog[open],[role=menu]:not([inert]),.audio-panel');
+ const blocked=()=>!latest.current.enabled||!latest.current.canBack||!!document.querySelector('dialog[open],[role=menu]:not([inert]),.quick-audio:popover-open');
  const setProgress=(progress:number)=>themeRoot.style.setProperty('--back-swipe-progress',String(progress));
  const clear=()=>{
   cancelAnimationFrame(handoffFrame);
@@ -158,12 +158,14 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   page.style.setProperty('--back-swipe-offset',`${progress*width}px`);
   cover?.seek(progress);
  };
- const reset=()=>{clearTimeout(timer);cancelAnimationFrame(frame);clear();x=0;y=0;axis='pending';locked=false;velocity=0;peakVelocity=0;peakAt=0;motionAt=0;sample=0;amount=0;};
- const cancel=()=>{clearTimeout(timer);cancelAnimationFrame(frame);clear();locked=true;axis='ignored';};
+ const reset=()=>{release++;ending=false;clearTimeout(timer);cancelAnimationFrame(frame);clear();x=0;y=0;axis='pending';locked=false;velocity=0;peakVelocity=0;peakAt=0;motionAt=0;sample=0;amount=0;};
+ const cancel=()=>{release++;ending=false;fingers=false;clearTimeout(timer);cancelAnimationFrame(frame);clear();locked=true;axis='ignored';};
  const finish=(commit:boolean)=>{
   clearTimeout(timer);timer=0;
   if(axis!=='horizontal'||locked)return;
   locked=true;
+  ending=false;
+  const owner=++release;
   commit=commit&&!blocked();
   cancelAnimationFrame(frame);
   if(!preview){
@@ -174,7 +176,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   paint();
   const progress=Math.min(1,Math.max(0,-amount/width));
   const done=()=>{
-   if(disposed)return;
+   if(disposed||owner!==release)return;
    if(!commit){clear();return;}
    setProgress(1);
    column.dataset.backSwipe='handoff';
@@ -206,8 +208,8 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  const beginPreview=()=>{
   width=page.getBoundingClientRect().width;
   const key=locationKey(latest.current.previousKey),cached=prepared.current,saved=snapshots.get(key);
-  if(!saved||media.matches||Math.abs(saved.columnWidth-column.getBoundingClientRect().width)>1)return;
-  preview=cached?.key===key?cached.preview:preparePreview(saved);
+  if(!saved||media.matches)return;
+  preview=cached?.saved===saved?cached.preview:preparePreview(saved);
   // Each gesture owns its copy, so reversing or restarting never reuses altered markup.
   prepared.current=null;
   column.append(preview.frame);
@@ -239,19 +241,71 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   page.getAnimations({subtree:true}).filter(a=>a.id.includes('reveal')||a.id.includes('navigation')).forEach(a=>a.cancel());
  };
  const releaseVelocity=()=>performance.now()-motionAt>120?0:performance.now()-peakAt<100?Math.max(velocity,peakVelocity):velocity;
- const wheel=(event:WheelEvent)=>{if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.deltaMode!==0||blocked())return;const now=performance.now();if(momentum)return;if(now-last>280&&!fingers)reset();const dt=now-(sample||now-16);last=now;sample=now;if(locked||axis==='ignored')return;if(consumesHorizontalScroll(event.target as Element,host)){axis='ignored';return;}x+=event.deltaX;y+=event.deltaY;if(event.deltaX>0){velocity=0;peakVelocity=0;peakAt=now;motionAt=now;}else if(event.deltaX<0){const speed=-event.deltaX/Math.max(1,dt);velocity=velocity*.35+speed*.65;motionAt=now;if(speed>=peakVelocity||now-peakAt>100){peakVelocity=speed;peakAt=now;}}if(axis==='pending'){if(Math.abs(x)<12&&Math.abs(y)<12)return;if(!acceptsBackAxis(x,y)){axis='ignored';return;}axis='horizontal';beginPreview();}if(Math.abs(y)>Math.abs(x)*.8||x>0){finish(false);return;}event.preventDefault();amount=x;if(!frame)frame=requestAnimationFrame(paint);clearTimeout(timer);if(!fingers)timer=window.setTimeout(()=>finish(shouldCommitSwipe(-x,width,releaseVelocity())),80);};
- const phase=(value:number)=>{if(value===1){momentum=false;fingers=true;const now=performance.now();if(animation&&axis==='horizontal'){
-   const transform=getComputedStyle(page).transform;
-   const offset=transform==='none'?0:new DOMMatrixReadOnly(transform).m41;
-   animation.cancel();animation=null;locked=false;x=-offset;amount=x;y=0;velocity=0;peakVelocity=0;sample=0;cover?.seek(Math.max(0,offset/width));
-   if(theme){
-    const style=getComputedStyle(themeRoot);
-    const colors=swipeColors.map(color=>style.getPropertyValue(`--${color}`));
-    swipeColors.forEach((color,index)=>themeRoot.style.setProperty(`--swipe-from-${color}`,colors[index]));
-    themeRoot.dataset.backSwipeTheme='true';setProgress(0);
-   }
-   paint();
-  }else if(locked||axis==='ignored'||now-last>50)reset();last=now;}else if(value===2){fingers=false;finish(shouldCommitSwipe(-x,width,releaseVelocity()));}else if(value===3){fingers=false;finish(false);}else if(value===4){fingers=false;momentum=true;if(axis==='horizontal'&&!locked)finish(shouldCommitSwipe(-x,width,releaseVelocity()));locked=true;}else if(value===5){momentum=false;last=performance.now();}};
+ const settle=(delay:number)=>{
+  clearTimeout(timer);
+  timer=window.setTimeout(()=>{
+   fingers=false;
+   ending=false;
+   finish(shouldCommitSwipe(-x,width,releaseVelocity()));
+  },delay);
+ };
+ const wheel=(event:WheelEvent)=>{
+  if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.deltaMode!==0||blocked())return;
+  if(momentum)return;
+  const now=performance.now();
+  if(now-last>280&&!fingers&&!ending)reset();
+  const dt=now-(sample||now-16);
+  last=now;sample=now;
+  if(locked||axis==='ignored')return;
+  // An inert outgoing page can change the wheel target once the drag starts.
+  if(axis==='pending'&&(consumesHorizontalScroll(event.target as Element,host)
+    ||(event.target as Element|null)?.closest('.audio-panel'))){axis='ignored';return;}
+  x+=event.deltaX;y+=event.deltaY;
+  if(event.deltaX>0){velocity=0;peakVelocity=0;peakAt=now;motionAt=now;}
+  else if(event.deltaX<0){
+   const speed=-event.deltaX/Math.max(1,dt);
+   velocity=velocity*.35+speed*.65;motionAt=now;
+   if(speed>=peakVelocity||now-peakAt>100){peakVelocity=speed;peakAt=now;}
+  }
+  if(axis==='pending'){
+   if(Math.abs(x)<12&&Math.abs(y)<12)return;
+   if(!acceptsBackAxis(x,y)){axis='ignored';return;}
+   axis='horizontal';beginPreview();
+  }
+  event.preventDefault();
+  if(Math.abs(y)>Math.abs(x)*.8||x>=0){finish(false);return;}
+  amount=x;
+  if(!frame)frame=requestAnimationFrame(paint);
+  if(!ending)settle(fingers?500:80);
+ };
+ const phase=(value:number)=>{
+  if(value===1){
+   momentum=false;fingers=true;ending=false;
+   clearTimeout(timer);
+   const now=performance.now();
+   if(animation&&axis==='horizontal'&&column.dataset.backSwipe!=='handoff'){
+    const transform=getComputedStyle(page).transform;
+    const offset=transform==='none'?0:new DOMMatrixReadOnly(transform).m41;
+    release++;animation.cancel();animation=null;locked=false;
+    x=-offset;amount=x;y=0;velocity=0;peakVelocity=0;sample=0;
+    if(theme){
+     const style=getComputedStyle(themeRoot);
+     const colors=swipeColors.map(color=>style.getPropertyValue(`--${color}`));
+     swipeColors.forEach((color,index)=>themeRoot.style.setProperty(`--swipe-from-${color}`,colors[index]));
+     themeRoot.dataset.backSwipeTheme='true';setProgress(0);
+    }
+    paint();
+   }else if(locked||axis==='ignored'||now-last>50)reset();
+   last=now;
+  }else if(value===2||value===4){
+   // AppKit's phase message and the final WebKit wheel event travel separately.
+   // Give the last finger sample a frame to arrive before deciding the release.
+   fingers=false;ending=true;
+   if(value===4)momentum=true;
+   settle(24);
+  }else if(value===3){fingers=false;ending=false;finish(false);}
+  else if(value===5){momentum=false;last=performance.now();}
+ };
  if(native)void listen<number>('trackpad-phase',event=>phase(event.payload)).then(off=>{if(disposed)off();else unlisten=off;});const testPhase=(event:Event)=>phase((event as CustomEvent<number>).detail);window.addEventListener('musicos-trackpad-phase',testPhase);
  host.addEventListener('wheel',wheel,{passive:false});window.addEventListener('resize',cancel);window.addEventListener('blur',cancel);window.addEventListener('pointerdown',cancel);const navigation=()=>{if(!document.documentElement.dataset.swipeNavigation)cancel();};window.addEventListener('musicos-navigation-start',navigation);media.addEventListener('change',cancel);
  return()=>{disposed=true;unlisten?.();host.removeEventListener('wheel',wheel);window.removeEventListener('resize',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('pointerdown',cancel);window.removeEventListener('musicos-navigation-start',navigation);window.removeEventListener('musicos-trackpad-phase',testPhase);media.removeEventListener('change',cancel);clearTimeout(timer);cancelAnimationFrame(frame);clear();};

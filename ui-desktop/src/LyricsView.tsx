@@ -3,14 +3,14 @@ import {lyricWordSegments,lyricWordEnd,lyricWordActive,wordProgress} from './lyr
 import {useLyricFollow} from './useLyricFollow';
 import {appleCall} from './AppleEnrichment';
 import './lyrics.css';
-import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode} from 'react';
+import {Fragment,useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {resolveArtworkTheme} from './artworkTheme';
 import LyricActivity from './LyricActivity';
 import {Icon,Overflow,type MenuItem} from './components';
 import {call,errorText} from './bridge';
 import {clockPosition,currentPlaybackClock,subscribePlaybackClock} from './playbackFeed';
 import {useViewActive} from './ViewScope';
-import {activeLyricIndices,lyricSpeaker,lyricVoice,lyricIndex,visibleLyricLine,useLyrics,lyricCall,type LyricDocument} from './lyrics';
+import {activeLyricIndices,lyricSpeaker,lyricVoice,lyricIndex,lyricPauses,lyricPauseAt,visibleLyricLine,useLyrics,lyricCall,type LyricDocument} from './lyrics';
 import type {Playback,Track} from './types';
 export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving:boolean;playing:boolean;cover?:string|null}){
  const host=useRef<HTMLDivElement>(null),[artColors,setArtColors]=useState<string[]|null>(null),state=useRef({phase:0,energy:[0,0,0]}),sceneColors=useRef(['#0064df','#54b9ff','#0064df']),painted=useRef(false);
@@ -51,8 +51,11 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  async function selectApple(){if(appleBusy||!appleCandidate||!track||appleCandidate.trackId!==track.id)return;const token=++appleIntent.current,id=track.id;setAppleBusy(true);try{await lyricCall({action:'save',trackId:id,revision:result?.revision??0,document:appleCandidate.doc});if(token===appleIntent.current)setAppleCandidate(null);window.dispatchEvent(new CustomEvent('musicos-lyrics-changed',{detail:id}));}catch(e){if(token===appleIntent.current)setAppleError(errorText(e));}finally{if(token===appleIntent.current)setAppleBusy(false);}}
  const current=track?.id===player.track?.id,doc=result?.track_id===track?.id?result?.document:null;
  useEffect(()=>{setFollowing(true);},[track?.id]);
+ const pauses=useMemo(()=>doc?lyricPauses(doc,track?.duration??0):[],[doc,track?.duration]);
+ const pausesByLine=useMemo(()=>new Map(pauses.map(item=>[item.before,item])),[pauses]);
+ const pause=current?lyricPauseAt(pauses,position):undefined;
  const wordSegments=useMemo(()=>doc?.lines.map(lyricWordSegments)??[],[doc]);
- const wordSignature=doc?activeLyricIndices(doc,position).join('|'):'';
+ const wordSignature=doc&&!pause?activeLyricIndices(doc,position).join('|'):'';
  const glowTick=useRef<(time:number)=>void>(()=>{}),glowPosition=useRef<()=>void>(()=>{});
  const updateClock=useRef<(()=>void)|null>(null);
  const displayedKey=useRef(''),displayedDoc=useRef(doc);if(displayedDoc.current!==doc){displayedDoc.current=doc;displayedKey.current='';}
@@ -88,7 +91,7 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
     if(active!==word.active){if(active)word.node.dataset.wordActive='true';else delete word.node.dataset.wordActive;word.active=active;}
    }
    if(words.length)glowTick.current(lyricTime);
-   const key=`${track?.id}:${lyricIndex(doc,pos)}:${activeLyricIndices(doc,pos).join(',')}`;
+   const key=`${track?.id}:${lyricIndex(doc,pos)}:${activeLyricIndices(doc,pos).join(',')}:${lyricPauseAt(pauses,pos)?.before??''}`;
    if(key!==displayedKey.current){displayedKey.current=key;setPosition(pos);}
    if(value.playing&&words.length&&!frame)frame=requestAnimationFrame(()=>{frame=0;update();});
   };
@@ -97,26 +100,34 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
   visibility();
   document.addEventListener('visibilitychange',visibility);
   return()=>{updateClock.current=null;off?.();cancelAnimationFrame(frame);document.removeEventListener('visibilitychange',visibility);};
- },[active,current,player.is_playing,track?.id,doc]);
+ },[active,current,player.is_playing,track?.id,doc,pauses]);
 
- const index=doc&&current?lyricIndex(doc,position):-1,activeLines=doc&&current?activeLyricIndices(doc,position):[],activeKey=activeLines.join(','),activeSet=new Set(activeLines),focusLines=activeLines.length?activeLines:[Math.max(0,index)];
+ const index=doc&&current?lyricIndex(doc,position):-1,activeLines=doc&&current&&!pause?activeLyricIndices(doc,position):[],activeKey=activeLines.join(','),activeSet=new Set(activeLines),focusLines=activeLines.length?activeLines:[Math.max(0,index)];
  const [layoutEpoch,setLayoutEpoch]=useState(0);
  useLayoutEffect(()=>{const host=scroll.current;if(!active||!host)return;let size='';const measure=()=>{const next=host.clientHeight,key=`${next}:${host.clientWidth}`;if(key===size)return;size=key;host.style.setProperty('--lyric-space',`${next*.5}px`);setLayoutEpoch(v=>v+1);};measure();const observer=new ResizeObserver(measure);observer.observe(host);const fonts=()=>{size='';measure();};document.fonts?.addEventListener('loadingdone',fonts);return()=>{observer.disconnect();document.fonts?.removeEventListener('loadingdone',fonts);};},[active,doc,variant]);
  const stopFollowing=()=>setFollowing(false);
  const focus=activeLines[0]??(index<0&&doc?doc.lines.findIndex((_,i)=>visibleLyricLine(doc,i)):index);
- useLyricFollow(scroll,{active,following,doc,trackId:track?.id,variant,focus,last:activeLines.at(-1)??focus,layoutEpoch,onPosition:()=>glowPosition.current()});
+ useLyricFollow(scroll,{active,following,doc,trackId:track?.id,variant,focus:pause?`pause-${pause.before}`:focus,last:pause?`pause-${pause.before}`:activeLines.at(-1)??focus,layoutEpoch,onPosition:()=>glowPosition.current()});
  const glow=useLyricGlow(pane,scroll,active&&current&&!!doc,`${track?.id}:${result?.revision}:${wordSignature}`,variant,doc);glowTick.current=glow.tick;glowPosition.current=glow.position;
  useLayoutEffect(()=>{updateClock.current?.();},[activeKey]);
+ const pauseMarker=(before:number)=>{
+  const item=pausesByLine.get(before);
+  if(!item)return null;
+  const shown=pause===item;
+  return <div className="lyric-pause" data-line={`pause-${before}`} data-current={shown||undefined} aria-hidden={!shown}>
+   {shown&&<LyricActivity active={active} playing={player.is_playing} start={item.start} end={item.end}/>}
+  </div>;
+ };
  const state=doc?.metadata.instrumental?'Instrumental':doc&&!doc.lines.length?(doc.plain.trim()?'Plain lyrics':'No lyrics yet'):({offline:'You’re offline',not_found:'No lyrics found',missing:'No lyrics yet',choose:'Choose the right version',retry_later:'Lyrics provider is temporarily unavailable',provider_error:'Couldn’t load lyrics'} as Record<string,string>)[result?.state??''];
  const lyricActions:MenuItem[]=[{label:'Edit lyrics',icon:'Metadata',disabled:!track,onSelect:edit},{label:'Find lyrics',icon:'search',disabled:busy||retryIn>0||!track,onSelect:()=>void find()},{label:'Apple Music version',icon:'Lyrics',disabled:appleBusy||!track,onSelect:()=>void findApple()},{label:'Other versions',icon:'Lyrics',disabled:busy||retryIn>0||!track,onSelect:()=>void find(true)},...(result?.source?.url?[{label:`Source: ${result.source.label}`,icon:'Lyrics',onSelect:()=>void call('open_provider',{url:result.source!.url!})}]:[])];
- return <section ref={pane} className="lyrics-pane" data-current-cues={activeKey} data-variant={variant} data-following={following} aria-label="Lyrics" onContextMenu={e=>{e.preventDefault();e.stopPropagation();context({x:e.clientX,y:e.clientY});}} onKeyDown={e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();e.stopPropagation();context();}}} onPointerDown={e=>{if(e.pointerType==='touch'){const point={x:e.clientX,y:e.clientY};touchOrigin.current=point;longPress.current=window.setTimeout(()=>context(point),500);}}} onPointerUp={()=>clearTimeout(longPress.current)} onPointerCancel={()=>clearTimeout(longPress.current)} onPointerMove={e=>{if(Math.hypot(e.clientX-touchOrigin.current.x,e.clientY-touchOrigin.current.y)>6)clearTimeout(longPress.current);}}>
+ return <section ref={pane} className="lyrics-pane" data-current-cues={activeKey} data-variant={variant} data-following={following} data-lyric-pause={!!pause||undefined} aria-label="Lyrics" onContextMenu={e=>{e.preventDefault();e.stopPropagation();context({x:e.clientX,y:e.clientY});}} onKeyDown={e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();e.stopPropagation();context();}}} onPointerDown={e=>{if(e.pointerType==='touch'){const point={x:e.clientX,y:e.clientY};touchOrigin.current=point;longPress.current=window.setTimeout(()=>context(point),500);}}} onPointerUp={()=>clearTimeout(longPress.current)} onPointerCancel={()=>clearTimeout(longPress.current)} onPointerMove={e=>{if(Math.hypot(e.clientX-touchOrigin.current.x,e.clientY-touchOrigin.current.y)>6)clearTimeout(longPress.current);}}>
  <div className="lyrics-follow-slot" data-visible={!following&&!!doc?.lines.length&&current}><span className="lyrics-mini-identification">{track?.title}</span><button className="lyrics-follow" disabled={following||!doc?.lines.length||!current} tabIndex={following?-1:0} aria-hidden={following||undefined} onClick={()=>setFollowing(true)}><Icon name="sync"/>Follow lyrics</button></div>
  {renderMenu?renderMenu(lyricActions):<Overflow contextOnly items={lyricActions}/>}
 
  {!current&&<div className="lyrics-preview-notice"><strong>{track?.title}</strong><button disabled={starting||!track?.available} onClick={()=>{setStarting(true);setPlayError('');void onPlay().catch(e=>setPlayError(errorText(e))).finally(()=>setStarting(false));}}><Icon name="play"/>{starting?'Starting…':'Play this song'}</button></div>}
  {appleBusy&&<div className="apple-lyric-preview" role="status"><LyricActivity loading active={active}/>Checking Apple Music…</div>}{appleError&&<p className="inline-error" role="alert">{appleError}</p>}{appleCandidate&&<div className="apple-lyric-preview"><span><strong>Apple Music version</strong><small>{appleCandidate.doc.lines.length} timed lines · {appleCandidate.doc.lines.some(l=>l.words?.length)?'Word synced':'Line synced'}</small></span><button disabled={appleBusy} onClick={()=>void selectApple()}>Use this version</button><button onClick={()=>setAppleCandidate(null)}>Cancel</button></div>}
  {busy&&!doc&&(!result||result.track_id!==track?.id)?<div className="lyrics-empty" role="status"><LyricActivity loading active={active}/><h2>Finding your words…</h2><p>Checking saved lyrics, connected Apple Music, and LRCLIB.</p></div>:doc&&!doc.metadata.instrumental&&(doc.lines.length>0||!!doc.plain.trim())?<div ref={scroll} className="lyrics-lines" tabIndex={0} aria-label="Song lyrics" onWheel={stopFollowing} onTouchStart={stopFollowing} onKeyDown={e=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key))stopFollowing();}}>
- {doc.lines.length?doc.lines.map((line,i)=>visibleLyricLine(doc,i)&&<button key={`${line.start_ms}-${i}`} data-line={i} data-in-window={activeSet.has(i)||i===(index<0?0:Math.max(index,...activeLines)+1)||undefined} style={{'--lyric-distance':Math.min(...focusLines.map(n=>Math.max(0,i-n))),'--lyric-blur':`${Math.min(3.2,Math.min(...focusLines.map(n=>Math.abs(i-n)))*.65)}px`} as import('react').CSSProperties} tabIndex={activeSet.has(i)||i===focus?0:-1} aria-label={`${lyricSpeaker(doc,line)}: ${line.text}`} data-voice={lyricVoice(line)} data-current={activeSet.has(i)||undefined} dir="auto" className="lyric-line" disabled={!current} aria-current={activeSet.has(i)?'true':undefined} onClick={()=>{setFollowing(true);void onSeek(Math.max(0,(line.start_ms+doc.metadata.offset_ms)/1000));}}>{wordSegments[i]?wordSegments[i]!.map((segment,n)=>segment.word===undefined?segment.text:<span key={`word-${n}`} className="lyric-word" data-word-start={line.words![segment.word].start_ms} data-word-end={lyricWordEnd(line,segment.word)} style={{'--word-progress':`${wordProgress(line.words![segment.word].start_ms,lyricWordEnd(line,segment.word),position*1000-doc.metadata.offset_ms)*100}%`,'--word-feather':lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)?'5%':'0%'} as import('react').CSSProperties} data-word-active={current&&activeSet.has(i)&&lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)||undefined} data-sung={current&&position*1000-doc.metadata.offset_ms>=line.words![segment.word].start_ms||undefined}>{segment.text}</span>):line.text.trim()&&!/^[\s♪♫♬♩]+$/.test(line.text)?line.text:<LyricActivity active={active&&i===index} playing={player.is_playing} start={line.start_ms+doc.metadata.offset_ms} end={(doc.lines[i+1]?.start_ms??track!.duration*1000)+doc.metadata.offset_ms}/>}</button>):<div className="lyrics-plain" dir="auto">{doc.plain}</div>}
+ {doc.lines.length?<>{doc.lines.map((line,i)=><Fragment key={`${line.start_ms}-${i}`}>{pauseMarker(i)}{visibleLyricLine(doc,i)&&<button data-line={i} data-in-window={activeSet.has(i)||i===(index<0?0:Math.max(index,...activeLines)+1)||undefined} style={{'--lyric-distance':Math.min(...focusLines.map(n=>Math.max(0,i-n))),'--lyric-blur':`${Math.min(3.2,Math.min(...focusLines.map(n=>Math.abs(i-n)))*.65)}px`} as import('react').CSSProperties} tabIndex={activeSet.has(i)||i===focus?0:-1} aria-label={`${lyricSpeaker(doc,line)}: ${line.text}`} data-voice={lyricVoice(line)} data-current={activeSet.has(i)||undefined} dir="auto" className="lyric-line" disabled={!current} aria-current={activeSet.has(i)?'true':undefined} onClick={()=>{setFollowing(true);void onSeek(Math.max(0,(line.start_ms+doc.metadata.offset_ms)/1000));}}>{wordSegments[i]?wordSegments[i]!.map((segment,n)=>segment.word===undefined?segment.text:<span key={`word-${n}`} className="lyric-word" data-word-start={line.words![segment.word].start_ms} data-word-end={lyricWordEnd(line,segment.word)} style={{'--word-progress':`${wordProgress(line.words![segment.word].start_ms,lyricWordEnd(line,segment.word),position*1000-doc.metadata.offset_ms)*100}%`,'--word-feather':lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)?'5%':'0%'} as import('react').CSSProperties} data-word-active={current&&activeSet.has(i)&&lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)||undefined} data-sung={current&&position*1000-doc.metadata.offset_ms>=line.words![segment.word].start_ms||undefined}>{segment.text}</span>):line.text.trim()&&!/^[\s♪♫♬♩]+$/.test(line.text)?line.text:<LyricActivity active={active&&i===index} playing={player.is_playing} start={line.start_ms+doc.metadata.offset_ms} end={(doc.lines[i+1]?.start_ms??track!.duration*1000)+doc.metadata.offset_ms}/>}</button>}</Fragment>)}{pauseMarker(doc.lines.length)}</>:<div className="lyrics-plain" dir="auto">{doc.plain}</div>}
  </div>:<div className="lyrics-empty"><Icon name="Lyrics"/><h2>{track?(state||'Lyrics'):'Nothing playing yet'}</h2><p>{!track?'Choose a song in Library.':retryIn?`Retry available in ${retryIn}s.`:result?.state==='retry_later'?'LRCLIB is busy. This doesn’t mean the song has no lyrics.':result?.message??(doc?.metadata.instrumental?'Let the music speak.':'Find another version, or add your own lyrics.')}</p>{variant!=='mini'&&track&&['retry_later','offline','provider_error'].includes(result?.state??'')&&<button className="lyrics-retry" disabled={busy||retryIn>0} onClick={()=>void find()}><Icon name="sync"/>{busy?'Finding…':retryIn?`Retry in ${retryIn}s`:'Retry lyrics'}</button>}</div>}
  {state&&doc&&<small className="lyrics-kind">{state}</small>}
  {(error||playError)&&<p className="inline-error" role="alert">{error||playError}</p>}

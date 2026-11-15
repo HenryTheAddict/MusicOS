@@ -2,12 +2,12 @@
 use serde::{Deserialize,Serialize};
 #[derive(Debug,Clone,PartialEq,Serialize,Deserialize)]
 #[serde(default)]
-pub struct Listening {pub bands:u8,pub gains3:[f32;3],pub gains8:[f32;8],pub speed:f32,pub pitch:f32,pub linked:bool,pub reverb:f32,pub reverb_depth:f32}
-impl Default for Listening {fn default()->Self{Self{bands:3,gains3:[0.;3],gains8:[0.;8],speed:1.,pitch:0.,linked:true,reverb:0.,reverb_depth:0.5}}}
+pub struct Listening {pub bands:u8,pub gains3:[f32;3],pub gains8:[f32;8],pub eq_headroom:bool,pub speed:f32,pub pitch:f32,pub linked:bool,pub reverb:f32,pub reverb_depth:f32}
+impl Default for Listening {fn default()->Self{Self{bands:3,gains3:[0.;3],gains8:[0.;8],eq_headroom:false,speed:1.,pitch:0.,linked:true,reverb:0.,reverb_depth:0.5}}}
 impl Listening {
  pub fn normalize(mut self)->Self{self.reverb_depth=if self.reverb_depth.is_finite(){self.reverb_depth.clamp(0.,1.)}else{0.5};self.reverb=if self.reverb.is_finite(){self.reverb.clamp(0.,1.)}else{0.};self.bands=if self.bands==8{8}else{3};for gain in self.gains3.iter_mut().chain(self.gains8.iter_mut()){*gain=if gain.is_finite(){gain.clamp(-12.,12.)}else{0.};}self.speed=if self.speed.is_finite(){self.speed.clamp(0.5,2.)}else{1.};self.pitch=if self.linked{12.*self.speed.log2()}else if self.pitch.is_finite(){self.pitch.clamp(-12.,12.)}else{0.};self}
  pub fn transpose(&self)->f32{2_f32.powf(self.pitch/12.)}
- pub fn coefficients(&self)->Equalizer{let mut result=Equalizer::default();result.reverb=self.reverb;result.reverb_depth=self.reverb_depth;let (freq,gains):(&[f32],&[f32])=if self.bands==8{(&[63.,125.,250.,500.,1000.,2000.,4000.,8000.],&self.gains8)}else{(&[125.,1000.,8000.],&self.gains3)};let mut boost=0_f32;for(i,(&hz,&gain))in freq.iter().zip(gains).enumerate(){result.coefficients[i]=peak(hz,gain,if self.bands==3{0.6}else{1.});boost=boost.max(gain);}result.headroom=10_f32.powf(-boost/20.);result}
+ pub fn coefficients(&self)->Equalizer{let mut result=Equalizer::default();result.reverb=self.reverb;result.reverb_depth=self.reverb_depth;let (freq,gains):(&[f32],&[f32])=if self.bands==8{(&[63.,125.,250.,500.,1000.,2000.,4000.,8000.],&self.gains8)}else{(&[125.,1000.,8000.],&self.gains3)};let mut boost=0_f32;for(i,(&hz,&gain))in freq.iter().zip(gains).enumerate(){result.coefficients[i]=peak(hz,gain,if self.bands==3{0.6}else{1.});boost=boost.max(gain);}if self.eq_headroom {result.headroom=10_f32.powf(-boost/20.);}result}
 }
 #[derive(Debug,Clone,Copy)]pub struct Equalizer{pub coefficients:[[f32;5];8],pub headroom:f32,pub reverb:f32,pub reverb_depth:f32}
 impl Default for Equalizer{fn default()->Self{Self{coefficients:[[1.,0.,0.,0.,0.];8],headroom:1.,reverb:0.,reverb_depth:0.5}}}
@@ -21,7 +21,25 @@ impl EqProcessor{
 }
 #[cfg(test)]mod tests{use super::*;
  #[test]fn linked_defaults_and_bounds(){let p=Listening{speed:2.,pitch:-12.,..Default::default()}.normalize();assert_eq!(p.pitch,12.);assert_eq!(p.transpose(),2.);let p=Listening{speed:f32::NAN,gains3:[f32::NAN,40.,-40.],..Default::default()}.normalize();assert_eq!(p.gains3,[0.,12.,-12.]);assert_eq!(p.speed,1.);}
- #[test]fn flat_is_transparent_and_boost_is_bounded(){let mut eq=EqProcessor::default();for _ in 0..1000{assert_eq!(eq.process([0.25,-0.5]),[0.25,-0.5]);}eq.set(Listening{gains3:[12.;3],..Default::default()}.coefficients());for i in 0..48000{let x=(i as f32*0.13).sin()*0.5;assert!(eq.process([x,x]).iter().all(|v|v.is_finite()&&v.abs()<2.));}}
+ #[test]fn flat_is_transparent_and_boost_is_bounded(){let mut eq=EqProcessor::default();for _ in 0..1000{assert_eq!(eq.process([0.25,-0.5]),[0.25,-0.5]);}eq.set(Listening{gains3:[12.;3],eq_headroom:true,..Default::default()}.coefficients());for i in 0..48000{let x=(i as f32*0.13).sin()*0.5;assert!(eq.process([x,x]).iter().all(|v|v.is_finite()&&v.abs()<2.));}}
+ #[test]
+ fn eq_boost_changes_loudness_and_headroom_is_optional() {
+  let legacy: Listening = serde_json::from_str(r#"{"gains3":[6,0,0]}"#).unwrap();
+  assert!(!legacy.eq_headroom && legacy.coefficients().headroom == 1.);
+  let mut boost = EqProcessor::default();
+  boost.set(legacy.coefficients());
+  let mut headroom = EqProcessor::default();
+  headroom.set(Listening {eq_headroom:true,..legacy}.coefficients());
+  let mut sums = [0.;2];
+  for i in 0..24_000 {
+   let signal = (i as f32*125.*std::f32::consts::TAU/48_000.).sin()*0.15;
+   let loud = boost.process([signal;2])[0];
+   let quiet = headroom.process([signal;2])[0];
+   if i>=4_000 {sums[0]+=loud*loud;sums[1]+=quiet*quiet;}
+  }
+  assert!((sums[0]/sums[1])>3.8);
+  assert!((sums[1]/20_000.-0.15*0.15/2.).abs()<0.001);
+ }
  #[test]fn mid_cut_attenuates_mid_tone(){let mut eq=EqProcessor::default();eq.set(Listening{gains3:[0.,-12.,0.],..Default::default()}.coefficients());let mut power=0.;for i in 0..48000{let x=(i as f32*2.*std::f32::consts::PI*1000./48000.).sin();let y=eq.process([x,x])[0];if i>24000{power+=y*y;}}assert!((power/24000.).sqrt()<0.2);}
 }
 

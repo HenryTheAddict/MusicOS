@@ -13,9 +13,13 @@ test('quality opens independent audio controls, EQ layout persists, and queue st
 test('expanded artwork uses a readable blurred backdrop',async({page})=>{await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Expand Discovery artwork'}).click();const dialog=page.getByRole('dialog');await expect(dialog.locator('.viewer-backdrop')).toHaveCSS('filter','blur(32px) brightness(0.4)');await expect(dialog.locator('figcaption')).toHaveText('Discovery');await expect(dialog).toHaveCSS('opacity','1');await page.screenshot({path:'out/rebuild-qa/blurred-artwork-viewer.png'});await page.keyboard.press('Escape');await expect(dialog).not.toBeVisible();});
 test('reverb is opt-in, persists, resets, and volume has no visible thumb',async({page})=>{
  await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});
+ const headroom=panel.getByRole('switch',{name:'Preserve EQ headroom',exact:true});
+ await expect(headroom).not.toBeChecked();
+ await headroom.check();
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening?.eq_headroom)).toBe(true);
  await expect(panel.getByRole('switch',{name:'Reverb',exact:true})).not.toBeChecked();await panel.getByRole('switch',{name:'Reverb',exact:true}).check();await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening?.reverb)).toBe(.45);
  const thumb=await panel.getByRole('slider',{name:'Volume',exact:true}).evaluate(el=>{const s=getComputedStyle(el,'::-webkit-slider-thumb');return {background:s.backgroundColor,shadow:s.boxShadow};});expect(thumb).toEqual({background:'rgba(0, 0, 0, 0)',shadow:'none'});
- await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(panel.getByRole('switch',{name:'Reverb',exact:true})).toBeChecked();await panel.getByRole('button',{name:'Reset audio'}).click();await expect(panel.getByRole('switch',{name:'Reverb',exact:true})).not.toBeChecked();await expect(panel.getByRole('slider',{name:'Playback speed'})).toHaveValue('1');
+ await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(panel.getByRole('switch',{name:'Reverb',exact:true})).toBeChecked();await expect(headroom).toBeChecked();await panel.getByRole('button',{name:'Reset audio'}).click();await expect(headroom).not.toBeChecked();await expect(panel.getByRole('switch',{name:'Reverb',exact:true})).not.toBeChecked();await expect(panel.getByRole('slider',{name:'Playback speed'})).toHaveValue('1');
  const flat=await panel.locator('.eq-connections path').getAttribute('d');
  for(const [name,key,count]of [['Bass gain','ArrowUp',6],['Mid gain','ArrowDown',4],['Treble gain','ArrowUp',4]] as const){await panel.getByRole('slider',{name}).focus();for(let i=0;i<count;i++)await page.keyboard.press(key);}
  await expect(panel.locator('.eq-connections path')).not.toHaveAttribute('d',flat!);await panel.getByRole('heading',{name:'Audio',exact:true}).click();
@@ -40,7 +44,8 @@ test('reverb pad drags both axes, supports keyboard, and keeps a fixed square',a
  await panel.getByRole('switch',{name:'Reverb',exact:true}).check();await pad.focus();await page.keyboard.press('ArrowUp');await page.keyboard.press('Shift+ArrowRight');
  const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening);
  await expect.poll(saved).toMatchObject({reverb:.55,reverb_depth:.51});
- await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width+30,box.y-30,{steps:8});await page.mouse.up();await expect.poll(saved).toMatchObject({reverb:1,reverb_depth:1});
+ await pad.scrollIntoViewIfNeeded();const from=(await pad.boundingBox())!;
+ await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();await page.mouse.move(from.x+from.width+30,from.y-30,{steps:8});await page.mouse.up();await expect.poll(saved).toMatchObject({reverb:1,reverb_depth:1});
  const after=(await pad.boundingBox())!;expect(after.width).toBe(box.width);expect(after.height).toBe(box.height);
  await pad.focus();await page.keyboard.press('ArrowDown');await expect.poll(saved).toMatchObject({reverb_depth:.99});
  await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(pad).toHaveAccessibleName('Reverb pad, 100% room, 99% depth');

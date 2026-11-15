@@ -66,7 +66,7 @@ export interface Library {
   protected_source_ids?:number[];
 }
 export interface LibraryFilters {sort:'recent'|'title';genre:string;quality:'all'|'lossless'|'lossy'|'mixed';favorites:boolean;availability:'all'|'available'|'unavailable';separate_singles:boolean}
-export interface Listening {bands:3|8;gains3:number[];gains8:number[];speed:number;pitch:number;linked:boolean;reverb?:number;reverb_depth?:number}
+export interface Listening {bands:3|8;gains3:number[];gains8:number[];eq_headroom?:boolean;speed:number;pitch:number;linked:boolean;reverb?:number;reverb_depth?:number}
 export interface Appearance {mode:"system"|"light"|"dark";source:"artwork"|"blue"|"custom";accent:string;saturation:number;tint:number}
 export interface Preferences {
   controller?:import("./controller").ControllerPreferences;
