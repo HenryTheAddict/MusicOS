@@ -169,3 +169,34 @@ pub unsafe extern "C" fn musicos_artwork_colors(source:*const c_char,output:*mut
         std::ptr::copy_nonoverlapping(bytes.as_ptr(),output.cast::<u8>(),bytes.len());*output.add(bytes.len())=0;bytes.len()as i32
     }).unwrap_or(-1)
 }
+
+#[path = "../../../src-tauri/src/transition_energy.rs"]
+mod transition_energy;
+
+/// Profiles contain at most 64 quarter-second bins. The output has three slots:
+/// outgoing cue, overlap, and incoming cue, in source seconds.
+#[no_mangle]
+pub unsafe extern "C" fn musicos_transition_cue(
+    tail: *const f32,
+    tail_count: usize,
+    tail_start: f32,
+    head: *const f32,
+    head_count: usize,
+    duration: f32,
+    output: *mut f32,
+) {
+    if tail.is_null() || head.is_null() || output.is_null()
+        || tail_count > 64 || head_count > 64 || !duration.is_finite() || duration <= 0.
+    {
+        return;
+    }
+    use transition_energy::Envelope;
+    let envelope = |start, values| Envelope { start, step: 0.25, values };
+    let tail_values = std::slice::from_raw_parts(tail, tail_count);
+    let head_values = std::slice::from_raw_parts(head, head_count);
+    let fade = transition_energy::tail(envelope(tail_start, tail_values), duration);
+    let overlap = fade.map_or(2_f32.min(duration / 4.), |fade| fade.overlap);
+    let cue = fade.map_or(duration - overlap, |fade| fade.cue);
+    let intro = transition_energy::intro(envelope(0., head_values));
+    std::ptr::copy_nonoverlapping([cue, overlap, intro].as_ptr(), output, 3);
+}

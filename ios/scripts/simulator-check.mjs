@@ -23,6 +23,13 @@ for(const [index,[filename,mime,codec]] of variants.entries()){
  const lyricPath=resolve(fixtures,`lyrics${index}.json`);writeFileSync(lyricPath,JSON.stringify({version:'1.0',metadata:{title:filename,artist:'musicOS tests',album:'Offline checks',offset_ms:0,instrumental:false,duration_ms:12000},plain:'Native playback\nWorks offline',lines:[{text:'Native playback',start_ms:0,end_ms:2400,words:[{text:'Native',start_ms:0,end_ms:1200},{text:'playback',start_ms:1200,end_ms:2400}]},{text:'Works offline',start_ms:2500,end_ms:4800}]}));
  tracks.push({id:index+1,path,title:filename,artist:'musicOS tests',album:'Offline checks',album_id:'test-release',genre:'Test',year:2026,track_number:index+1,disc_number:1,duration_ms:12000,sha256:hash,size:bytes.length,mime,artwork_path:cover,lyrics_path:lyricPath,favorited:false,server_id:'isolated-simulator-fixture'});
 }
+for(const [name,level] of [
+ ['outro.wav',"if(lt(t,17.5),1,0.08)"],
+ ['entrance.wav',"if(lt(t,2.25),0,1)"],
+]){
+ run('/opt/homebrew/bin/ffmpeg',['-v','error','-y','-f','lavfi','-i',
+  'sine=frequency=330:duration=24','-af',`volume='${level}':eval=frame`,'-c:a','pcm_f32le',resolve(fixtures,name)]);
+}
 if(process.argv.includes('--long-labels')){
  for (const track of tracks) {
   track.title='AnUnbrokenSongTitle'.repeat(10);

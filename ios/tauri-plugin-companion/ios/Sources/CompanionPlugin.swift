@@ -143,7 +143,9 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     private var stoppingSync = false
     private var transferPlan: URL { root.appendingPathComponent("transfer-plan.json") }
     var preparingMix:Task<Void,Never>?,mixTask:Task<Void,Never>?
-    var preparedMix:(deck:AVPlayer,index:Int,entry:Int64,source:Int64)?,outgoingMix:AVPlayer?
+    var preparedMix:(deck:AVPlayer,index:Int,entry:Int64,source:Int64,cues:TransitionCues)?,outgoingMix:AVPlayer?
+    private var mixPreparation = 0
+    private var attemptedMix: Int64?
     var generation = 0; var resumeAfterInterruption = false; var playbackError: String?
     var currentID: Int64? { queue.indices.contains(queueIndex) ? queue[queueIndex] : nil }
     var current: [String:Any]? { library.first { number($0["id"]) == currentID } }
@@ -371,6 +373,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         return (Float(outgoing / headroom),Float(incoming / headroom))
     }
     func cancelMix(){
+        mixPreparation += 1; attemptedMix = nil
         preparingMix?.cancel();preparingMix=nil;mixTask?.cancel();mixTask=nil
         if let deck=preparedMix?.deck,deck !== player{deck.pause()};preparedMix=nil
         if let deck=outgoingMix,deck !== player{deck.pause()};outgoingMix=nil;player.volume=1
@@ -385,51 +388,126 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         decodedJobs[key]=job;let code=await job.value;decodedJobs.removeValue(forKey:key);try Task.checkCancellation()
         guard code==0 else{throw CompanionError.message("This audio file could not be decoded")};return destination
     }
-    func considerMix(){
-        guard preferences.automix,player.rate>0,repeatMode != "one",mixTask==nil,let track=current,queue.indices.contains(queueIndex),queueEntryIds.indices.contains(queueIndex)else{return}
-        let duration=(track["duration_ms"] as? Double ?? 0)/1000,remaining=duration-player.currentTime().seconds
-        guard duration>6,remaining>0.12,remaining<=8 else{return}
-        let index=queueIndex+1<queue.count ? queueIndex+1:repeatMode=="all" ? 0:-1
-        guard queue.indices.contains(index),index != queueIndex,let next=library.first(where:{number($0["id"])==queue[index]})else{return}
-        // Contiguous album sequences retain their natural endings.
-        if track["album_id"] as? String==next["album_id"] as? String,number(next["track_number"])==number(track["track_number"])+1{return}
-        let source=queueEntryIds[queueIndex],entry=queueEntryIds[index]
-        if preparedMix==nil,preparingMix==nil{
-            preparingMix=Task{[weak self] in
-                guard let self=self else{return};defer{self.preparingMix=nil}
-                do{let url=try await self.preparedURL(next);try Task.checkCancellation()
-                    guard self.preferences.automix,self.queueEntryIds.indices.contains(self.queueIndex),self.queueEntryIds[self.queueIndex]==source else{return}
-                    let deck=AVPlayer(playerItem:AVPlayerItem(url:url));deck.volume=0
-                    for _ in 0..<50{if deck.currentItem?.status != .unknown{break};try await Task.sleep(nanoseconds:20_000_000)}
-                    guard deck.currentItem?.status == .readyToPlay else{return}
-                    self.preparedMix=(deck,index,entry,source);self.considerMix()
-                }catch{} // A late/failed preparation retains the ordinary ending and skip path.
+    func considerMix() {
+        guard preferences.automix, player.rate > 0, !player.isExternalPlaybackActive, repeatMode != "one",
+            mixTask == nil, let track = current, queueEntryIds.indices.contains(queueIndex),
+            let item = player.currentItem, let outgoing = item.asset as? AVURLAsset else { return }
+        let actualDuration = item.duration.seconds
+        let duration = actualDuration.isFinite && actualDuration > 0 ? actualDuration : Double(number(track["duration_ms"])) / 1000
+        let position = player.currentTime().seconds, remaining = duration - position
+        guard duration > 6, remaining > 0.18, remaining <= 18 else { return }
+        let index = queueIndex + 1 < queue.count ? queueIndex + 1 : repeatMode == "all" ? 0 : -1
+        guard queueEntryIds.indices.contains(index), index != queueIndex,
+            let next = library.first(where: { number($0["id"]) == queue[index] }) else { return }
+        // Protect consecutive songs on a known album, including a disc change.
+        if let album = track["album_id"] as? String, !album.isEmpty, album == next["album_id"] as? String {
+            let disc = number(track["disc_number"]), nextDisc = number(next["disc_number"])
+            let song = number(track["track_number"]), nextSong = number(next["track_number"])
+            if (disc == nextDisc && song > 0 && nextSong == song + 1) ||
+                (disc > 0 && nextDisc == disc + 1 && nextSong == 1) { return }
+        }
+        let source = queueEntryIds[queueIndex], entry = queueEntryIds[index]
+        if preparedMix == nil, preparingMix == nil, attemptedMix != source {
+            attemptedMix = source
+            mixPreparation += 1
+            let attempt = mixPreparation
+            preparingMix = Task { [weak self] in
+                guard let self else { return }
+                defer { if self.mixPreparation == attempt { self.preparingMix = nil } }
+                do {
+                    let url = try await self.preparedURL(next)
+                    try Task.checkCancellation()
+                    let outgoingURL = outgoing.url
+                    let worker = Task.detached(priority: .utility) {
+                        try TransitionCues.measure(outgoing: outgoingURL, incoming: url, duration: duration)
+                    }
+                    let cues = try await withTaskCancellationHandler {
+                        try await worker.value
+                    } onCancel: { worker.cancel() }
+                    let deck = AVPlayer(playerItem: AVPlayerItem(url: url))
+                    deck.volume = 0
+                    deck.automaticallyWaitsToMinimizeStalling = false
+                    for _ in 0..<50 {
+                        if deck.currentItem?.status != .unknown { break }
+                        try await Task.sleep(nanoseconds: 20_000_000)
+                    }
+                    guard deck.currentItem?.status == .readyToPlay else { return }
+                    if cues.entrance > 0 {
+                        let positioned = await deck.seek(to: CMTime(seconds: cues.entrance, preferredTimescale: 600),
+                            toleranceBefore: .zero, toleranceAfter: .zero)
+                        guard positioned else { return }
+                    }
+                    try Task.checkCancellation()
+                    guard self.mixPreparation == attempt, self.preferences.automix,
+                        self.queueEntryIds.indices.contains(self.queueIndex), self.queueEntryIds[self.queueIndex] == source,
+                        self.queueEntryIds.indices.contains(index), self.queueEntryIds[index] == entry else { return }
+                    self.preparedMix = (deck, index, entry, source, cues)
+                    self.considerMix()
+                } catch {} // Playback uses the ordinary ending if the second deck falls behind.
             }
         }
-        guard remaining<=2,let ready=preparedMix,ready.source==source,ready.entry==entry else{return}
-        let from=player,start=from.currentTime().seconds,length=min(2,remaining),to=ready.deck
-        outgoingMix=from;to.play()
-        mixTask=Task{[weak self] in
-            guard let self=self else{return};var committed=false
-            do{while !Task.isCancelled{
-                let phase=min(1,max(0,(from.currentTime().seconds-start)/length))
-                let incoming = to.currentTime().seconds
-                if !committed && (!incoming.isFinite || incoming < 0.015) {
-                    if phase >= 0.7 { self.cancelMix(); return }
-                    try await Task.sleep(nanoseconds:20_000_000)
-                    continue
+        guard let ready = preparedMix, ready.source == source, ready.entry == entry else { return }
+        // Late preparation or a seek past the planned cue uses the safe ending.
+        let missed = position > ready.cues.start + 0.4
+        let cue = missed ? duration - min(2, duration / 4) : ready.cues.start
+        guard position + 0.03 >= cue else { return }
+        let length = min(missed ? 2 : ready.cues.overlap, remaining)
+        guard length >= 0.25 else { return }
+        let from = player, to = ready.deck, start = position
+        let incomingStart = to.currentTime().seconds
+        outgoingMix = from
+        to.playImmediately(atRate: 1)
+        mixTask = Task { [weak self] in
+            guard let self else { return }
+            var committed = false
+            do {
+                while !Task.isCancelled {
+                    let elapsed = from.currentTime().seconds - start
+                    let finished = committed && from.rate == 0
+                    let phase = finished ? 1 : min(1, max(0, elapsed / length))
+                    let incoming = to.currentTime().seconds
+                    if !committed && (!incoming.isFinite || incoming - incomingStart < 0.015) {
+                        if phase >= 0.7 || from.rate == 0 {
+                            self.cancelMix()
+                            self.attemptedMix = source
+                            return
+                        }
+                        try await Task.sleep(nanoseconds: 20_000_000)
+                        continue
+                    }
+                    let gains = Self.mixGains(phase)
+                    from.volume = gains.outgoing
+                    to.volume = gains.incoming
+                    if phase >= 0.5 && !committed {
+                        guard self.queueEntryIds.indices.contains(ready.index), self.queueEntryIds[ready.index] == entry else {
+                            self.cancelMix()
+                            return
+                        }
+                        committed = true
+                        if let observer = self.observer { from.removeTimeObserver(observer) }
+                        self.observer = nil
+                        self.player = to
+                        self.queueIndex = ready.index
+                        self.savedPosition = incoming
+                        self.generation += 1
+                        self.preparedMix = nil
+                        self.attachPlaybackObserver()
+                        self.publish()
+                        try? self.persist()
+                        self.warmUpcomingAudio()
+                        Task { await self.readRecordingInfo(next) }
+                    }
+                    if phase >= 1 { break }
+                    try await Task.sleep(nanoseconds: 20_000_000)
                 }
-                let gains = Self.mixGains(phase)
-                from.volume = gains.outgoing
-                to.volume = gains.incoming
-                if phase>=0.5 && !committed{
-                    guard self.queueEntryIds.indices.contains(ready.index),self.queueEntryIds[ready.index]==entry else{self.cancelMix();return}
-                    committed=true;if let observer=self.observer{from.removeTimeObserver(observer)};self.observer=nil
-                    self.player=to;self.queueIndex=ready.index;self.savedPosition=0;self.generation+=1;self.preparedMix=nil;self.attachPlaybackObserver();self.publish();try? self.persist();Task{await self.readRecordingInfo(next)}
-                }
-                if phase>=1{break};try await Task.sleep(nanoseconds:20_000_000)
-            }}catch{}
-            if !Task.isCancelled{from.pause();to.volume=1;self.outgoingMix=nil;self.mixTask=nil;self.publish()}
+            } catch {}
+            if !Task.isCancelled {
+                from.pause()
+                to.volume = 1
+                self.outgoingMix = nil
+                self.mixTask = nil
+                self.publish()
+            }
         }
     }
     func restorePath(_ path:String)->String {
@@ -784,7 +862,8 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "previous": try await skip(-1);return playback()
         case "seek":
             cancelMix()
-            let seconds=max(0,min(payload["position"] as? Double ?? 0,(current?["duration_ms"] as? Double ?? 0)/1000)),token=generation
+            let duration = Double(max(0, number(current?["duration_ms"]))) / 1000
+            let seconds=max(0,min(payload["position"] as? Double ?? 0,duration)),token=generation
             if player.currentItem != nil{_=await player.seek(to:CMTime(seconds:seconds,preferredTimescale:600),toleranceBefore:.zero,toleranceAfter:.zero)}else{savedPosition=seconds}
             if generation==token{publish()};return playback()
         case "queue_play":
@@ -819,7 +898,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             let entries=Array(zip(queueEntryIds,queue));if !shuffled{originalQueue=entries;let start=min(queueIndex+1,queue.count);let tail=Array(entries.dropFirst(start)).shuffled();queue=Array(queue.prefix(start))+tail.map{$0.1};queueEntryIds=Array(queueEntryIds.prefix(start))+tail.map{$0.0}}
             else{let start=min(queueIndex+1,queue.count),pending=Set(queueEntryIds.dropFirst(start));let tail=originalQueue.filter{pending.contains($0.0)}+entries.dropFirst(start).filter{entry in !originalQueue.contains{$0.0==entry.0}};queue=Array(queue.prefix(start))+tail.map{$0.1};queueEntryIds=Array(queueEntryIds.prefix(start))+tail.map{$0.0}}
             shuffled.toggle();try persist();publish();return playback()
-        case "repeat":repeatMode=repeatMode=="none" ? "all":repeatMode=="all" ? "one":"none";try persist();publish();return playback()
+        case "repeat":cancelMix();repeatMode=repeatMode=="none" ? "all":repeatMode=="all" ? "one":"none";try persist();publish();return playback()
         case "favorite":
             let id=number(payload["id"]),value=payload["value"] as? Bool ?? false
             guard let i=library.firstIndex(where:{number($0["id"])==id}) else { throw CompanionError.message("Song is unavailable") }
@@ -1367,10 +1446,53 @@ extension Companion {
                 check("phone relay keeps the two service settings private by default",
                       !MobilePreferences().lastfmListening && !MobilePreferences().discordPresence)
             }
+            let measuredTransition = try await checkEnergyTransition()
+            check("AutoMix analyzes actual audio ends and measures the entrance", measuredTransition.cue)
+            check("AutoMix hands off before the ordinary fade and queues exactly once (\(measuredTransition.observed))", measuredTransition.playback)
             for (name, passed) in try checkCloudLibrary() { check(name, passed) }
         }catch{checks.append(["name":"native service execution","passed":false,"error":error.localizedDescription])}
         pause()
         try? JSONSerialization.data(withJSONObject:["checks":checks],options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("native-checks.json"),options:.atomic)
+    }
+
+    private func checkEnergyTransition() async throws -> (cue: Bool, playback: Bool, observed: String) {
+        let before = (library, queue, queueEntryIds, queueIndex, savedPosition)
+        let outgoing = root.appendingPathComponent("test-fixtures/outro.wav")
+        let incoming = root.appendingPathComponent("test-fixtures/entrance.wav")
+        let cues = try await Task.detached(priority: .utility) {
+            try TransitionCues.measure(outgoing: outgoing, incoming: incoming, duration: 24)
+        }.value
+        let found = (16.75...18).contains(cues.start) && (1.75...2.25).contains(cues.entrance) && cues.start + cues.overlap < 24
+        defer {
+            pause()
+            player.replaceCurrentItem(with: nil)
+            (library, queue, queueEntryIds, queueIndex, savedPosition) = before
+            preferences.automix = false
+            try? persist()
+        }
+        let ids: [Int64] = [2_500, 2_501]
+        for (id, file) in zip(ids, [outgoing, incoming]) {
+            library.append(["id": id, "path": file.path, "mime": "audio/wav", "duration_ms": 24_000,
+                "title": file.lastPathComponent, "artist": "musicOS", "album_id": file.lastPathComponent])
+        }
+        preferences.automix = true
+        _ = try await request(["action": "play", "ids": [ids[0], ids[1], ids[0]]])
+        for _ in 0..<50 {
+            if player.currentItem?.status == .readyToPlay && player.currentTime().seconds > 0.04 { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        _ = try await request(["action": "seek", "position": 14.5])
+        let entries = queueEntryIds
+        let until = ProcessInfo.processInfo.systemUptime + 6.9
+        while queueIndex == 0 && ProcessInfo.processInfo.systemUptime < until {
+            try await Task.sleep(nanoseconds: 40_000_000)
+        }
+        let playingPosition = player.currentTime().seconds
+        let outgoingPosition = outgoingMix?.currentTime().seconds
+        let prepared = preparedMix?.cues.start ?? -1
+        let observed = "cue \(cues.start), intro \(cues.entrance), prepared \(prepared), index \(queueIndex), position \(playingPosition), old position \(outgoingPosition ?? -1)"
+        return (found, queueIndex == 1 && currentID == ids[1] && queueEntryIds == entries &&
+            playingPosition >= cues.entrance && (outgoingPosition ?? 24) < 21.5, observed)
     }
 
     private func checkCloudLibrary() throws -> [(String, Bool)] {

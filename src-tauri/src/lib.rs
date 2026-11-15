@@ -83,3 +83,4 @@ pub mod platform;
 mod companion_sync;
 mod activity;
 mod waveform;
+mod transition_energy;

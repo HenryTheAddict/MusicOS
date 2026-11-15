@@ -1,6 +1,6 @@
 //! Pure desktop transition planning. Plans are estimates and are not audio
 //! scheduling; the sample-clocked engine must validate them before execution.
-use crate::structure::Structure;
+use crate::{structure::Structure, transition_energy::{self, Envelope}};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -119,11 +119,32 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
             ..fallback("Full song")
         });
     }
+    let outgoing_tail = a.structure.and_then(|s| transition_energy::tail(envelope(s), length));
+    let incoming_cue = b.structure.map_or(0., |s| transition_energy::intro(envelope(s)));
+    let ending = |reason: &str| {
+        if let Some(tail) = outgoing_tail.filter(|tail| {
+            tail.cue >= earliest
+                && a.structure.is_some_and(|s| {
+                    preserves_section(s, tail.cue) && preserves_section(s, tail.cue + tail.overlap)
+                })
+        }) {
+            return Plan {
+                outgoing_cue: tail.cue,
+                incoming_cue,
+                duration: tail.overlap.min(incoming_length / 4.),
+                incoming_tempo: 1.,
+                effect: Effect::CleanBlend,
+                confidence: 0.58,
+                reason: "Sustained drop in outro energy".into(),
+            };
+        }
+        Plan { incoming_cue, ..fallback(reason) }
+    };
     if length < 45. || incoming_length < 30. {
-        return Some(fallback("Short track"));
+        return Some(ending("Short track"));
     }
     let (Some(sa), Some(sb), Some(ba), Some(bb)) = (a.structure, b.structure, a.bpm, b.bpm) else {
-        return Some(fallback("Structural analysis unavailable"));
+        return Some(ending("Structural analysis unavailable"));
     };
     if sa.beat_confidence < 0.5
         || sb.beat_confidence < 0.5
@@ -132,15 +153,16 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
         || ba <= 0.
         || bb <= 0.
     {
-        return Some(fallback("Beat grid uncertain"));
+        return Some(ending("Beat grid uncertain"));
     }
     // These are evidence-supported beat sequences, not an extrapolated BPM clock.
     if !valid_beats(&sa.beats)||!valid_beats(&sb.beats) {
-        return Some(fallback("Measured beats unavailable"));
+        return Some(ending("Measured beats unavailable"));
     }
     let allowed = |cue: f32| {
         cue >= (length * 2. / 3.).max(earliest) && cue < length
             && preserves_section(sa,cue)
+            && outgoing_tail.is_none_or(|tail| cue >= tail.drop - 2. && cue <= tail.drop + 3.)
     };
     let mut best: Option<(f32, Plan)> = None;
     let (mut tempo_rejected,mut unstable_rejected,mut drift_rejected)=(0,0,0);
@@ -154,7 +176,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
             // The overlap starts on measured structural evidence. Its end is
             // an actual beat of the same stable grid, not a second independently
             // detected section change that needlessly rejects usable blends.
-            for entry in entries.iter().filter(|p|p.confidence>=0.5&&p.seconds<=incoming_length/3.&&preserves_section(sb,p.seconds)) {
+            for entry in entries.iter().filter(|p|p.confidence>=0.5&&p.seconds>=incoming_cue && p.seconds<=incoming_length/3.&&preserves_section(sb,p.seconds)) {
                 let Some(bi)=boundary_beat(&sb.beats,entry.seconds) else {continue};
                 let Some(&incoming_end)=sb.beats.get(bi+count) else {continue};
                 if incoming_end>=incoming_length {continue;}
@@ -175,7 +197,8 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     .min(exit.confidence).min(entry.confidence);
                 let energy=(outgoing_density-incoming_density).abs();
                 let skipped=(length-end)/length+sb.beats[bi]/incoming_length;
-                let score=dense_overlap*0.35+harmonic*0.15+energy*0.2
+                let transition_distance = outgoing_tail.map_or(0., |tail| (sa.beats[ai] - tail.drop).abs() * 0.08);
+                let score=transition_distance+dense_overlap*0.35+harmonic*0.15+energy*0.2
                     +(1.-confidence)*0.2+drift/0.05*0.2+skipped*0.25+(duration-8.).abs()/16.*0.08;
                 let effect=if dense_overlap<0.2 {Effect::CleanBlend}
                     else if config.character==Character::Creative&&outgoing_density>incoming_density*1.5 {Effect::EchoBounce}
@@ -187,7 +210,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
             }
         }
     }
-    Some(best.map(|(_, p)| p).unwrap_or_else(||fallback(&format!("No compatible measured section boundaries (tempo {tempo_rejected}, unstable {unstable_rejected}, drift {drift_rejected})"))))
+    Some(best.map(|(_, p)| p).unwrap_or_else(||ending(&format!("No compatible measured section boundaries (tempo {tempo_rejected}, unstable {unstable_rejected}, drift {drift_rejected})"))))
 }
 /// A recurring phrase is useful evidence, but not the only evidence: a strong
 /// measured timbre/energy change near an observed beat also supports a cue.
@@ -216,6 +239,10 @@ fn stable_window(beats:&[f32],bpm:f32)->bool{
     // Octave-compatible global estimates are allowed only with actual local beat evidence.
     let octave_agrees=[0.5,1.,2.].iter().any(|factor|(local/(bpm*factor)-1.).abs()<=0.15);
     octave_agrees&&beats.windows(2).all(|p|((p[1]-p[0])/period-1.).abs()<=0.12)
+}
+
+fn envelope(s: &Structure) -> Envelope<'_> {
+    Envelope { start: 0., step: s.energy_step, values: &s.envelope }
 }
 
 fn density(s: &Structure, start: f32, duration: f32) -> f32 {
@@ -431,6 +458,29 @@ mod tests {
         let mut a=measured(0.5);a.phrases.clear();let b=measured(0.5);
         let p=plan(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false).unwrap();assert_eq!(p.confidence,0.);
     }
+    #[test]
+    fn measured_energy_supplies_an_unwarped_cue_without_a_beat_grid() {
+        let mut outgoing = Structure { energy_step: 0.25, envelope: vec![0.7; 240], ..Default::default() };
+        outgoing.envelope[216..].fill(0.1);
+        let mut incoming = Structure { energy_step: 0.25, envelope: vec![0.35; 240], ..Default::default() };
+        incoming.envelope[..8].fill(0.);
+        let a = track(60., None, Some(&outgoing));
+        let b = track(60., None, Some(&incoming));
+        let measured = plan(a, b, &config(), false).unwrap();
+        assert!((53.5..=54.5).contains(&measured.outgoing_cue));
+        assert_eq!(measured.incoming_cue, 1.75);
+        assert!(measured.outgoing_cue + measured.duration < 60.);
+        assert_eq!(measured.incoming_tempo, 1.);
+        let passed = plan_after(a, b, &config(), false, 56.).unwrap();
+        assert_eq!(passed.outgoing_cue, 58.);
+        assert_eq!(passed.duration, 2.);
+        let mut full = config();
+        full.mode = Mode::FullSong;
+        let full = plan(a, b, &full, false).unwrap();
+        assert_eq!(full.outgoing_cue + full.duration, 60.);
+        assert_eq!(full.incoming_cue, 0.);
+    }
+
     #[test]
     fn album_handoff_has_no_overlap() {
         let p = plan(
