@@ -9,6 +9,7 @@
 .expanded-player[data-visualizer=true] .expanded-song-column{display:none!important;}
 .expanded-player[data-visualizer=true] .expanded-player-content{display:flex!important;align-items:center;justify-content:center;padding:76px 20px 12px!important;bottom:140px;}
 .expanded-player[data-visualizer=true] .expanded-side-view{width:min(54rem,100%);height:100%;}
+.expanded-player[data-visualizer=true] .expanded-lyrics-view{width:min(43rem,100%);}
 .expanded-player[data-visualizer=true][data-view=playing] .expanded-player-content{pointer-events:none;visibility:hidden;}
 .expanded-player[data-visualizer=true] .expanded-queue-view{background:var(--visualizer-surface);padding:16px;border-radius:20px;box-sizing:border-box;}
 .expanded-player[data-visualizer=true] .expanded-player-dock{border-radius:20px;background:color-mix(in srgb,var(--visualizer-surface) 92%,transparent);height:116px;padding:8px 16px;box-sizing:border-box;}
@@ -19,7 +20,7 @@
 .expanded-player[data-visualizer=true] .lyrics-pane[data-variant=visualizer]{height:100%;width:100%;display:flex;flex-direction:column;justify-content:center;position:relative;}
 .lyrics-pane[data-variant=visualizer]>.lyrics-heading,.lyrics-pane[data-variant=visualizer]>.lyrics-footer{display:none;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyrics-lines{flex:1;min-height:0;padding-block:8px!important;mask-image:linear-gradient(transparent,#000 12%,#000 78%,transparent)!important;}
-.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.25rem,min(3.8vw,6vh),3.5rem)!important;line-height:1.2!important;filter:none!important;padding-block:.22em!important;}
+.lyrics-pane[data-variant=visualizer] .lyric-line{font-size:clamp(1.25rem,min(3.5vw,6vh),3rem)!important;line-height:1.2!important;filter:none!important;padding-block:.27em!important;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line:not([data-in-window=true]){opacity:0!important;visibility:hidden;pointer-events:none;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line{transition:opacity 240ms ease-out,filter 240ms ease-out,visibility 240ms;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line:not([data-current=true]){opacity:.32;filter:blur(.45px)!important;}
@@ -105,9 +106,21 @@
 .expanded-player[data-visualizer=true] .progress-rail{box-shadow:0 1px 3px #0004;}
 @media(prefers-reduced-motion:reduce){.expanded-player[data-visualizer=true]{transition:none;}}
 .lyrics-pane[data-variant=visualizer]{--visualizer-lyric-idle:#e7e3ea;--visualizer-lyric-lit:#fff;}
-.lyrics-pane[data-variant=visualizer]::before{content:'';position:absolute;inset:-12% -10%;background:radial-gradient(ellipse at center,#09080e75 12%,#09080e46 48%,transparent 75%);pointer-events:none;}
+/* Full-scene contrast so the lyrics column never cuts a visible rectangle. */
+.expanded-player[data-visualizer=true][data-view=lyrics]::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:radial-gradient(ellipse 62% 52% at 50% 42%,#09080e62 10%,#09080e32 56%,transparent 100%);
+}
+.lyrics-pane[data-variant=visualizer] .lyric-line:has(> .lyric-activity) {
+  font-size:clamp(1rem,2.3vw,1.5rem)!important;
+  padding-block:.5em!important;
+}
+.lyrics-pane[data-variant=visualizer] .lyric-line > .lyric-activity > .icon { display:none; }
 .lyrics-pane[data-variant=visualizer] .lyric-line{color:var(--visualizer-lyric-lit);text-shadow:0 .04em .14em #0008;line-height:1.25!important;}
 .lyrics-pane[data-variant=visualizer] .lyric-line[data-current=true]:not(.lyric-glow-clone) .lyric-word{--lyric-fill-direction:to right;background-image:linear-gradient(var(--lyric-fill-direction),var(--visualizer-lyric-lit) calc(var(--word-progress,0%) - var(--word-feather,0%)),var(--visualizer-lyric-idle) calc(var(--word-progress,0%) + var(--word-feather,0%)));text-shadow:none;filter:drop-shadow(0 .04em .065em #0009);}
 .lyrics-pane[data-variant=visualizer] .lyric-line[data-current=true]:dir(rtl) .lyric-word{--lyric-fill-direction:to left;}
 .lyrics-pane[data-variant=visualizer] .lyric-glow-clone .lyric-word{text-shadow:0 0 .17em #fff6,0 0 .27em color-mix(in srgb,var(--visualizer-ink) 32%,transparent)!important;}
-.lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line[data-in-window=true]:not([data-current=true]){opacity:.56;filter:none!important;}
+.lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line[data-in-window=true]:not([data-current=true]){opacity:.66;filter:none!important;}

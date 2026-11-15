@@ -250,6 +250,7 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
     use rusqlite::OptionalExtension;
     let mut query = c.prepare("SELECT state, candidate_json, error FROM metadata_enrichment_status WHERE track_id=?")?;
     let mut rows = Vec::with_capacity(album.track_ids.len());
+    let mut cover_comparisons = std::collections::HashMap::new();
     for id in &album.track_ids {
         let mut current = db.metadata_values(*id)?;
         if current["album_artist"].is_null() {
@@ -267,7 +268,13 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
         let art_resolution = artwork.and_then(|path| image::image_dimensions(path).ok())
             .map(|(width, height)| [width, height]);
         let mut fields=Vec::new();if let Some(value)=&candidate{for field in ["title","artist","album","album_artist","year","track_number","disc_number"]{if !value[field].is_null()&&value[field]!=current[field]{fields.push(field)}}}
-        let art_comparison=match (album.cover.as_deref(),artwork){(Some(old),Some(new))=>art_comparison(old,new),(_,Some(_))=>"new",_=>"none"};
+        let art_comparison = match (album.cover.as_deref(), artwork) {
+            (Some(old), Some(new)) => *cover_comparisons
+                .entry(new.to_owned())
+                .or_insert_with(|| art_comparison(old, new)),
+            (_, Some(_)) => "new",
+            _ => "none",
+        };
         if artwork.is_some()&&art_comparison!="identical"{fields.push("artwork");}
         rows.push(json!({"changed_fields":fields,"art_comparison":art_comparison,"track_id": id, "current": current, "candidate": candidate,
             "candidate_token": candidate_token, "status": status, "lookup_error": error, "art_identity": art_identity, "art_available": artwork.is_some(), "art_resolution": art_resolution}));

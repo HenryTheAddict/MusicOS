@@ -59,7 +59,7 @@ test('RTL glyphs and detached glow share exact wrapping, then clean up in Reduce
 });
 
 
-test('visualizer chrome picks up an artwork color without a gradient behind the lyrics',async({page})=>{
+test('visualizer contrast spans the scene and leaves the lyrics column transparent',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');
  await page.getByRole('button',{name:'Open visualizer',exact:true}).click();
  await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');await page.mouse.move(300,120);
@@ -67,4 +67,13 @@ test('visualizer chrome picks up an artwork color without a gradient behind the 
  await expect(player).toHaveCSS('--visualizer-source','rgb(222, 167, 43)');
  await expect(player.locator('.expanded-player-dock')).toHaveCSS('background-image','none');
  await expect(player.locator('.lyrics-pane[data-variant=visualizer]')).toHaveCSS('background-image','none');
+ const scrim=await player.evaluate(node=>{
+  const column=node.querySelector('.lyrics-pane[data-variant=visualizer]')!;
+  const full=getComputedStyle(node,'::before');
+  return {inset:full.inset,background:full.backgroundImage,column:getComputedStyle(column,'::before').backgroundImage};
+ });
+ expect(scrim.inset).toBe('0px');
+ expect(scrim.background).toContain('radial-gradient');
+ expect(scrim.column).toBe('none');
+ await page.screenshot({path:'out/musicos-polish-visualizer.png'});
 });

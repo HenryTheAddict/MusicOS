@@ -87,13 +87,15 @@ function coverResolution(size?:number[]) {
   return size ? size.join(' × ') : 'Resolution unknown';
 }
 
-function CoverComparison({current,proposed,lowerResolution}: {
-  current:{path?:string|null;size?:number[]};proposed?:{path:string;size?:number[];local?:boolean};lowerResolution?:boolean;
+function CoverComparison({current,proposed,lowerResolution,identical}: {
+  current:{path?:string|null;size?:number[]};proposed?:{path:string;size?:number[];local?:boolean};lowerResolution?:boolean;identical?:boolean;
 }) {
-  return <div className="tag-cover-comparison">
+  return <div className="tag-cover-comparison" data-single={!proposed||undefined}>
     <figure>
-      <img className="cover" src={imageUrl(current.path)} alt="Current cover"/>
-      <figcaption><strong>Current cover</strong><span>{current.path?coverResolution(current.size):'No cover saved'}</span></figcaption>
+      {current.path?<img className="cover" src={imageUrl(current.path)} alt="Current cover"/>:<Cover title=""/>}
+      <figcaption><strong>Current cover</strong><span>{current.path?coverResolution(current.size):'No cover saved'}</span>
+        {identical&&<span className="tag-cover-match">Suggested cover matches</span>}
+      </figcaption>
     </figure>
     {proposed&&<figure>
       <img className="cover" src={imageUrl(proposed.path)} alt={proposed.local?'Imported cover':'Suggested cover'}/>
@@ -105,11 +107,11 @@ function CoverComparison({current,proposed,lowerResolution}: {
   </div>;
 }
 
-export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,epoch,playing,onCheck,onTab,onSong,onLyrics,onDirty,onSaving,onSaved,onRefresh}: {
+export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,epoch,playing,onCheck,onTab,onSong,onLyrics,onDirty,onSaving,onSaved,onRefresh,onComparison}: {
   album:Album; track?:Track; tab:InspectorTab; lyrics:boolean; lyricsRequest?:number; epoch:number; playing:boolean;
   onCheck?:()=>void; onTab:(tab:InspectorTab)=>void; onSong:(id:number)=>void; onLyrics:(show:boolean)=>void;
   onDirty:(dirty:boolean)=>void; onSaving:(saving:boolean)=>void;
-  onSaved:(message:string)=>void; onRefresh:()=>Promise<void>;
+  onSaved:(message:string)=>void; onRefresh:()=>Promise<void>; onComparison?:(result:AlbumReview)=>void;
 }) {
   const active = useViewActive();
   const [comparison,setComparison] = useState<AlbumReview|null>(null);
@@ -187,6 +189,7 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
         setWrite(false);
       }
       setComparison(result.album);
+      onComparison?.(result.album);
     }).catch(error=>{if(current)setLoadError(errorText(error));}).finally(()=>{if(current)setLoading(false);});
     return ()=>{current=false;};
   },[active,album.id,epoch,reload]);
@@ -434,10 +437,9 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
           unmatched>0&&`No confident match for ${songCount(unmatched)}`,
           failed>0&&`Lookup failed for ${songCount(failed)}`,
         ].filter(Boolean).join(' · ')}</p>}
-        {identicalCover&&!proposedCover&&<p className="tag-status">The suggested image is the same cover. Your current image is kept.</p>}
         {differentCrop&&<p className="tag-status">Different crop or proportions · compare both images before updating.</p>}
         <CoverComparison current={currentCover} proposed={imported?{path:imported.path,size:imported.size,local:true}:proposedCover&&{path:proposedCover[0],size:proposedCover[1].art_resolution}}
-          lowerResolution={lowerResolution(imported?.size??proposedCover?.[1].art_resolution)}/>
+          lowerResolution={lowerResolution(imported?.size??proposedCover?.[1].art_resolution)} identical={identicalCover&&!artwork.length&&!imported}/>
         {imported&&<button onClick={()=>setImported(undefined)}>Remove imported image</button>}
         {!imported&&artwork.length>1 && <fieldset className="tag-cover-options"><legend>Choose a proposed cover</legend>
           {artwork.map(([cover,row],index)=><label key={cover}>

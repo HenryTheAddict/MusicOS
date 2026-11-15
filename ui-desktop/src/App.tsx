@@ -1,3 +1,4 @@
+import {useScrollEdges} from './useScrollEdges';
 import Activity from './Activity';
 import {SongPreviewProvider} from './SongPreview';
 import {installController,defaultController} from './controller';
@@ -910,6 +911,8 @@ export default function App() {
       />
     </div>
   );
+  const sidebarScroll = useRef<HTMLDivElement>(null);
+  useScrollEdges(sidebarScroll, section==='Library'&&!compact, collections);
   let content;
   if (miniMode!=='normal')content=null;
   else if (loading)
@@ -1253,7 +1256,8 @@ export default function App() {
       <div className={`workspace ${section !== "Library" ? "full-width" : ""}`}>
         {section === "Library" && !compact && (
           <aside className="library-sidebar">
-            <div className="sidebar-body">
+            <div className="sidebar-body scroll-edges" ref={sidebarScroll}>
+            <div className="sidebar-body-content">
             <section className="sidebar-personal" aria-label="Your home"><button className={`sidebar-home ${route.view==='home'?'active':''}`} aria-current={route.view==='home'?'page':undefined} onClick={()=>goScope('home')}><Icon name="Home"/><span>{personalName(preferences.display_name,!loading)}</span></button><Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'SmartPlaylist',onSelect:()=>createCollection('rule')}]}>+</Menu></section>
             <div className="sidebar-search-slot" data-back={navigation.history.length>0}>
               <button className={`sidebar-navigation ${navigation.history.length?'sidebar-back':'search sidebar-search'}`} aria-label={navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search music and commands'} aria-keyshortcuts={navigation.history.length?undefined:'Meta+K Control+K'} onClick={navigation.history.length?()=>goBack():()=>setCommandOpen(true)}><span className="sidebar-nav-glyph" aria-hidden="true"><span className="sidebar-glyph-search"><Icon name="search"/></span><span className="sidebar-glyph-back"><Icon name="Back"/></span></span><span className="sidebar-nav-label">{navigation.history.length?`Back to ${navigation.history.at(-1)!.view==='home'?'Home':navigation.history.at(-1)!.view[0].toUpperCase()+navigation.history.at(-1)!.view.slice(1)}`:'Search'}</span>{!navigation.history.length&&<kbd>⌘ K</kbd>}</button>
@@ -1291,6 +1295,7 @@ export default function App() {
               </div>
             </section>
             {collectionError&&<small role="alert">{collectionError}</small>}
+            </div>
             </div>
             <footer className="sidebar-footer">
               <span aria-busy={loading}>{loading?"":`${library.tracks.length} songs`}</span>

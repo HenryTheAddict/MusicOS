@@ -9,14 +9,42 @@ html[data-theme-mode=dark] .menu-panel.dropdown:not(.section-dropdown)>.menu-pan
 /* Portaled choices must paint above the selector's expanding shell (layer 21).
    A lower portal layer leaves the menu clickable but hides every label. */
 .menu-panel.dropdown{z-index:100;}
-.menu-panel.section-dropdown{position:fixed;}
-/* Paint the choices in their portal as well as the joined header shell.
-   A header-owned pseudo-element can composite behind page artwork in WebKit;
-   the portaled items must never rely on it for their opaque backdrop. Both
-   paints use the same color, edge and measured height, with one outer shadow. */
-.menu-panel.section-dropdown{isolation:isolate;}
-.menu-panel.section-dropdown>.menu-panel-surface{border-top:0;background:var(--control-surface);box-shadow:none;}
-.menu-panel.section-dropdown>.menu-panel-items{padding:.25rem;}
+.menu-panel.section-dropdown {
+  position:fixed;
+  isolation:isolate;
+  box-sizing:border-box;
+  min-width:0;
+  max-width:none;
+  border-radius:0 0 1rem 1rem;
+  color:var(--ink);
+}
+/* Keep an opaque portal surface when WebKit composites it above the header. */
+.menu-panel.section-dropdown > .menu-panel-surface {
+  border-top:0;
+  background:var(--control-surface);
+  box-shadow:none;
+}
+.menu-panel.section-dropdown > .menu-panel-items { padding:.25rem; }
+.menu-panel.section-dropdown .dropdown-item {
+  justify-content:flex-start;
+  gap:.5rem;
+  min-height:2.25rem;
+  padding:.375rem .625rem;
+  border-radius:.625rem;
+  font-size:.875rem;
+  font-weight:550;
+}
+.menu-panel.section-dropdown .dropdown-item > .icon {
+  flex:none;
+  width:1.125rem;
+  height:1.125rem;
+}
+.menu-panel.section-dropdown .dropdown-item > span {
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 @property --menu-join-height{syntax:'<length>';inherits:true;initial-value:0px;}
 @property --menu-shadow-opacity{syntax:'<number>';inherits:true;initial-value:0;}
 /* The same header paint survives opening, retraction and the final unmount.

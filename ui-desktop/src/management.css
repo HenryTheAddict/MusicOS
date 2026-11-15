@@ -252,9 +252,10 @@
 .app-shell .release-workspace .tag-albums>button[aria-pressed=true]{background:var(--control-surface);border-color:var(--control-border);color:var(--ink)}
 .tag-albums>button .cover{width:2.625rem;height:2.625rem;border-radius:.5rem;aspect-ratio:1}
 .tag-albums>button>span{min-width:0}
-.tag-albums>button :is(strong,small){display:block;overflow-wrap:anywhere}
+.tag-albums>button strong{display:block;overflow-wrap:anywhere;font-weight:650;line-height:1.25}
+.tag-albums>button small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:.125rem}
 .tag-albums>button small,.tag-suggestion-mark,.tag-status,.tag-inspector-empty{color:var(--secondary-ink);font-size:.75rem}
-.tag-suggestion-mark{display:block;font-weight:600;margin-top:.125rem}
+.tag-suggestion-mark{display:block;font-weight:550;margin-top:.1875rem;line-height:1.25;font-size:.6875rem}
 .tag-albums>button>.icon{width:.875rem;height:.875rem;transform:scaleX(-1)}
 .tag-pages{justify-content:space-between;margin-top:.5rem}
 .tag-result{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.625rem .75rem;margin-bottom:.75rem;border-radius:.75rem;background:var(--control-surface)}
@@ -265,7 +266,26 @@
 .release-editor>.library-settings-nav{margin-bottom:.75rem}
 .release-editor .metadata-action-footer{justify-content:flex-end;z-index:2}
 .app-shell .release-editor .metadata-action-footer button.primary{background:var(--accent);color:var(--accent-ink)}
-.tag-cover-comparison{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.625rem;align-items:stretch;max-width:26rem}
+.tag-cover-comparison {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.625rem;
+  align-items:stretch;
+  max-width:26rem;
+}
+.tag-cover-comparison[data-single=true] {
+  grid-template-columns:minmax(0,1fr);
+  max-width:22rem;
+}
+.tag-cover-comparison[data-single=true] figure {
+  display:grid;
+  grid-template-columns:minmax(3.5rem,7rem) minmax(0,1fr);
+  align-items:center;
+  gap:.75rem;
+}
+.tag-cover-comparison[data-single=true] figcaption { padding:0; }
+.tag-cover-match { margin-top:.375rem; }
+.tag-cover:has(.tag-cover-comparison[data-single=true]) .tag-matches { margin-top:.875rem; }
 .tag-cover-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;margin-block:.875rem .625rem}
 .tag-cover-heading h3{font-size:1rem;margin:0}
 .tag-cover-heading p,.tag-cover-note,.tag-cover-actions>span{font-size:.75rem;color:var(--secondary-ink);margin:.25rem 0;line-height:1.45}

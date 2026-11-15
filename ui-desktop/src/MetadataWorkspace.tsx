@@ -8,7 +8,7 @@ import BatchMetadata from './BatchMetadata';
 import {LyricsHistory,LyricFileSync} from './LyricsEditor';
 import MetadataBackups from './MetadataBackups';
 import {displayMetadata,songCount} from './MetadataFields';
-import type {Album,Library,MetadataHistory,MetadataStatus,Review,Task} from './types';
+import type {Album,AlbumReview,Library,MetadataHistory,MetadataStatus,Review,Task} from './types';
 
 export type MetadataEntry = {mode:'album'; albumId:string}
   | {mode:'song'|'lyrics'; trackId:number}
@@ -21,6 +21,25 @@ type Props = {
   onTask:(kind:string,albumId?:string)=>void; onRefresh:()=>Promise<void>;
 };
 const pageSize = 50;
+type AlbumSummary = {state?:string;changed_fields:number;cover_review?:boolean;checked?:number;total?:number};
+function albumStatus(summary:AlbumSummary|undefined, listed:boolean) {
+  if (summary?.state==='changes_available') {
+    return [
+      summary.changed_fields>0 && `${summary.changed_fields} tag ${summary.changed_fields===1?'change':'changes'}`,
+      summary.cover_review&&'Cover to compare',
+    ].filter(Boolean).join(' · ');
+  }
+  switch (summary?.state) {
+    case 'already_matches': return 'Already matches';
+    case 'choose_release': return 'Choose a release';
+    case 'partially_matched': return 'Some songs matched';
+    case 'no_confident_match': return 'No confident match';
+    case 'lookup_failed': return 'Lookup failed';
+    case 'not_checked': return 'Not checked';
+    default: return listed?'Suggestions available':'Not checked';
+  }
+}
+
 const displayFields = ['title','artist','album_artist','album','genre','year','track_number','disc_number','cover_art_path'];
 
 export default function MetadataWorkspace({library,entry,busy,task,playing=false,onTask,onRefresh}:Props) {
@@ -51,7 +70,8 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
   const [filter,setFilter] = useState<'all'|'suggestions'>('all');
   const [offset,setOffset] = useState(0);
   const [summary,setSummary] = useState<Set<string>|null>(null);
-  const [albumStates,setAlbumStates]=useState<Record<string,{state:string;changed_fields:number;cover_review?:boolean;checked:number;total:number}>>({});
+  const [albumStates,setAlbumStates]=useState<Record<string,AlbumSummary>>({});
+  const [inspected,setInspected]=useState<Record<string,{epoch:number;summary:AlbumSummary}>>({});
   const [summaryError,setSummaryError] = useState('');
   const [cancelling,setCancelling] = useState(false);
   const [cancelError,setCancelError] = useState('');
@@ -66,11 +86,16 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
   const displayed = useMemo(()=>{
     const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return library.albums.filter(album=>{
-      if (filter==='suggestions' && !summary?.has(album.id)) return false;
+      if (filter==='suggestions') {
+        const inspection=inspected[album.id];
+        if (inspection?.epoch===epoch) {
+          if (!['changes_available','choose_release'].includes(inspection.summary.state??'')) return false;
+        } else if (!summary?.has(album.id)) return false;
+      }
       const text = `${album.title} ${album.artist} ${album.year||''} ${album.release_type??''}`.toLocaleLowerCase();
       return words.every(word=>text.includes(word));
     });
-  },[library.albums,summary,filter,query]);
+  },[library.albums,summary,filter,query,inspected,epoch]);
   const currentOffset = Math.min(offset,Math.max(0,Math.ceil(displayed.length/pageSize)-1)*pageSize);
   const scanning = task?.kind==='enrich' && task.running;
   useEffect(()=>{if(!scanning)setCancelling(false);},[scanning]);
@@ -175,6 +200,16 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
     setShowInspector(false);
   }
 
+  function rememberComparison(result:AlbumReview) {
+    if (!result.status) return;
+    const cover_review=result.rows.some(row=>row.changed_fields?.includes('artwork'));
+    setInspected(previous=>({...previous,[result.album_id]:{epoch,summary:{
+      state:result.status,
+      changed_fields:Math.max(0,(result.changed_fields??0)-Number(cover_review)),
+      cover_review,
+    }}}));
+  }
+
   function resetList() {
     browserScroll.current=0;
     if(list.current)list.current.scrollTop=0;
@@ -226,14 +261,18 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
           </div>
           {summaryError&&<p role="alert">Suggestion status unavailable. <button onClick={()=>setEpoch(epoch=>epoch+1)}>Retry</button></p>}
           <div className="tag-albums" ref={list} aria-busy={filter==='suggestions'&&!summary&&!summaryError}>
-            {displayed.slice(currentOffset,currentOffset+pageSize).map(release=><button key={release.id} data-release-id={release.id}
-              aria-pressed={album?.id===release.id} onClick={()=>select({album:release,tab:'cover'})}>
-              <Cover src={release.cover} title={release.title}/>
-              <span><strong>{release.title}</strong><small>{[release.artist,release.year||null,release.release_type,songCount(release.track_ids.length)].filter(Boolean).join(' · ')}</small>
-                <span className="tag-suggestion-mark" data-state={albumStates[release.id]?.state}>{albumStates[release.id]?.state==='changes_available'?`${albumStates[release.id].changed_fields||''}${albumStates[release.id].changed_fields?' tag changes':''}${albumStates[release.id].cover_review?(albumStates[release.id].changed_fields?' · Cover to compare':'Cover to compare'):''}`:albumStates[release.id]?.state==='already_matches'?'Already matches':albumStates[release.id]?.state==='choose_release'?'Choose a release':albumStates[release.id]?.state==='partially_matched'?'Some songs matched':albumStates[release.id]?.state==='no_confident_match'?'No confident match':albumStates[release.id]?.state==='lookup_failed'?'Lookup failed':summary?.has(release.id)?'Suggestions available':'Not checked'}</span>
-              </span>
-              <Icon name="Back"/>
-            </button>)}
+            {displayed.slice(currentOffset,currentOffset+pageSize).map(release=>{
+              const inspection=inspected[release.id];
+              const state=inspection?.epoch===epoch?inspection.summary:albumStates[release.id];
+              return <button key={release.id} data-release-id={release.id}
+                aria-pressed={album?.id===release.id} onClick={()=>select({album:release,tab:'cover'})}>
+                <Cover src={release.cover} title=""/>
+                <span><strong>{release.title}</strong><small>{[release.artist,release.year||null,release.release_type,songCount(release.track_ids.length)].filter(Boolean).join(' · ')}</small>
+                  <span className="tag-suggestion-mark" data-state={state?.state}>{albumStatus(state,!!summary?.has(release.id))}</span>
+                </span>
+                <Icon name="Back"/>
+              </button>;
+            })}
             {!displayed.length&&<p role="status">{filter==='suggestions'&&!summary&&!summaryError?'Loading suggestions…':!library.albums.length?'Add music to manage its metadata.':query?'No albums match your search.':filter==='suggestions'?'No albums have suggestions.':'No albums available.'}</p>}
           </div>
           {displayed.length>pageSize&&<div className="tag-pages">
@@ -249,7 +288,7 @@ export default function MetadataWorkspace({library,entry,busy,task,playing=false
               onCheck={busy||saving||bulkSaving ? undefined : ()=>onTask('enrich',album.id)}
               onTab={setTab} onSong={id=>select({album,trackId:id||undefined,tab:'songs'})}
               onLyrics={setLyrics} onDirty={setDirty} onSaving={setSaving}
-              onSaved={text=>setMessage(text)} onRefresh={onRefresh}/></KeepView>
+              onSaved={text=>setMessage(text)} onRefresh={onRefresh} onComparison={rememberComparison}/></KeepView>
           </> : <p className="tag-inspector-empty">{selection?'The release’s songs are now in separate albums. Choose an album to continue.':'Choose an album to see its cover, tags, and songs.'}</p>}
         </div>
       </div>

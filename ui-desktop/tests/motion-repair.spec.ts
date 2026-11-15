@@ -125,3 +125,105 @@ test('Appearance panels align and stay reachable in compact and wide settings',a
   await expect(visualizer).toBeInViewport();
  }
 });
+
+test('section menu contour stays on the selector edges across widths',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});
+ for(const [width,height] of [[480,480],[720,480],[1280,800]]) {
+  await page.setViewportSize({width,height});
+  await page.goto('/?fixture=1');
+  await expect(page.locator('.personal-home h1')).toBeVisible();
+  const chooser=page.getByRole('button',{name:'Choose section',exact:true});
+  await chooser.click();
+  const panel=page.locator('.section-dropdown');
+  await expect(panel.getByRole('menuitem',{name:'Settings',exact:true})).toBeVisible();
+  const header=(await chooser.boundingBox())!, menu=(await panel.boundingBox())!;
+  expect(Math.abs(menu.x-header.x)).toBeLessThan(1);
+  expect(Math.abs(menu.width-header.width)).toBeLessThan(1);
+  expect(Math.abs(menu.y-header.y-header.height)).toBeLessThan(2);
+  if(width===720)await page.screenshot({path:'out/musicos-polish-menu.png'});
+  await page.keyboard.press('Escape');
+ }
+});
+
+test('short sidebar fades the scroll cut and keeps the counts visible',async({page})=>{
+ await page.setViewportSize({width:1200,height:400});
+ await page.goto('/?fixture=1');
+ await expect(page.locator('.personal-home h1')).toBeVisible();
+ const body=page.locator('.sidebar-body');
+ const footer=page.locator('.sidebar-footer');
+ await expect(body).toHaveAttribute('data-scroll-bottom','true');
+ await expect(footer).toBeInViewport();
+ await expect(footer).toHaveCSS('clip-path','none');
+ await expect(footer).toContainText('songs');
+ expect((await footer.boundingBox())!.width).toBeGreaterThan(100);
+ await page.screenshot({path:'out/musicos-polish-sidebar.png'});
+ await body.evaluate(el=>{el.scrollTop=el.scrollHeight;});
+ await expect(body).toHaveAttribute('data-scroll-bottom','false');
+ await expect(body.getByRole('button',{name:'Favorites',exact:true})).toBeInViewport();
+});
+
+test('Sparklist refinement keeps Keep and More on the song row',async({page})=>{
+ for(const [width,height,scale] of [[480,480,150],[720,480,125],[1280,800,125]]) {
+  await page.setViewportSize({width,height});
+  await page.goto('/?fixture=1&sparkReady=1');
+  await page.evaluate(percent=>localStorage.setItem('musicos-fixture-preferences',
+   JSON.stringify({version:1,interface_percent:percent})),scale);
+  await page.reload();
+  await page.getByRole('button',{name:'Create collection',exact:true}).first().click();
+  await page.getByRole('menuitem',{name:'New Sparklist',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'Create Sparklist',exact:true});
+  await dialog.getByRole('button',{name:'Choose for me',exact:true}).click();
+  const row=dialog.locator('.spark-preview-list > li').first();
+  await expect(row.getByRole('button',{name:'Keep',exact:true})).toBeVisible();
+  const metrics=await row.evaluate(node=>{
+   const title=node.querySelector('.spark-track-copy')!.getBoundingClientRect();
+   const keep=node.querySelector('.spark-keep')!.getBoundingClientRect();
+   const more=node.querySelector('.spark-row-menu')!.getBoundingClientRect();
+   const list=node.parentElement!;
+   return {overlap:Math.max(title.right-keep.left,keep.right-more.left),
+    middle:Math.abs((keep.top+keep.bottom-more.top-more.bottom)/2),
+    inside:more.right<=list.getBoundingClientRect().right,
+    overflow:list.scrollWidth-list.clientWidth};
+  });
+  expect(metrics.overlap).toBeLessThanOrEqual(0);
+  expect(metrics.middle).toBeLessThan(2);
+  expect(metrics.inside).toBe(true);
+  expect(metrics.overflow).toBeLessThanOrEqual(1);
+  if(width===1280)await page.screenshot({path:'out/musicos-polish-sparklist.png'});
+  await row.getByRole('button',{name:/Refine /}).click();
+  await expect(page.getByRole('menuitem',{name:'Replace song'})).toBeVisible();
+ }
+});
+
+test('matching covers clear the browser suggestion and bulk artwork lines up',async({page})=>{
+ await page.setViewportSize({width:1500,height:800});
+ await page.goto('/?fixture=1&metadataIdentical=1');
+ await page.getByRole('button',{name:'Choose section',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+ await page.getByRole('tab',{name:'Library',exact:true}).click();
+ await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
+ const browser=page.locator('.tag-albums');
+ const release=browser.getByRole('button',{name:/Cover to compare/});
+ await expect(release).toHaveCount(1);
+ const id=await release.getAttribute('data-release-id');
+ await release.click();
+ await expect(page.getByText('Suggested cover matches', {exact:true})).toBeVisible();
+ await expect(browser.locator(`[data-release-id="${id}"]`)).toContainText('Already matches');
+ await page.screenshot({path:'out/musicos-polish-metadata.png'});
+ await page.getByRole('button',{name:'Has suggestions',exact:true}).click();
+ await expect(browser.getByText('No albums have suggestions.',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'More metadata tools',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Bulk edit',exact:true}).click();
+ const editor=page.getByRole('region',{name:'Edit library metadata'});
+ await expect(editor.getByRole('searchbox',{name:'Find albums to edit'})).toBeVisible();
+ const covers=await editor.locator('.metadata-album-list > button .cover').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().left));
+ expect(covers.length).toBeGreaterThan(2);
+ expect(Math.max(...covers)-Math.min(...covers)).toBeLessThan(1);
+ await expect(page.getByRole('menuitem',{name:'Bulk edit',exact:true})).toHaveCount(0);
+ await page.screenshot({path:'out/musicos-polish-bulk.png'});
+ await editor.getByRole('searchbox',{name:'Find albums to edit'}).fill('Discovery');
+ await editor.getByRole('button',{name:'Select matching albums'}).click();
+ await expect(editor.locator('output').first()).not.toHaveText('0 selected');
+ await editor.getByRole('button',{name:'Songs',exact:true}).click();
+ await expect(editor.getByRole('searchbox',{name:'Find songs to edit'})).toBeVisible();
+});
