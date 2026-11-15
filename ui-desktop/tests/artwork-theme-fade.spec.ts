@@ -100,3 +100,22 @@ for(const mode of ['light','dark'])test(`${mode}: a Back swipe holds both page c
  await expect.poll(colors).toEqual(destination);
  expect(await transitions(page)).toEqual([]);
 });
+
+test('a full-distance swipe releases with one palette transition and an opaque preview',async({page})=>{
+ await coloredArtwork(page);
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await expect.poll(()=>transitions(page)).toContain('--shell-color');
+ await finishColors(page);
+ await page.locator('#library-content').evaluate(node=>{
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:1}));
+  node.dispatchEvent(new WheelEvent('wheel',{deltaX:-node.clientWidth*1.4,bubbles:true,cancelable:true}));
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2}));
+ });
+ const root=page.locator('html');
+ await expect(root).toHaveAttribute('data-back-swipe-theme','release');
+ await expect(page.locator('.back-page-preview')).toHaveCSS('opacity','1');
+ await expect(page.locator('#library-content .collection-grid')).toBeVisible();
+ await expect(page.locator('.back-page-preview,.swipe-cover-transfer')).toHaveCount(0);
+ await expect(root).not.toHaveAttribute('data-back-swipe-theme',/./);
+ expect(await transitions(page)).toEqual([]);
+});

@@ -420,13 +420,9 @@ fn playback_loop(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
         player.tick();
-        let latest = player.entry_ids();
-        if latest
-            != snapshot
-                .read()
-                .unwrap_or_else(|e| e.into_inner())
-                .queue_entry_ids
-        {
+        if !player.has_entry_order(
+            &snapshot.read().unwrap_or_else(|e| e.into_inner()).queue_entry_ids,
+        ) {
             queue = queue_snapshot(&player);
             queue_revision = queue_revision.wrapping_add(1);
         }
@@ -576,12 +572,17 @@ fn publish(
         LoopMode::One => "one",
     };
     if let Ok(mut snapshot) = target.write() {
+        let queue_entry_ids = if revision == 0 || snapshot.queue_revision != queue_revision {
+            player.entry_ids()
+        } else {
+            std::mem::take(&mut snapshot.queue_entry_ids)
+        };
         *snapshot = LocalPlaybackSnapshot {
             revision,
             track: status.track.map(track_from_init),
             queue,
             queue_revision,
-            queue_entry_ids: player.entry_ids(),
+            queue_entry_ids,
             pinned_entries: player.pins.iter().copied().collect(),
             arranged_entries: player.arranged.iter().copied().collect(),
             plan_revision: player.plan_revision,

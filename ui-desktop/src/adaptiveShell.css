@@ -182,6 +182,11 @@ html:is([data-back-swipe-theme=true],[data-back-swipe-theme=release]) {
   --accent:color-mix(in oklab,var(--swipe-from-accent),var(--swipe-to-accent) var(--back-swipe-weight)) !important;
 }
 .page-frame.back-page-preview{position:absolute;z-index:1;pointer-events:none;contain:strict;}
+.back-page-preview *,
+.back-page-preview *::before,
+.back-page-preview *::after { animation:none!important; transition:none!important; }
+html[data-sketch-window=true] .page-frame.back-page-preview { border-color:transparent; }
+
 .content-column > .back-swipe-bar{position:absolute;z-index:3;margin:0;pointer-events:none;opacity:var(--back-swipe-progress);clip-path:inset(0 0 calc((1 - var(--back-swipe-progress)) * 22%) 0 round 1rem);}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview){z-index:2;background:transparent;border-color:transparent;}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview) > .theme-layer{visibility:hidden;}

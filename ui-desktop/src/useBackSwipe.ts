@@ -8,7 +8,8 @@ import type {Palette} from './types';
 function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:${r.id??''}:${r.search??''}`;}catch{return raw}}
 export type BackArtwork={request:string;result:{palette:Palette;path:string}|null};
 const swipeColors=['shell-color','page-color','surface-color','blob-color','accent'] as const;
-type BackTheme={appearance:string;artwork:BackArtwork;colors:Record<typeof swipeColors[number],string>};
+const pageThemeColors=[...swipeColors,'ink','secondary-ink','accent-ink','playback-tone'] as const;
+type BackTheme={appearance:string;artwork:BackArtwork;colors:Record<typeof pageThemeColors[number],string>};
 type Snapshot = {
  html:string;
  scroll:number;
@@ -20,8 +21,23 @@ const snapshots=new Map<string,Snapshot>();
 let total=0;
 
 function freezeMarkup(source:HTMLElement){
- const copy=source.cloneNode(true) as HTMLElement;
- const sourceImages=source.querySelectorAll<HTMLImageElement>('img');
+ const copy=source.cloneNode(false) as HTMLElement;
+ const content=source.querySelector(':scope > .page-content');
+ const sourceImages:HTMLImageElement[]=[];
+ if(content){
+  // Retained Home, search and settings views are hidden siblings. Do not
+  // clone their contents or eagerly load their artwork for a Back snapshot.
+  const visible=content.cloneNode(false);
+  for(const child of content.children){
+   if(child.matches('[hidden]'))continue;
+   visible.appendChild(child.cloneNode(true));
+   sourceImages.push(...child.querySelectorAll<HTMLImageElement>('img'));
+  }
+  copy.appendChild(visible);
+ }else{
+  for(const child of source.childNodes)copy.appendChild(child.cloneNode(true));
+  sourceImages.push(...source.querySelectorAll<HTMLImageElement>('img'));
+ }
  copy.querySelectorAll<HTMLImageElement>('img').forEach((image,index)=>{
   const original=sourceImages[index];
   if(original?.complete&&original.naturalWidth){
@@ -36,11 +52,10 @@ function freezeMarkup(source:HTMLElement){
  const ids=new Map<string,string>(),prefix=`back-${Math.random().toString(36).slice(2)}-`;
  copy.querySelectorAll('[id]').forEach(node=>{ids.set(node.id,prefix+node.id);node.id=prefix+node.id;});
  for(const node of [copy,...copy.querySelectorAll<HTMLElement>('*')]){
-  node.style.setProperty('animation','none','important');
-  node.style.setProperty('transition','none','important');
   for(const key of node.getAttributeNames()){
    if(key==='id')continue;
    const value=node.getAttribute(key)!;
+   if(!value.includes('#'))continue;
    const next=value.replace(/url\(#([^)]+)\)/g,(_,id)=>`url(#${ids.get(id)??id})`);
    const updated=next.startsWith('#')&&ids.has(next.slice(1))?'#'+ids.get(next.slice(1)):next;
    if(updated!==value)node.setAttribute(key,updated);
@@ -60,7 +75,7 @@ export function captureBackPage(root:HTMLElement|null,key:string,appearance:stri
  const style=document.documentElement.style;
  const theme=appearance&&artwork?{
   appearance,artwork,
-  colors:Object.fromEntries(swipeColors.map(name=>[name,style.getPropertyValue(`--${name}`)])) as BackTheme['colors'],
+  colors:Object.fromEntries(pageThemeColors.map(name=>[name,style.getPropertyValue(`--${name}`)])) as BackTheme['colors'],
  }:undefined;
  const size=html.length;
  total-=snapshots.get(key)?.size??0;
@@ -192,9 +207,12 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    animation?.cancel();animation=null;
    handoffFrame=requestAnimationFrame(()=>{handoffFrame=requestAnimationFrame(clear);});
   };
-  const duration=commit?180*(1-progress):Math.min(140,70+progress*140);
+  // A fast swipe can finish the geometry almost instantly. Give the
+  // broad palette change its own minimum travel so it cannot flash one frame.
+  const floor=theme&&commit?128:0;
+  const duration=commit?Math.max(floor,180*(1-progress)):Math.min(140,70+progress*140);
   if(duration<8){if(commit)cover?.seek(1);done();return;}
-  const from=-amount,to=commit?width:0;
+  const from=progress*width,to=commit?width:0;
   animation=page.animate([{transform:`translate3d(${from}px,0,0)`},{transform:`translate3d(${to}px,0,0)`}],
     {duration,easing:'cubic-bezier(.2,.7,.2,1)',fill:'forwards'});
   if(theme){
@@ -221,7 +239,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    theme=targetTheme;
    const displayed=getComputedStyle(themeRoot);
    const outgoing=getComputedStyle(page);
-   for(const name of swipeColors){
+   for(const name of pageThemeColors){
     const property=`--${name}`;
     pageColors.set(property,page.style.getPropertyValue(property));
     page.style.setProperty(property,outgoing.getPropertyValue(property));

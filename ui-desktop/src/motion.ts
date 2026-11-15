@@ -19,10 +19,14 @@ export function useContentFade(root:RefObject<HTMLElement|null>,location:string,
    // entrance on the quiet loading placeholder. Stop observing after that paint.
    if([...node.querySelectorAll('.screen-placeholder,.settings-subpage-placeholder')].some(child=>!child.closest('[hidden]')))return;
    const movingContent=spatial&&![...node.querySelectorAll('.track-table')].some(table=>!table.closest('[hidden]'));
-   observer?.disconnect();cancel=animateOwned(node,id,[reversal.current??{opacity:'0',transform:movingContent?'translateY(5px)':'none'},{opacity:1,transform:'none'}],180);reversal.current=null;
+   observer?.disconnect();cancel=animateOwned(node,id,[reversal.current??{opacity:'.92',transform:movingContent?'translateY(4px)':'none'},{opacity:1,transform:'none'}],180);reversal.current=null;
   };
-  observer=new MutationObserver(enter);observer.observe(node,{childList:true,subtree:true});enter();
-  return()=>{observer?.disconnect();if(cancel){const moving=node.getAnimations().some(animation=>animation.id===id&&animation.playState==='running'),style=getComputedStyle(node);reversal.current=moving?{opacity:style.opacity,transform:style.transform}:null;cancel();}};
+  enter();
+  if(!cancel){
+   observer=new MutationObserver(enter);
+   observer.observe(node,{childList:true,subtree:true});
+  }
+  return()=>{observer?.disconnect();if(cancel){const moving=node.getAnimations().some(animation=>animation.id===id&&animation.playState==='running');const style=moving?getComputedStyle(node):null;reversal.current=style?{opacity:style.opacity,transform:style.transform}:null;cancel();}};
  },[root,location,ready,selector,id]);
 }
 export function usePageEntrance(root:RefObject<HTMLElement|null>,location:string,ready:boolean) {

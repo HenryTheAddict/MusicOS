@@ -279,10 +279,10 @@ pub fn order_upcoming<T>(
             position
         } else {
             let best = (0..remaining.len())
-                .min_by(|a, b| {
-                    cost(previous, remaining[*a]).total_cmp(&cost(previous, remaining[*b]))
-                })
-                .unwrap();
+                .map(|index| (index, cost(previous, remaining[index])))
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .expect("an unpinned position always has a candidate")
+                .0;
             remaining.remove(best)
         };
         result.push(index);
@@ -493,6 +493,17 @@ mod tests {
         assert_eq!(p.duration, 0.);
         assert_eq!(p.outgoing_cue, 180.);
     }
+    #[test]
+    fn lineup_scores_each_candidate_once_per_position_and_keeps_ties_stable() {
+        let mut evaluations = std::collections::HashSet::new();
+        let order = order_upcoming(&[0, 1, 2, 3, 4], 1, &Default::default(), |from, to| {
+            assert!(evaluations.insert((from, to)));
+            0.
+        });
+        assert_eq!(order, [1, 2, 3, 4]);
+        assert_eq!(evaluations.len(), 10);
+    }
+
     #[test]
     fn manual_positions_are_pinned_without_moving_current_or_past() {
         let pins = [3].into_iter().collect();

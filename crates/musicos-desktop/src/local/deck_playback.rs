@@ -22,9 +22,9 @@ pub struct Transition {
     pub tempo: f32,
     pub effect: String,
 }
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct TransitionOutcome {pub request_id:u64,pub outgoing_entry:u64,pub incoming_entry:u64,pub status:String,pub reason:String}
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct TransitionStatus {
     pub outgoing_entry: u64,
     pub plan_id:u64,
@@ -66,7 +66,7 @@ pub struct Status {
     pub backend: String,
     pub last_error: Option<String>,
 }
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct AuditionStatus {pub track_id:i64,pub position:f32,pub duration:f32,pub preparing:bool}
 struct Audition {track_id:i64,generation:u64,deck:usize,start:f32,end:f32,resume:bool,started:std::time::Instant}
 pub struct DesktopPlayer {
@@ -653,6 +653,9 @@ impl DesktopPlayer {
     pub fn refresh_paths(&mut self, tracks:&[Track]) {self.cancel_reason("music files organized");for entry in &mut self.queue{if let Some(track)=tracks.iter().find(|t|t.id==entry.track.id){entry.track.path=track.path.clone();self.failed_entries.remove(&entry.key);self.prepare_attempts.remove(&entry.key);}}}
     pub fn queue_tracks(&self) -> Vec<Track> {
         self.queue.iter().map(|e| e.track.clone()).collect()
+    }
+    pub fn has_entry_order(&self, ids: &[u64]) -> bool {
+        self.queue.len() == ids.len() && self.queue.iter().zip(ids).all(|(entry, id)| entry.key == *id)
     }
     pub fn entry_ids(&self) -> Vec<u64> {
         self.queue.iter().map(|e| e.key).collect()

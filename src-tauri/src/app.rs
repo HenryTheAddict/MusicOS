@@ -14,7 +14,12 @@ use musicos_desktop::{
         LibraryQuery, LibraryRepository, LocalLibraryRepository, LocalPlaybackCommand,
         LocalPlaybackService,
     },
-    models::ControlCenterConfig,
+    local::{
+        deck_playback::{AuditionStatus, TransitionOutcome, TransitionStatus},
+        listening::Listening,
+        playback::LocalPlaybackSnapshot,
+    },
+    models::{ControlCenterConfig, Track},
     runtime_manager::RuntimeManager,
     storage,
 };
@@ -538,14 +543,80 @@ fn load_library(app: &tauri::AppHandle) -> Result<library::Library> {
     *state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner())=Some(result.clone());
     Ok(result)
 }
-fn playback_value(state: &AppState) -> Value {
-    let s = state
-        .playback
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .snapshot();
-    json!({"audition":s.audition,"track":s.track,"queue":s.queue.as_ref(),"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"queue_entry_ids":s.queue_entry_ids,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend})
+// Borrow the published state. Tauri serializes only events that actually
+// change, and clock ticks avoid constructing and cloning an intermediate JSON tree.
+#[derive(Clone, Serialize, PartialEq)]
+struct PlaybackEvent<'a> {
+    audition: &'a Option<AuditionStatus>,
+    track: &'a Option<Track>,
+    queue_index: Option<usize>,
+    is_playing: bool,
+    position: f32,
+    volume: f32,
+    shuffle: bool,
+    dj_mode: bool,
+    pinned_entries: &'a [u64],
+    arranged_entries: &'a [u64],
+    plan_revision: u64,
+    dj_transition: &'a Option<TransitionStatus>,
+    listening: &'a Listening,
+    listening_applied: bool,
+    applied_listening_revision: u64,
+    requested_listening_revision: u64,
+    applied_reverb: f32,
+    applied_reverb_depth: f32,
+    reverb_processed_frames: u64,
+    transition_outcome: &'a Option<TransitionOutcome>,
+    failed_entries: &'a [u64],
+    audio_levels: [f32; 3],
+    repeat: &'a str,
+    error: &'a Option<String>,
+    backend: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    queue: Option<&'a [Track]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    queue_entry_ids: Option<&'a [u64]>,
 }
+
+impl<'a> PlaybackEvent<'a> {
+    fn new(snapshot: &'a LocalPlaybackSnapshot, include_queue: bool) -> Self {
+        Self {
+            audition: &snapshot.audition,
+            track: &snapshot.track,
+            queue_index: snapshot.queue_index,
+            is_playing: snapshot.is_playing,
+            position: snapshot.position,
+            volume: snapshot.volume,
+            shuffle: snapshot.shuffle,
+            dj_mode: snapshot.dj_mode,
+            pinned_entries: &snapshot.pinned_entries,
+            arranged_entries: &snapshot.arranged_entries,
+            plan_revision: snapshot.plan_revision,
+            dj_transition: &snapshot.dj_transition,
+            listening: &snapshot.listening,
+            listening_applied: snapshot.listening_applied,
+            applied_listening_revision: snapshot.applied_listening_revision,
+            requested_listening_revision: snapshot.requested_listening_revision,
+            applied_reverb: snapshot.applied_reverb,
+            applied_reverb_depth: snapshot.applied_reverb_depth,
+            reverb_processed_frames: snapshot.reverb_processed_frames,
+            transition_outcome: &snapshot.transition_outcome,
+            failed_entries: &snapshot.failed_entries,
+            audio_levels: snapshot.audio_levels,
+            repeat: &snapshot.repeat,
+            error: &snapshot.error,
+            backend: &snapshot.backend,
+            queue: include_queue.then_some(snapshot.queue.as_ref()),
+            queue_entry_ids: include_queue.then_some(&snapshot.queue_entry_ids),
+        }
+    }
+}
+
+fn playback_value(state: &AppState) -> Value {
+    let snapshot = state.playback.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+    json!(PlaybackEvent::new(&snapshot, true))
+}
+
 async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> Result<T> + Send + 'static,
 ) -> ApiResult<T> {
@@ -1905,11 +1976,11 @@ pub fn run() {
             let fallback=window.clone();std::thread::spawn(move||{std::thread::sleep(Duration::from_secs(2));if fallback.is_visible().ok()==Some(false){let _=fallback.show();}});
             let handle = app.handle().clone();
             std::thread::spawn(move || {
-                let mut last_queue_revision = u64::MAX;
-                let mut last_value = Value::Null;
+                let mut last_sent: Option<LocalPlaybackSnapshot> = None;
                 let mut planned=None;
                 let mut planned_at=std::time::Instant::now();
                 let mut arranged=None;
+                let mut prioritized_queue=None;
                 let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
                 let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
                 let mut last_snapshot=None;
@@ -1929,13 +2000,22 @@ pub fn run() {
                             let _=handle.run_on_main_thread(move||crate::system_media::publish(&snapshot));
                         }
                     }
-                    let analysis_progress=state.analysis.progress();
-                    let mut config=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone();config.enabled=s.dj_mode;
+                    let mut config=if s.dj_mode {
+                        state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone()
+                    } else {
+                        crate::dj_plan::Config::default()
+                    };
+                    config.enabled=s.dj_mode;
                     if s.dj_mode && s.is_playing && s.audition.is_none() {if let Some(current)=s.queue_index {
-                     let db=state.config().db_path;let upcoming=s.queue.iter().skip(current).take(5).collect::<Vec<_>>();state.analysis.prioritize(upcoming.iter().map(|t|t.id).collect());
-                     if state.analysis.auto_allowed()&&!analysis_progress.running&&analysis_check.elapsed()>=Duration::from_secs(1) {
+                     let priority=(s.queue_revision,current);
+                     if prioritized_queue!=Some(priority) {
+                        state.analysis.prioritize(s.queue.iter().skip(current).take(5).map(|track|track.id).collect());
+                        prioritized_queue=Some(priority);
+                     }
+                     if analysis_check.elapsed()>=Duration::from_secs(1)&&state.analysis.auto_allowed()&&!state.analysis.progress().running {
                         analysis_check=std::time::Instant::now();
-                        let candidates=upcoming.iter().map(|t|{let metadata=std::fs::metadata(&t.path).ok();let key=format!("{}|{:?}|{:?}",t.path,metadata.as_ref().map(|m|m.len()),metadata.and_then(|m|m.modified().ok()));(*t,key)}).collect::<Vec<_>>();
+                        let db=state.config().db_path;
+                        let candidates=s.queue.iter().skip(current).take(5).map(|t|{let metadata=std::fs::metadata(&t.path).ok();let key=format!("{}|{:?}|{:?}",t.path,metadata.as_ref().map(|m|m.len()),metadata.and_then(|m|m.modified().ok()));(t,key)}).collect::<Vec<_>>();
                         let missing=candidates.iter().filter(|(t,key)|analysis_requested.get(&t.id)!=Some(key)&&crate::analysis::cached_current(&db,t.id,&t.path).is_none()).map(|(t,_)|(t.id,t.path.clone(),t.duration as i64)).collect::<Vec<_>>();
                         if !missing.is_empty()&&state.analysis.start(db.clone(),missing.clone()).is_ok(){for(id,_,_)in missing{if let Some((_,key))=candidates.iter().find(|(t,_)|t.id==id){analysis_requested.insert(id,key.clone());}}}
                      }
@@ -1946,6 +2026,7 @@ pub fn run() {
                      let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));
                      if window.len()>2&&config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {
                       arranged=Some(stamp);
+                      let db=state.config().db_path;
                       let features=crate::analysis::cached_many(&db,&window.iter().map(|track|(track.id,track.path.as_str())).collect::<Vec<_>>());
                       let entries=&s.queue_entry_ids[current..window_end];
                       let pins=entries.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(index,_)|index).collect();
@@ -1959,10 +2040,10 @@ pub fn run() {
                       if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
                      }
                     }}
-                    if !s.dj_mode { planned=None;arranged=None; }
+                    if !s.dj_mode { planned=None;arranged=None;prioritized_queue=None; }
                     if s.dj_mode && s.is_playing && s.audition.is_none() && s.dj_transition.is_none() {
                     let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
-                    let stamp=(s.queue_revision,s.plan_revision,s.queue_index,serde_json::to_string(&config).unwrap_or_default(),state.analysis.pair_revision(&relevant_ids));
+                    let stamp=(s.queue_revision,s.plan_revision,s.queue_index,config.clone(),state.analysis.pair_revision(&relevant_ids));
                     if planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
                      let outgoing=&s.queue[index];let incoming=&s.queue[next];let db=state.config().db_path;
                      let features=crate::analysis::cached_many(&db,&[(outgoing.id,outgoing.path.as_str()),(incoming.id,incoming.path.as_str())]);
@@ -1975,15 +2056,12 @@ pub fn run() {
                     }}}
                     }
 
-                    let mut value = json!({"audition":s.audition,"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
-                    if value != last_value || s.queue_revision != last_queue_revision {
-                        last_value=value.clone();
-                        // Send the potentially large queue only when membership/order changes.
-                        if s.queue_revision != last_queue_revision {
-                            value["queue"]=json!(s.queue.as_ref());value["queue_entry_ids"]=json!(s.queue_entry_ids);
-                            last_queue_revision=s.queue_revision;
-                        }
-                        let _=handle.emit("playback",value);
+                    let queue_changed = last_sent.as_ref().is_none_or(|last| last.queue_revision != s.queue_revision);
+                    if queue_changed || last_sent.as_ref().is_some_and(|last| {
+                        PlaybackEvent::new(last, false) != PlaybackEvent::new(&s, false)
+                    }) {
+                        let _ = handle.emit("playback", PlaybackEvent::new(&s, queue_changed));
+                        last_sent = Some(s);
                     }
                 }
             });

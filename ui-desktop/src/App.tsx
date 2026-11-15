@@ -35,7 +35,6 @@ import OverflowLabel from './OverflowLabel';
 import {playerTheme} from './playerTheme';
 import {invalidateDisplay,type LibraryChanged} from './displayData';
 import {KeepView,ViewActivity} from './ViewScope';
-import {mergePlaybackUpdate} from './playbackPresentation';
 import {captureAlbumCover,captureAlbumReturn,captureArtistCover,captureArtistReturn,captureLibraryToolbar} from './albumTransitions';
 import MiniPlayer from './MiniPlayer';
 import usePanelPresence from './usePanelPresence';
@@ -375,7 +374,7 @@ export default function App() {
     async function events() {
       const listeners = await Promise.all([
         subscribe<Partial<Playback>>("playback", (update) =>
-          setPlayer((old) => mergePlaybackUpdate(old,update)),
+          setPlayer(update),
         ),
         subscribe<Task>("task", task=>{
           if(task.kind==='enrich'&&!task.running)invalidateDisplay('album_metadata');

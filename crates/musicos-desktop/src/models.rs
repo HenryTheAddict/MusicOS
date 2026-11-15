@@ -681,7 +681,7 @@ fn default_columns() -> Vec<ColumnPreference> {
     .collect()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct Track {
     #[serde(default)] pub album_artist: Option<String>,
     #[serde(default)] pub release_id: Option<String>,
@@ -718,7 +718,7 @@ pub struct Track {
     pub available: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Default, Serialize, Deserialize)]
 pub struct AudioQuality {pub format:String,pub lossless:bool,pub sample_rate:Option<u32>,pub bit_depth:Option<u8>,pub bitrate:Option<u32>,pub channels:Option<u8>}
 
 fn default_true() -> bool {
