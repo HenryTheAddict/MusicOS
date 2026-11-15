@@ -1763,35 +1763,38 @@ fn sync_window_chrome(window: tauri::WebviewWindow, state: State<'_, AppState>, 
             use objc2_foundation::NSPoint;
             // Tauri guarantees this callback runs on the UI thread, with a live NSWindow.
             let native: &NSWindow = unsafe { &*webview.ns_window().cast() };
-            let Some(close) = native.standardWindowButton(NSWindowButton::CloseButton) else {
+            if native.styleMask().contains(objc2_app_kit::NSWindowStyleMask::FullScreen) {
                 return;
-            };
-            let Some(mini) = native.standardWindowButton(NSWindowButton::MiniaturizeButton) else {
-                return;
-            };
-            let Some(zoom) = native.standardWindowButton(NSWindowButton::ZoomButton) else {
-                return;
-            };
-            let Some(parent) = (unsafe { close.superview().and_then(|v| v.superview()) }) else {
-                return;
-            };
-            // AppKit can hide the titlebar container when its three standard
-            // buttons are hidden. Restore the complete hierarchy after Mini Player.
-            parent.setHidden(false);
-            if let Some(group) = unsafe { close.superview() } { group.setHidden(false); }
-            close.setHidden(false);
-            mini.setHidden(false);
-            zoom.setHidden(false);
+            }
+            let Some(close) = native.standardWindowButton(NSWindowButton::CloseButton) else { return; };
+            let Some(mini) = native.standardWindowButton(NSWindowButton::MiniaturizeButton) else { return; };
+            let Some(zoom) = native.standardWindowButton(NSWindowButton::ZoomButton) else { return; };
+            let Some(group) = (unsafe { close.superview() }) else { return; };
+            let Some(parent) = (unsafe { group.superview() }) else { return; };
+
             let rect = close.frame();
             let height = center_y + rect.origin.y + rect.size.height / 2.0;
             let mut container = parent.frame();
-            container.size.height = height;
-            container.origin.y = native.frame().size.height - height;
-            parent.setFrame(container);
+            let y = native.frame().size.height - height;
+            let changed = |current: f64, target: f64| (current - target).abs() >= 0.25;
+            // Width-only changes and unrelated webview resizes leave the native
+            // views alone so AppKit keeps the existing hover and inactive paint.
+            if changed(container.size.height, height) || changed(container.origin.y, y) {
+                container.size.height = height;
+                container.origin.y = y;
+                parent.setFrame(container);
+            }
             let gap = mini.frame().origin.x - rect.origin.x;
             for (index, button) in [close, mini, zoom].into_iter().enumerate() {
-                button.setFrameOrigin(NSPoint::new(18.0 + index as f64 * gap, rect.origin.y));
+                let x = 18.0 + index as f64 * gap;
+                if changed(button.frame().origin.x, x) {
+                    button.setFrameOrigin(NSPoint::new(x, rect.origin.y));
+                }
+                if button.isHidden() { button.setHidden(false); }
             }
+            // The hierarchy can be hidden when returning from Mini Player.
+            if group.isHidden() { group.setHidden(false); }
+            if parent.isHidden() { parent.setHidden(false); }
         })
         .map_err(|e| AppError::from(anyhow::Error::from(e)))?;
     #[cfg(not(target_os = "macos"))]

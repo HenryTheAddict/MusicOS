@@ -227,3 +227,19 @@ test('matching covers clear the browser suggestion and bulk artwork lines up',as
  await editor.getByRole('button',{name:'Songs',exact:true}).click();
  await expect(editor.getByRole('searchbox',{name:'Find songs to edit'})).toBeVisible();
 });
+
+test('all four header playback shortcuts fit smaller windows',async({page})=>{
+ for(const [width,percent] of [[480,150],[720,125],[940,100]]){
+  await page.setViewportSize({width,height:480});
+  await page.goto('/?fixture=1&lyrics=timed');
+  await page.evaluate(value=>localStorage.setItem('musicos-fixture-preferences',
+   JSON.stringify({version:1,interface_percent:value})),percent);
+  await page.reload();
+  const bar=page.getByRole('region',{name:'Now playing',exact:true});
+  for(const name of ['Open Up next','Audio quality:','Shuffle','Repeat']){
+   await expect(bar.getByRole('button',{name:new RegExp('^'+name)})).toBeInViewport();
+  }
+  const overflow=await bar.evaluate(el=>el.scrollWidth-el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+ }
+});

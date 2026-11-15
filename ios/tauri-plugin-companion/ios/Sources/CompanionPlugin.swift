@@ -95,6 +95,19 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     private var refreshCompletion: ((Bool) -> Void)?
     private var preparationLease = UIBackgroundTaskIdentifier.invalid
     var libraryChanged:(()->Void)?
+    private let cloudPicker = CloudFolderPicker()
+    private var cloudTask: Task<Void, Never>?
+    private var cloudPhase = "idle"
+    private var cloudMessage: String?
+    private var cloudCopies: [[String: Any]] = []
+    private var cloudBookmark: Data? { UserDefaults.standard.data(forKey: "cloud-folder-bookmark") }
+    private var cloudAutomatic: Bool { UserDefaults.standard.bool(forKey: "cloud-auto-sync") }
+    private var cloudDevice: UUID {
+        if let value = UserDefaults.standard.string(forKey: "cloud-device"), let id = UUID(uuidString: value) { return id }
+        let id = UUID()
+        UserDefaults.standard.set(id.uuidString, forKey: "cloud-device")
+        return id
+    }
     var activityLinkPending: String?
     private var followedActivityID = UserDefaults.standard.string(forKey:"followed-mac-activity")
     private var followedActivity: [String:Any]?
@@ -147,6 +160,18 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             savedPosition=state["position"] as? Double ?? 0;repeatMode=state["repeat"] as? String ?? "none"
             queueEntryIds=(state["queue_entries"] as? [NSNumber] ?? []).map(\.int64Value)
             if queueEntryIds.count != queue.count{queueEntryIds=queue.map{_ in entryCounter+=1;return entryCounter}}
+        }
+        // Old builds could persist songs that were no longer in the local catalogue.
+        // Repair the entry IDs and the current index together before publishing the queue.
+        let available = Set(library.map { number($0["id"]) })
+        if queue.contains(where: { !available.contains($0) }) {
+            let oldIndex = queueIndex
+            let surviving = queue.indices.filter { available.contains(queue[$0]) }
+            let nearest = surviving.firstIndex(where: { $0 >= oldIndex }) ?? max(0, surviving.count - 1)
+            if !surviving.indices.contains(nearest) || surviving[nearest] != oldIndex { savedPosition = 0 }
+            queue = surviving.map { queue[$0] }
+            queueEntryIds = surviving.map { queueEntryIds[$0] }
+            queueIndex = nearest
         }
         // iOS can relocate the data container during an update. Persist only library-relative assets.
         library=library.map{restorePaths($0)};collections=collections.map{restorePaths($0)};portraits=portraits.mapValues{restorePath($0)}
@@ -223,7 +248,7 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
 
     private func scheduleRefresh() {
         let followsJob=preferences.liveSync&&followedActivityID != nil
-        guard (preferences.backgroundSync&&preferences.autoSync||followsJob), connection != nil else {
+        guard ((preferences.backgroundSync && preferences.autoSync || followsJob) && connection != nil) || (cloudBookmark != nil && cloudAutomatic) else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.refreshID)
             return
         }
@@ -234,6 +259,13 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
 
     private func runScheduledRefresh(_ task: BGTask) {
         scheduleRefresh()
+        let wifiDue = preferences.backgroundSync && preferences.autoSync && connection != nil
+        if cloudAutomatic && cloudBookmark != nil && (!wifiDue || UserDefaults.standard.bool(forKey: "cloud-refresh-next")) && cloudTask == nil {
+            UserDefaults.standard.set(false, forKey: "cloud-refresh-next")
+            beginCloud("upload", background: task)
+            return
+        }
+        UserDefaults.standard.set(true, forKey: "cloud-refresh-next")
         if preferences.liveSync && followedActivityID != nil && !(preferences.backgroundSync && preferences.autoSync) {
             let refresh=Task { @MainActor in
                 do{_=try await macActivity();task.setTaskCompleted(success:true)}
@@ -668,6 +700,42 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             if !preferences.automix{cancelMix()};updateLiveStatus();if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish()
             if key=="discordPresence" { listening.tryAgain() }
             return snapshot()
+        case "cloud_status": return cloudStatus()
+        case "cloud_choose":
+            guard cloudTask == nil else { return cloudStatus() }
+            if let (bookmark, name) = try await cloudPicker.choose() {
+                UserDefaults.standard.set(bookmark, forKey: "cloud-folder-bookmark")
+                UserDefaults.standard.set(name, forKey: "cloud-folder-name")
+                UserDefaults.standard.removeObject(forKey: "cloud-last-save")
+                cloudCopies = []
+                scheduleRefresh()
+                beginCloud("list")
+            }
+            return cloudStatus()
+        case "cloud_auto":
+            UserDefaults.standard.set(cloudBookmark != nil && payload["enabled"] as? Bool == true, forKey: "cloud-auto-sync")
+            scheduleRefresh()
+            return cloudStatus()
+        case "cloud_upload": beginCloud("upload"); return cloudStatus()
+        case "cloud_list": beginCloud("list"); return cloudStatus()
+        case "cloud_import":
+            guard let raw = payload["device"] as? String, let device = UUID(uuidString: raw),
+                  let update = payload["updated"] as? Double else { throw CloudLibrary.Failure("Choose an iCloud library copy.") }
+            beginCloud("import", device: device, updated: Date(timeIntervalSince1970: update))
+            return cloudStatus()
+        case "cloud_cancel":
+            cloudTask?.cancel()
+            return cloudStatus()
+        case "cloud_disconnect":
+            guard cloudTask == nil else { return cloudStatus() }
+            for key in ["cloud-folder-bookmark", "cloud-folder-name", "cloud-auto-sync", "cloud-last-save"] {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
+            cloudCopies = []
+            cloudPhase = "idle"
+            cloudMessage = nil
+            scheduleRefresh()
+            return cloudStatus()
         case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
         case "snapshot":
             var result = snapshot()
@@ -757,7 +825,10 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             guard let i=library.firstIndex(where:{number($0["id"])==id}) else { throw CompanionError.message("Song is unavailable") }
             let before=library[i]["favorited"] as? Bool ?? false; library[i]["favorited"]=value
             if preferences.interactionFeedback{UIImpactFeedbackGenerator(style:.soft).impactOccurred()}
-            outbox.append(["id":UUID().uuidString,"kind":"favorite","track_id":id,"base":before,"value":value]);try persist();return snapshot()
+            if library[i]["cloud_imported"] as? Bool != true {
+                outbox.append(["id":UUID().uuidString,"kind":"favorite","track_id":id,"base":before,"value":value])
+            }
+            try persist();return snapshot()
         case "playlist":
             let id=payload["id"] as? String ?? "phone/\(UUID().uuidString)"
             let old=collections.first(where:{$0["id"] as? String==id})
@@ -767,9 +838,21 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             let name=String((payload["name"] as? String ?? "Playlist").prefix(120)).trimmingCharacters(in:.whitespacesAndNewlines)
             guard !name.isEmpty else { throw CompanionError.message("Give the playlist a name") }
             let operationID=UUID().uuidString
-            let row:[String:Any]=["id":id,"kind":"manual","name":name,"track_ids":ids,"revision":old?["revision"] ?? "","pending_change":operationID]
+            let includesCloudOnly = ids.contains { item in
+                library.contains { number($0["id"]) == item.int64Value && $0["cloud_imported"] as? Bool == true }
+            }
+            if includesCloudOnly, let old, old["cloud_source"] == nil {
+                throw CompanionError.message("Create a new playlist for iCloud-only songs. This playlist syncs with your Mac.")
+            }
+            let localOnly = old?["cloud_source"] != nil || includesCloudOnly
+            var row:[String:Any]=["id":id,"kind":"manual","name":name,"track_ids":ids,"revision":old?["revision"] ?? ""]
+            if localOnly { row["cloud_source"] = old?["cloud_source"] ?? cloudDevice.uuidString }
+            else {
+                row["pending_change"] = operationID
+                outbox.append(["id":operationID,"kind":"playlist","collection_id":id,"base_revision":old?["revision"] ?? "","depends_on":old?["pending_change"] ?? NSNull(),"name":name,"track_ids":ids])
+            }
             collections.removeAll{$0["id"] as? String==id};collections.append(row)
-            outbox.append(["id":operationID,"kind":"playlist","collection_id":id,"base_revision":old?["revision"] ?? "","depends_on":old?["pending_change"] ?? NSNull(),"name":name,"track_ids":ids]);try persist();return snapshot()
+            try persist();return snapshot()
         case "lyrics":
             guard let t=library.first(where:{number($0["id"])==number(payload["id"])}),let path=t["lyrics_path"] as? String,let data=try? Data(contentsOf:URL(fileURLWithPath:path)) else { return ["document":NSNull(),"message":"No saved lyrics were copied for this song. Save lyrics on your Mac, then sync again.","state":"not_found","candidates":[],"revision":0,"track_id":number(payload["id"])] as [String:Any] }
             let doc=try JSONSerialization.jsonObject(with:data)
@@ -1284,9 +1367,221 @@ extension Companion {
                 check("phone relay keeps the two service settings private by default",
                       !MobilePreferences().lastfmListening && !MobilePreferences().discordPresence)
             }
+            for (name, passed) in try checkCloudLibrary() { check(name, passed) }
         }catch{checks.append(["name":"native service execution","passed":false,"error":error.localizedDescription])}
         pause()
         try? JSONSerialization.data(withJSONObject:["checks":checks],options:[.prettyPrinted,.sortedKeys]).write(to:root.appendingPathComponent("native-checks.json"),options:.atomic)
     }
+
+    private func checkCloudLibrary() throws -> [(String, Bool)] {
+        let manager = FileManager.default
+        let before = (library, collections, portraits)
+        let test = root.appendingPathComponent("test-fixtures/cloud-" + UUID().uuidString)
+        let cloud = test.appendingPathComponent("musicOS Library")
+        let receiver = test.appendingPathComponent("receive")
+        try manager.createDirectory(at: receiver, withIntermediateDirectories: true)
+        defer {
+            (library, collections, portraits) = before
+            try? persist()
+            try? manager.removeItem(at: test)
+        }
+        let sender = UUID()
+        let original = library[0]
+        let id = number(original["id"])
+        guard let sourcePath = original["path"] as? String else { throw CloudLibrary.Failure("Fixture audio unavailable.") }
+        var related = original
+        related["id"] = 2222
+        related["server_id"] = sender.uuidString
+        related["favorited"] = true
+        var fromOtherPhone = original
+        fromOtherPhone["favorited"] = false
+        fromOtherPhone["pending_operation"] = "private"
+        let collection: [String: Any] = ["id": "cloud-test", "name": "Cloud playlist", "kind": "manual", "track_ids": [id, 2222, id]]
+        let catalogue = try CloudLibrary.encoded(["tracks": [fromOtherPhone, related], "collections": [collection]])
+        let snapshot = try CloudLibrary.upload(local: root, catalogue: catalogue, to: cloud, device: sender, name: "Test iPhone")
+        let again = try CloudLibrary.upload(local: root, catalogue: catalogue, to: cloud, device: sender, name: "Test iPhone")
+        let index = try CloudLibrary.index(cloud)
+        let downloaded = try CloudLibrary.download(cloud, local: receiver, device: sender, updated: snapshot.updated)
+        let document = try CloudLibrary.decoded(downloaded)
+        let imported = document["tracks"] as? [[String: Any]] ?? []
+        let path = imported.first?["path"] as? String ?? ""
+        let source = URL(fileURLWithPath: sourcePath)
+        let sameBytes = manager.contentsEqual(atPath: path, andPath: source.path)
+        let assets = snapshot.assets
+        let privateFieldsExcluded = imported.first?["pending_operation"] == nil &&
+            !String(decoding: snapshot.catalogue, as: UTF8.self).contains(source.path)
+        let staleRejected: Bool
+        do {
+            _ = try CloudLibrary.download(cloud, local: receiver, device: sender, updated: snapshot.updated.addingTimeInterval(-1))
+            staleRejected = false
+        } catch { staleRejected = true }
+        try mergeCloud(downloaded, from: sender)
+        try mergeCloud(downloaded, from: sender)
+        let safeMerge = library.count == before.0.count + 1 && library.first?["favorited"] as? Bool == true &&
+            library.last?["favorited"] as? Bool == true && library.first?["lyrics_path"] as? String == original["lyrics_path"] as? String &&
+            collections.count == before.1.count + 1 &&
+            (collections.last?["track_ids"] as? [NSNumber])?.map(\.int64Value) == [id, 2222, id]
+        let corrupt = cloud.appendingPathComponent("Files").appendingPathComponent(assets.first { $0.kind == "audio" }!.name)
+        try Data("not the audio file".utf8).write(to: corrupt, options: .atomic)
+        try manager.createDirectory(at: test.appendingPathComponent("fresh"), withIntermediateDirectories: true)
+        let corruptRejected: Bool
+        do {
+            _ = try CloudLibrary.download(cloud, local: test.appendingPathComponent("fresh"), device: sender, updated: snapshot.updated)
+            corruptRejected = false
+        } catch { corruptRejected = true }
+        return [
+            ("iCloud copies audio, cover art and lyrics once for duplicate references", sameBytes && assets.count == 3 && index.first?.songs == 2),
+            ("identical library saves keep the same revision and omit private data", snapshot.updated == again.updated && privateFieldsExcluded),
+            ("stale iCloud reviews and corrupted audio are rejected", staleRejected && corruptRejected),
+            ("repeat imports keep favorites, local lyrics and duplicate playlist entries", safeMerge)
+        ]
+    }
 }
 #endif
+
+extension Companion {
+    private func cloudStatus() -> [String: Any] {
+        var result: [String: Any] = [
+            "phase": cloudPhase, "automatic": cloudAutomatic, "connected": cloudBookmark != nil,
+            "copies": cloudCopies, "song_count": library.count
+        ]
+        result["folder"] = UserDefaults.standard.string(forKey: "cloud-folder-name")
+        result["last_saved"] = UserDefaults.standard.object(forKey: "cloud-last-save")
+        result["message"] = cloudMessage
+        return result
+    }
+
+    private func beginCloud(_ action: String, device: UUID? = nil, updated: Date? = nil, background: BGTask? = nil) {
+        guard cloudTask == nil, let bookmark = cloudBookmark else { background?.setTaskCompleted(success: false); return }
+        if action == "upload" && library.isEmpty {
+            cloudPhase = "error"
+            cloudMessage = "Download music before saving an iCloud library copy."
+            background?.setTaskCompleted(success: false)
+            return
+        }
+        cloudPhase = action == "upload" ? "saving" : action == "import" ? "importing" : "checking"
+        cloudMessage = nil
+        let own = cloudDevice, name = UIDevice.current.name, local = root
+        let catalogue: Data
+        do {
+            catalogue = action == "upload" ? try CloudLibrary.encoded(["tracks": library, "collections": collections, "portraits": portraits]) : Data()
+        } catch {
+            cloudPhase = "error"
+            cloudMessage = error.localizedDescription
+            background?.setTaskCompleted(success: false)
+            return
+        }
+        let worker = Task.detached(priority: .utility) { () throws -> (Date?, Data?, [CloudLibrary.Manifest]) in
+            try CloudLibrary.withFolder(bookmark) { folder in
+                switch action {
+                case "upload":
+                    let saved = try CloudLibrary.upload(local: local, catalogue: catalogue, to: folder, device: own, name: name)
+                    return (saved.updated, nil, [])
+                case "import":
+                    guard let device, let updated else { throw CloudLibrary.Failure("Choose a library copy first.") }
+                    return (nil, try CloudLibrary.download(folder, local: local, device: device, updated: updated), [])
+                default:
+                    return (nil, nil, try CloudLibrary.index(folder))
+                }
+            }
+        }
+        cloudTask = Task { [weak self] in
+            var succeeded = false
+            defer {
+                self?.cloudTask = nil
+                background?.setTaskCompleted(success: succeeded)
+            }
+            do {
+                let (saved, imported, copies) = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: { worker.cancel() }
+                try Task.checkCancellation()
+                guard let self else { return }
+                if let imported, let device {
+                    try self.mergeCloud(imported, from: device)
+                    self.cloudMessage = "Library copy merged. Songs are available offline."
+                    self.libraryChanged?()
+                } else if let saved {
+                    UserDefaults.standard.set(saved.timeIntervalSince1970, forKey: "cloud-last-save")
+                    self.cloudMessage = "Saved to your Files folder. iCloud Drive uploads the files when available."
+                } else {
+                    self.cloudCopies = copies.map { ["device": $0.device.uuidString, "name": $0.name, "songs": $0.songs,
+                        "updated": $0.updated.timeIntervalSince1970, "current": $0.device == own] }
+                    self.cloudMessage = copies.isEmpty ? "No library copies found in this folder yet." : nil
+                }
+                self.cloudPhase = "idle"
+                succeeded = true
+            } catch is CancellationError {
+                self?.cloudPhase = "idle"
+                self?.cloudMessage = "iCloud transfer cancelled."
+            } catch {
+                self?.cloudPhase = "error"
+                self?.cloudMessage = error.localizedDescription
+            }
+        }
+        background?.expirationHandler = { [weak self] in Task { @MainActor in self?.cloudTask?.cancel() } }
+    }
+
+    private func mergeCloud(_ data: Data, from device: UUID) throws {
+        let state = try CloudLibrary.decoded(data)
+        let before = (library, collections, portraits)
+        let source = device.uuidString
+        func identity(_ row: [String: Any], fallback: String) -> String {
+            let origin = row["cloud_origin"] as? String ?? row["server_id"] as? String ?? fallback
+            return "\(origin):\(number(row["cloud_id"] ?? row["id"]))"
+        }
+        var index = [String: Int]()
+        var taken = Set<Int64>()
+        for (i, song) in library.enumerated() {
+            index[identity(song, fallback: cloudDevice.uuidString)] = i
+            taken.insert(number(song["id"]))
+        }
+        var remap = [Int64: Int64](), largeId: Int64 = 4_000_000_000_000
+        for var song in state["tracks"] as? [[String: Any]] ?? [] {
+            let incoming = number(song["id"])
+            if let i = index[identity(song, fallback: source)] {
+                remap[incoming] = number(library[i]["id"])
+                for field in ["artwork_path", "lyrics_path"] where library[i][field] == nil {
+                    library[i][field] = song[field]
+                }
+                continue
+            }
+            let local: Int64
+            if taken.contains(incoming) {
+                while taken.contains(largeId) { largeId += 1 }
+                local = largeId
+            } else { local = incoming }
+            let key = identity(song, fallback: source)
+            song["cloud_origin"] = song["cloud_origin"] ?? song["server_id"] ?? source
+            song["cloud_id"] = song["cloud_id"] ?? incoming
+            song["cloud_imported"] = true
+            song["id"] = local
+            if local != incoming { song.removeValue(forKey: "server_id") }
+            taken.insert(local)
+            remap[incoming] = local
+            index[key] = library.count
+            library.append(song)
+        }
+        for var row in state["collections"] as? [[String: Any]] ?? [] {
+            guard let incoming = row["id"] as? String, !incoming.isEmpty,
+                  let ids = row["track_ids"] as? [NSNumber], let name = row["name"] as? String else { continue }
+            // Partial playlists cannot introduce dangling or wrong song IDs.
+            let mapped = ids.compactMap { remap[$0.int64Value] }
+            guard mapped.count == ids.count else { continue }
+            if collections.contains(where: { entry in
+                (entry["id"] as? String == incoming || entry["cloud_source"] as? String == "\(source)/\(incoming)") &&
+                entry["name"] as? String == name &&
+                (entry["track_ids"] as? [NSNumber])?.map(\.int64Value) == mapped
+            }) { continue }
+            let signature = try CloudLibrary.encoded(["source": source, "id": incoming, "name": name, "songs": mapped])
+            let hash = SHA256.hash(data: signature).prefix(16).map { String(format: "%02x", $0) }.joined()
+            row["id"] = "icloud/\(hash)"
+            row["cloud_source"] = "\(source)/\(incoming)"
+            row["track_ids"] = mapped
+            if !collections.contains(where: { $0["id"] as? String == row["id"] as? String }) { collections.append(row) }
+        }
+        portraits.merge(state["portraits"] as? [String: String] ?? [:]) { current, _ in current }
+        do { try persist() }
+        catch { (library, collections, portraits) = before; throw error }
+    }
+}

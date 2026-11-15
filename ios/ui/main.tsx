@@ -46,7 +46,13 @@ type State={open_computer?:boolean;open_activity?:string;preferences?:PhonePrefe
 const blank:State={tracks:[],collections:[],paired:false,pending_changes:0,conflicts:[],sync:{state:'idle'},storage_bytes:0,playback:emptyPlayback as Playback};
 function shuffleIds(ids:number[]){const a=[...ids];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function duration(s:number){return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;}
-function Picture({track,className=''}:{track?:Track;className?:string}){return <span className={`phone-cover ${className}`}>{track?.cover_art_path?<img src={artwork(track.cover_art_path)} alt=""/>:<Icon name="Album"/>}</span>;}
+function Picture({track,className=''}:{track?:Track;className?:string}){
+ const [failed,setFailed]=useState<string|null>(null);
+ const source=track?.cover_art_path;
+ return <span className={`phone-cover ${className}`}>{source&&source!==failed
+  ?<img key={source} src={artwork(source)} alt="" onError={()=>setFailed(source)}/>
+  :<Icon name="Album"/>}</span>;
+}
 function CollectionPicture({item,track}:{item:Collection;track?:Track}){const cover=item.artwork_path?artwork(item.artwork_path):collectionCover(item.artwork_choice);return cover?<span className="phone-cover"><img src={cover} alt=""/></span>:<Picture track={track}/>;}
 function App(){
  const [state,setState]=useState(blank),[player,feed]=usePlaybackFeed(blank.playback),[destination,setDestination]=useState('home'),[category,setCategory]=useState('albums'),[query,setQuery]=useState(''),[detail,setDetail]=useState<{title:string;ids:number[];collection?:Collection}|null>(null),[view,setView]=useState<'normal'|'queue'|'lyrics'>('normal'),[devices,setDevices]=useState(false),[settings,setSettings]=useState(false),[error,setError]=useState(''),[palette,setPalette]=useState<Palette|null>(null),[lyricPreview,setLyricPreview]=useState<Track|undefined>(undefined),[songActions,setSongActions]=useState<Track|null>(null),[newPlaylist,setNewPlaylist]=useState(false),[name,setName]=useState(''),[selected,setSelected]=useState<number[]>([]),[editingPlaylist,setEditingPlaylist]=useState<string|undefined>(),[editingRevision,setEditingRevision]=useState<string|undefined>(),[playlistTarget,setPlaylistTarget]=useState<Track|null>(null),[queuePicker,setQueuePicker]=useState(false),[rowLimit,setRowLimit]=useState(60),[playlistQuery,setPlaylistQuery]=useState('');
@@ -118,7 +124,7 @@ function App(){
   ],180)]:[]);
   return ()=>cleanup.forEach(cancel=>cancel());
  },[expanded,closing,view,entry,preferences.animations]);
- const tracks=useMemo(()=>[...state.tracks].sort(songOrder),[state.tracks]),byId=new Map(tracks.map(t=>[t.id,t])),albums=useMemo(()=>orderedAlbums(tracks),[tracks]);
+ const tracks=useMemo(()=>[...state.tracks].sort(songOrder),[state.tracks]),byId=useMemo(()=>new Map(tracks.map(t=>[t.id,t])),[tracks]),albums=useMemo(()=>orderedAlbums(tracks),[tracks]);
  useLayoutEffect(()=>{if(pendingScroll.current!==null&&content.current){content.current.scrollTop=pendingScroll.current;pendingScroll.current=null;}if(!detail&&returnFromDetail.current!==null){const index=returnFromDetail.current;returnFromDetail.current=null;(pageContent.current?.querySelectorAll('button')[index]??content.current)?.focus({preventScroll:true});}const skip=skipPageEntrance.current;skipPageEntrance.current=false;if(skip||shownNavigation.current===navigationRevision)return;shownNavigation.current=navigationRevision;const node=pageContent.current;if(node&&preferences.animations)return animateOwned(node,'phone-destination',[{opacity:.91,transform:`translateX(${direction.current*7}px)`},{opacity:1,transform:'none'}],180);},[navigationRevision,detail,preferences.animations]);
  useScrollEdges(content,!expanded&&!settings&&!devices,`${destination}:${detail?.title}:${query}:${state.tracks.length}`);
  function navigate(next:string){if(destination===next)return;direction.current=['home','search','library'].indexOf(next)>['home','search','library'].indexOf(destination)?1:-1;if(content.current)scrolls.current[destination]=content.current.scrollTop;destinationDetails.current[destination]=detail;pendingScroll.current=scrolls.current[next]??0;setDestination(next);setDetail(destinationDetails.current[next]??null);setNavigationRevision(n=>n+1);}

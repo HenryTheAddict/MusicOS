@@ -13,10 +13,19 @@ if(scenario==='sync'){
  state.paired=true;
  state.pending_changes=2;
 }
+let cloud:any={phase:'idle',automatic:false,connected:false,copies:[],song_count:tracks.length};
+const iCloudCopy={device:'fixture',name:'Studio iPhone',songs:6,updated:1700000000,current:false};
 let snapshots=0;
 let syncTimer=0;
 let serial=1000;
 export async function fixtureRequest(p:any){const a=p.action,s=state.playback;switch(a){case 'snapshot':snapshots++;return structuredClone(state);
+case 'cloud_status':return structuredClone(cloud);
+case 'cloud_choose':cloud={...cloud,connected:true,folder:'Music copies'};return structuredClone(cloud);
+case 'cloud_list':cloud.copies=[iCloudCopy];return structuredClone(cloud);
+case 'cloud_auto':cloud.automatic=p.enabled;return structuredClone(cloud);
+case 'cloud_upload':cloud={...cloud,last_saved:1700000000,message:'Saved to your Files folder.'};return structuredClone(cloud);
+case 'cloud_import':cloud.message='Library copy merged. Songs are available offline.';return structuredClone(cloud);
+case 'cloud_disconnect':cloud={...cloud,connected:false,automatic:false,copies:[],message:undefined};return structuredClone(cloud);
 case 'fixture_snapshot_count':return snapshots;
 case 'listening_status':return {state:state.paired?'connected':'unpaired',lastfm_ready:state.paired,discord_ready:state.paired,pending:state.preferences.lastfmListening?2:0,storage_error:false};
 case 'sync_status':return {paired:state.paired,nearby_macs:[],offline_songs:tracks.length,storage_bytes:state.storage_bytes,pending_changes:state.pending_changes,conflicts:[],sync:{...state.sync}};
