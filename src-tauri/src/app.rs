@@ -48,11 +48,18 @@ fn save_launch_palette(snapshot:crate::launch_palette::Snapshot)->std::result::R
 #[tauri::command]
 fn present_shell(window:tauri::WebviewWindow,color:String)->std::result::Result<(),AppError>{
     let color=color.trim();if !(color.len()==7&&color.starts_with('#')&&color[1..].bytes().all(|v|v.is_ascii_hexdigit())){return Err(anyhow::anyhow!("Invalid launch color").into());}
-    let rgb=|a,b|u8::from_str_radix(&color[a..b],16).unwrap();window.set_background_color(Some(tauri::window::Color(rgb(1,3),rgb(3,5),rgb(5,7),255))).map_err(|e|anyhow::anyhow!(e))?;window.show().map_err(|e|anyhow::anyhow!(e))?;Ok(())
+    #[cfg(not(target_os="macos"))]
+    {
+        let rgb=|a,b|u8::from_str_radix(&color[a..b],16).unwrap();
+        window.set_background_color(Some(tauri::window::Color(rgb(1,3),rgb(3,5),rgb(5,7),255))).map_err(|e|anyhow::anyhow!(e))?;
+    }
+    window.show().map_err(|e|anyhow::anyhow!(e))?;
+    Ok(())
 }
 type ApiResult<T> = std::result::Result<T, AppError>;
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Task {
+    pub activity_id: Option<String>,
     pub running: bool,
     pub kind: String,
     pub processed: usize,
@@ -261,7 +268,7 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
         }
 
     }
-    window.set_background_color(if mode == "normal" {None} else {Some(tauri::window::Color(0,0,0,0))})?;
+    window.set_background_color(if cfg!(target_os="macos") || mode!="normal" {Some(tauri::window::Color(0,0,0,0))} else {None})?;
     #[cfg(target_os = "macos")]
     {
         let normal = mode == "normal";
@@ -277,7 +284,9 @@ async fn mini_player(window: tauri::WebviewWindow, state: State<'_, AppState>, m
                 NSWindowStyleMask::Titled | NSWindowStyleMask::Closable | NSWindowStyleMask::Miniaturizable | NSWindowStyleMask::Resizable | NSWindowStyleMask::FullSizeContentView
             } else if resizable { NSWindowStyleMask::Borderless | NSWindowStyleMask::Resizable } else { NSWindowStyleMask::Borderless };
             if native.styleMask() != mask { native.setStyleMask(mask); }
-            native.setOpaque(normal);
+            native.setOpaque(false);
+            native.setHasShadow(true);
+            native.invalidateShadow();
             native.setMovable(true);
             if focus { native.makeKeyAndOrderFront(None); }
             let _ = send.send(());
@@ -325,10 +334,39 @@ async fn window_pin(window: tauri::WebviewWindow, state: State<'_, AppState>, en
     window.set_always_on_top(enabled).map_err(|e| AppError::from(anyhow::Error::from(e)))
 }
 
-fn emit_task(app: &tauri::AppHandle, task: Task) {
+fn emit_task(app: &tauri::AppHandle, mut task: Task) {
     let state = app.state::<AppState>();
-    *state.task.lock().unwrap_or_else(|e| e.into_inner()) = task.clone();
+    {
+        let mut current=state.task.lock().unwrap_or_else(|e| e.into_inner());
+        task.activity_id=current.activity_id.clone();
+        *current=task.clone();
+    }
+    if let Some(id)=&task.activity_id{
+        let title=match task.kind.as_str(){"enrich"=>"Metadata suggestions","sync"=>"Sync music","rescan"=>"Check music folders",_=>"Add music"};
+        let phase=if task.running{"running"}else if task.cancelled{"cancelled"}else if task.error.is_some(){"failed"}else{"complete"};
+        let _=crate::activity::update(&state.config().db_path,crate::activity::Job{
+            id:id.clone(),kind:task.kind.clone(),title:title.into(),state:phase.into(),completed:task.processed,total:task.total,
+            message:task.error.clone().unwrap_or_else(||task.message.clone()),finished_at:None,
+        });
+    }
     let _ = app.emit("task", &task);
+}
+
+#[tauri::command]
+async fn activity_jobs(app:tauri::AppHandle)->ApiResult<Vec<crate::activity::Job>>{
+    let db=app.state::<AppState>().config().db_path;
+    blocking(move||crate::activity::list(&db)).await
+}
+
+#[tauri::command]
+async fn track_waveform(app:tauri::AppHandle,track_id:i64)->ApiResult<crate::waveform::Waveform>{
+    let db=app.state::<AppState>().config().db_path;
+    blocking(move||{
+        static WORKER:std::sync::Mutex<()>=std::sync::Mutex::new(());
+        let _worker=WORKER.lock().unwrap_or_else(|error|error.into_inner());
+        let track=musicos_init::database::Db::open(&db.to_string_lossy())?.get_track_by_id(track_id)?.context("Song unavailable")?;
+        crate::waveform::read(&db.with_file_name("waveform-previews-v1"),Path::new(&track.path),f64::from(track.duration))
+    }).await
 }
 fn allow_art(app: &tauri::AppHandle, path: &str) {
     if let Ok(path) = Path::new(path).canonicalize() {
@@ -942,6 +980,7 @@ fn begin_task(state: &AppState, kind: &str) -> Result<()> {
     );
     state.cancel.store(false, Ordering::Relaxed);
     *task = Task {
+        activity_id:Some(crate::activity::id(kind)),
         running: true,
         kind: kind.into(),
         message: "Starting…".into(),
@@ -975,7 +1014,7 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let _ = app.emit("task", initial);
+    emit_task(&app, initial);
     let task_app = app.clone();
     std::thread::spawn(move || {
         let app = task_app;
@@ -1010,6 +1049,7 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                                 message: p.current.clone(),
                                 error: None,
                                 cancelled: p.cancel_requested,
+                                activity_id:None,
                             },
                         )
                     },
@@ -1206,7 +1246,12 @@ async fn album_metadata(app: tauri::AppHandle, request: crate::album_metadata::R
     blocking(move || {
         let state = app.state::<AppState>();
         let config = state.config();
-        let cached = (request.action != "apply")
+        if request.action == "stage_cover" {
+            let result=crate::album_metadata::stage_cover(&config.db_path,&request)?;
+            if let Some(path)=result["imported_cover"]["path"].as_str(){allow_art(&app,path);}
+            return Ok(result);
+        }
+        let cached = (!matches!(request.action.as_str(),"apply"|"apply_cover"|"apply_positions"))
             .then(|| state.library_snapshot.lock().unwrap_or_else(|e| e.into_inner()).clone())
             .flatten();
         let library = match cached {
@@ -1245,13 +1290,17 @@ async fn album_metadata(app: tauri::AppHandle, request: crate::album_metadata::R
                 }
                 Ok(result)
             }
-            "apply" => {
+            "apply" | "apply_cover" | "apply_positions" => {
                 let guard = request.write_files.unwrap_or(false)
                     .then(|| state.playback.lock().unwrap_or_else(|e| e.into_inner()));
                 if let Some(service) = &guard {
                     anyhow::ensure!(!service.snapshot().is_playing, "Pause playback before writing music files");
                 }
-                let result = crate::album_metadata::apply(&config.db_path, &library, request)?;
+                let result = if request.action=="apply" {
+                    crate::album_metadata::apply(&config.db_path,&library,request)?
+                } else {
+                    crate::album_metadata::apply_manual(&config.db_path,&library,request)?
+                };
                 let _ = app.emit("library-changed", json!({"reason":"metadata"}));
                 Ok(result)
             }
@@ -1616,19 +1665,46 @@ async fn wifi_sync(app:tauri::AppHandle,action:String,track_ids:Option<Vec<i64>>
     if action=="status"{return Ok(app.state::<AppState>().wifi.status());}
     if action!="start"{return app.state::<AppState>().wifi.action(&action,peer_id.as_deref()).map_err(Into::into);}
     let ids=track_ids.context("Choose music to copy")?;if ids.is_empty()||ids.len()>50000{return Err(anyhow::anyhow!("Choose between 1 and 50,000 songs").into());}
+    let remote_app=app.clone();
+    let state=app.state::<AppState>();
+    let client=state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
+    state.wifi.enable_remote_host(client,std::sync::Arc::new(move||{
+        let state=remote_app.state::<AppState>();
+        let cached=state.library_snapshot.lock().unwrap_or_else(|e|e.into_inner()).clone();
+        if let Some(library)=cached {Ok(library)}else{load_library(&remote_app)}
+    }));
     let notify=app.clone();let db=app.state::<AppState>().config().db_path;
     app.state::<AppState>().wifi.configure(db,std::sync::Arc::new(move|result|{let event=if let (Some(id),Some(favorited))=(result["track_id"].as_i64(),result["favorited"].as_bool()){json!({"reason":"favorites","favorite_updates":[{"track_id":id,"favorited":favorited}]})}else{json!({"reason":"collections"})};let _=notify.emit("library-changed",event);}));
     let format=copy_format.unwrap_or_default();let generation=app.state::<AppState>().wifi.begin_preparation(format,ids.len());
+    let mut job=crate::activity::Job{id:crate::activity::id("wifi"),kind:"wifi".into(),title:"Prepare Wi-Fi sync".into(),state:"running".into(),
+        completed:0,total:ids.len(),message:"Preparing your selection".into(),finished_at:None};
+    let job_db=app.state::<AppState>().config().db_path;
+    let _=crate::activity::update(&job_db,job.clone());
     // Open the opt-in listener before hashing/conversion; pairing is independent of preparation.
     let mut empty=crate::wifi::Share::default();empty.format=format;
-    let status=match app.state::<AppState>().wifi.start(empty,"musicOS Mac".into(),generation).await {Ok(status)=>status,Err(error)=>{app.state::<AppState>().wifi.fail(generation,error.to_string());return Err(error.into());}};
+    let status=match app.state::<AppState>().wifi.start(empty,"musicOS Mac".into(),generation).await {Ok(status)=>status,Err(error)=>{
+        app.state::<AppState>().wifi.fail(generation,error.to_string());job.state="failed".into();job.message=error.to_string();
+        let _=crate::activity::update(&job_db,job);return Err(error.into());}};
     tauri::async_runtime::spawn(async move {
         let prepare_app=app.clone();
+        let progress=job.clone();
         let result=blocking(move||{let state=prepare_app.state::<AppState>();let _cache=state.wifi.prepare_guard();anyhow::ensure!(state.wifi.current(generation),"Sharing preparation was cancelled");let config=state.config();let library=load_library(&prepare_app)?;let collections=crate::collections::list(&LocalLibraryRepository::new(&config.db_path,&config.media_dir))?;let name=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).display_name.clone();
-            let mut share=crate::wifi::prepare_with(&library,collections,&ids,name,format,&state.wifi.cache_folder(),&||state.wifi.current(generation),&|done,total,title|state.wifi.progress(generation,done,total,title))?;
+            let last=std::cell::Cell::new(std::time::Instant::now());
+            let mut share=crate::wifi::prepare_with(&library,collections,&ids,name,format,&state.wifi.cache_folder(),&||state.wifi.current(generation),&|done,total,title|{
+                state.wifi.progress(generation,done,total,title);
+                if last.get().elapsed()>=Duration::from_secs(1){
+                    let _=crate::activity::update(&config.db_path,crate::activity::Job{completed:done,total,..progress.clone()});
+                    last.set(std::time::Instant::now());
+                }
+            })?;
             crate::wifi::enrich_assets(&mut share,&config.db_path,&state.wifi.cache_folder())?;Ok(share)
         }).await.map_err(|e|anyhow::anyhow!(e.message));
-        let _=app.state::<AppState>().wifi.finish(generation,result);
+        let wifi=&app.state::<AppState>().wifi;
+        job.state=if !wifi.current(generation){"cancelled"}else if result.is_err(){"failed"}else{"complete"}.into();
+        job.completed=wifi.status()["preparation"]["completed"].as_u64().unwrap_or(0) as usize;
+        job.message=match job.state.as_str(){"complete"=>"Ready to copy to your iPhone","cancelled"=>"Preparation stopped",_=>"Could not prepare the selected songs"}.into();
+        let _=wifi.finish(generation,result);
+        let _=crate::activity::update(&job_db,job);
     });
     Ok(status)
 }
@@ -1778,7 +1854,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![audition,controller,lyric_edition,trackpad_feedback,
             audio_analysis, audio_tempos, playlist_file, sparklist,
-            present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task,
+            present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task, activity_jobs, track_waveform,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             visualizer, artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
@@ -1787,21 +1863,32 @@ pub fn run() {
             let launch_appearance=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).appearance.clone();
             let client = state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
             client.send(LocalPlaybackCommand::SetListening(state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening.clone()))?;
+            crate::activity::recover(&state.config().db_path);
             app.manage(state);
             app.manage(crate::controller::Service::new(app.handle().clone()));
             crate::apple_enrichment::background::resume(app.handle().clone(),app.state::<AppState>().config().db_path.clone());
             #[cfg(target_os="macos")]crate::apple_enrichment::install_power_events(app.handle());
             let launch=crate::launch_palette::load().filter(|s|s.valid()&&s.appearance==launch_appearance);
             let init=format!("window.__MUSICOS_LAUNCH_APPEARANCE__={};window.__MUSICOS_LAUNCH_PALETTE__={};",serde_json::to_string(&launch_appearance)?,serde_json::to_string(&launch)?);
-            let window=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?
-                .initialization_script(init).visible(false).build()?;
+            let builder=tauri::WebviewWindowBuilder::from_config(app.handle(),&app.config().app.windows[0])?
+                .initialization_script(init).visible(false);
+            #[cfg(target_os="macos")]
+            let builder=builder.transparent(true).background_color(tauri::window::Color(0,0,0,0));
+            let window=builder.build()?;
             crate::player_shortcuts::install(app.handle(),"main");
-            let dark=launch_appearance.mode=="dark" || (launch_appearance.mode=="system"&&window.theme().ok()==Some(tauri::Theme::Dark));
-            window.set_background_color(Some(launch.as_ref().filter(|s|s.matches(&launch_appearance,dark)).map(|s|s.native_color()).unwrap_or(if dark {tauri::window::Color(32,33,36,255)}else{tauri::window::Color(203,241,255,255)})))?;
+            #[cfg(not(target_os="macos"))]
+            {
+                let dark=launch_appearance.mode=="dark" || (launch_appearance.mode=="system"&&window.theme().ok()==Some(tauri::Theme::Dark));
+                window.set_background_color(Some(launch.as_ref().filter(|s|s.matches(&launch_appearance,dark)).map(|s|s.native_color()).unwrap_or(if dark {tauri::window::Color(32,33,36,255)}else{tauri::window::Color(203,241,255,255)})))?;
+            }
             #[cfg(target_os="macos")]
             if let Some(window)=app.get_webview_window("main") {
                 let swipe_app=app.handle().clone();
                 let _=window.with_webview(move |view| {
+                    let native:&objc2_app_kit::NSWindow=unsafe{&*view.ns_window().cast()};
+                    native.setOpaque(false);
+                    native.setHasShadow(true);
+                    native.invalidateShadow();
                     crate::trackpad_phase::install(&swipe_app,view.inner().cast());
                     let enabled=unsafe{musicos_desktop::local::decoded_audio::apple::prefer_native_refresh(view.inner().cast())};
                     eprintln!("artwork rendering: native refresh preference {}",if enabled{"applied"}else{"unavailable; platform pacing retained"});
@@ -1844,17 +1931,30 @@ pub fn run() {
                         if !missing.is_empty()&&state.analysis.start(db.clone(),missing.clone()).is_ok(){for(id,_,_)in missing{if let Some((_,key))=candidates.iter().find(|(t,_)|t.id==id){analysis_requested.insert(id,key.clone());}}}
                      }
 
-                     let queued_ids=s.queue.iter().skip(current).map(|t|t.id).collect::<Vec<_>>();
-                     let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));if config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {arranged=Some(stamp);
-                      let features=crate::analysis::cached_many(&db,&s.queue.iter().map(|t|(t.id,t.path.as_str())).collect::<Vec<_>>());let pins=s.queue_entry_ids.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(i,_)|i).collect();
-                      let window_end=(current+13).min(s.queue.len());let order=crate::dj_plan::order_upcoming(&s.queue[..window_end],current+1,&pins,|previous,index|{let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};let musical=if let Some(previous)=previous{crate::dj_plan::plan(analyzed_dj_track(s.queue[previous].duration as f32,a),analyzed_dj_track(s.queue[index].duration as f32,b),&config,false).filter(|p|p.confidence>=0.5).map(|p|1.+p.confidence).unwrap_or(0.)}else{0.};
-                      crate::analysis::compatibility(a,b)+energy-musical+if previous.is_some_and(|p|s.queue[p].artist==s.queue[index].artist){0.3}else{0.}});
-                      let ids=order.iter().map(|i|s.queue_entry_ids[*i]).chain(s.queue_entry_ids[window_end..].iter().copied()).collect::<Vec<_>>();if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
+                     let window_end=(current+13).min(s.queue.len());
+                     let window=&s.queue[current..window_end];
+                     let queued_ids=window.iter().map(|track|track.id).collect::<Vec<_>>();
+                     let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));
+                     if window.len()>2&&config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {
+                      arranged=Some(stamp);
+                      let features=crate::analysis::cached_many(&db,&window.iter().map(|track|(track.id,track.path.as_str())).collect::<Vec<_>>());
+                      let entries=&s.queue_entry_ids[current..window_end];
+                      let pins=entries.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(index,_)|index).collect();
+                      let order=crate::dj_plan::order_upcoming(window,1,&pins,|previous,index|{
+                       let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();
+                       let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};
+                       let musical=previous.and_then(|i|crate::dj_plan::plan(analyzed_dj_track(window[i].duration as f32,a),analyzed_dj_track(window[index].duration as f32,b),&config,false)).filter(|p|p.confidence>=0.5).map_or(0.,|p|1.+p.confidence);
+                       crate::analysis::compatibility(a,b)+energy-musical+if previous.is_some_and(|i|window[i].artist==window[index].artist){0.3}else{0.}
+                      });
+                      let ids=order.iter().map(|i|entries[*i]).chain(s.queue_entry_ids[window_end..].iter().copied()).collect::<Vec<_>>();
+                      if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
                      }
                     }}
+                    if !s.dj_mode { planned=None;arranged=None; }
+                    if s.dj_mode && s.audition.is_none() && s.dj_transition.is_none() {
                     let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
                     let stamp=(s.queue_revision,s.plan_revision,s.queue_index,serde_json::to_string(&config).unwrap_or_default(),state.analysis.pair_revision(&relevant_ids));
-                    if s.audition.is_none()&&s.dj_transition.is_none()&&(planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3)) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
+                    if planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
                      let outgoing=&s.queue[index];let incoming=&s.queue[next];let db=state.config().db_path;
                      let features=crate::analysis::cached_many(&db,&[(outgoing.id,outgoing.path.as_str()),(incoming.id,incoming.path.as_str())]);
                      let (a,b)=(features[0].as_ref(),features[1].as_ref());
@@ -1864,6 +1964,7 @@ pub fn run() {
                      let plan=crate::dj_plan::plan_after(crate::dj_plan::Track{key_index:a.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:a.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(outgoing.duration as f32),bpm:a.and_then(|f|f.bpm),structure:a.and_then(|f|f.structure.as_ref())},crate::dj_plan::Track{key_index:b.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:b.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(incoming.duration as f32),bpm:b.and_then(|f|f.bpm),structure:b.and_then(|f|f.structure.as_ref())},&config,contiguous,s.position+2.*s.listening.speed);
                      if let Some(plan)=plan.filter(|p|p.ready_to_schedule(config.mode,s.position,s.listening.speed)){musicos_desktop::local::dj_diagnostics::record("candidate",Some(s.queue_entry_ids[index]),Some(s.queue_entry_ids[next]),format!("{}; confidence {:.2}, cue {:.3}s overlap {:.3}s",plan.reason,plan.confidence,plan.outgoing_cue,plan.duration));if let Err(error)=client.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{request_id:musicos_desktop::local::deck_playback::next_request_id(),outgoing:s.queue_entry_ids[index],incoming:s.queue_entry_ids[next],outgoing_cue:plan.outgoing_cue,incoming_cue:plan.incoming_cue,duration:plan.duration,tempo:plan.incoming_tempo,effect:serde_json::to_value(plan.effect).ok().and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default()})){planned=None;musicos_desktop::local::dj_diagnostics::record("delivery_failed",None,None,error.to_string());}}
                     }}}
+                    }
 
                     let mut value = json!({"audition":s.audition,"track":s.track,"queue_index":s.queue_index,"is_playing":s.is_playing,"position":s.position,"volume":s.volume,"shuffle":s.shuffle,"dj_mode":s.dj_mode,"pinned_entries":s.pinned_entries,"arranged_entries":s.arranged_entries,"plan_revision":s.plan_revision,"dj_transition":s.dj_transition,"listening":s.listening,"listening_applied":s.listening_applied,"applied_listening_revision":s.applied_listening_revision,"requested_listening_revision":s.requested_listening_revision,"applied_reverb":s.applied_reverb,"applied_reverb_depth":s.applied_reverb_depth,"reverb_processed_frames":s.reverb_processed_frames,"transition_outcome":s.transition_outcome,"failed_entries":s.failed_entries,"audio_levels":s.audio_levels,"repeat":s.repeat,"error":s.error,"backend":s.backend});
                     if value != last_value || s.queue_revision != last_queue_revision {

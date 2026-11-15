@@ -41,7 +41,49 @@ pub enum LocalPlaybackCommand {
     ClearUpcoming,
     ClearQueue,
     RefreshPaths,
+    Remote { action: RemotePlayback, reply: mpsc::SyncSender<Result<()>> },
     Shutdown,
+}
+
+#[derive(Debug,Clone,serde::Deserialize)]
+#[serde(tag="kind",rename_all="snake_case",deny_unknown_fields)]
+pub enum RemotePlayback {
+    Play { ids:Vec<i64>, start:usize },
+    Toggle,
+    Previous,
+    Next,
+    Seek { position:f32, entry:u64 },
+    Add { id:i64, next:bool, revision:u64 },
+    Remove { entry:u64, revision:u64 },
+    Move { entry:u64, target:u64, revision:u64 },
+}
+
+impl RemotePlayback {
+    fn command(self,player:&AudioPlayer,revision:u64)->Result<LocalPlaybackCommand>{
+        use LocalPlaybackCommand as Command;
+        let entries=player.entry_ids();
+        let current=player.get_status().queue_index;
+        let upcoming=|entry:u64| entries.iter().position(|id|*id==entry)
+            .filter(|index|current.is_none_or(|playing|*index>playing)).context("This queue entry is no longer upcoming");
+        let check=|expected|->Result<()>{anyhow::ensure!(revision==expected,"The queue changed. Refresh and try again.");Ok(())};
+        Ok(match self{
+            Self::Play{ids,start}=>{
+                anyhow::ensure!(!ids.is_empty()&&ids.len()<=1000&&start<ids.len(),"Invalid song selection");
+                Command::PlayTracks{ids,start_index:start}
+            }
+            Self::Toggle=>Command::PlayPause,
+            Self::Previous=>Command::Previous,
+            Self::Next=>Command::Next,
+            Self::Seek{position,entry}=>{
+                anyhow::ensure!(position.is_finite()&&position>=0.,"Invalid playback position");
+                anyhow::ensure!(current.and_then(|i|entries.get(i))==Some(&entry),"The playing song changed");
+                Command::SeekAbsolute(position)
+            }
+            Self::Add{id,next,revision}=>{check(revision)?;if next{Command::PlayNext(id)}else{Command::AddToQueue(id)}}
+            Self::Remove{entry,revision}=>{check(revision)?;Command::RemoveQueueIndex(upcoming(entry)?)}
+            Self::Move{entry,target,revision}=>{check(revision)?;Command::MoveQueueItem{from:upcoming(entry)?,to:upcoming(target)?}}
+        })
+    }
 }
 
 impl LocalPlaybackCommand {
@@ -167,6 +209,13 @@ impl LocalPlaybackClient {
             .read()
             .map(|snapshot| snapshot.clone())
             .unwrap_or_default()
+    }
+
+    pub fn remote(&self,action:RemotePlayback)->Result<LocalPlaybackSnapshot>{
+        let (send,receive)=mpsc::sync_channel(1);
+        self.send(LocalPlaybackCommand::Remote{action,reply:send})?;
+        receive.recv_timeout(Duration::from_secs(8)).context("Mac playback did not respond")??;
+        Ok(self.snapshot())
     }
 }
 
@@ -297,6 +346,7 @@ fn playback_loop(
     );
 
     loop {
+        let mut remote_reply=None;
         let timeout = if player.is_playing() || player.audition_status().is_some() {
             Duration::from_millis(100)
         } else {
@@ -304,6 +354,19 @@ fn playback_loop(
         };
         match receiver.recv_timeout(timeout) {
             Ok(LocalPlaybackCommand::Shutdown) => break,
+            Ok(LocalPlaybackCommand::Remote{action,reply})=>{
+                let result=action.command(&player,queue_revision).and_then(|command|{
+                    let mutates_queue=command.mutates_queue();
+                    apply_command(&db,&mut player,command)?;
+                    if mutates_queue{
+                        queue=queue_snapshot(&player);
+                        queue_revision=queue_revision.wrapping_add(1);
+                    }
+                    Ok(())
+                });
+                if result.is_ok(){command_error=None;}
+                remote_reply=Some((reply,result));
+            }
             Ok(command) => {
                 if let LocalPlaybackCommand::SetDjMode(enabled) = &command {
                     dj_mode = *enabled;
@@ -346,6 +409,7 @@ fn playback_loop(
             revision,
             command_error.as_deref(),
         );
+        if let Some((reply,result))=remote_reply{let _=reply.send(result);}
     }
 }
 
@@ -458,7 +522,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
         LocalPlaybackCommand::ClearUpcoming => player.queue_clear_upcoming(),
         LocalPlaybackCommand::ClearQueue => player.queue_clear(),
         LocalPlaybackCommand::RefreshPaths => {let tracks=player.queue_tracks().into_iter().filter_map(|t|db.get_track_by_id(t.id).ok().flatten()).collect::<Vec<_>>();player.refresh_paths(&tracks);}
-        LocalPlaybackCommand::Shutdown => {}
+        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::Shutdown => {}
     }
     Ok(())
 }

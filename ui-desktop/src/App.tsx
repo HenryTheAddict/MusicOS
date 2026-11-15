@@ -1,3 +1,4 @@
+import Activity from './Activity';
 import {SongPreviewProvider} from './SongPreview';
 import {installController,defaultController} from './controller';
 import {useNativePlayerShortcuts,type PlayerShortcut} from './useNativePlayerShortcuts';
@@ -108,7 +109,7 @@ import { useNativeChrome } from "./nativeChrome";
 const Devices = lazy(()=>import("./Devices"));
 const LibraryTools = lazy(()=>import("./LibraryTools"));
 import { usePageEntrance } from "./motion";
-import { useSmoothCorners } from "./smoothCorners";
+import { useSmoothCorners,useWindowContour } from "./smoothCorners";
 import PlaybackProgress from "./PlaybackProgress";
 import AudioQuality from "./AudioQuality";
 import AlbumDescription from "./AlbumDescription";
@@ -149,6 +150,7 @@ function contrastInk(hex:string){
 }
 export default function App() {
   usePlayfulControls();
+  const [activityOpen,setActivityOpen]=useState(false);
   const [settingsLibraryView,setSettingsLibraryView]=useState<"sources"|"review"|"playlists"|"sparklists">("sources");
   const [metadataEntry,setMetadataEntry]=useState<MetadataEntry>();
   function openMetadata(entry?:MetadataEntry) {
@@ -195,6 +197,7 @@ export default function App() {
   useEffect(installInteractionFeedback,[]);
   const savedSparkBeta=useRef(defaultPreferences.sparklist_beta);
   useSmoothCorners();
+  useWindowContour(native&&/Mac/.test(navigator.platform));
   const [miniMode,setMiniMode]=useState<'normal'|'tall'|'queue'>('normal');
   const miniChanging=useRef(false);
   const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
@@ -413,8 +416,14 @@ export default function App() {
             if(e.payload.type==="enter"&&e.payload.paths.length>0)setFileDrop(true);
             if(e.payload.type==="leave"||e.payload.type==="drop")setFileDrop(false);
             if (e.payload.type === "drop") {
-              const paths = e.payload.paths;
+              const {paths,position} = e.payload;
               if (!paths.length) return;
+              const coverDrop=document.elementFromPoint(position.x/window.devicePixelRatio,position.y/window.devicePixelRatio)
+                ?.closest('[data-album-cover-drop]');
+              if(coverDrop){
+                coverDrop.dispatchEvent(new CustomEvent('musicos-drop-cover',{detail:paths}));
+                return;
+              }
               void call("inspect_import", { paths })
                 .then(() => call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path}}))
                 .catch((e) => setError(errorText(e)));
@@ -519,7 +528,7 @@ export default function App() {
     let gone=false;
     if(loading||look.source!=='artwork'){setPlayingArtPalette(null);return;}
     const [cover,id]=JSON.parse(playingThemeRequest) as [string|null,number|undefined];
-    void resolveArtworkTheme([cover],id).then(result=>{if(!gone)setPlayingArtPalette(result?.palette??null);});
+    void resolveArtworkTheme([cover],id).then(result=>{if(!gone&&(result||id===undefined))setPlayingArtPalette(result?.palette??null);});
     return()=>{gone=true;};
   },[loading,look.source,playingThemeRequest,themeEpoch]);
   const playingPalette=useMemo(()=>themePalette(look,playingArtPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,playingArtPalette,systemDark]);
@@ -537,7 +546,7 @@ export default function App() {
   );
   const artistThemeTracks=useMemo(()=>library.albums.filter(a=>artist?.album_ids.includes(a.id)).map(a=>a.track_ids[0]).filter((id):id is number=>id!==undefined),[library.albums,artist?.id]);
   const themeTrackId = section === "Library" && route.view === "album"
-    ? album?.track_ids[0]
+    ? album?.track_ids
     : section === "Library" && route.view === "artist" ? artistThemeTracks : playingAlbum?.track_ids[0]??player.track?.id;
   const themeRequest=JSON.stringify([[source,section==='Library'&&route.view==='artist'?firstArtistAlbum?.cover:null],themeTrackId]);
   useEffect(() => {
@@ -1158,7 +1167,7 @@ export default function App() {
           <span className="section-icon-space" aria-hidden="true"/><span className="section-name">{section}</span>
           <span className="chevron" aria-hidden="true"><svg viewBox="0 0 24 12"><path d="M1 1 12 11 23 1" /></svg></span>
         </Menu>
-        <Menu triggerClassName="section-actions-trigger" label="musicOS actions" items={[{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><span className="section-action-glyph"><Icon name={section==='Library'?'Library':section==='Settings'?'Settings':'device'} className="section-category-glyph"/><Icon name="3dots_(nocircle)" className="section-dots-glyph"/></span></Menu>
+        <Menu triggerClassName="section-actions-trigger" label="musicOS actions" items={[{label:'Activity',icon:'sync',onSelect:()=>setActivityOpen(true)},{label:'Mini Player',icon:'openMiniplayer',onSelect:()=>void changeMini(preferences.mini_player_view==='queue'?'queue':'tall')},{label:'Manage collections',icon:'Playlist',onSelect:()=>{setSection('Library');goScope('playlists');}}]}><span className="section-action-glyph"><Icon name={section==='Library'?'Library':section==='Settings'?'Settings':'device'} className="section-category-glyph"/><Icon name="3dots_(nocircle)" className="section-dots-glyph"/></span></Menu>
         </div>
         <div className="header-drag-spacer" />
         <section ref={barMotion} style={playingStyle} className="now-playing" aria-label="Now playing" onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new CustomEvent('musicos-open-menu',{detail:{x:e.clientX,y:e.clientY}}));}} onKeyDown={e=>{if(e.key==='ContextMenu'||(e.shiftKey&&e.key==='F10')){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>('.context-only')?.dispatchEvent(new Event('musicos-open-menu'));}}}>
@@ -1190,7 +1199,7 @@ export default function App() {
               {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:""}</span>
-            <PlaybackProgress revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
+            <PlaybackProgress djMode={!!player.dj_mode} revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
           </div>
@@ -1264,10 +1273,13 @@ export default function App() {
                 ),
               )}
             </nav>
-            <div className="sidebar-more"><Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
+            <div className="sidebar-more"><Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')},]}><Icon name="3dots_(nocircle)"/><span>More</span></Menu></div>
             <section className="sidebar-playlists" aria-label="Your playlists">
               <h2>{personalName(preferences.display_name,!loading)}</h2>
               <div className="sidebar-playlist-list">
+                <button className="sidebar-favorites" aria-current={route.view==='favorites'?'page':undefined} onClick={()=>goScope('favorites')}>
+                  <Icon name="hearted"/><span>Favorites</span>
+                </button>
                 {collections.filter(item=>item.kind!=='audio'&&!item.spark).map(item=>{
                   const summary=collectionSummaries.get(item.id)!;
                   return <ActionSurface contextOnly items={actionsForCollection(item)} key={item.id} className={`personal-collection ${route.view==='playlist'&&route.id===item.id?'active':''}`} data-collection-tone="true" data-manual-collection={item.kind!=='audio'&&!item.spark?item.id:undefined}>
@@ -1291,7 +1303,7 @@ export default function App() {
         <div className="content-column">
           {compact&&section==='Library'&&<div className="compact-library-controls">
             {navigation.history.length>0&&<IconButton name="Back" label="Back" onClick={()=>goBack()}/>}
-            {destination==='library'?<nav aria-label="Library categories">{(['albums','artists','songs'] as Scope[]).map(view=><button key={view} aria-current={displayScope===view?'page':undefined} onClick={()=>goScope(view)}>{view[0].toUpperCase()+view.slice(1)}</button>)}<Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Favorites',icon:'hearted',onSelect:()=>goScope('favorites')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')}]}>More</Menu></nav>:<span className="compact-destination-name">{destination==='home'?personalName(preferences.display_name,!loading):'Search'}</span>}
+            {destination==='library'?<nav aria-label="Library categories">{(['albums','artists','songs'] as Scope[]).map(view=><button key={view} aria-current={displayScope===view?'page':undefined} onClick={()=>goScope(view)}>{view[0].toUpperCase()+view.slice(1)}</button>)}<Menu label="More library views" morph="dots" items={[{label:'Genres',icon:'Genre',onSelect:()=>goScope('genres')},{label:'Playlists',icon:'Playlist',onSelect:()=>goScope('playlists')},{label:'Sparklists',icon:'Sparklist',onSelect:()=>goScope('sparklists')}]}>More</Menu></nav>:<span className="compact-destination-name">{destination==='home'?personalName(preferences.display_name,!loading):'Search'}</span>}
             <Menu label="Create collection" morph="plus" items={[{label:'New playlist',icon:'Playlist',onSelect:()=>createCollection('manual')},{label:'New Sparklist',icon:'Sparklist',onSelect:()=>createCollection('spark')},{label:'New Smart playlist',icon:'SmartPlaylist',onSelect:()=>createCollection('rule')}]}>+</Menu>
           </div>}
 
@@ -1469,6 +1481,12 @@ export default function App() {
       {queuePresent&&!expandedPresent&&<AudioPanel view={queueView} theme={playingStyle} closing={!queueOpen} player={player} scale={scale} presentation={preferences.audio_presentation??'sidebar'} onClose={()=>setQueueOpen(false)} onAction={run} onSettings={()=>{sessionStorage.setItem('musicos-settings-tab','Audio');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Audio'}));setQueueOpen(false);setSection('Settings');}}/>}
       {expandedPresent&&<ExpandedPlayer background={preferences.player_background??'flowing'} previewTrack={lyricPreview} onPreviewPlay={async()=>{if(lyricPreview){if(!lyricPreview.available)throw Error('This song is unavailable.');setPlayer(await call('playback',{action:{type:'play',ids:[lyricPreview.id],start_index:0,shuffle:false}}));setLyricPreview(null);}}} onEditLyrics={id=>{setExpandedOpen(false);openMetadata({mode:'lyrics',trackId:id});}} layout={shell.layout} onWindowError={setError} returnFocus={playerOpener.current} open={expandedOpen&&!visualizerOpen} view={playerView} onView={view=>{setPlayerView(view);if(view!=='lyrics')setLyricPreview(null);}} onClose={()=>setExpandedOpen(false)} player={player} cover={playingCover??null} bpm={player.track?tempos.get(player.track.id):undefined} scale={scale} theme={playingStyle} onAction={runImmersive} onFavorite={()=>{if(player.track)void favorite(player.track);}} items={nowActions} origin={playerOrigin.current}/>}
       {dropNotice&&<div className="song-drop-notice" role="status">{dropNotice}</div>}
+      {activityOpen&&<Activity onClose={()=>setActivityOpen(false)} onResults={kind=>{
+        setActivityOpen(false);
+        if(kind==='enrich')openMetadata();
+        else if(kind==='wifi')chooseSection('Devices');
+        else {sessionStorage.setItem('musicos-settings-tab','Integrations');window.dispatchEvent(new CustomEvent('musicos-settings-tab',{detail:'Integrations'}));chooseSection('Settings');}
+      }}/>}
       {commandPresent&&<Suspense fallback={null}><SuperCommand open={commandOpen} recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>setCommandOpen(false)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={destination=>{if(destination==='Settings'||destination==='Devices')chooseSection(destination);else{setSection('Library');goScope(destination.toLowerCase() as Route['view']);}}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense>}
       {(error || visiblePlaybackError) && (
         <div className="error-toast" role="alert">

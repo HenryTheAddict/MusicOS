@@ -239,6 +239,11 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
     }
     let app = app.clone();
     let db = db.to_owned();
+    let mut activity=crate::activity::Job{
+        id:crate::activity::id("apple"),kind:"apple".into(),title:"Save lyrics & artwork".into(),
+        state:"running".into(),completed:0,total:ids.len(),message:"Saving library assets".into(),finished_at:None,
+    };
+    let _=crate::activity::update(&db,activity.clone());
     std::thread::spawn(move || {
         let _job = Job;
         let mut stopped = None;
@@ -247,6 +252,7 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
         let mut saved_cover_targets = std::collections::HashSet::new();
         let library = musicos_init::database::Db::open_background(&db.to_string_lossy()).ok();
         let cover_index = sql(&db).ok();
+        let mut last_activity=std::time::Instant::now();
         for id in &ids {
             if CANCEL.load(Ordering::SeqCst) {
                 break;
@@ -342,6 +348,11 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
                 if art.is_ok() {
                     s.artwork_ready += 1;
                 }
+                activity.completed=s.completed;
+            }
+            if last_activity.elapsed()>=std::time::Duration::from_secs(1){
+                let _=crate::activity::update(&db,activity.clone());
+                last_activity=std::time::Instant::now();
             }
             std::thread::sleep(Duration::from_millis(400));
         }
@@ -386,6 +397,10 @@ pub(super) fn start(app: &tauri::AppHandle, db: &Path) -> Result<Value> {
         }
         let status = s.clone();
         drop(s);
+        activity.completed=status.completed;
+        activity.state=if status.phase=="cancelled"{"cancelled"}else if status.phase=="partial"||status.message.contains("Could not write"){"failed"}else{"complete"}.into();
+        activity.message=if activity.state=="failed"{"Some library files could not be saved. Open Integrations to see details.".into()}else{status.message.clone()};
+        let _=crate::activity::update(&db,activity);
         let _ = app.emit_to("main", "apple-enrichment-status", status);
     });
     Ok(json!({"status":state().lock().unwrap().clone()}))

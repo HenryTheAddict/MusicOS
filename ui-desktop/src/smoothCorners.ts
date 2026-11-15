@@ -16,6 +16,38 @@ export function smoothPath(width: number, height: number, radius: number, smooth
   }
   return path;
 }
+
+/** Paint the window contour separately so portaled menus never inherit its clip. */
+export function useWindowContour(nativeMac:boolean){
+  useLayoutEffect(()=>{
+    if(!nativeMac)return;
+    const root=document.documentElement;
+    let frame=0,disposed=false,isFullscreen=false,off:(()=>void)|undefined,sequence=0;
+    function update(){
+      cancelAnimationFrame(frame);
+      frame=requestAnimationFrame(()=>{
+        const width=root.clientWidth,height=root.clientHeight;
+        if(width&&height)root.style.setProperty('--window-contour',isFullscreen?'none':`path('${smoothPath(width,height,16,.6)}')`);
+      });
+    }
+    const observer=new ResizeObserver(update);
+    observer.observe(root);
+    root.dataset.sketchWindow='true';
+    update();
+    void import('@tauri-apps/api/window').then(async({getCurrentWindow})=>{
+      if(disposed)return;
+      const window=getCurrentWindow();
+      const sync=async()=>{
+        const token=++sequence;
+        const value=await window.isFullscreen();
+        if(!disposed&&token===sequence){isFullscreen=value;update();}
+      };
+      const cancel=await window.onResized(()=>{void sync().catch(()=>{});});
+      if(disposed)cancel();else{off=cancel;await sync();}
+    }).catch(()=>{});
+    return()=>{disposed=true;off?.();cancelAnimationFrame(frame);observer.disconnect();delete root.dataset.sketchWindow;root.style.removeProperty('--window-contour');};
+  },[nativeMac]);
+}
 export function useSmoothCorners() {
   useLayoutEffect(() => {
     const watched=new Set<HTMLElement>(),pending=new Set<HTMLElement>();let frame=0;

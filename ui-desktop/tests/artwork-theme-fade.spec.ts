@@ -49,7 +49,7 @@ test('explicit appearance changes, System mode switches, and Reduced Motion rema
  await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:'System',exact:true}).click();await page.emulateMedia({colorScheme:'light'});await page.emulateMedia({colorScheme:'dark'});await expect(page.locator('html')).toHaveAttribute('data-theme-mode','dark');expect(await transitions(page)).toEqual([]);
 });
 
-for(const mode of ['light','dark'])test(`${mode}: a Back swipe blends the shell and preview together through release`,async({page})=>{
+for(const mode of ['light','dark'])test(`${mode}: a Back swipe holds both page colors steady until release`,async({page})=>{
  await coloredArtwork(page,mode);
  const colors=()=>page.evaluate(()=>{
   const root=document.documentElement;
@@ -81,22 +81,20 @@ for(const mode of ['light','dark'])test(`${mode}: a Back swipe blends the shell 
  expect(source.shell).not.toBe(destination.shell);
 
  await gesture(1,-.25);
- const blend=await colors();
- expect(blend.owned).toBe(true);
- expect(blend.shell).not.toBe(source.shell);
- expect(blend.shell).not.toBe(destination.shell);
- expect(blend.preview).toBe(blend.surface);
+ const dragging=await colors();
+ expect(dragging.owned).toBe(true);
+ expect(dragging.shell).toBe(source.shell);
+ expect(dragging.preview).toBe(destination.surface);
  await gesture(null,-.25);
- await expect.poll(async()=>(await colors()).shell).not.toBe(blend.shell);
+ expect((await colors()).shell).toBe(source.shell);
  await gesture(null,.25);
- await expect.poll(async()=>(await colors()).shell).toBe(blend.shell);
  await gesture(3);
  await expect.poll(colors).toEqual(source);
 
  await gesture(1,-.58);
  const beforeRelease=await colors();
- expect(beforeRelease.shell).not.toBe(destination.shell);
- expect(beforeRelease.preview).toBe(beforeRelease.surface);
+ expect(beforeRelease.shell).toBe(source.shell);
+ expect(beforeRelease.preview).toBe(destination.surface);
  await gesture(2);
  await expect(page.locator('#library-content .collection-grid')).toBeVisible();
  await expect.poll(colors).toEqual(destination);

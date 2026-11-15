@@ -1,3 +1,5 @@
+import PhoneActivity from './PhoneActivity';
+import MacRemote from './MacRemote';
 import {songOrder,orderedAlbums,artistTrackOrder,artistOrder} from './libraryOrder';
 import PlaylistEditor from './PlaylistEditor';
 import ComputerSheet from './ComputerSheet';
@@ -40,7 +42,7 @@ function MiniProgress({trackId,total,position,active}:{trackId:number;total:numb
 }
 
 type Collection={id:string;name:string;kind:string;track_ids:number[];complete?:boolean;revision?:string;artwork_path?:string;artwork_choice?:string};
-type State={open_computer?:boolean;preferences?:PhonePreferences;music_haptics_status?:string;portraits?:Record<string,string>;tracks:Track[];collections:Collection[];nearby_macs?:{id:string;name:string}[];paired:boolean;pending_changes:number;conflicts:any[];sync:{state:string;message?:string;completed?:number;total?:number};storage_bytes:number;text_scale?:number;playback:Playback};
+type State={open_computer?:boolean;open_activity?:string;preferences?:PhonePreferences;music_haptics_status?:string;portraits?:Record<string,string>;tracks:Track[];collections:Collection[];nearby_macs?:{id:string;name:string}[];paired:boolean;pending_changes:number;conflicts:any[];sync:{state:string;message?:string;completed?:number;total?:number};storage_bytes:number;text_scale?:number;playback:Playback};
 const blank:State={tracks:[],collections:[],paired:false,pending_changes:0,conflicts:[],sync:{state:'idle'},storage_bytes:0,playback:emptyPlayback as Playback};
 function shuffleIds(ids:number[]){const a=[...ids];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function duration(s:number){return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;}
@@ -48,6 +50,10 @@ function Picture({track,className=''}:{track?:Track;className?:string}){return <
 function CollectionPicture({item,track}:{item:Collection;track?:Track}){const cover=item.artwork_path?artwork(item.artwork_path):collectionCover(item.artwork_choice);return cover?<span className="phone-cover"><img src={cover} alt=""/></span>:<Picture track={track}/>;}
 function App(){
  const [state,setState]=useState(blank),[player,feed]=usePlaybackFeed(blank.playback),[destination,setDestination]=useState('home'),[category,setCategory]=useState('albums'),[query,setQuery]=useState(''),[detail,setDetail]=useState<{title:string;ids:number[];collection?:Collection}|null>(null),[view,setView]=useState<'normal'|'queue'|'lyrics'>('normal'),[devices,setDevices]=useState(false),[settings,setSettings]=useState(false),[error,setError]=useState(''),[palette,setPalette]=useState<Palette|null>(null),[lyricPreview,setLyricPreview]=useState<Track|undefined>(undefined),[songActions,setSongActions]=useState<Track|null>(null),[newPlaylist,setNewPlaylist]=useState(false),[name,setName]=useState(''),[selected,setSelected]=useState<number[]>([]),[editingPlaylist,setEditingPlaylist]=useState<string|undefined>(),[editingRevision,setEditingRevision]=useState<string|undefined>(),[playlistTarget,setPlaylistTarget]=useState<Track|null>(null),[queuePicker,setQueuePicker]=useState(false),[rowLimit,setRowLimit]=useState(60),[playlistQuery,setPlaylistQuery]=useState('');
+ const [remoteOpen,setRemoteOpen]=useState(false);
+ const [activity,setActivity]=useState<string>();
+ const [routePresented,setRoutePresented]=useState(false);
+ const routeSlot=useRef<HTMLSpanElement>(null);
  const preferences=state.preferences??phoneDefaults;
  const {expanded,closing,sheet,open:openSheet,close:closeSheet}=usePhonePlayerSheet(preferences.animations);
  const [navigationRevision,setNavigationRevision]=useState(0);
@@ -70,7 +76,7 @@ function App(){
  },[settings]);
  const pageBody=useRef<HTMLDivElement>(null),pageContent=useRef<HTMLDivElement>(null),pendingScroll=useRef<number|null>(null),direction=useRef(1);const catalogue=useRef<Track[]>([]);const content=useRef<HTMLElement>(null),scrolls=useRef<Record<string,number>>({}),destinationDetails=useRef<Record<string,typeof detail>>({}),browserScrolls=useRef<Record<string,number>>({}),playerRef=useRef(player);playerRef.current=player;
  useEffect(()=>{const haptic=(event:MouseEvent)=>{const button=(event.target as HTMLElement)?.closest('button');if(!button||button.disabled||button.closest('.heart,.reorder-handle,.remove-entry')||button.closest('.phone-settings'))return;feedback(button.closest('nav')?'selection':'light');};document.addEventListener('click',haptic);return()=>document.removeEventListener('click',haptic);},[]);
- async function refresh(){const value=await request({action:'snapshot'}) as State;if(value.open_computer){computerFromSettings.current=false;closeSheet();setSettings(false);setDevices(true);}catalogue.current=value.tracks;value.playback=normalizePlayback(value.playback,value.tracks);setState(value);feed(value.playback);}
+ async function refresh(){const value=await request({action:'snapshot'}) as State;if(value.open_activity){setDevices(false);setSettings(false);setRemoteOpen(false);closeSheet();setActivity(value.open_activity);}if(value.open_computer){computerFromSettings.current=false;closeSheet();setSettings(false);setDevices(true);}catalogue.current=value.tracks;value.playback=normalizePlayback(value.playback,value.tracks);setState(value);feed(value.playback);}
  async function perform(action:Record<string,unknown>){if(action.action==='next'||action.action==='previous')skipIntent.current={direction:action.action==='next'?1:-1,at:performance.now()};setError('');try{const value=await request(action);if(value.tracks){catalogue.current=value.tracks;value.playback=normalizePlayback(value.playback,value.tracks);setState(value);feed(value.playback);}else if(value.queue){feed(normalizePlayback(value,catalogue.current));}return value;}catch(e){setError(errorText(e));throw e;}}
  useEffect(()=>{if(player.error)setError(errorText(player.error));},[player.error]);
  useEffect(()=>{void refresh().catch(e=>setError(errorText(e)));if(!native)return;let gone=false,off:(()=>void)|undefined;void addPluginListener<{json:string}>('companion','playback',value=>{if(!gone){const p=JSON.parse(value.json);feed(normalizePlayback(p,catalogue.current));if(p.text_scale)setState(s=>s.text_scale===p.text_scale?s:{...s,text_scale:p.text_scale});}}).then(listener=>{if(gone)void listener.unregister();else off=()=>void listener.unregister();}).catch(e=>setError(errorText(e)));return()=>{gone=true;off?.();};},[]);
@@ -143,17 +149,44 @@ function App(){
  const backSwipe=useSwipe(d=>{if(d==='right'&&detail)closeDetail(true);},'horizontal',detail&&!expanded&&!devices&&!settings&&!newPlaylist&&!songActions&&!playlistTarget?'edge':'off',false,()=>backPreviews.current[destination]??null);
  const mainRef=useCallback((node:HTMLElement|null)=>{content.current=node;backSwipe.ref(node);},[backSwipe.ref]);
  const miniSwipe=useSwipe(d=>{if(d==='up'){openPlayer('normal');}else if(d==='left')void perform({action:'next'});else if(d==='right')void perform({action:'previous'});},'both');
- const dismissSwipe=useSwipe((d,offset)=>{if(d==='down')closeSheet(offset);},'vertical','all',true);
+ const dismissSwipe=useSwipe((d,offset)=>{if(d==='down'&&!routePresented)closeSheet(offset);},'vertical',routePresented?'off':'all',true);
  const playerSwipe=useSwipe((d,offset)=>{
+  if(routePresented)return;
   if(d==='down')closeSheet(offset);
   else if(d==='left')void perform({action:'next'});
   else if(d==='right')void perform({action:'previous'});
- },'both',view==='normal'?'all':'off',true);
+ },'both',view==='normal'&&!routePresented?'all':'off',true);
+ useEffect(()=>{
+  if(!native)return;
+  let gone=false;
+  const listener=addPluginListener<{open:boolean}>('companion','route-presentation',({open})=>{if(!gone)setRoutePresented(open);});
+  void listener.catch(()=>{});
+  return()=>{gone=true;void listener.then(handle=>handle.unregister()).catch(()=>{});};
+ },[]);
+ useLayoutEffect(()=>{
+  if(!native)return;
+  const node=routeSlot.current,visible=expanded&&!closing&&!queuePicker&&!songActions&&!newPlaylist&&!playlistTarget;
+  if(!node||!visible){void request({action:'route_control'}).catch(()=>{});return;}
+  let frame=0;
+  const update=()=>{
+   cancelAnimationFrame(frame);
+   frame=requestAnimationFrame(()=>{
+    const bounds=node.getBoundingClientRect();
+    const owner=sheet.current?.getBoundingClientRect();
+    if(owner)void request({action:'route_control',frame:[bounds.left,bounds.top-owner.top,bounds.width,bounds.height]}).catch(()=>{});
+   });
+  };
+  const observer=new ResizeObserver(update);
+  observer.observe(node);
+  window.addEventListener('resize',update);
+  update();
+  return()=>{observer.disconnect();window.removeEventListener('resize',update);cancelAnimationFrame(frame);};
+ },[expanded,closing,queuePicker,songActions,newPlaylist,playlistTarget,sheet]);
  const playerBodyRef=useCallback((node:HTMLDivElement|null)=>{pageBody.current=node;playerSwipe.ref(node);},[playerSwipe.ref]);
  const transport=<div className="phone-transport"><button className="icon-button heart" aria-label={current?.favorited?'Unfavorite song':'Favorite song'} disabled={!current} onClick={()=>current&&void perform({action:'favorite',id:current.id,value:!current.favorited})}><Icon motion={preferences.animations} name={current?.favorited?'hearted':'noheart'}/></button><button className="icon-button" aria-label="Previous song" onClick={()=>void perform({action:'previous'})}><Icon name="prev"/></button><button className="icon-button play" aria-label={player.is_playing?'Pause':'Play'} onClick={()=>void perform({action:'toggle'})}><Icon motion={preferences.animations} name={(player as any).preparing?'sync':player.is_playing?'pause':'play'}/></button><button className="icon-button" aria-label="Next song" onClick={()=>void perform({action:'next'})}><Icon name="next"/></button><button className="icon-button" aria-label={`Show ${view==='normal'?'Up next':view==='queue'?'Lyrics':'Now playing'}`} onClick={cycle}><Icon motion={preferences.animations} name={view==='normal'?'playerQueue':view==='queue'?'playerLyrics':'playerPlaying'}/></button></div>;
  return <div className="phone-app" style={style} data-reduced-motion={!preferences.animations||undefined}>
- <header inert={expanded||devices||settings||newPlaylist||songActions||playlistTarget?true:undefined}><span className="brand"><Icon name="Album"/>musicOS</span><button className="icon-button" aria-label="Settings" onClick={()=>{void refresh();setSettings(true);}}><Icon name="Settings"/></button></header>
- <main tabIndex={-1} className="phone-scroll-edges" {...backSwipe} ref={mainRef} inert={expanded||devices||settings||newPlaylist||songActions||playlistTarget?true:undefined}><div ref={pageContent} className="phone-page">
+ <header inert={expanded||devices||remoteOpen||activity!==undefined||settings||newPlaylist||songActions||playlistTarget?true:undefined}><span className="brand"><Icon name="Album"/>musicOS</span><button className="icon-button" aria-label="Settings" onClick={()=>{void refresh();setSettings(true);}}><Icon name="Settings"/></button></header>
+ <main tabIndex={-1} className="phone-scroll-edges" {...backSwipe} ref={mainRef} inert={expanded||devices||remoteOpen||activity!==undefined||settings||newPlaylist||songActions||playlistTarget?true:undefined}><div ref={pageContent} className="phone-page">
  {detail?<><button className="filled compact" onClick={()=>closeDetail()}><Icon name="Back"/>Back</button><div className="phone-detail"><Picture track={detailTracks[0]}/><h1>{detail.title}</h1><p>{detailTracks.length===detail.ids.length?`${detailTracks.length} ${detailTracks.length===1?'song':'songs'}`:`${detailTracks.length} of ${detail.ids.length} songs offline`}</p><div className="actions"><button className="filled" disabled={!detailTracks.length} onClick={()=>void play(detailTracks.map(track=>track.id))}><Icon name="play"/>Play</button><button className="filled" disabled={!detailTracks.length} onClick={()=>void play(shuffleIds(detailTracks.map(track=>track.id)))}><Icon name="ShuffleON"/>Shuffle</button>{detail.collection?.kind==='manual'&&detail.collection.complete!==false&&<button className="filled compact" onClick={()=>{setEditingPlaylist(detail.collection?.id);setEditingRevision(detail.collection?.revision??'');setName(detail.title);setSelected(detail.ids);setNewPlaylist(true);}}>Edit</button>}</div></div>{rows(detailTracks)}</>:<>
  <h1>{destination==='home'?'Home':destination==='search'?'Search':'Library'}</h1>
  {destination==='home'?<>
@@ -164,12 +197,12 @@ function App(){
  </>:destination==='search'?<><input type="search" aria-label="Search downloaded music" placeholder="Songs, artists, albums" value={query} onChange={e=>setQuery(e.target.value)}/>{rows(shown)}</>:<><div className="phone-categories">{['albums','artists','songs','favorites','collections'].map(c=><button key={c} aria-pressed={category===c} onClick={()=>setCategory(c)}>{c[0].toUpperCase()+c.slice(1)}</button>)}</div>{category==='albums'?albumGrid(albums):category==='artists'?<div className="collection-list">{[...new Set(tracks.map(t=>t.artist))].sort(artistOrder).map(artist=><button key={artist} onClick={event=>openDetail({title:artist,ids:tracks.filter(t=>t.artist===artist).sort(artistTrackOrder).map(t=>t.id)},event.currentTarget)}><span className="phone-cover artist-portrait">{state.portraits?.[artist]?<img src={artwork(state.portraits[artist])} alt=""/>:<Icon name="Artist"/>}</span><strong>{artist}</strong></button>)}</div>:category==='collections'?<div className="collection-list">{state.collections.map(c=><button key={c.id} onClick={event=>openDetail({title:c.name,ids:c.track_ids,collection:c},event.currentTarget)}><CollectionPicture item={c} track={byId.get(c.track_ids[0])}/><strong>{c.name}</strong></button>)}</div>:rows(category==='favorites'?tracks.filter(t=>t.favorited):tracks)}</>}
  </>}
  </div></main>
- <footer inert={expanded||devices||settings||newPlaylist||songActions||playlistTarget?true:undefined}>{current&&<div className="phone-mini" {...miniSwipe}><button className="mini-identify" onClick={event=>openPlayer('normal',undefined,event.currentTarget)}><Picture track={current}/><span><strong>{current.title}</strong><small>{current.artist}</small></span></button><button className="icon-button" aria-label={player.is_playing?'Pause':'Resume'} onClick={()=>void perform({action:'toggle'})}><Icon motion={preferences.animations} name={(player as any).preparing?'sync':player.is_playing?'pause':'play'}/></button><button className="icon-button" aria-label="Up next" onClick={event=>openPlayer('queue',undefined,event.currentTarget)}><Icon name="playerQueue"/></button><MiniProgress trackId={current.id} position={player.position} total={current.duration} active={!expanded&&!devices&&!settings&&!newPlaylist&&!songActions&&!playlistTarget}/></div>}<nav>{[['home','Home'],['search','Search'],['library','Library']].map(([id,icon])=><button aria-current={destination===id?'page':undefined} key={id} onClick={()=>navigate(id)}><Icon name={id==='search'?'search':icon}/><span>{icon}</span></button>)}</nav></footer>
- {expanded&&<section ref={sheet} className="phone-player" data-view={view} data-swipe-closing={closing||undefined} role="dialog" aria-modal="true" aria-label="Player" inert={closing||queuePicker||songActions||newPlaylist||playlistTarget?true:undefined}><div className="player-top" {...dismissSwipe}><button className="icon-button" aria-label="Close player" onClick={()=>closeSheet()}><Icon name="Back" className="chevron-down"/></button><span>{view==='normal'?'Now playing':view==='queue'?'Up next':'Lyrics'}</span><button className="icon-button" aria-label="Audio output" onClick={()=>void perform({action:'route'})}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 17H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-1M7 20l5-6 5 6H7Z"/></svg></button></div><div {...playerSwipe} ref={playerBodyRef} className={`phone-player-content ${view}`} onScrollCapture={event=>{const target=event.target;if(target instanceof HTMLElement&&target.classList.contains('phone-queue'))queueScroll.current=target.scrollTop;}}>
+ <footer inert={expanded||devices||remoteOpen||activity!==undefined||settings||newPlaylist||songActions||playlistTarget?true:undefined}>{current&&<div className="phone-mini" {...miniSwipe}><button className="mini-identify" onClick={event=>openPlayer('normal',undefined,event.currentTarget)}><Picture track={current}/><span><strong>{current.title}</strong><small>{current.artist}</small></span></button><button className="icon-button" aria-label={player.is_playing?'Pause':'Resume'} onClick={()=>void perform({action:'toggle'})}><Icon motion={preferences.animations} name={(player as any).preparing?'sync':player.is_playing?'pause':'play'}/></button><button className="icon-button" aria-label="Up next" onClick={event=>openPlayer('queue',undefined,event.currentTarget)}><Icon name="playerQueue"/></button><MiniProgress trackId={current.id} position={player.position} total={current.duration} active={!expanded&&!devices&&!settings&&!newPlaylist&&!songActions&&!playlistTarget}/></div>}<nav>{[['home','Home'],['search','Search'],['library','Library']].map(([id,icon])=><button aria-current={destination===id?'page':undefined} key={id} onClick={()=>navigate(id)}><Icon name={id==='search'?'search':icon}/><span>{icon}</span></button>)}</nav></footer>
+ {expanded&&<section ref={sheet} className="phone-player" data-view={view} data-swipe-closing={closing||undefined} role="dialog" aria-modal="true" aria-label="Player" inert={closing||queuePicker||songActions||newPlaylist||playlistTarget?true:undefined}><div className="player-top" {...dismissSwipe}><button className="icon-button" aria-label="Close player" disabled={routePresented} onClick={()=>closeSheet()}><Icon name="Back" className="chevron-down"/></button><span>{view==='normal'?'Now playing':view==='queue'?'Up next':'Lyrics'}</span>{native?<span className="icon-button route-slot" ref={routeSlot} aria-hidden="true"/>:<button className="icon-button" aria-label="Audio output" disabled><Icon name="Devices"/></button>}</div><div {...playerSwipe} ref={playerBodyRef} className={`phone-player-content ${view}`} onScrollCapture={event=>{const target=event.target;if(target instanceof HTMLElement&&target.classList.contains('phone-queue'))queueScroll.current=target.scrollTop;}}>
  {view==='normal'?<div className="phone-playing"><div className="phone-playing-art"><Picture track={current}/></div><div className="phone-playing-identity"><h1>{current?.title??'Nothing playing'}</h1>{current&&<p>{current.artist} · {current.album}</p>}</div></div>:view==='lyrics'?<LyricsView renderMenu={()=>null} track={lyricPreview??current} player={player} active={!closing} onSeek={s=>perform({action:'seek',position:s})} onPlay={()=>play((lyricPreview??current)?[(lyricPreview??current)!.id]:[])} variant="panel"/>:<QueueEditor player={player} onAction={perform} onAdd={()=>setQueuePicker(true)}/>}
  </div><div className="player-bottom"><div className="phone-playback-options"><button className="icon-button" aria-label="Shuffle queue" aria-pressed={player.shuffle} onClick={()=>void perform({action:'shuffle'})}><Icon motion={preferences.animations} name={player.shuffle?'ShuffleON':'ShuffleOFF'}/></button><button className="icon-button" aria-label="Repeat" aria-pressed={player.repeat!=='none'} onClick={()=>void perform({action:'repeat'})}><Icon motion={preferences.animations} name={player.repeat==='one'?'RepeatONE':player.repeat==='all'?'RepeatON':'RepeatOFF'}/></button></div><PlaybackProgress roundedFill entryId={entry} trackId={current?.id} position={player.position} duration={current?.duration??0} seek={async s=>{await perform({action:'seek',position:s});}}/>{transport}</div></section>}
- {settings&&<PhoneSettings preferences={preferences} musicHapticsStatus={state.music_haptics_status} onChange={(key,value)=>void perform({action:'settings',key,value})} onComputer={()=>{computerFromSettings.current=true;setSettings(false);setDevices(true);}} paired={state.paired} onClose={()=>setSettings(false)}/>}
- {devices&&<ComputerSheet paired={state.paired} onClose={()=>{
+ {settings&&<PhoneSettings onActivity={()=>{setSettings(false);setActivity('');}} preferences={preferences} musicHapticsStatus={state.music_haptics_status} onChange={(key,value)=>void perform({action:'settings',key,value})} onComputer={()=>{computerFromSettings.current=true;setSettings(false);setDevices(true);}} paired={state.paired} onClose={()=>setSettings(false)}/>}
+ {devices&&<ComputerSheet paired={state.paired} onRemote={()=>{setDevices(false);setRemoteOpen(true);}} onClose={()=>{
    setDevices(false);
    if(computerFromSettings.current){
     computerFromSettings.current=false;
@@ -177,6 +210,8 @@ function App(){
     setSettings(true);
    }
   }} onLibraryChange={refresh}/>}
+ {activity!==undefined&&<PhoneActivity selection={activity} liveSync={preferences.liveSync} onClose={()=>{setActivity(undefined);setSettings(true);}} onComputer={()=>{setActivity(undefined);computerFromSettings.current=true;setDevices(true);}}/>}
+ {remoteOpen&&<MacRemote onClose={()=>{setRemoteOpen(false);setDevices(true);}}/>}
  {newPlaylist&&<PlaylistEditor tracks={tracks} initialName={name} initialIds={selected} editing={!!editingPlaylist} onClose={()=>setNewPlaylist(false)} onSave={async(name,ids)=>{await perform({action:'playlist',id:editingPlaylist,base_revision:editingPlaylist?editingRevision:undefined,name,track_ids:ids});setNewPlaylist(false);if(editingPlaylist&&detail?.collection?.id===editingPlaylist)setDetail({...detail,title:name,ids});}}/>}
  {queuePicker&&<AddQueueSongs tracks={tracks} onClose={()=>setQueuePicker(false)} onAdd={id=>perform({action:'queue_add',ids:[id]}).then(()=>feedback('drop'))}/>}
 

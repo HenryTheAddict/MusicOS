@@ -11,6 +11,7 @@ import MusicOSActivityShared
         let message: String
         let completed: Int
         let total: Int
+        let jobID:String?
     }
     private var next: (Update, Bool)?
     private var last: Update?
@@ -28,7 +29,8 @@ import MusicOSActivityShared
         let terminal = ["complete","cancelled","error","approval","idle"].contains(phase)
         let state = Update(
             phase:phase, message:String((status["message"] as? String ?? "").prefix(120)),
-            completed:status["completed"] as? Int ?? 0, total:status["total"] as? Int ?? 0)
+            completed:status["completed"] as? Int ?? 0, total:status["total"] as? Int ?? 0,
+            jobID:status["job_id"] as? String)
         next = (state, terminal)
         if terminal || !enabled { pending?.cancel(); pending = nil }
         guard pending == nil else { return }
@@ -43,7 +45,7 @@ import MusicOSActivityShared
                 last = nil
                 return
             }
-            let content = ActivityContent(state:SyncActivityAttributes.ContentState(phase:state.phase,message:state.message,completed:state.completed,total:state.total), staleDate:terminal ? nil : Date().addingTimeInterval(180))
+            let content = ActivityContent(state:SyncActivityAttributes.ContentState(phase:state.phase,message:state.message,completed:state.completed,total:state.total,jobID:state.jobID), staleDate:terminal ? nil : Date().addingTimeInterval(state.jobID==nil ? 180 : 90))
             if terminal {
                 for activity in activities {
                     await activity.end(content,dismissalPolicy:state.phase == "idle" ? .immediate : .after(Date().addingTimeInterval(20)))

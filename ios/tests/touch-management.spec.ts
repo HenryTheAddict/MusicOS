@@ -3,7 +3,21 @@ test('queue edits preserve the current entry, including duplicate songs',async({
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Up next',exact:true}).click();const queue=page.getByLabel('Queue',{exact:true});await expect(queue.locator('.phone-reorder-row')).toHaveCount(5);await queue.getByRole('button',{name:'Reorder item 2. Use arrow keys to move.',exact:true}).press('ArrowUp');await expect(queue.locator('.phone-reorder-row').first()).toContainText('Second light');await expect(queue.locator('.queue-current')).toContainText('Second light');await queue.getByRole('button',{name:'Clear upcoming songs',exact:true}).click();await page.getByRole('button',{name:'Clear upcoming',exact:true}).click();await expect(queue.locator('.phone-reorder-row')).toHaveCount(0);await expect(queue.locator('.queue-current')).toContainText('Second light');await queue.getByRole('button',{name:'Choose songs',exact:true}).click();await page.getByRole('searchbox',{name:'Find songs for queue'}).fill('Soft signal');await page.getByRole('button',{name:'Queue Soft signal',exact:true}).click();await page.getByRole('button',{name:'Done',exact:true}).click();await expect(queue.locator('.phone-reorder-row')).toHaveCount(1);await expect(queue.locator('.queue-current')).toContainText('Second light');
 });
 test('queue drag handle reorders without starting playback',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Up next',exact:true}).click();const rows=page.locator('.phone-reorder-row'),handle=await rows.first().locator('.reorder-handle').boundingBox(),last=await rows.nth(2).boundingBox();await page.mouse.move(handle!.x+20,handle!.y+20);await page.mouse.down();await page.mouse.move(handle!.x+20,last!.y+last!.height/2,{steps:12});await page.mouse.up();await expect(rows.nth(2)).toContainText('Soft signal');await expect(page.getByRole('button',{name:'Play',exact:true})).toBeVisible();await expect(page.locator('[data-dragging]')).toHaveCount(0);
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Up next',exact:true}).click();
+ const player=page.locator('.phone-player'),rows=player.locator('.phone-reorder-row');
+ await expect(rows).toHaveCount(5);
+ await expect.poll(()=>player.evaluate(node=>node.getAnimations({subtree:true}).filter(a=>a.id.startsWith('phone-player')).length)).toBe(0);
+ const handle=(await rows.first().locator('.reorder-handle').boundingBox())!,last=(await rows.nth(2).boundingBox())!;
+ const x=handle.x+handle.width/2;
+ await page.mouse.move(x,handle.y+handle.height/2);
+ await page.mouse.down();
+ await expect(rows.first()).toHaveAttribute('data-dragging','true');
+ await page.mouse.move(x,last.y+last.height/2,{steps:12});
+ await page.mouse.up();
+ await expect(rows.nth(2)).toContainText('Soft signal');
+ await expect(page.getByRole('button',{name:'Play',exact:true})).toBeVisible();
+ await expect(page.locator('[data-dragging]')).toHaveCount(0);
 });
 test('playlist editor searches, retains duplicates, reorders, removes and undoes',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Weekend 4 songs',exact:true}).click();await page.getByRole('button',{name:'Edit',exact:true}).click();const editor=page.getByRole('dialog',{name:'Playlist editor'});await expect(editor.locator('.phone-reorder-row')).toHaveCount(4);await editor.getByRole('button',{name:'Add songs',exact:true}).click();await expect(editor.locator('.playlist-add-row')).toHaveCount(40);await editor.getByRole('searchbox',{name:'Find songs to add'}).fill('Soft signal');await editor.getByRole('button',{name:'Add Soft signal to playlist',exact:true}).click();await editor.getByRole('button',{name:'Add Soft signal to playlist',exact:true}).click();await editor.getByRole('button',{name:'Playlist · 6',exact:true}).click();await expect(editor.locator('.phone-reorder-row')).toHaveCount(6);await editor.getByRole('button',{name:'Remove item 1',exact:true}).click();await editor.getByRole('button',{name:'Undo',exact:true}).click();await editor.getByRole('button',{name:'Reorder item 6. Use arrow keys to move.',exact:true}).press('ArrowUp');await editor.getByRole('textbox',{name:'Name',exact:true}).fill('Weekend revised');await editor.getByRole('button',{name:'Save playlist',exact:true}).click();await expect(editor).toHaveCount(0);await expect(page.getByRole('heading',{name:'Weekend revised',exact:true})).toBeVisible();await expect(page.locator('.phone-song')).toHaveCount(6);

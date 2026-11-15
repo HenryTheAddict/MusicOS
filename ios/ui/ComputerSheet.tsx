@@ -20,8 +20,8 @@ const phaseTitle: Record<SyncPhase, string> = {
  cancelled: 'Sync stopped', complete: 'Ready offline', error: 'Sync needs attention',
 };
 
-export default function ComputerSheet({paired, onClose, onLibraryChange}: {
- paired: boolean; onClose: () => void; onLibraryChange: () => Promise<void>;
+export default function ComputerSheet({paired, onClose, onLibraryChange,onRemote}: {
+ paired: boolean; onClose: () => void; onLibraryChange: () => Promise<void>; onRemote:()=>void;
 }) {
  const [status, setStatus] = useState<SyncStatus>();
  const [link, setLink] = useState('');
@@ -105,6 +105,7 @@ export default function ComputerSheet({paired, onClose, onLibraryChange}: {
     <button className="filled" disabled={!!pending || syncing} onClick={() => void run('resolve', {id:conflict.id, phone:false})}>Use Mac</button>
     <button className="filled" disabled={!!pending || syncing} onClick={() => void run('resolve', {id:conflict.id, phone:true})}>Use iPhone</button>
    </div></div>)}
+   <section className="computer-offline"><h2>Mac Remote</h2><button className="filled" onClick={onRemote}><Icon name="System"/>Control playback on Mac</button></section>
    <details className="computer-manage"><summary>Manage connection</summary>
     {disconnect ? <><p>Disconnect this Mac? Your downloaded songs stay on this iPhone.</p><div className="actions">
      <button className="filled" disabled={!!pending} onClick={() => setDisconnect(false)}>Keep connection</button>

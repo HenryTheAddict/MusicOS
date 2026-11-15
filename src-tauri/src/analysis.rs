@@ -96,41 +96,20 @@ pub fn cached_rhythms(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32,Option
 pub fn cached_tempos(db:&Path,tracks:&[(i64,&str)])->Result<Vec<(i64,f32)>>{Ok(cached_rhythms(db,tracks)?.into_iter().map(|(id,bpm,_)|(id,bpm)).collect())}
 pub fn cached_many_current(db:&Path,tracks:&[(i64,&str)])->Vec<Option<Features>>{cached_many_mode(db,tracks,true)}
 fn cached_many_mode(db: &Path, tracks: &[(i64, &str)],current:bool) -> Vec<Option<Features>> {
-    let read = (|| -> Result<std::collections::HashMap<i64, (String, String, Features)>> {
+    let lookup = (|| -> Result<Vec<Option<Features>>> {
         let conn = cache(db)?;
-        let mut statement =
-            conn.prepare("SELECT track_id,identity,version,result FROM desktop_dsp_v1")?;
-        let rows = statement.query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
-            ))
-        })?;
-        let mut values = std::collections::HashMap::new();
-        for row in rows {
-            let (id, signature, version, result) = row?;
-            if let Ok(features) = serde_json::from_str(&result) {
-                values.insert(id, (signature, version, features));
-            }
-        }
-        Ok(values)
+        let mut query = conn.prepare(
+            "SELECT result FROM desktop_dsp_v1 WHERE track_id=? AND identity=? AND (?=0 OR version=?)",
+        )?;
+        Ok(tracks.iter().map(|(id, path)| {
+            let signature = identity(Path::new(path)).ok()?;
+            let row = query.query_row(rusqlite::params![id, signature, current, VERSION], |row| row.get::<_, String>(0)).ok()?;
+            serde_json::from_str(&row).ok()
+        }).collect())
     })();
-    let values = read.unwrap_or_default();
-    tracks
-        .iter()
-        .map(|(id, path)| {
-            values
-                .get(id)
-                .filter(|(signature, version, _)| {
-                    (!current || version == VERSION)
-                        && identity(Path::new(path)).is_ok_and(|current| current == *signature)
-                })
-                .map(|(_, _, f)| f.clone())
-        })
-        .collect()
+    lookup.unwrap_or_else(|_| vec![None; tracks.len()])
 }
+
 #[derive(Clone,Copy,Debug,Default)]
 pub struct Progress {pub running:bool,pub paused:bool,pub processed:usize,pub total:usize}
 impl Analysis {

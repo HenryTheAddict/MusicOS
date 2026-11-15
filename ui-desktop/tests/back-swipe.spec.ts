@@ -20,41 +20,22 @@ test('artwork and fade follow finger distance and retract without a second trans
 });
 
 
-test('Filter reveals with the swipe and the preview stays aligned through the first live frame',async({page})=>{
+test('Back keeps one live toolbar and restores the grid without shifting it',async({page})=>{
  await page.goto('/?fixture=1');
  await page.getByRole('button',{name:'Albums',exact:true}).click();
- const bar=page.locator('.library-toolbar:not(.back-swipe-bar)');
- const initialBar=(await bar.boundingBox())!;
- const initialGrid=(await page.locator('#library-content').boundingBox())!;
+ const initialTop=(await page.locator('#library-content').boundingBox())!.y;
  await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
  await expect(page.locator('.album-cover-transfer')).toHaveCount(0);
  await page.locator('.album-detail h1').hover();
  await phase(page,1);
  await page.mouse.wheel(-150,0);
- const previewBar=page.locator('.back-swipe-bar.library-toolbar');
- await expect(previewBar).toHaveCount(1);
- await expect(previewBar).toHaveAttribute('aria-hidden','true');
- expect((await previewBar.boundingBox())!.y).toBeCloseTo(initialBar.y,0);
- expect((await page.locator('.back-page-preview .page-scroll').boundingBox())!.y).toBeCloseTo(initialGrid.y,0);
- const opacity=()=>previewBar.evaluate(node=>Number(getComputedStyle(node).opacity));
- const partial=await opacity();
- expect(partial).toBeGreaterThan(0);
- expect(partial).toBeLessThan(1);
- await page.mouse.wheel(-100,0);
- await expect.poll(opacity).toBeGreaterThan(partial);
+ await expect(page.locator('.back-page-preview')).toHaveCount(1);
+ await expect(page.locator('.back-swipe-bar')).toHaveCount(0);
+ await expect(page.locator('#library-content')).toHaveCSS('opacity','1');
+ expect((await page.locator('.back-page-preview .page-scroll').boundingBox())!.y).toBeCloseTo(initialTop,0);
  await page.mouse.wheel(-1400,0);
- await expect(previewBar).toHaveCSS('opacity','1');
- const firstFrame=await page.evaluate(()=>new Promise<{preview:boolean;aligned:boolean;toolbarVisible:boolean}>(resolve=>{
-  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2}));
-  requestAnimationFrame(()=>{
-   const frozen=document.querySelector('.back-page-preview .page-scroll');
-   const live=document.querySelector('#library-content');
-   const toolbar=document.querySelector('.back-swipe-bar.library-toolbar');
-   resolve({preview:!!frozen,aligned:!!frozen&&!!live&&Math.abs(frozen.getBoundingClientRect().top-live.getBoundingClientRect().top)<1,toolbarVisible:!!toolbar&&getComputedStyle(toolbar).opacity==='1'});
-  });
- }));
- expect(firstFrame).toEqual({preview:true,aligned:true,toolbarVisible:true});
- await expect(page.locator('.back-page-preview,.back-swipe-bar,.swipe-cover-transfer')).toHaveCount(0);
+ await phase(page,2);
+ await expect(page.locator('.back-page-preview,.swipe-cover-transfer')).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Filter',exact:true})).toBeVisible();
- expect((await page.locator('#library-content').boundingBox())!.y).toBeCloseTo(initialGrid.y,0);
+ expect((await page.locator('#library-content').boundingBox())!.y).toBeCloseTo(initialTop,0);
 });

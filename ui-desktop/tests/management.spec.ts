@@ -43,7 +43,7 @@ test('cover-only action leaves checked album details untouched',async({page})=>{
  await page.getByRole('tab',{name:'Cover',exact:true}).click();
  await page.getByRole('button',{name:'Update cover only',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Review cover update'})).toBeVisible();
- await page.getByRole('button',{name:'Save in musicOS',exact:true}).click();
+ await page.getByRole('button',{name:'Save cover only',exact:true}).click();
  await expect(page.getByRole('status').filter({hasText:'Cover updated'})).toBeVisible();
  const result=await page.evaluate(async()=>{const {fixtureCall}=await import('/src/fixtures.ts' as string);return (await fixtureCall('metadata_workspace',{request:{action:'history'}})).history[0];});
  expect(result.changes).toHaveLength(12);
@@ -99,7 +99,7 @@ test('cover review fits supported window sizes, scales, and modes',async({page})
   await metadata(page);
   await openSuggested(page);
   await page.getByRole('button',{name:'Update cover only',exact:true}).click();
-  const save=page.getByRole('button',{name:'Save in musicOS',exact:true});
+  const save=page.getByRole('button',{name:'Save cover only',exact:true});
   await expect(save).toBeVisible();
   await save.scrollIntoViewIfNeeded();
   await expect(save).toBeInViewport();

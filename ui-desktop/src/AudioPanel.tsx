@@ -16,9 +16,22 @@ export default function AudioPanel({player,scale,presentation,closing=false,onCl
  const panel=useRef<HTMLElement>(null),opener=useRef(document.querySelector<HTMLElement>('[aria-label="Open Up next"]')??document.activeElement as HTMLElement|null);
  usePlayerHandoff(panel,player.track?.id,view,player.queue_entry_ids?.[player.queue_index??-1]);
  const [docked,setDocked]=useState(false),[songDrop,setSongDrop]=useState(false);
+ const motion=useRef<Animation|null>(null);
+ useLayoutEffect(()=>{
+  const node=panel.current;
+  if(!node||presentation==='embedded'||matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+  const style=getComputedStyle(node);
+  const initial=motion.current||closing?{translate:style.translate,opacity:style.opacity}:{translate:'12px 0',opacity:0};
+  motion.current?.cancel();
+  const animation=node.animate([initial,closing?{translate:'12px 0',opacity:0}:{translate:'0 0',opacity:1}],
+   {duration:140,easing:'cubic-bezier(.2,.7,.2,1)',fill:closing?'forwards':'none'});
+  motion.current=animation;
+  void animation.finished.then(()=>{if(!closing&&motion.current===animation)motion.current=null;}).catch(()=>{});
+ },[closing,presentation]);
+ useEffect(()=>()=>motion.current?.cancel(),[]);
  const actionRef=useRef(onAction);actionRef.current=onAction;
  const playerRef=useRef(player);playerRef.current=player;
- useEffect(()=>{if(!active||view!=='queue'){setSongDrop(false);return;}let frame=0,last:SongDrag|null=null;
+ useEffect(()=>{if(!active||closing||view!=='queue'){setSongDrop(false);return;}let frame=0,last:SongDrag|null=null;
  const clear=()=>{panel.current?.querySelectorAll('[data-incoming-drop]').forEach(row=>row.removeAttribute('data-incoming-drop'));};
  const locate=(drag:SongDrag)=>{clear();const rows=[...(panel.current?.querySelectorAll<HTMLElement>('[data-queue-index]')??[])];let index=playerRef.current.queue.length;
  for(const row of rows){const box=row.getBoundingClientRect();if(drag.y<box.top+box.height/2){index=(playerRef.current.queue_index??-1)+1+Number(row.dataset.queueIndex);row.setAttribute('data-incoming-drop','true');break;}}return index;};
@@ -26,7 +39,7 @@ export default function AudioPanel({player,scale,presentation,closing=false,onCl
  const update=(event:Event)=>{const drag=(event as CustomEvent<SongDrag>).detail,box=panel.current?.getBoundingClientRect();const inside=!!box&&drag.x>=box.left&&drag.x<=box.right&&drag.y>=box.top&&drag.y<=box.bottom;setSongDrop(!drag.drop&&inside);
  if(inside&&!drag.drop){songDragFeedback(`Add ${(drag.ids??[drag.id]).length} ${(drag.ids??[drag.id]).length===1?'song':'songs'} to Up next`);last=drag;locate(drag);if(!frame)frame=requestAnimationFrame(scroll);}else{last=null;cancelAnimationFrame(frame);frame=0;}
  if(drag.drop&&!drag.cancelled&&inside){const index=locate(drag),ids=[...new Set(drag.ids??[drag.id])];void(async()=>{for(let offset=0;offset<ids.length;offset++)await actionRef.current({type:'add_to_queue',id:ids[offset],index:index+offset});haptic('drop',`queue:${index}`);})();}if(drag.drop||!inside)clear();};
- window.addEventListener('musicos-song-drag',update);return()=>{cancelAnimationFrame(frame);clear();window.removeEventListener('musicos-song-drag',update);};},[active,view]);
+ window.addEventListener('musicos-song-drag',update);return()=>{cancelAnimationFrame(frame);clear();window.removeEventListener('musicos-song-drag',update);};},[active,view,closing]);
  const state=useRef({docked,onClose,closing});state.current={docked,onClose,closing};
  useLayoutEffect(()=>{if(presentation==='embedded')return;const shell=panel.current?.closest<HTMLElement>('.app-shell');if(!shell)return;const header=shell.querySelector<HTMLElement>('.app-header');const update=()=>{const font=parseFloat(getComputedStyle(shell).fontSize);const sidebar=shell.querySelector('.library-sidebar')?.getBoundingClientRect().width??0;const canDock=presentation==='sidebar'&&shell.clientWidth-sidebar>=50*font;setDocked(canDock);shell.dataset.audioSidebar=String(canDock);shell.style.setProperty('--audio-top',`${shell.querySelector('.workspace')?.getBoundingClientRect().top??header?.offsetHeight??64}px`);};const observer=new ResizeObserver(update);observer.observe(shell);if(header)observer.observe(header);update();return()=>{observer.disconnect();delete shell.dataset.audioSidebar;};},[presentation,scale]);
  // Wait for a completed click: pointer-down may begin an internal song drag

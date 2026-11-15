@@ -95,10 +95,25 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     private var refreshCompletion: ((Bool) -> Void)?
     private var preparationLease = UIBackgroundTaskIdentifier.invalid
     var libraryChanged:(()->Void)?
-    var syncLinkPending = false
+    var activityLinkPending: String?
+    private var followedActivityID = UserDefaults.standard.string(forKey:"followed-mac-activity")
+    private var followedActivity: [String:Any]?
+    private var activityMonitor:Task<Void,Never>?
     var outbox: [[String:Any]] = []
     var conflicts: [[String:Any]] = []
-    var status: [String:Any] = ["state":"idle", "completed":0, "total":0] {didSet{SyncLiveStatus.shared.update(status,enabled:preferences.liveSync)}}
+    var status: [String:Any] = ["state":"idle", "completed":0, "total":0] {didSet{
+        let phase=status["state"] as? String ?? "idle"
+        let historyPhases=["complete","cancelled","error"]
+        if historyPhases.contains(phase) {
+            var rows=UserDefaults.standard.array(forKey:"music-sync-history") as? [[String:Any]] ?? []
+            let entry=["state":phase,"message":status["message"] as? String ?? "", "completed":number(status["completed"]), "total":number(status["total"])] as [String:Any]
+            if let latest=rows.first,let time=latest["time"] as? Double, Date().timeIntervalSince1970-time<5,
+               latest["state"] as? String==phase,latest["message"] as? String==entry["message"] as? String {updateLiveStatus();return}
+            var record=entry;record["time"]=Date().timeIntervalSince1970;rows.insert(record,at:0)
+            UserDefaults.standard.set(Array(rows.prefix(16)),forKey:"music-sync-history")
+        }
+        updateLiveStatus()
+    }}
     var queue: [Int64] = []; var queueIndex = 0
     var queueEntryIds:[Int64]=[];var entryCounter:Int64=Int64(Date().timeIntervalSince1970*1000);var repeatMode="none";var shuffled=false;var originalQueue:[(Int64,Int64)]=[]
     var artworkPalettes:[String:[String:Any]]=[:]
@@ -207,17 +222,26 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     }
 
     private func scheduleRefresh() {
-        guard preferences.backgroundSync, preferences.autoSync, connection != nil else {
+        let followsJob=preferences.liveSync&&followedActivityID != nil
+        guard (preferences.backgroundSync&&preferences.autoSync||followsJob), connection != nil else {
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:Self.refreshID)
             return
         }
         let request = BGAppRefreshTaskRequest(identifier:Self.refreshID)
-        request.earliestBeginDate = Date().addingTimeInterval(30 * 60)
+        request.earliestBeginDate = Date().addingTimeInterval(followsJob ? 60 : 30 * 60)
         try? BGTaskScheduler.shared.submit(request)
     }
 
     private func runScheduledRefresh(_ task: BGTask) {
         scheduleRefresh()
+        if preferences.liveSync && followedActivityID != nil && !(preferences.backgroundSync && preferences.autoSync) {
+            let refresh=Task { @MainActor in
+                do{_=try await macActivity();task.setTaskCompleted(success:true)}
+                catch{task.setTaskCompleted(success:false)}
+            }
+            task.expirationHandler={refresh.cancel()}
+            return
+        }
         guard preferences.backgroundSync, preferences.autoSync, connection != nil, syncTask == nil, !stoppingSync else {
             task.setTaskCompleted(success:true)
             return
@@ -386,8 +410,38 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     func storePaths(_ row:[String:Any])->[String:Any]{var result=row;for key in ["path","artwork_path","lyrics_path"]{if let path=row[key] as? String{result[key]=storePath(path)}};return result}
     func sceneUpdated() {
         if UIApplication.shared.applicationState != .background { scheduleRefresh(); updateMusicHaptics() }
+        monitorActivity()
         publish()
         try? persist()
+    }
+    private func monitorActivity(){
+        activityMonitor?.cancel();activityMonitor=nil
+        guard followedActivityID != nil,preferences.liveSync,UIApplication.shared.applicationState == .active else{return}
+        activityMonitor=Task { [weak self] in
+            while let self,self.followedActivityID != nil,!Task.isCancelled {
+                _=try? await self.macActivity()
+                do{try await Task.sleep(nanoseconds:5_000_000_000)}catch{break}
+            }
+        }
+    }
+    private func updateLiveStatus() {
+        let phase=status["state"] as? String ?? "idle"
+        let transferring=["starting","connecting","preparing","downloading","updating","uploading","cancelling"].contains(phase)
+        SyncLiveStatus.shared.update(transferring ? status : followedActivity ?? status,enabled:preferences.liveSync)
+    }
+    private func macActivity() async throws -> [[String:Any]] {
+        let result=try await remote("activity") as? [[String:Any]] ?? []
+        if let id=followedActivityID,let job=result.first(where:{$0["id"] as? String==id}) {
+            let state=job["state"] as? String ?? "failed"
+            followedActivity=["state":state=="running" ? "mac_job":state=="complete" ? "complete":state=="cancelled" ? "cancelled":"error",
+                "message":job["title"] as? String ?? "Mac activity","completed":number(job["completed"]),"total":number(job["total"]),"job_id":id]
+            updateLiveStatus()
+            if state != "running" {
+                followedActivityID=nil;followedActivity=nil
+                UserDefaults.standard.removeObject(forKey:"followed-mac-activity")
+            }
+        }
+        return result
     }
     func persist() throws {
         let value: [String:Any] = ["version":1,"preferences":preferences.json,"portraits":portraits.mapValues{storePath($0)},"tracks":library.map{storePaths($0)},"collections":collections.map{storePaths($0)},"outbox":outbox,"conflicts":conflicts,"queue":queue,"queue_index":queueIndex,"queue_entries":queueEntryIds,"position":player.currentItem==nil ? savedPosition:max(0,player.currentTime().seconds.isFinite ? player.currentTime().seconds:0),"repeat":repeatMode]
@@ -611,15 +665,30 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
             if ["backgroundSync","autoSync"].contains(key) { scheduleRefresh() }
             if key == "musicHaptics" { updateMusicHaptics() }
             if key=="lastfmListening" && !preferences.lastfmListening { listening.stopCollecting() }
-            if !preferences.automix{cancelMix()};SyncLiveStatus.shared.update(status,enabled:preferences.liveSync);if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish()
+            if !preferences.automix{cancelMix()};updateLiveStatus();if preferences.interactionFeedback{UISelectionFeedbackGenerator().selectionChanged()};try persist();publish()
             if key=="discordPresence" { listening.tryAgain() }
             return snapshot()
         case "haptic":feedback(payload["kind"] as? String ?? "selection");return ["ok":true]
         case "snapshot":
             var result = snapshot()
-            result["open_computer"] = syncLinkPending
-            syncLinkPending = false
+            result["open_activity"] = activityLinkPending
+            activityLinkPending = nil
             return result
+        case "activity_jobs":
+            let history=UserDefaults.standard.array(forKey:"music-sync-history") as? [[String:Any]] ?? []
+            let mac=(try? await macActivity()) ?? []
+            return ["sync":status,"history":history,"mac":mac,"following":followedActivityID ?? ""] as [String:Any]
+        case "follow_activity":
+            let selected=payload["id"] as? String
+            if let selected {
+                let jobs=try await macActivity()
+                guard jobs.contains(where:{$0["id"] as? String==selected&&$0["state"] as? String=="running"}) else{throw CompanionError.message("The Mac job has already finished")}
+            }
+            followedActivityID=selected;followedActivity=nil
+            UserDefaults.standard.set(selected,forKey:"followed-mac-activity")
+            if selected != nil { _=try await macActivity() }else{updateLiveStatus()}
+            scheduleRefresh();monitorActivity()
+            return [:] as [String:String]
         case "listening_status":
             observeListening()
             if payload["refresh"] as? Bool == true {
@@ -735,10 +804,21 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         case "stop_discovery":discoveryStop?.cancel();discovery.stop();return [:] as [String:String]
         case "scan":
             return try await scanPairingCode()
-        case "route":
-            if let view=UIApplication.shared.connectedScenes.compactMap({$0 as? UIWindowScene}).flatMap(\.windows).first(where:{$0.isKeyWindow})?.rootViewController?.view {
-                let route=AVRoutePickerView(frame:CGRect(x:view.bounds.midX,y:view.bounds.midY,width:44,height:44));view.addSubview(route);(route.subviews.first(where:{$0 is UIButton}) as? UIButton)?.sendActions(for:.touchUpInside);DispatchQueue.main.asyncAfter(deadline:.now()+1){route.removeFromSuperview()}
-            };return [:] as [String:String]
+        case "mac_remote_state":
+            return try await remote("remote/state")
+        case "mac_remote_library":
+            var query=[URLQueryItem(name:"offset",value:String(number(payload["offset"])))]
+            if let term=payload["query"] as? String {query.append(URLQueryItem(name:"q",value:String(term.prefix(160))))}
+            if let album=payload["album"] as? String {query.append(URLQueryItem(name:"album",value:String(album.prefix(128))))}
+            let (data,_)=try await fetch("remote/library",query:query)
+            return try JSONSerialization.jsonObject(with:data)
+        case "mac_remote_command":
+            guard let command=payload["command"] as? [String:Any] else {throw CompanionError.message("No command was selected")}
+            return try await remote("remote/command",body:["request_id":UUID().uuidString,"action":command])
+        case "mac_remote_cover":
+            let (data,_)=try await fetch("remote/cover/\(number(payload["id"]))")
+            guard data.count<=128*1024 else {throw CompanionError.message("Cover unavailable")}
+            return ["image":"data:image/jpeg;base64,"+data.base64EncodedString()]
         default: throw CompanionError.message("This operation is unavailable on iPhone")
         }
     }
@@ -746,12 +826,16 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
         let (data,_)=try await fetch(path,body:body,range:range)
         return try JSONSerialization.jsonObject(with:data)
     }
-    func fetch(_ path:String,body:[String:Any]?=nil,range:String?=nil,etag:String?=nil) async throws -> (Data,HTTPURLResponse) {
+    func fetch(_ path:String,body:[String:Any]?=nil,range:String?=nil,etag:String?=nil,query:[URLQueryItem]=[]) async throws -> (Data,HTTPURLResponse) {
         guard let c=connection else { throw CompanionError.message("Pair with your Mac first") }
         let shared = syncSession.flatMap { $0.base == c.base && $0.fingerprint == c.fingerprint ? $0.session : nil }
         let session = shared ?? makeSyncSession(fingerprint:c.fingerprint, listening:path=="listening")
         defer { if shared == nil { session.finishTasksAndInvalidate() } }
-        var r=URLRequest(url:c.base.appendingPathComponent(path));r.setValue("Bearer \(c.client).\(c.token)",forHTTPHeaderField:"Authorization")
+        guard var url=URLComponents(url:c.base.appendingPathComponent(path),resolvingAgainstBaseURL:false) else{throw CompanionError.message("The Mac address is unavailable")}
+        if !query.isEmpty{url.queryItems=query}
+        guard let endpoint=url.url else{throw CompanionError.message("The Mac address is unavailable")}
+        var r=URLRequest(url:endpoint);r.setValue("Bearer \(c.client).\(c.token)",forHTTPHeaderField:"Authorization")
+        if path.hasPrefix("remote/"){r.timeoutInterval=10}
         if let body=body { r.httpMethod="POST";r.httpBody=try JSONSerialization.data(withJSONObject:body);r.setValue("application/json",forHTTPHeaderField:"Content-Type") }
         if let range=range {r.setValue(range,forHTTPHeaderField:"Range")};if let etag=etag {r.setValue("\"\(etag)\"",forHTTPHeaderField:"If-Match")}
         let (data,response)=try await session.data(for:r)
@@ -999,11 +1083,14 @@ private final class PinnedConnection: NSObject, URLSessionDelegate, URLSessionTa
     }
 }
 class CompanionPlugin: Plugin {
+    @MainActor private var routeControl: RouteControl?
+    private weak var playerWebView: WKWebView?
     override func load(webview:WKWebView){
-        MusicOSSetSyncLinkCallback {
+        playerWebView = webview
+        MusicOSSetSyncLinkCallback { destination in
             Task { @MainActor in
                 let service = Companion.shared
-                service.syncLinkPending = true
+                service.activityLinkPending = destination
                 service.libraryChanged?()
             }
         }
@@ -1023,6 +1110,19 @@ class CompanionPlugin: Plugin {
         guard let args=try JSONSerialization.jsonObject(with:data) as? [String:Any] else {invoke.reject("Invalid request");return}
         Task { @MainActor in
             let service=Companion.shared
+            if let payload=args["payload"] as? [String:Any],payload["action"] as? String=="route_control" {
+                if self.routeControl == nil {
+                    let control=RouteControl()
+                    control.presentationChanged={ [weak self] open in self?.trigger("route-presentation",data:["open":open]) }
+                    self.routeControl=control
+                }
+                self.routeControl?.webView=self.playerWebView
+                let rect=payload["frame"] as? [Double]
+                let frame=rect.flatMap{r in r.count==4&&r.allSatisfy(\.isFinite)&&r[2]>0&&r[3]>0 ? CGRect(x:r[0],y:r[1],width:r[2],height:r[3]):nil}
+                self.routeControl?.place(frame)
+                invoke.resolve("{}")
+                return
+            }
             service.emit={ [weak self] json in self?.trigger("playback",data:["json":json]) };service.libraryChanged={ [weak self] in self?.trigger("library",data:[:]) }
             do {invoke.resolve(service.json(try await service.request(args)))}catch{invoke.reject(error.localizedDescription)}
         }

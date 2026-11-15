@@ -7,13 +7,15 @@ static MusicOSBackgroundCallback callback;
 static NSMutableDictionary<NSString *, void (^)(void)> *pending;
 static IMP original;
 static IMP originalOpenURL;
-static void (^syncLinkCallback)(void);
-static BOOL pendingSyncLink;
+static void (^syncLinkCallback)(NSString *);
+static NSString *pendingSyncLink;
 
 static BOOL handleOpenURL(id self, SEL selector, UIApplication *application, NSURL *url, NSDictionary *options) {
-    if ([url.scheme.lowercaseString isEqualToString:@"musicos"] && [url.host.lowercaseString isEqualToString:@"sync"]) {
-        if (syncLinkCallback) syncLinkCallback();
-        else pendingSyncLink = YES;
+    NSString *host = url.host.lowercaseString;
+    if ([url.scheme.lowercaseString isEqualToString:@"musicos"] && ([host isEqualToString:@"sync"] || [host isEqualToString:@"activity"])) {
+        NSString *destination = [host isEqualToString:@"activity"] ? (url.lastPathComponent ?: @"activity") : @"sync";
+        if (syncLinkCallback) syncLinkCallback(destination);
+        else pendingSyncLink = [destination copy];
         return YES;
     }
     return originalOpenURL
@@ -21,11 +23,12 @@ static BOOL handleOpenURL(id self, SEL selector, UIApplication *application, NSU
         : NO;
 }
 
-void MusicOSSetSyncLinkCallback(void (^value)(void)) {
+void MusicOSSetSyncLinkCallback(void (^value)(NSString *)) {
     syncLinkCallback = [value copy];
     if (pendingSyncLink) {
-        pendingSyncLink = NO;
-        syncLinkCallback();
+        NSString *destination = pendingSyncLink;
+        pendingSyncLink = nil;
+        syncLinkCallback(destination);
     }
 }
 static void handleBackground(id self, SEL selector, UIApplication *application, NSString *identifier, void (^completion)(void)) {

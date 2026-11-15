@@ -9,19 +9,16 @@ function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:$
 export type BackArtwork={request:string;result:{palette:Palette;path:string}|null};
 const swipeColors=['shell-color','page-color','surface-color','blob-color','accent'] as const;
 type BackTheme={appearance:string;artwork:BackArtwork;colors:Record<typeof swipeColors[number],string>};
-type Bounds = {left:number;top:number;width:number;height:number};
 type Snapshot = {
  html:string;
  scroll:number;
  theme?:BackTheme;
  columnWidth:number;
  frame:{left:number;top:number;right:number;bottom:number};
- bars:{html:string;bounds:Bounds}[];
  size:number;
 };
 const snapshots=new Map<string,Snapshot>();
 let total=0;
-const barSelector=':scope > .library-toolbar:not(.library-toolbar-exit,.back-swipe-bar), :scope > .list-find[data-open=true]:not(.back-swipe-bar)';
 
 function freezeMarkup(source:HTMLElement){
  const copy=source.cloneNode(true) as HTMLElement;
@@ -59,10 +56,6 @@ export function captureBackPage(root:HTMLElement|null,key:string,appearance:stri
  if(!root||!column||!frame)return;
  key=locationKey(key);
  const columnBox=column.getBoundingClientRect(),frameBox=frame.getBoundingClientRect();
- const bars=[...column.querySelectorAll<HTMLElement>(barSelector)].map(bar=>{
-  const {left,top,width,height}=bar.getBoundingClientRect();
-  return {html:freezeMarkup(bar),bounds:{left:left-columnBox.left,top:top-columnBox.top,width,height}};
- });
  const html=freezeMarkup(root);
  // Save the resolved endpoint, even if the previous page is still tinting.
  const style=document.documentElement.style;
@@ -70,10 +63,10 @@ export function captureBackPage(root:HTMLElement|null,key:string,appearance:stri
   appearance,artwork,
   colors:Object.fromEntries(swipeColors.map(name=>[name,style.getPropertyValue(`--${name}`)])) as BackTheme['colors'],
  }:undefined;
- const size=html.length+bars.reduce((sum,bar)=>sum+bar.html.length,0);
+ const size=html.length;
  total-=snapshots.get(key)?.size??0;
  snapshots.delete(key);
- snapshots.set(key,{html,bars,theme,scroll:root.scrollTop,columnWidth:columnBox.width,size,
+ snapshots.set(key,{html,theme,scroll:root.scrollTop,columnWidth:columnBox.width,size,
   frame:{left:frameBox.left-columnBox.left,top:frameBox.top-columnBox.top,right:columnBox.right-frameBox.right,bottom:columnBox.bottom-frameBox.bottom}});
  total+=size;
  while(snapshots.size>8||total>4_000_000){
@@ -91,19 +84,10 @@ function preparePreview(saved:Snapshot){
  const {top,right,bottom,left}=saved.frame;
  frame.style.inset=`${top}px ${right}px ${bottom}px ${left}px`;
  frame.innerHTML=saved.html;
+ if(saved.theme)for(const [name,value] of Object.entries(saved.theme.colors))frame.style.setProperty(`--${name}`,value);
  const page=frame.firstElementChild as HTMLElement;
  Object.assign(page.style,{width:'100%',height:'100%',transform:'none',margin:'0'});
- const bars=saved.bars.map(({html,bounds})=>{
-  const template=document.createElement('template');
-  template.innerHTML=html;
-  const bar=template.content.firstElementChild as HTMLElement;
-  bar.classList.add('back-swipe-bar');
-  bar.inert=true;
-  bar.ariaHidden='true';
-  for(const [name,value] of Object.entries(bounds))bar.style.setProperty(name,`${value}px`);
-  return bar;
- });
- return {frame,page,bars,scroll:saved.scroll};
+ return {frame,page,scroll:saved.scroll};
 }
 
 export const backSwipeThreshold=110;
@@ -146,8 +130,9 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   cancelAnimationFrame(handoffFrame);
   cover?.release();cover=undefined;
   animation?.cancel();animation=null;
-  preview?.frame.remove();preview?.bars.forEach(bar=>bar.remove());preview=undefined;
+  preview?.frame.remove();preview=undefined;
   themeRoot.style.removeProperty('--back-swipe-progress');
+  themeRoot.style.removeProperty('--back-swipe-duration');
   for(const [color,value] of pageColors){
    if(value)page.style.setProperty(color,value);else page.style.removeProperty(color);
   }
@@ -160,7 +145,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    }
    theme=undefined;
   }
-  column.style.removeProperty('--back-swipe-width');
+  page.style.removeProperty('--back-swipe-offset');
   delete column.dataset.backSwipe;
   delete document.documentElement.dataset.swipeNavigation;
   page.inert=inertBefore;
@@ -170,7 +155,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   frame=0;
   if(!preview)return;
   const progress=Math.max(0,Math.min(1,-amount/Math.max(1,width)));
-  setProgress(progress);
+  page.style.setProperty('--back-swipe-offset',`${progress*width}px`);
   cover?.seek(progress);
  };
  const reset=()=>{clearTimeout(timer);cancelAnimationFrame(frame);clear();x=0;y=0;axis='pending';locked=false;velocity=0;peakVelocity=0;peakAt=0;motionAt=0;sample=0;amount=0;};
@@ -206,8 +191,15 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    handoffFrame=requestAnimationFrame(()=>{handoffFrame=requestAnimationFrame(clear);});
   };
   const duration=commit?180*(1-progress):Math.min(140,70+progress*140);
-  if(duration<16){if(commit)cover?.seek(1);done();return;}
-  animation=themeRoot.animate([{'--back-swipe-progress':progress},{'--back-swipe-progress':commit?1:0}],{duration,easing:'cubic-bezier(.2,.7,.2,1)',fill:'forwards'});
+  if(duration<8){if(commit)cover?.seek(1);done();return;}
+  const from=-amount,to=commit?width:0;
+  animation=page.animate([{transform:`translate3d(${from}px,0,0)`},{transform:`translate3d(${to}px,0,0)`}],
+    {duration,easing:'cubic-bezier(.2,.7,.2,1)',fill:'forwards'});
+  if(theme){
+   themeRoot.dataset.backSwipeTheme='release';
+   themeRoot.style.setProperty('--back-swipe-duration',`${duration}ms`);
+   setProgress(commit?1:0);
+  }
   animation.id='interactive-back-finish';
   void Promise.all([animation.finished,cover?.finish(commit,duration)]).then(done).catch(()=>{});
  };
@@ -218,7 +210,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   preview=cached?.key===key?cached.preview:preparePreview(saved);
   // Each gesture owns its copy, so reversing or restarting never reuses altered markup.
   prepared.current=null;
-  column.append(preview.frame,...preview.bars);
+  column.append(preview.frame);
   preview.page.scrollTop=preview.scroll;
   cover=swipeCover(page,preview.page);
   if(!cover)window.dispatchEvent(new Event('musicos-back-gesture-start'));
@@ -239,7 +231,6 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    });
    themeRoot.dataset.backSwipeTheme='true';
   }
-  column.style.setProperty('--back-swipe-width',`${width}px`);
   column.dataset.backSwipe='dragging';
   page.dataset.swiping='true';
   page.inert=true;
@@ -249,7 +240,18 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  };
  const releaseVelocity=()=>performance.now()-motionAt>120?0:performance.now()-peakAt<100?Math.max(velocity,peakVelocity):velocity;
  const wheel=(event:WheelEvent)=>{if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey||event.deltaMode!==0||blocked())return;const now=performance.now();if(momentum)return;if(now-last>280&&!fingers)reset();const dt=now-(sample||now-16);last=now;sample=now;if(locked||axis==='ignored')return;if(consumesHorizontalScroll(event.target as Element,host)){axis='ignored';return;}x+=event.deltaX;y+=event.deltaY;if(event.deltaX>0){velocity=0;peakVelocity=0;peakAt=now;motionAt=now;}else if(event.deltaX<0){const speed=-event.deltaX/Math.max(1,dt);velocity=velocity*.35+speed*.65;motionAt=now;if(speed>=peakVelocity||now-peakAt>100){peakVelocity=speed;peakAt=now;}}if(axis==='pending'){if(Math.abs(x)<12&&Math.abs(y)<12)return;if(!acceptsBackAxis(x,y)){axis='ignored';return;}axis='horizontal';beginPreview();}if(Math.abs(y)>Math.abs(x)*.8||x>0){finish(false);return;}event.preventDefault();amount=x;if(!frame)frame=requestAnimationFrame(paint);clearTimeout(timer);if(!fingers)timer=window.setTimeout(()=>finish(shouldCommitSwipe(-x,width,releaseVelocity())),80);};
- const phase=(value:number)=>{if(value===1){momentum=false;fingers=true;const now=performance.now();if(animation&&axis==='horizontal'){const progress=Number(getComputedStyle(themeRoot).getPropertyValue('--back-swipe-progress'));setProgress(progress);animation.cancel();animation=null;locked=false;x=-progress*width;amount=x;y=0;velocity=0;peakVelocity=0;sample=0;cover?.seek(progress);}else if(locked||axis==='ignored'||now-last>50)reset();last=now;}else if(value===2){fingers=false;finish(shouldCommitSwipe(-x,width,releaseVelocity()));}else if(value===3){fingers=false;finish(false);}else if(value===4){fingers=false;momentum=true;if(axis==='horizontal'&&!locked)finish(shouldCommitSwipe(-x,width,releaseVelocity()));locked=true;}else if(value===5){momentum=false;last=performance.now();}};
+ const phase=(value:number)=>{if(value===1){momentum=false;fingers=true;const now=performance.now();if(animation&&axis==='horizontal'){
+   const transform=getComputedStyle(page).transform;
+   const offset=transform==='none'?0:new DOMMatrixReadOnly(transform).m41;
+   animation.cancel();animation=null;locked=false;x=-offset;amount=x;y=0;velocity=0;peakVelocity=0;sample=0;cover?.seek(Math.max(0,offset/width));
+   if(theme){
+    const style=getComputedStyle(themeRoot);
+    const colors=swipeColors.map(color=>style.getPropertyValue(`--${color}`));
+    swipeColors.forEach((color,index)=>themeRoot.style.setProperty(`--swipe-from-${color}`,colors[index]));
+    themeRoot.dataset.backSwipeTheme='true';setProgress(0);
+   }
+   paint();
+  }else if(locked||axis==='ignored'||now-last>50)reset();last=now;}else if(value===2){fingers=false;finish(shouldCommitSwipe(-x,width,releaseVelocity()));}else if(value===3){fingers=false;finish(false);}else if(value===4){fingers=false;momentum=true;if(axis==='horizontal'&&!locked)finish(shouldCommitSwipe(-x,width,releaseVelocity()));locked=true;}else if(value===5){momentum=false;last=performance.now();}};
  if(native)void listen<number>('trackpad-phase',event=>phase(event.payload)).then(off=>{if(disposed)off();else unlisten=off;});const testPhase=(event:Event)=>phase((event as CustomEvent<number>).detail);window.addEventListener('musicos-trackpad-phase',testPhase);
  host.addEventListener('wheel',wheel,{passive:false});window.addEventListener('resize',cancel);window.addEventListener('blur',cancel);window.addEventListener('pointerdown',cancel);const navigation=()=>{if(!document.documentElement.dataset.swipeNavigation)cancel();};window.addEventListener('musicos-navigation-start',navigation);media.addEventListener('change',cancel);
  return()=>{disposed=true;unlisten?.();host.removeEventListener('wheel',wheel);window.removeEventListener('resize',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('pointerdown',cancel);window.removeEventListener('musicos-navigation-start',navigation);window.removeEventListener('musicos-trackpad-phase',testPhase);media.removeEventListener('change',cancel);clearTimeout(timer);cancelAnimationFrame(frame);clear();};

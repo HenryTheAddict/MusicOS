@@ -46,3 +46,8 @@ button.soft-action:focus-visible{outline:2px solid var(--accent);outline-offset:
 
 /* Programmatic menu return after a pointer click is not Tab navigation. */
 html[data-input-modality=pointer] :is(button,[role=button]):focus-visible{outline:none;}
+.menu-panel.dropdown[data-pointer-menu]{position:fixed;isolation:isolate;min-width:10.75rem;max-width:min(17rem,calc(100vw - 16px));border-radius:.75rem;}
+.menu-panel.dropdown[data-pointer-menu]>.menu-panel-surface{background:var(--surface-color);box-shadow:0 .25rem .85rem #0003;}
+.menu-panel.dropdown[data-pointer-menu]>.menu-panel-items{padding:4px;}
+.menu-panel.dropdown[data-pointer-menu] .dropdown-item{min-height:2rem;gap:.5rem;padding:.3125rem .5rem;border-radius:.45rem;line-height:1.25;}
+.menu-panel.dropdown[data-pointer-menu] .dropdown-item>.icon{width:1rem;height:1rem;flex:none;}

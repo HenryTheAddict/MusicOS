@@ -176,7 +176,8 @@
 @property --back-swipe-progress{syntax:'<number>';inherits:true;initial-value:0;}
 /* The shell, outgoing page, and inert preview share the gesture's palette. */
 html[data-back-swipe-theme] {transition:none;}
-html[data-back-swipe-theme=true] {
+html[data-back-swipe-theme=release]{transition:--back-swipe-progress var(--back-swipe-duration,140ms) cubic-bezier(.2,.7,.2,1)!important;}
+html:is([data-back-swipe-theme=true],[data-back-swipe-theme=release]) {
   --back-swipe-weight:calc(var(--back-swipe-progress) * 100%);
   --shell-color:color-mix(in oklab,var(--swipe-from-shell-color),var(--swipe-to-shell-color) var(--back-swipe-weight)) !important;
   --page-color:color-mix(in oklab,var(--swipe-from-page-color),var(--swipe-to-page-color) var(--back-swipe-weight)) !important;
@@ -188,7 +189,85 @@ html[data-back-swipe-theme=true] {
 .content-column > .back-swipe-bar{position:absolute;z-index:3;margin:0;pointer-events:none;opacity:var(--back-swipe-progress);clip-path:inset(0 0 calc((1 - var(--back-swipe-progress)) * 22%) 0 round 1rem);}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview){z-index:2;background:transparent;border-color:transparent;}
 .content-column[data-back-swipe=dragging] > .page-frame:not(.back-page-preview) > .theme-layer{visibility:hidden;}
-.content-column[data-back-swipe=dragging] > :is(.library-toolbar,.list-find):not(.back-swipe-bar){opacity:calc(1 - var(--back-swipe-progress));}
-.page-frame .page-scroll[data-swiping=true]{background:var(--page-color,var(--surface-color));box-shadow:none;overflow-x:clip;will-change:transform,opacity;transform:translate3d(calc(var(--back-swipe-width) * var(--back-swipe-progress)),0,0);opacity:1;}
+.page-frame .page-scroll[data-swiping=true]{background:var(--page-color,var(--surface-color));box-shadow:none;overflow-x:clip;will-change:transform;transform:translate3d(var(--back-swipe-offset,0px),0,0);opacity:1;}
 .content-column[data-back-swipe=handoff] > .back-page-preview{z-index:3;}
-.content-column[data-back-swipe=handoff] > :is(.library-toolbar,.list-find):not(.back-swipe-bar){visibility:hidden;}
+html[data-sketch-window=true] :is(body,#root){background:transparent}
+html[data-sketch-window=true] .adaptive-shell{background:transparent;isolation:isolate}
+html[data-sketch-window=true] .adaptive-shell::before{content:'';position:absolute;inset:0;z-index:-1;background:var(--shell-color);clip-path:var(--window-contour,none);pointer-events:none}
+html[data-sketch-window=true] .adaptive-shell>.app-header{background:transparent;box-shadow:none}
+html[data-sketch-window=true] .adaptive-shell .page-frame:not(.back-page-preview){border-color:transparent;box-shadow:none}
+.sidebar-playlists .sidebar-favorites{display:flex;align-items:center;gap:.5rem;width:100%;min-height:2.125rem;padding:.3125rem .5rem;margin:0 0 .25rem;border:0;border-radius:.625rem;background:transparent;color:var(--ink);font:inherit;text-align:left;}
+.sidebar-playlists .sidebar-favorites:is(:hover,:focus-visible,[aria-current=page]){background:var(--control-surface)}
+.sidebar-favorites>.icon{width:1.125rem;height:1.125rem;--icon-fill:var(--accent);--icon-stroke:var(--accent)}
+.home-collections>.home-favorites{justify-self:start;display:inline-flex;align-items:center;gap:.5rem;padding:.3rem .625rem;margin:.25rem 0 .5rem;min-height:2rem;}
+.home-collections>.home-favorites span{display:flex;align-items:baseline;gap:.5rem;}.home-collections>.home-favorites .icon{width:1rem;height:1rem;}
+.home-recent [data-action-surface]{padding:.375rem .5rem;gap:.5rem;}.home-recent [data-action-surface]>.menu-trigger:not(.context-only){opacity:1;}
+
+/* Keep the personal rows on the same scale and align action icons to one grid. */
+.library-sidebar .sidebar-playlists .sidebar-favorites {
+  display:grid;
+  grid-template-columns:1.75rem minmax(0,1fr);
+  align-items:center;
+  gap:.375rem;
+  min-height:2.125rem;
+  padding:.25rem .375rem;
+  border:1px solid var(--control-border);
+  background:var(--surface-color);
+  font-size:.75rem;
+  font-weight:650;
+  line-height:1.2;
+}
+.sidebar-playlists .sidebar-favorites > .icon { justify-self:center; }
+.library-sidebar .sidebar-playlists .personal-collection {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 1.625rem 1.625rem;
+  align-items:center;
+  gap:.2rem;
+  border:1px solid var(--control-border);
+  border-radius:.625rem;
+  padding:.2rem;
+}
+.library-sidebar .sidebar-playlists .collection-label strong { font-size:.75rem;line-height:1.22; }
+.library-sidebar .sidebar-playlists .collection-label small { font-size:.625rem;line-height:1.22; }
+.library-sidebar .sidebar-playlists .personal-collection > :is(.collection-shuffle,.menu-trigger) {
+  position:static;
+  display:grid;
+  place-items:center;
+  align-self:center;
+  margin:0;
+  width:1.625rem;
+  height:1.625rem;
+  min-width:0;
+  min-height:0;
+  padding:0;
+}
+.library-sidebar .sidebar-playlists .personal-collection > .menu-trigger > .icon { width:.95rem;height:.95rem; }
+.personal-home .home-recent > [data-action-surface] {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) 1.875rem 1.875rem;
+  align-items:center;
+  gap:.5rem;
+  padding:.375rem .5rem;
+  border:1px solid var(--control-border);
+  border-radius:.75rem;
+}
+.personal-home .home-recent > [data-action-surface] > :is(.icon-button,.menu-trigger) {
+  display:grid;
+  place-items:center;
+  align-self:center;
+  justify-self:center;
+  width:1.875rem;
+  height:1.875rem;
+  min-width:0;
+  min-height:0;
+  margin:0;
+  padding:0;
+}
+.personal-home .home-recent > [data-action-surface] > :is(.icon-button,.menu-trigger) > .icon {
+  display:block;
+  width:1.125rem;
+  height:1.125rem;
+  margin:0;
+}
+.personal-home .home-recent-copy strong { font-size:.8rem;line-height:1.25; }
+.personal-home .home-recent-copy small { font-size:.675rem;line-height:1.25; }

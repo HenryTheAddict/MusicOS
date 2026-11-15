@@ -7,7 +7,8 @@ public struct SyncActivityAttributes:ActivityAttributes {
         public var message:String
         public var completed:Int
         public var total:Int
-        public init(phase:String,message:String,completed:Int,total:Int){self.phase=phase;self.message=message;self.completed=completed;self.total=total}
+        public var jobID:String?
+        public init(phase:String,message:String,completed:Int,total:Int,jobID:String?=nil){self.phase=phase;self.message=message;self.completed=completed;self.total=total;self.jobID=jobID}
         public var fraction:Double{total>0 ? min(1,max(0,Double(completed)/Double(total))):0}
     }
     public var computer:String

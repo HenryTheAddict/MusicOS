@@ -1,5 +1,6 @@
 //! Opt-in, pinned-TLS offline transfer. This is separate from the embedded OS API.
 mod media;
+mod remote;
 pub use media::CopyFormat;
 use anyhow::{bail, ensure, Context, Result};
 use axum::{
@@ -120,6 +121,7 @@ impl Identity {
 struct Peer {
     #[serde(default)] sync_changes:bool,
     #[serde(default)] listening_allowed: bool,
+    #[serde(default)] remote_allowed: bool,
     id: String,
     name: String,
     token_hash: String,
@@ -373,6 +375,7 @@ pub struct Service {
     database:Mutex<Option<PathBuf>>,
     changed:Mutex<Option<Arc<dyn Fn(Value)+Send+Sync>>>,
     integrations: Mutex<Option<crate::integrations::IntegrationService>>,
+    remote: Mutex<Option<remote::RemoteHost>>,
 }
 #[derive(Default,Clone,Serialize)]
 struct Preparation { preparing:bool, completed:usize, total:usize, current:String, error:Option<String>, format:CopyFormat }
@@ -386,6 +389,8 @@ struct Hub {
     database:Option<PathBuf>,
     changed:Option<Arc<dyn Fn(Value)+Send+Sync>>,
     integrations: Option<crate::integrations::IntegrationService>,
+    remote: Option<remote::RemoteHost>,
+    remote_commands: Mutex<Vec<remote::Receipt>>,
     listening_scope: String,
     identity: Identity,
     name: String,
@@ -471,7 +476,7 @@ impl Hub {
     }
     fn status(&self) -> Value {
         let share = read(&self.share);
-        let peers=lock(&self.trust).peers.iter().map(|p|json!({"id":p.id,"name":p.name,"listening_allowed":p.listening_allowed,"approved_at":p.approved_at,"last_seen_at":p.last_seen_at,"last_sync_at":p.last_sync_at,"track_count":p.track_count,"bytes_transferred":lock(&self.transferred).get(&p.id).copied().unwrap_or(0)})).collect::<Vec<_>>();
+        let peers=lock(&self.trust).peers.iter().map(|p|json!({"id":p.id,"name":p.name,"listening_allowed":p.listening_allowed,"remote_allowed":p.remote_allowed,"approved_at":p.approved_at,"last_seen_at":p.last_seen_at,"last_sync_at":p.last_sync_at,"track_count":p.track_count,"bytes_transferred":lock(&self.transferred).get(&p.id).copied().unwrap_or(0)})).collect::<Vec<_>>();
         let mut pending = lock(&self.pending);
         pending.retain(|p| now() - p.created_at <= 120);
         let ticket = lock(&self.ticket);
@@ -503,10 +508,13 @@ impl Service {
             hub: Mutex::new(None),
             generation: AtomicU64::new(0),
             operation: tokio::sync::Mutex::new(()),
-            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),database:Mutex::new(None),changed:Mutex::new(None),integrations:Mutex::new(None),
+            folder, preparation:Arc::new(Mutex::new(Preparation::default())),cache_operation:Mutex::new(()),database:Mutex::new(None),changed:Mutex::new(None),integrations:Mutex::new(None),remote:Mutex::new(None),
         }
     }
     pub fn configure(&self,db:PathBuf,changed:Arc<dyn Fn(Value)+Send+Sync>){*lock(&self.database)=Some(db);*lock(&self.changed)=Some(changed);}
+    pub fn enable_remote_host(&self,client:musicos_desktop::local::playback::LocalPlaybackClient,library:Arc<dyn Fn()->Result<crate::library::Library>+Send+Sync>){
+        *lock(&self.remote)=Some(remote::RemoteHost{client,library});
+    }
     pub fn set_integrations(&self, service: crate::integrations::IntegrationService) {
         *lock(&self.integrations) = Some(service);
     }
@@ -590,6 +598,7 @@ impl Service {
         let hub = Arc::new(Hub {
             database:lock(&self.database).clone(),changed:lock(&self.changed).clone(),
             integrations:lock(&self.integrations).clone(),
+            remote:lock(&self.remote).clone(),remote_commands:Mutex::new(Vec::new()),
             listening_scope:random(),
             identity,
             name: name.chars().filter(|c| !c.is_control()).take(50).collect(),
@@ -646,6 +655,11 @@ impl Service {
             .route("/v1/changes",post(changes).layer(DefaultBodyLimit::max(256*1024)))
             .route("/v1/sync-complete", post(complete))
             .route("/v1/listening", get(listening_status).post(listening_update))
+            .route("/v1/remote/state",get(remote::state))
+            .route("/v1/remote/library",get(remote::library))
+            .route("/v1/remote/command",post(remote::command).layer(DefaultBodyLimit::max(32*1024)))
+            .route("/v1/remote/cover/{id}",get(remote::cover))
+            .route("/v1/activity",get(activity_jobs))
             .layer(axum::middleware::from_fn(
                 |ConnectInfo(remote): ConnectInfo<SocketAddr>,
                  request: axum::extract::Request,
@@ -734,6 +748,7 @@ impl Service {
                 trust.peers.push(Peer {
                     sync_changes:p.sync_changes,
                     listening_allowed:false,
+                    remote_allowed:false,
                     id: p.id,
                     name: p.name,
                     token_hash: p.token_hash,
@@ -747,6 +762,15 @@ impl Service {
                 hub.persist()?;
             }
             "reject" => lock(&hub.pending).retain(|p| Some(p.id.as_str()) != id),
+            "allow_remote" | "block_remote"=>{
+                let id=id.context("Choose a phone")?;
+                let mut trust=lock(&hub.trust);
+                let mut next=trust.clone();
+                let peer=next.peers.iter_mut().find(|p|p.id==id).context("Phone is no longer paired")?;
+                peer.remote_allowed=action=="allow_remote";
+                save(&hub.folder.join("peers.json"),&next)?;
+                *trust=next;
+            }
             "revoke" | "allow_listening" | "block_listening" => {
                 let id = id.context("Choose a phone")?;
                 let mut trust = lock(&hub.trust);
@@ -784,6 +808,16 @@ struct PairRequest {
     client_token: String,
 }
 type HttpError = (StatusCode, &'static str);
+
+async fn activity_jobs(State(hub):State<Arc<Hub>>,headers:HeaderMap)->Result<Json<Vec<crate::activity::Job>>,HttpError>{
+    hub.authorized(&headers).ok_or((StatusCode::UNAUTHORIZED,"Pair this iPhone first"))?;
+    let path=hub.database.clone().ok_or((StatusCode::NOT_FOUND,"Mac activity is unavailable"))?;
+    let jobs=tokio::task::spawn_blocking(move||crate::activity::list(&path)).await.ok().and_then(Result::ok)
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE,"Mac activity is unavailable"))?;
+    // Library paths, filenames, provider errors and metadata are kept on the Mac.
+    Ok(Json(jobs.into_iter().filter(|job|matches!(job.kind.as_str(),"enrich"|"apple"|"wifi"))
+        .map(|mut job|{job.message.clear();job}).collect()))
+}
 async fn pair(
     State(hub): State<Arc<Hub>>,
     ConnectInfo(address): ConnectInfo<SocketAddr>,
@@ -1152,6 +1186,72 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn mac_remote_requires_access_and_rejects_a_stale_duplicate_queue_edit() {
+        use musicos_desktop::{local::playback::LocalPlaybackService, models::PlaybackPreferences};
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("library.sqlite");
+        let audio = root.path().join("private-song.wav");
+        let mut wave = b"RIFF\x24\x7d\0\0WAVEfmt \x10\0\0\0\x01\0\x01\0\x40\x1f\0\0\x80\x3e\0\0\x02\0\x10\0data\0\x7d\0\0".to_vec();
+        wave.resize(32044, 0);
+        fs::write(&audio, wave).unwrap();
+        let db = musicos_init::database::Db::open(path.to_str().unwrap()).unwrap();
+        let song = db.insert_track(audio.to_str().unwrap(), "Remote song", "Artist", "Fixture album", 2, 16000, 1).unwrap();
+        drop(db);
+        let app = LocalPlaybackService::start_with_preferences(path.clone(), PlaybackPreferences {
+            volume: 0.0, queue_track_ids: vec![song, song, song], ..Default::default()
+        }).unwrap();
+        let service = Service::at(root.path().join("identity"));
+        let scope = path.clone();
+        service.enable_remote_host(app.client(), Arc::new(move || {
+            let db = musicos_init::database::Db::open(scope.to_str().unwrap())?;
+            Ok(crate::library::group(musicos_desktop::models::LibrarySnapshot {
+                tracks: db.get_tracks()?.into_iter().map(musicos_desktop::local::library::track_from_init).collect(),
+                ..Default::default()
+            }))
+        }));
+        service.configure(path, Arc::new(|_| {}));
+        service.start(fixture_share(root.path()), "Test Mac".into(), service.begin()).await.unwrap();
+        let hub = lock(&service.hub).as_ref().unwrap().clone();
+        let cert = reqwest::Certificate::from_der(&STANDARD.decode(&hub.identity.certificate).unwrap()).unwrap();
+        let client = reqwest::Client::builder().add_root_certificate(cert).build().unwrap();
+        let base = format!("https://localhost:{}/v1/remote", hub.port);
+        let id = random();
+        let token = random();
+        lock(&hub.pending).push(Pending { sync_changes: false, id: id.clone(), name: "Fixture iPhone".into(),
+            token_hash: digest(token.as_bytes()), created_at: now() });
+        service.action("approve", Some(&id)).unwrap();
+        let auth = format!("{id}.{token}");
+        let state = format!("{base}/state");
+        let command = format!("{base}/command");
+        assert_eq!(client.get(&state).send().await.unwrap().status(), 401);
+        assert_eq!(client.get(&state).bearer_auth(&auth).send().await.unwrap().status(), 403);
+        service.action("allow_remote", Some(&id)).unwrap();
+        let library: Value = client.get(format!("{base}/library")).bearer_auth(&auth).send().await.unwrap().json().await.unwrap();
+        assert_eq!(library["tracks"][0]["title"], "Remote song");
+        assert!(!library.to_string().contains("private-song.wav"));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let queue: Value = loop {
+            let value: Value = client.get(&state).bearer_auth(&auth).send().await.unwrap().json().await.unwrap();
+            if value["queue"].as_array().is_some_and(|queue| queue.len() == 2) { break value; }
+            assert!(std::time::Instant::now() < deadline, "Playback queue did not restore: {value}");
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+        };
+        let first = queue["queue"][0]["entry"].as_u64().unwrap();
+        let second = queue["queue"][1]["entry"].as_u64().unwrap();
+        let revision = queue["queue_revision"].as_u64().unwrap();
+        let remove = json!({"request_id":"remote-command-0001","action":{"kind":"remove","entry":first,"revision":revision}});
+        for _ in 0..2 {
+            let reply: Value = client.post(&command).bearer_auth(&auth).json(&remove).send().await.unwrap().json().await.unwrap();
+            assert_eq!(reply["queue"].as_array().unwrap().len(), 1);
+            assert_eq!(reply["queue"][0]["entry"], second);
+        }
+        let stale = json!({"request_id":"remote-command-0002","action":{"kind":"remove","entry":second,"revision":revision}});
+        assert_eq!(client.post(&command).bearer_auth(&auth).json(&stale).send().await.unwrap().status(), 409);
+        service.action("block_remote", Some(&id)).unwrap();
+        assert_eq!(client.get(&state).bearer_auth(&auth).send().await.unwrap().status(), 403);
+    }
+
+    #[tokio::test]
     async fn phone_listening_requires_permission_and_acknowledges_a_retry_once() {
         use crate::integrations::{Config, IntegrationService};
         let root = tempfile::tempdir().unwrap();
@@ -1403,6 +1503,7 @@ mod tests {
                 peers: vec![Peer {
                     sync_changes:false,
                     listening_allowed:false,
+                    remote_allowed:false,
                     id: "phone".into(),
                     name: "Phone".into(),
                     token_hash: digest(b"secret"),

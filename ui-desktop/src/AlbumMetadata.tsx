@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
-import {call,errorText} from './bridge';
+import {open} from '@tauri-apps/plugin-dialog';
+import {artwork as imageUrl,call,errorText,native} from './bridge';
 import {displayData,invalidateDisplay} from './displayData';
 import {Cover,Icon} from './components';
 import type {Album,AlbumReview,Track} from './types';
@@ -12,7 +13,10 @@ import MetadataFields,{displayMetadata,fieldLabel,metadataFields,songCount,tagPa
 export type InspectorTab = 'cover' | 'details' | 'songs';
 type Row = AlbumReview['rows'][number];
 type Change = {id:number; title:string; field:MetadataField; before:unknown; after:unknown};
-type Review = {kind:'cover'; token:string; source:Row; path:string; ids:number[]}
+type Position = {track_id:number;disc_number?:number;track_number?:number};
+type ImportedCover = {id:string;path:string;size:number[]};
+type Review = {kind:'cover'; token:string; source?:Row; path:string; imported?:ImportedCover; ids:number[]}
+  | {kind:'positions';token:string;changes:Change[];positions:Position[];ids:number[]}
   | {kind:'tags'; token:string; patch:MetadataPatch; changes:Change[]; ids:number[]; revisions:[number,number][]}
   | {kind:'suggestions'; token:string; changes:Change[]; ids:number[]};
 
@@ -84,18 +88,19 @@ function coverResolution(size?:number[]) {
 }
 
 function CoverComparison({current,proposed,lowerResolution}: {
-  current:{path?:string|null;size?:number[]};proposed?:{path:string;size?:number[]};lowerResolution?:boolean;
+  current:{path?:string|null;size?:number[]};proposed?:{path:string;size?:number[];local?:boolean};lowerResolution?:boolean;
 }) {
   return <div className="tag-cover-comparison">
     <figure>
-      <Cover src={current.path} title="Current cover"/>
+      <img className="cover" src={imageUrl(current.path)} alt="Current cover"/>
       <figcaption><strong>Current cover</strong><span>{current.path?coverResolution(current.size):'No cover saved'}</span></figcaption>
     </figure>
     {proposed&&<figure>
-      <Cover src={proposed.path} title="Suggested cover"/>
-      <figcaption><strong>Suggested cover</strong><span>{coverResolution(proposed.size)} · Cover Art Archive</span>
+      <img className="cover" src={imageUrl(proposed.path)} alt={proposed.local?'Imported cover':'Suggested cover'}/>
+      <figcaption><strong>{proposed.local?'Imported cover':'Suggested cover'}</strong><span>{coverResolution(proposed.size)} · {proposed.local?'Local image':'Cover Art Archive'}</span>
         {lowerResolution&&<span className="tag-cover-quality">Lower resolution</span>}
       </figcaption>
+      {proposed.local&&<div className="tag-crop-preview"><img src={imageUrl(proposed.path)} alt="Square crop"/><small>In the library</small></div>}
     </figure>}
   </div>;
 }
@@ -111,6 +116,10 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const [drafts,setDrafts] = useState<{album:MetadataDraft;song:MetadataDraft}>({album:{},song:{}});
   const [choices,setChoices] = useState<Set<string>>(new Set());
   const [path,setPath] = useState('');
+  const [imported,setImported] = useState<ImportedCover>();
+  const [importing,setImporting] = useState(false);
+  const [positions,setPositions] = useState<Record<number,{disc_number:string;track_number:string}>>({});
+  const [order,setOrder] = useState<number[]>([]);
   const [review,setReview] = useState<Review|null>(null);
   const [lyricDirty,setLyricDirty] = useState(false);
   const [lyricBusy,setLyricBusy] = useState(false);
@@ -123,6 +132,9 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const [notice,setNotice] = useState('');
   const [reload,setReload] = useState(0);
   const reviewHeading = useRef<HTMLHeadingElement>(null);
+  const dropZone = useRef<HTMLElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const importVersion = useRef(0);
   const rows = comparison?.album_id===album.id ? comparison.rows : [];
   const scope = tab==='songs' && track ? 'song' : 'album';
   const scopedRows = scope==='song' ? rows.filter(row=>row.track_id===track?.id) : rows;
@@ -141,8 +153,21 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
   const differentCrop=proposedCover?.[1].art_comparison==='different_crop';
   const failed=rows.filter(row=>row.status==='failed').length;
   const unmatched=rows.filter(row=>row.status==='unmatched').length;
-  const unchecked=rows.length>0&&rows.every(row=>!row.status||row.status==='unchecked');
-  const dirty = Object.values(drafts).some(values=>Object.keys(values).length>0) || choices.size>0 || !!path || lyricDirty || !!review;
+  const naturalRows=rows.filter(row=>!order.includes(row.track_id));
+  const orderedRows=[...order.flatMap(id=>rows.find(row=>row.track_id===id)??[]),...naturalRows];
+  const positionOf=(row:Row)=>positions[row.track_id]??{
+    disc_number:String(row.current.disc_number||''),track_number:String(row.current.track_number||'')};
+  const positionKey=(row:Row)=>{
+    const position=positionOf(row);
+    return Number(position.track_number)>0?`${Number(position.disc_number)||1}:${Number(position.track_number)}`:'';
+  };
+  const counts=new Map<string,number>();
+  for(const row of rows){const key=positionKey(row);if(key)counts.set(key,(counts.get(key)??0)+1);}
+  const duplicatePositions=[...counts.values()].some(count=>count>1);
+  const missingPositions=rows.some(row=>!positionOf(row).track_number);
+  const missingTags=rows.some(row=>albumFields.some(field=>!row.current[field]));
+  const missingTab=!currentCover.path?'cover':duplicatePositions||missingPositions?'songs':missingTags?'details':null;
+  const dirty = Object.values(drafts).some(values=>Object.keys(values).length>0) || choices.size>0 || !!path || !!imported || !!Object.keys(positions).length || !!order.length || lyricDirty || !!review;
   useEffect(()=>onDirty(dirty),[dirty,onDirty]);
   useEffect(()=>onSaving(saving||lyricBusy),[saving,lyricBusy,onSaving]);
 
@@ -171,6 +196,62 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
     setWrite(false);
   },[tab,lyrics]);
   useEffect(()=>{if(review)reviewHeading.current?.focus({preventScroll:true});},[review]);
+  useEffect(()=>{
+    if(!active)return;
+    const zone=dropZone.current;
+    function drop(event:Event){
+      const paths=(event as CustomEvent<string[]>).detail;
+      if(paths.length!==1){setError('Drop one image at a time.');return;}
+      void importCover({image_path:paths[0]});
+    }
+    zone?.addEventListener('musicos-drop-cover',drop);
+    return ()=>zone?.removeEventListener('musicos-drop-cover',drop);
+  },[active,tab,review]);
+  useEffect(()=>()=>{importVersion.current++;},[]);
+
+  async function importCover(input:{image_path:string}|{image_data:string}){
+    const version=++importVersion.current;
+    setImporting(true);setError('');setNotice('');
+    try{
+      const result=await call('album_metadata',{request:{action:'stage_cover',...input}});
+      if(importVersion.current!==version)return;
+      if(!result.imported_cover)throw new Error('The cover could not be imported.');
+      setImported(result.imported_cover);setPath('');
+    }catch(error){if(importVersion.current===version)setError(errorText(error));}
+    finally{if(importVersion.current===version)setImporting(false);}
+  }
+  function importFile(file?:File){
+    if(!file)return;
+    if(file.size>20*1024*1024){setError('Choose an image smaller than 20 MB.');return;}
+    const reader=new FileReader();
+    reader.onload=()=>{if(typeof reader.result==='string')void importCover({image_data:reader.result.split(',')[1]});};
+    reader.onerror=()=>setError('The image could not be read.');
+    reader.readAsDataURL(file);
+  }
+  async function chooseCover(){
+    if(!native){imageInput.current?.click();return;}
+    try{
+      const file=await open({multiple:false,title:'Choose album artwork',filters:[{name:'Images',extensions:['jpg','jpeg','png','webp']}]});
+      if(typeof file==='string')await importCover({image_path:file});
+    }catch(error){setError(errorText(error));}
+  }
+  function movePosition(id:number,delta:number){
+    const ids=orderedRows.map(row=>row.track_id),index=ids.indexOf(id),target=index+delta;
+    if(target<0||target>=ids.length)return;
+    [ids[index],ids[target]]=[ids[target],ids[index]];
+    setOrder(ids);
+  }
+  function renumber(){
+    const next:typeof positions={},perDisc=new Map<number,number>();
+    for(const row of orderedRows){
+      const position=positionOf(row),disc=Number(position.disc_number)||1;
+      const number=(perDisc.get(disc)??0)+1;
+      perDisc.set(disc,number);
+      next[row.track_id]={...position,track_number:String(number)};
+    }
+    setPositions(next);
+    setNotice('Review the new track numbers before saving.');
+  }
 
   function update(field:MetadataField,value:string|undefined) {
     setDrafts(old=>{
@@ -187,8 +268,27 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
     setError('');
     setNotice('');
     setWrite(false);
-    if (kind==='cover' && proposedCover) {
-      setReview({kind,token:comparison.token,path:proposedCover[0],source:proposedCover[1],ids:rows.map(row=>row.track_id)});
+    if (kind==='cover' && (imported||proposedCover)) {
+      setReview({kind,token:comparison.token,path:imported?.path??proposedCover![0],source:imported?undefined:proposedCover?.[1],imported,ids:rows.map(row=>row.track_id)});
+    } else if(kind==='positions'){
+      const changes:Change[]=[];
+      const edits=orderedRows.flatMap(row=>{
+        const patch:Position={track_id:row.track_id};
+        for(const field of ['disc_number','track_number'] as const){
+          const value=positionOf(row)[field];
+          if(value&&!/^\d{1,4}$/.test(value))return [null];
+          const number=Number(value);
+          if(Number(row.current[field]??0)!==number){
+            patch[field]=number;
+            changes.push({field,id:row.track_id,title:String(row.current.title),before:row.current[field],after:number});
+          }
+        }
+        return Object.keys(patch).length>1?[patch]:[];
+      });
+      if(edits.some(edit=>!edit)){setError('Use numbers between 0 and 9999.');return;}
+      const positions=edits.filter(edit=>edit!==null);
+      if(!positions.length){setNotice('The track numbers already match.');return;}
+      setReview({kind,token:comparison.token,changes,positions,ids:positions.map(position=>position.track_id)});
     } else if (kind==='suggestions' && selected.length) {
       setReview({kind,token:comparison.token,changes:selected,ids:[...new Set(selected.map(change=>change.id))]});
     } else if (kind==='tags') {
@@ -217,9 +317,16 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
       if (review.kind==='tags') {
         count = await call('metadata_edit',{ids:review.ids,patch:review.patch,revisions:review.revisions,writeFiles:write});
         setDrafts(old=>({...old,[scope]:{}}));
+      } else if(review.kind==='positions'||(review.kind==='cover'&&review.imported)){
+        const result=await call('album_metadata',{request:{action:review.kind==='positions'?'apply_positions':'apply_cover',
+          album_id:album.id,token:review.token,write_files:write,
+          positions:review.kind==='positions'?review.positions:undefined,cover_id:review.kind==='cover'?review.imported?.id:undefined}});
+        count=result.count??review.ids.length;
+        if(review.kind==='positions'){setPositions({});setOrder([]);}
+        else setImported(undefined);
       } else {
         const selected = new Map<number,string[]>();
-        if (review.kind==='cover') selected.set(review.source.track_id,['artwork']);
+        if (review.kind==='cover') selected.set(review.source!.track_id,['artwork']);
         else for (const change of review.changes) {
           selected.set(change.id,[...(selected.get(change.id)??[]),change.field]);
         }
@@ -269,6 +376,10 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
       <Cover src={album.cover} title={album.title}/>
       <div><h2>{album.title}</h2><p>{[album.artist,album.year||null,songCount(album.track_ids.length)].filter(Boolean).join(' · ')}</p></div>
     </header>
+    {missingTab&&!review&&<button className="primary tag-missing-action" disabled={saving}
+      onClick={()=>{switchTab(missingTab);if(missingTab==='songs')onSong(0);if(missingTab==='cover')void chooseCover();}}>
+      <Icon name="Plus"/>Add missing details
+    </button>}
     <ManagementTabs label="Album editor" value={tab} options={[
       {id:'cover',label:'Cover'},{id:'details',label:'Details'},{id:'songs',label:'Songs'},
     ]} onChange={switchTab}/>
@@ -286,8 +397,9 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
         <h3 ref={reviewHeading} tabIndex={-1}>{review.kind==='cover'?'Review cover update':'Review changes'}</h3>
         <p>{album.title} · {songCount(review.ids.length)}</p>
         {review.kind==='cover' ? <>
-          <CoverComparison current={currentCover} proposed={{path:review.path,size:review.source.art_resolution}} lowerResolution={lowerResolution(review.source.art_resolution)}/>
-          <p className="tag-cover-note">This updates the artwork for {songCount(review.ids.length)}. Song and album details stay as they are.</p>
+          <CoverComparison current={currentCover} proposed={{path:review.path,size:review.imported?.size??review.source?.art_resolution,local:!!review.imported}}
+            lowerResolution={lowerResolution(review.imported?.size??review.source?.art_resolution)}/>
+          <p className="tag-cover-note">This replaces the cover for {songCount(review.ids.length)} on {album.title}.</p>
           <details><summary>See affected songs</summary><ul>{rows.map(row=><li key={row.track_id}>{String(row.current.title)}</li>)}</ul></details>
         </> : <ChangeList changes={review.changes}/>}
         <details className="tag-advanced" onToggle={event=>{if(!event.currentTarget.open)setWrite(false);}}>
@@ -299,16 +411,24 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
       <footer className="metadata-action-footer">
         <button disabled={saving} onClick={()=>{setReview(null);setWrite(false);}}>Back to editing</button>
         <button className="primary" disabled={saving||loading||!!loadError||(write&&(!fileReady||playing))} onClick={()=>void save()}>
-          {saving?'Saving…':write?'Save and write file tags':'Save in musicOS'}
+          {saving?'Saving…':write?'Save and write file tags':review.kind==='cover'?'Save cover only':'Save in musicOS'}
         </button>
       </footer>
     </> : <>
-      {tab==='cover' && <section className="tag-cover">
+      {tab==='cover' && <section ref={dropZone} className="tag-cover" data-album-cover-drop
+        onDragOver={event=>{if(event.dataTransfer.types.includes('Files'))event.preventDefault();}}
+        onDrop={event=>{if(!event.dataTransfer.files.length)return;event.preventDefault();event.stopPropagation();
+          if(event.dataTransfer.files.length!==1)setError('Drop one image at a time.');
+          else importFile(event.dataTransfer.files[0]);
+        }}>
         <div className="tag-cover-heading">
-          <div><h3>Album cover</h3><p>{artwork.length ? 'Compare available artwork before replacing this cover.' :
-            unchecked ? 'Check this album to look for artwork and tag suggestions.' :
-            'There’s no replacement cover in the saved results.'}</p></div>
-          <button disabled={!onCheck||saving||loading} onClick={onCheck}><Icon name="sync"/>Check this album</button>
+          <div><h3>Album cover</h3><p>Drop a JPEG, PNG, or WebP image here.</p></div>
+          <div className="tag-cover-choices">
+            <button className="primary" disabled={saving||importing} onClick={()=>void chooseCover()}><Icon name="Album"/>{importing?'Reading image…':'Choose image'}</button>
+            <button disabled={!onCheck||saving||loading} onClick={onCheck}><Icon name="sync"/>Check this album</button>
+          </div>
+          <input type="file" ref={imageInput} hidden accept="image/jpeg,image/png,image/webp"
+            onChange={event=>{importFile(event.currentTarget.files?.[0]);event.currentTarget.value='';}}/>
         </div>
         {(failed>0||unmatched>0)&&<p className="tag-cover-note">{[
           unmatched>0&&`No confident match for ${songCount(unmatched)}`,
@@ -316,18 +436,19 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
         ].filter(Boolean).join(' · ')}</p>}
         {identicalCover&&!proposedCover&&<p className="tag-status">The suggested image is the same cover. Your current image is kept.</p>}
         {differentCrop&&<p className="tag-status">Different crop or proportions · compare both images before updating.</p>}
-        <CoverComparison current={currentCover} proposed={proposedCover&&{path:proposedCover[0],size:proposedCover[1].art_resolution}}
-          lowerResolution={lowerResolution(proposedCover?.[1].art_resolution)}/>
-        {artwork.length>1 && <fieldset className="tag-cover-options"><legend>Choose a proposed cover</legend>
+        <CoverComparison current={currentCover} proposed={imported?{path:imported.path,size:imported.size,local:true}:proposedCover&&{path:proposedCover[0],size:proposedCover[1].art_resolution}}
+          lowerResolution={lowerResolution(imported?.size??proposedCover?.[1].art_resolution)}/>
+        {imported&&<button onClick={()=>setImported(undefined)}>Remove imported image</button>}
+        {!imported&&artwork.length>1 && <fieldset className="tag-cover-options"><legend>Choose a proposed cover</legend>
           {artwork.map(([cover,row],index)=><label key={cover}>
             <input name="metadata-cover" type="radio" checked={cover===path} onChange={()=>setPath(cover)}/>
             <Cover src={cover} title={`Proposed cover ${index+1}`}/>
             <span>Cover {index+1}<small>{row.art_resolution?.join(' × ') ?? String(row.current.title)}</small></span>
           </label>)}
         </fieldset>}
-        {!!artwork.length && <footer className="metadata-action-footer tag-cover-actions">
-          <span>{lowerResolution(proposedCover?.[1].art_resolution) ? 'Keep the current cover for higher resolution.' : `Applies to ${songCount(album.track_ids.length)} on this album.`}</span>
-          <button className={lowerResolution(proposedCover?.[1].art_resolution)?undefined:'primary'} disabled={!proposedCover||loading||!!loadError} onClick={()=>startReview('cover')}><Icon name="Album"/>{lowerResolution(proposedCover?.[1].art_resolution)?'Review lower-resolution cover':'Update cover only'}</button>
+        {(!!artwork.length||imported) && <footer className="metadata-action-footer tag-cover-actions">
+          <span>{`Applies to ${songCount(album.track_ids.length)} on ${album.title}.`}</span>
+          <button className="primary" disabled={(!proposedCover&&!imported)||loading||!!loadError||importing} onClick={()=>startReview('cover')}><Icon name="Album"/>{imported?'Review cover':lowerResolution(proposedCover?.[1].art_resolution)?'Review lower-resolution cover':'Update cover only'}</button>
         </footer>}
         <MatchDetails rows={rows.filter(row=>row.candidate?.artwork_path)} disabled={saving||loading} onIgnore={row=>void ignore(row)}/>
       </section>}
@@ -339,12 +460,29 @@ export default function AlbumMetadata({album,track,tab,lyrics,lyricsRequest=0,ep
             <button aria-pressed={!lyrics} onClick={()=>onLyrics(false)}>Tags</button>
             <button aria-pressed={lyrics} onClick={()=>onLyrics(true)}>Lyrics</button>
           </div>
-        </div> : <div className="tag-songs">
-          {rows.map(row=><button key={row.track_id} onClick={()=>onSong(row.track_id)}>
-            <small>{Number(row.current.disc_number)>0?`Disc ${row.current.disc_number} · `:''}{Number(row.current.track_number)>0?`Track ${row.current.track_number}`:''}</small>
-            <strong>{String(row.current.title)}</strong><span>{String(row.current.artist)}</span>
-          </button>)}
-        </div>}
+        </div> : <>
+          <div className="tag-cover-heading"><div><h3>Track order</h3>
+            {duplicatePositions&&<p role="status">Some songs have the same track number on the same disc.</p>}
+          </div><button disabled={saving||loading||!rows.length} onClick={renumber}>Renumber in this order</button></div>
+          <div className="tag-order-list">
+            {orderedRows.map((row,index)=>{
+              const id=row.track_id,position=positionOf(row),title=String(row.current.title);
+              return <div className="tag-order-row" key={id} data-conflict={(counts.get(positionKey(row))??0)>1||undefined}>
+                <button className="tag-order-song" onClick={()=>onSong(id)}><strong>{title}</strong><small>{String(row.current.artist)}</small></button>
+                {(['disc_number','track_number'] as const).map((field)=><label key={field}>{field==='disc_number'?'Disc':'Track'}
+                  <input aria-label={`${fieldLabel[field]} for ${title}`} inputMode="numeric" maxLength={4} placeholder="—" value={position[field]}
+                    onChange={event=>{const value=event.currentTarget.value;setPositions(old=>({...old,[id]:{...position,[field]:value}}));}}/>
+                </label>)}
+                <div className="tag-order-move">
+                  <button disabled={index===0} aria-label={`Move ${title} earlier`} onClick={()=>movePosition(id,-1)}>↑</button>
+                  <button disabled={index===orderedRows.length-1} aria-label={`Move ${title} later`} onClick={()=>movePosition(id,1)}>↓</button>
+                </div>
+              </div>;
+            })}
+          </div>
+          <footer className="metadata-action-footer"><button className="primary" disabled={saving||loading||!Object.keys(positions).length}
+            onClick={()=>startReview('positions')}>Review track order</button></footer>
+        </>}
       </section>}
       {(tab==='details'||(tab==='songs'&&track&&!lyrics)) && !!scopedRows.length && <>
         <MetadataFields rows={scopedRows.map(row=>({...row.current,id:row.track_id}))}

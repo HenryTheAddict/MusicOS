@@ -1,7 +1,182 @@
 //! Album-scoped comparisons retain each recording's provenance and revision.
 use anyhow::{ensure,Context,Result};use serde::{Deserialize};use serde_json::{json,Value};use sha2::{Digest,Sha256};use std::path::Path;use musicos_init::database::{Db,Connection,MetadataUpdate};
-#[derive(Default,Deserialize)]pub struct Request{pub action:String,pub album_id:Option<String>,pub token:Option<String>,pub rows:Option<Vec<Selection>>,pub search:Option<String>,pub write_files:Option<bool>,pub release_id:Option<String>}
+#[derive(Default,Deserialize)]pub struct Request{
+    pub action:String,pub album_id:Option<String>,pub token:Option<String>,pub rows:Option<Vec<Selection>>,
+    pub search:Option<String>,pub write_files:Option<bool>,pub release_id:Option<String>,
+    pub image_path:Option<String>,pub image_data:Option<String>,pub cover_id:Option<String>,
+    pub positions:Option<Vec<Position>>,
+}
 #[derive(Deserialize)]pub struct Selection{pub track_id:i64,pub fields:Vec<String>}
+#[derive(Deserialize)]pub struct Position{
+    track_id:i64,disc_number:Option<i32>,track_number:Option<i32>,
+}
+
+const MAX_COVER_BYTES:usize=20*1024*1024;
+
+fn cover_directory(db:&Path)->std::path::PathBuf{
+    db.with_file_name("library-assets").join("imported-covers")
+}
+
+fn inspect_cover(bytes:&[u8])->Result<(&'static str,[u32;2])>{
+    ensure!(!bytes.is_empty()&&bytes.len()<=MAX_COVER_BYTES,"Choose an image smaller than 20 MB");
+    let mut reader=image::io::Reader::new(std::io::Cursor::new(bytes)).with_guessed_format()?;
+    let suffix=match reader.format(){
+        Some(image::ImageFormat::Jpeg)=>"jpg",Some(image::ImageFormat::Png)=>"png",
+        Some(image::ImageFormat::WebP)=>"webp",_=>anyhow::bail!("Choose a JPEG, PNG, or WebP image"),
+    };
+    let mut limits=image::io::Limits::default();
+    limits.max_image_width=Some(8192);
+    limits.max_image_height=Some(8192);
+    limits.max_alloc=Some(128*1024*1024);
+    reader.limits(limits);
+    let decoded=reader.decode().context("The cover could not be decoded or exceeds the image size limit")?;
+    Ok((suffix,[decoded.width(),decoded.height()]))
+}
+
+pub fn stage_cover(db:&Path,request:&Request)->Result<Value>{
+    use base64::{Engine,engine::general_purpose::STANDARD};
+    use std::io::{Read,Write};
+    let bytes=match (&request.image_path,&request.image_data){
+        (Some(path),None)=>{
+            let file=std::fs::File::open(path).context("The image could not be opened")?;
+            ensure!(file.metadata()?.is_file(),"Choose an image file");
+            let mut bytes=Vec::new();
+            file.take((MAX_COVER_BYTES+1) as u64).read_to_end(&mut bytes)?;
+            bytes
+        }
+        (None,Some(data))=>{
+            ensure!(data.len()<=MAX_COVER_BYTES.div_ceil(3)*4,"Choose an image smaller than 20 MB");
+            STANDARD.decode(data).context("The image could not be read")?
+        }
+        _=>anyhow::bail!("Choose one image"),
+    };
+    let (suffix,size)=inspect_cover(&bytes)?;
+    let id=format!("{:x}.{suffix}",Sha256::digest(&bytes));
+    let directory=cover_directory(db);
+    std::fs::create_dir_all(&directory)?;
+    let path=directory.join(&id);
+    if !path.is_file(){
+        let temporary=directory.join(format!(".{}-{:016x}.tmp",std::process::id(),rand::random::<u64>()));
+        let result=(||->Result<()>{
+            let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temporary)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            std::fs::rename(&temporary,&path)?;
+            Ok(())
+        })();
+        if result.is_err(){let _=std::fs::remove_file(temporary);}
+        result?;
+    }
+    Ok(json!({"imported_cover":{"id":id,"path":path,"size":size}}))
+}
+
+pub fn apply_manual(db:&Path,library:&crate::library::Library,request:Request)->Result<Value>{
+    use std::collections::BTreeMap;
+    let album=detail(db,library,request.album_id.as_deref().context("Choose an album")?)?;
+    ensure!(album["token"].as_str()==request.token.as_deref(),"This album changed. Review it again before saving.");
+    let rows=album["rows"].as_array().context("Album songs unavailable")?;
+    let mut changes=BTreeMap::new();
+    match request.action.as_str(){
+        "apply_cover"=>{
+            let id=request.cover_id.as_deref().context("Choose an image")?;
+            let (hash,suffix)=id.split_once('.').context("Invalid image reference")?;
+            ensure!(hash.len()==64&&hash.bytes().all(|b|b.is_ascii_hexdigit())&&matches!(suffix,"jpg"|"png"|"webp"),"Invalid image reference");
+            let path=cover_directory(db).join(id);
+            ensure!(path.metadata()?.len()<=MAX_COVER_BYTES as u64,"The image exceeds the size limit");
+            let bytes=std::fs::read(&path)?;
+            ensure!(format!("{:x}",Sha256::digest(&bytes))==hash,"The image changed. Choose it again.");
+            let path=path.to_string_lossy().into_owned();
+            for row in rows {
+                changes.insert(row["track_id"].as_i64().unwrap(),MetadataUpdate{artwork_path:Some(path.clone()),..Default::default()});
+            }
+        }
+        "apply_positions"=>{
+            for position in request.positions.context("Enter track positions")?{
+                let row=rows.iter().find(|row|row["track_id"]==position.track_id).context("A song left this release")?;
+                let mut patch=MetadataUpdate::default();
+                for (field,value,target) in [
+                    ("disc_number",position.disc_number,&mut patch.disc_number),
+                    ("track_number",position.track_number,&mut patch.track_number),
+                ]{
+                    if let Some(value)=value{
+                        ensure!((0..=9999).contains(&value),"Disc and track numbers must be between 0 and 9999");
+                        if row["current"][field].as_i64().unwrap_or(0)!=i64::from(value){*target=Some(value);}
+                    }
+                }
+                ensure!(patch.disc_number.is_some()||patch.track_number.is_some(),"A reviewed position has not changed");
+                ensure!(changes.insert(position.track_id,patch).is_none(),"A song was listed twice");
+            }
+        }
+        _=>anyhow::bail!("Unknown album editing action"),
+    }
+    ensure!(!changes.is_empty(),"Choose changes to save");
+    let reviews=rows.iter().map(|row|(row["track_id"].as_i64().unwrap(),row["current"]["revision"].as_i64().unwrap(),String::new())).collect::<Vec<_>>();
+    let changes=changes.into_iter().collect::<Vec<_>>();
+    let (count,history_id)=crate::file_tags::apply(db,&changes,&reviews,request.write_files.unwrap_or(false))?;
+    Ok(json!({"count":count,"history_id":history_id}))
+}
+
+#[cfg(test)]
+mod manual_tests{
+    use super::*;
+    use musicos_desktop::{local::library::track_from_init,models::LibrarySnapshot};
+
+    #[test]
+    fn manual_cover_and_track_order_are_revision_checked_and_keep_editions_separate(){
+        let temporary=tempfile::tempdir().unwrap();
+        let path=temporary.path().join("library.sqlite3");
+        let database=Db::open(path.to_str().unwrap()).unwrap();
+        let mut originals=Vec::new();
+        for (index,title,release,disc) in [
+            (0,"Knock Yourself Out XD","SMILE! :D",1),
+            (1,"Cheerleader (Nitepunk Remix)","SMILE! :D plus+",1),
+            (2,"Easier to Love You (Vertile Remix)","SMILE! :D plus+",1),
+            (3,"Another remix","SMILE! :D plus+",2),
+        ]{
+            let audio=temporary.path().join(format!("{index}.flac"));
+            let bytes=format!("original {index}").into_bytes();
+            std::fs::write(&audio,&bytes).unwrap();
+            originals.push((audio.clone(),bytes));
+            let id=database.insert_track_with_number(audio.to_str().unwrap(),title,"Porter Robinson",release,1,200,12,1).unwrap();
+            Connection::open(&path).unwrap().execute("UPDATE tracks SET disc_number=? WHERE id=?",rusqlite::params![disc,id]).unwrap();
+        }
+        let library=||crate::library::group(LibrarySnapshot{tracks:database.get_tracks().unwrap().into_iter().map(track_from_init).collect(),..Default::default()});
+        let before=library();
+        let original=before.albums.iter().find(|album|album.title=="SMILE! :D").unwrap();
+        let remix=before.albums.iter().find(|album|album.title=="SMILE! :D plus+").unwrap();
+        let source=temporary.path().join("source.png");
+        image::RgbImage::new(40,24).save(&source).unwrap();
+        let prepared=stage_cover(&path,&Request{image_path:Some(source.to_string_lossy().into_owned()),..Default::default()}).unwrap();
+        assert_eq!(prepared["imported_cover"]["size"],json!([40,24]));
+        std::fs::remove_file(&source).unwrap();
+        std::fs::write(&source,b"invalid").unwrap();
+        assert!(stage_cover(&path,&Request{image_path:Some(source.to_string_lossy().into_owned()),..Default::default()}).is_err());
+        let oversized=std::fs::File::create(source).unwrap();
+        oversized.set_len((MAX_COVER_BYTES+1) as u64).unwrap();
+        assert!(inspect_cover(&vec![0;MAX_COVER_BYTES+1]).is_err());
+        let cover=prepared["imported_cover"]["id"].as_str().unwrap();
+        let revision=detail(&path,&before,&original.id).unwrap()["token"].as_str().unwrap().to_owned();
+        let request=||Request{action:"apply_cover".into(),album_id:Some(original.id.clone()),token:Some(revision.clone()),cover_id:Some(cover.into()),..Default::default()};
+        let applied=apply_manual(&path,&before,request()).unwrap();
+        assert!(apply_manual(&path,&before,request()).is_err());
+        let mut reopened=library();
+        crate::library::canonical_artwork(&path,&mut reopened).unwrap();
+        assert!(reopened.albums.iter().find(|album|album.id==original.id).unwrap().cover.as_ref().is_some_and(|path|Path::new(path).is_file()));
+        assert!(reopened.albums.iter().find(|album|album.id==remix.id).unwrap().cover.is_none());
+        database.undo_metadata_change(applied["history_id"].as_i64().unwrap()).unwrap();
+        let mut reopened=library();
+        crate::library::canonical_artwork(&path,&mut reopened).unwrap();
+        assert!(reopened.albums.iter().find(|album|album.id==original.id).unwrap().cover.is_none());
+        let current=detail(&path,&reopened,&remix.id).unwrap();
+        let rows=current["rows"].as_array().unwrap();
+        let pos=rows.iter().find(|row|row["current"]["title"]=="Easier to Love You (Vertile Remix)").unwrap()["track_id"].as_i64().unwrap();
+        let edited=apply_manual(&path,&reopened,Request{action:"apply_positions".into(),album_id:Some(remix.id.clone()),token:current["token"].as_str().map(str::to_owned),
+            positions:Some(vec![Position{track_id:pos,disc_number:Some(1),track_number:Some(2)}]),..Default::default()}).unwrap();
+        assert_eq!(edited["count"],1);
+        assert_eq!(database.metadata_values(pos).unwrap()["track_number"],2);
+        for (audio,bytes) in originals{assert_eq!(std::fs::read(audio).unwrap(),bytes);}
+    }
+}
 pub fn summary(path:&Path,library:&crate::library::Library)->Result<Value>{
     use std::collections::{HashMap,HashSet};
     let c = Connection::open(path)?;
@@ -97,7 +272,7 @@ fn comparison(path:&Path,db: &Db, c: &Connection, library: &crate::library::Libr
         rows.push(json!({"changed_fields":fields,"art_comparison":art_comparison,"track_id": id, "current": current, "candidate": candidate,
             "candidate_token": candidate_token, "status": status, "lookup_error": error, "art_identity": art_identity, "art_available": artwork.is_some(), "art_resolution": art_resolution}));
     }
-    let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, rows]))?));
+    let token = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([album.id, album.cover, rows]))?));
     let resolution = album.cover.as_deref().and_then(|path| image::image_dimensions(path).ok())
         .map(|(width, height)| [width, height]);
     let release_choices=album.track_ids.first().map(|id|musicos_desktop::local::enrichment::saved_release_choices(path,*id)).transpose()?.unwrap_or(json!({"choices":[]}));
