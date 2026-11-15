@@ -88,6 +88,7 @@ pub struct DesktopPlayer {
     transition: Option<Transition>,
     schedule_id:u64,
     scheduled_reported:bool,
+    gapless_retry: Option<(u64, u64)>,
     retry_after:std::time::Instant,
     preparing_since:std::time::Instant,
     pub transition_outcome:Option<TransitionOutcome>,
@@ -279,6 +280,7 @@ impl DesktopPlayer {
             transition: None,
             schedule_id:0,
             scheduled_reported:false,
+            gapless_retry: None,
             retry_after:std::time::Instant::now(),
             preparing_since:std::time::Instant::now(),
             transition_outcome:None,failed_entries:Default::default(),prepare_attempts:Default::default(),rate_revision:0,
@@ -415,6 +417,7 @@ impl DesktopPlayer {
         self.command(Command::Cancel);
         self.prepared = None;
         self.transition = None;
+        self.gapless_retry = None;
         let other = 1 - self.active;
         self.decks[other].generation.fetch_add(1, Ordering::AcqRel);
         self.plan_revision = self.plan_revision.wrapping_add(1);
@@ -451,6 +454,13 @@ impl DesktopPlayer {
                 && (0.94..=1.06).contains(&plan.tempo),
             "Invalid transition"
         );
+        if self.gapless_retry == Some((plan.outgoing, plan.incoming)) {
+            plan.outgoing_cue = self.queue[current].track.duration as f32;
+            plan.incoming_cue = 0.;
+            plan.duration = 0.;
+            plan.tempo = 1.;
+            plan.effect.clear();
+        }
         if plan.duration>0. && !(2. ..=16.).contains(&(plan.duration/self.listening.speed)) {
             plan.duration=(2.*self.listening.speed).min(self.queue[current].track.duration as f32/3.);
             plan.outgoing_cue=(self.queue[current].track.duration as f32-plan.duration).max(0.);
@@ -567,18 +577,21 @@ impl DesktopPlayer {
             if failed||expired {
                 self.outcome("failed",if failed {"incoming decoder failed"}else{"incoming readiness deadline expired"});
                 let terminal=self.transition_outcome.clone();
+                let retry=self.transition.as_ref().filter(|_| !failed).map(|p| (p.outgoing, p.incoming));
                 let attempts=self.prepare_attempts.entry(key).or_default();*attempts+=1;
                 if failed||*attempts>=2 {self.failed_entries.insert(key);}
                 self.cancel();self.transition_outcome=terminal;self.scheduled_reported=false;
+                self.gapless_retry = retry;
             }
         }
-        if self.control.clock.plan_failed.swap(false, Ordering::AcqRel) {
-            self.outcome("failed","missed activation or incoming starvation; future ending blend required");
-            if let Some((key,_))=self.prepared {let attempts=self.prepare_attempts.entry(key).or_default();*attempts+=1;if *attempts>=2{self.failed_entries.insert(key);}}
-            super::dj_diagnostics::record("fallback",self.transition.as_ref().map(|p|p.outgoing),self.transition.as_ref().map(|p|p.incoming),"preparation deadline missed; revalidate against audible source clock");
-            self.retry_after=std::time::Instant::now()+Duration::from_millis(500);
+        let failed_schedule = self.control.clock.failed_schedule.swap(0, Ordering::AcqRel);
+        if failed_schedule != 0 && self.transition.as_ref().is_some_and(|plan| plan.request_id == failed_schedule) {
+            self.gapless_retry = self.transition.as_ref().map(|plan| (plan.outgoing, plan.incoming));
+            self.outcome("failed", "Mix missed its cue or ran out of buffered audio; retry at the natural ending");
+            self.retry_after = std::time::Instant::now() + Duration::from_millis(500);
             self.prepared = None;
             self.transition = None;
+            self.scheduled_reported = false;
             self.plan_revision = self.plan_revision.wrapping_add(1);
         }
         let active = self.control.clock.active.load(Ordering::Acquire) as usize;
@@ -599,6 +612,7 @@ impl DesktopPlayer {
                 if deck == active {
                     self.current = self.queue.iter().position(|e| e.key == key);
                     self.transition = None;
+                    self.gapless_retry = None;
                     self.plan_revision = self.plan_revision.wrapping_add(1);
                 }
             }
@@ -971,6 +985,31 @@ pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS
  #[test]fn saturated_commands_do_not_publish_a_false_navigation(){let mut p=pending();let (commands,_held_consumer)=rtrb::RingBuffer::new(64);p.control.commands=commands;let held=p.control.commands.slots();for _ in 0..held {let _=p.control.commands.push(Command::Pause(true));}p.start(1,0.,false);assert_eq!(p.current,Some(0));}
  #[test]fn acknowledged_schedule_is_protected_before_controller_poll(){let mut p=pending();p.control.clock.schedule_id.store(42,Ordering::Release);p.control.clock.ready[1].store(true,Ordering::Release);let mut next=p.transition.clone().unwrap();next.request_id=99;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);}
  #[test]fn paused_preparation_keeps_its_deadline_frozen(){let mut p=pending();p.paused=true;p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_some());assert!(p.failed_entries.is_empty());}
+ #[test]
+ fn a_missed_mix_retries_the_same_entry_without_skipping_it() {
+     let mut player = pending();
+     // Pause the fixture so tick can exercise scheduler recovery without using an output device.
+     player.paused = true;
+     let clock = player.control.clock.clone();
+     let mut retry = player.transition.clone().unwrap();
+     retry.incoming_cue = 3.;
+     retry.tempo = 1.04;
+     clock.failed_schedule.store(41, Ordering::Release);
+     player.tick();
+     assert!(player.transition.is_some(), "a stale mixer report must leave the current plan alone");
+
+     clock.failed_schedule.store(42, Ordering::Release);
+     player.tick();
+     assert!(player.transition.is_none());
+     assert!(player.failed_entries.is_empty());
+     assert_eq!(player.next_playable(), Some(1));
+
+     retry.request_id = 43;
+     player.prepare(retry).unwrap();
+     let next = player.transition.as_ref().unwrap();
+     assert_eq!((next.outgoing, next.incoming), (1, 2));
+     assert_eq!((next.outgoing_cue, next.incoming_cue, next.duration, next.tempo), (100., 0., 0., 1.));
+ }
  #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();p.output.poll(true);for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
 }
 

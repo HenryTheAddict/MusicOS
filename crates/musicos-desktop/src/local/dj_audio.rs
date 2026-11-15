@@ -60,7 +60,7 @@ pub struct Clock {
     pub audible_frames: [AtomicU64; 2],
     pub finished: [AtomicU64; 2],
     pub drained: [AtomicBool; 2],
-    pub plan_failed: AtomicBool,
+    pub failed_schedule: AtomicU64,
     pub schedule_id:AtomicU64,
     pub cancel_revision:AtomicU64,
     pub source_frames: [AtomicU64; 2],
@@ -349,7 +349,7 @@ impl Mixer {
                         self.clock.mixing.store(true, Ordering::Relaxed);
                     } else {
                         self.cancel();
-                        self.clock.plan_failed.store(true, Ordering::Release);
+                        self.clock.failed_schedule.store(plan.id, Ordering::Release);
                     }
                 }
             }
@@ -387,7 +387,7 @@ impl Mixer {
                 // invented samples. Controller can recover at the natural ending.
                 self.clock.underruns.fetch_add(1, Ordering::Relaxed);
                 self.cancel();
-                self.clock.plan_failed.store(true, Ordering::Release);
+                self.clock.failed_schedule.store(plan.id, Ordering::Release);
             }
         }
         self.clock.rendered_frames.fetch_add(1, Ordering::Relaxed);
@@ -528,6 +528,21 @@ mod tests {
         assert_eq!(c.clock.active.load(Ordering::Relaxed), 1);
         assert!(c.clock.source_frames[1].load(Ordering::Relaxed) >= 1020);
     }
+    #[test]
+    fn missed_cue_reports_its_schedule_without_cutting_the_outgoing_track() {
+        let (mut control, mut mixer) = create(100);
+        push(&mut control, 0, 100, 0, 0.2);
+        control.commands.push(Command::Plan(Schedule {
+            cancel_revision: 0, id: 42, cue: 12., frames: 36, incoming: 1, tail: Tail::Clean,
+        })).unwrap();
+        control.commands.push(Command::Pause(false)).unwrap();
+        assert!(mixer.by_ref().take(150).all(|sample| sample == 0.2));
+        assert_eq!(control.clock.failed_schedule.load(Ordering::Acquire), 42);
+        assert_eq!(control.clock.active.load(Ordering::Acquire), 0);
+        assert_eq!(control.clock.source_frames[0].load(Ordering::Acquire), 74);
+        assert!(!control.clock.mixing.load(Ordering::Acquire));
+    }
+
     #[test]
     fn cancellation_discards_effect_tails_and_transition() {
         let (mut c, mut mixer) = create(100);

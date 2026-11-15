@@ -103,8 +103,14 @@ pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
 /// Skip only the measured dead air before the first audible event. A quiet
 /// intro or a single pickup remains part of the song.
 pub fn intro(envelope: Envelope<'_>) -> f32 {
+    let cue = first_audible(envelope)
+        .map_or(0., |start| (start - envelope.step.max(0.12)).max(0.));
+    if (0.35..=8.).contains(&cue) { cue } else { 0. }
+}
+
+pub fn first_audible(envelope: Envelope<'_>) -> Option<f32> {
     if envelope.start != 0. || !envelope.step.is_finite() || envelope.step <= 0. {
-        return 0.;
+        return None;
     }
     let samples = &envelope.values[..envelope
         .values
@@ -116,20 +122,12 @@ pub fn intro(envelope: Envelope<'_>) -> f32 {
         .filter(|x| x.is_finite())
         .fold(0_f32, f32::max);
     if peak < 0.002 {
-        return 0.;
+        return None;
     }
     let threshold = (peak * 0.012).max(0.0003);
-    let cue = samples
-        .iter()
+    samples.iter()
         .position(|&x| x.is_finite() && x > threshold)
-        .map_or(0., |index| {
-            (index as f32 * envelope.step - envelope.step.max(0.12)).max(0.)
-        });
-    if (0.35..=8.).contains(&cue) {
-        cue
-    } else {
-        0.
-    }
+        .map(|index| index as f32 * envelope.step)
 }
 
 #[cfg(test)]
