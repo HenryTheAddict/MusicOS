@@ -216,6 +216,13 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
     )
 }
 impl Mixer {
+    pub(super) fn service_parked(&mut self) {
+        self.commands();
+        if self.paused {
+            self.right=None;
+            self.fade_left=0;
+        }
+    }
     fn cancel(&mut self) {
         self.clock.dominant.store(self.active as u64,Ordering::Release);
         self.plan = None;

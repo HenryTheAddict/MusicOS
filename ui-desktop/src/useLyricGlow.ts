@@ -1,7 +1,7 @@
 import {useLayoutEffect,useRef,type RefObject} from 'react';
 import {wordGlow} from './lyricWords';
 
-type GlowWord={node:HTMLElement;start:number;end?:number};
+type GlowWord={node:HTMLElement;start:number;end?:number;strength?:number};
 /** Mirror only active words outside the scrolling/masked text surface. Geometry
  * is read on word/layout changes; scrolling only translates the cached copies. */
 export function useLyricGlow(pane:RefObject<HTMLElement|null>,scroll:RefObject<HTMLDivElement|null>,active:boolean,signature:string,variant:string,content:unknown){
@@ -13,7 +13,13 @@ export function useLyricGlow(pane:RefObject<HTMLElement|null>,scroll:RefObject<H
   const root=source.closest<HTMLElement>('dialog,.phone-player,.mini-player,.app-shell')??document.body;
   const layer=document.createElement('div');layer.className='lyric-glow-layer';layer.dataset.variant=variant;layer.dataset.following='false';layer.ariaHidden='true';layer.inert=true;root.append(layer);
   let frame=0,originY=viewport.scrollTop,originX=viewport.scrollLeft,words:GlowWord[]=[],copies:{node:HTMLElement;top:number;bottom:number}[]=[],bounds={top:0,bottom:0};
-  const update=(at:number)=>{time.current=at;for(const word of words)word.node.style.setProperty('--glow-strength',String(wordGlow(word.start,word.end,at)));};
+  const update=(at:number)=>{
+   time.current=at;
+   for(const word of words){
+    const strength=Math.round(wordGlow(word.start,word.end,at)*1000)/1000;
+    if(strength!==word.strength){word.node.style.setProperty('--glow-strength',String(strength));word.strength=strength;}
+   }
+  };
   tick.current=update;
   const position=()=>{const dy=originY-viewport.scrollTop,dx=originX-viewport.scrollLeft;for(const copy of copies){copy.node.style.transform=`translate(${dx}px,${dy}px)`;copy.node.style.opacity=String(Math.max(0,Math.min(1,(copy.bottom+dy-bounds.top+20)/36,(bounds.bottom-copy.top-dy+20)/36)));}};
   move.current=position;

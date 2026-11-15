@@ -273,3 +273,11 @@
 }
 
 .controller-status{display:grid;gap:.35rem;padding:.75rem 0}.controller-status small{display:block;color:var(--muted,var(--text))}.controller-mapping{display:grid;grid-template-columns:minmax(9rem,1fr) 2fr;gap:.5rem 1rem;margin:.75rem 0}.controller-mapping dt,.controller-mapping dd{margin:0}:root[data-controller-input=true] :focus{outline:2px solid var(--accent);outline-offset:3px}
+
+/* Align readability and control columns across Appearance groups. */
+.app-shell .settings .appearance-bento .settings-tile { width:min(100%,38rem); }
+.settings .appearance-bento .timing-tile > .settings-group-row {
+  min-height:2.5rem;
+  padding-block:.375rem;
+}
+.settings .appearance-bento .timing-tile > .themed-switch { padding-block:.375rem; }

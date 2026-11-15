@@ -30,7 +30,13 @@ test('description-free album controls align with the artwork bottom',async({page
 
 test('welcome setup keeps footer and identity fields usable in a square window',async({page})=>{
  await page.setViewportSize({width:480,height:480});await page.goto('/?fixture=1');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'General',exact:true}).click();await page.getByRole('button',{name:'Open welcome setup',exact:true}).click();
- const setup=page.getByRole('dialog',{name:/musicOS|welcome/i});await page.getByRole('button',{name:'Make it mine',exact:true}).click();await expect(page.getByRole('textbox',{name:'What should we call you?'})).toBeVisible();await expect.poll(()=>page.locator('.onboarding-copy').evaluate(el=>el.getAnimations().length)).toBe(0);const footer=await page.locator('.onboarding-footer').boundingBox();expect(footer!.y+footer!.height).toBeLessThanOrEqual(480);expect(await page.locator('.onboarding').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);await page.screenshot({path:'out/expressive-welcome-square.png'});
+ const setup=page.getByRole('dialog',{name:'Appearance'});
+ await expect(setup.getByRole('textbox',{name:/Your name/})).toBeInViewport();
+ await expect(setup.getByRole('button',{name:'Continue',exact:true})).toBeInViewport();
+ await setup.getByRole('button',{name:'Continue',exact:true}).click();
+ await expect(page.getByRole('dialog',{name:'Music folders'}).getByRole('button',{name:'Open my library',exact:true})).toBeInViewport();
+ expect(await page.locator('.onboarding').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+ await page.screenshot({path:'out/expressive-welcome-square.png'});
 });
 
 

@@ -76,10 +76,20 @@ pub(super) struct AudioOutput {
 impl AudioOutput {
     pub fn new(mixer:Mixer)->Self {
         let now=Instant::now();let (return_to,returned)=mpsc::sync_channel(1);
-        let mut output=Self{sink:None,stream:None,parked:Some(mixer),returned,return_to,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None};
-        output.inspect(now,current_route());output
+        Self{sink:None,stream:None,parked:Some(mixer),returned,return_to,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None}
     }
     pub fn available(&self)->bool{self.sink.is_some()}
+    pub fn service_parked(&mut self) {
+        if self.sink.is_some() { return; }
+        if self.parked.is_none() { self.parked=self.returned.try_recv().ok(); }
+        if let Some(mixer)=self.parked.as_mut() { mixer.service_parked(); }
+    }
+    pub fn suspend(&mut self) {
+        if self.available() { self.disconnect(); }
+        self.error=None;
+        self.service_parked();
+    }
+
     pub fn poll(&mut self,force:bool){
         let now=Instant::now();
         if !force&&now.duration_since(self.checked_at)<Duration::from_millis(250){return;}
@@ -151,7 +161,7 @@ impl Drop for AudioOutput {fn drop(&mut self){self.disconnect();}}
     #[cfg(target_os="macos")]
     #[test]fn native_output_can_reclaim_and_reopen_the_same_muted_mixer(){
         let (mut control,mixer)=dj_audio::create(1);control.commands.push(Command::Volume(0.)).unwrap();
-        let mut output=AudioOutput::new(mixer);assert!(output.available(),"{:?}",output.error);
+        let mut output=AudioOutput::new(mixer);assert!(!output.available());output.poll(true);assert!(output.available(),"{:?}",output.error);
         std::thread::sleep(Duration::from_millis(100));output.disconnect();
         assert!(output.parked.is_some(),"Output callback must relinquish the mixer on disposal");
         output.health.retry_at=Instant::now();output.poll(true);assert!(output.available(),"{:?}",output.error);

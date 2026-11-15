@@ -4,6 +4,60 @@ use objc2::{rc::Retained, runtime::AnyObject, AnyThread};
 use objc2_foundation::{NSDictionary, NSNumber, NSString, NSArray};
 use objc2_media_player::*;
 use std::{cell::RefCell, ptr::NonNull};
+use std::{path::PathBuf,time::{Duration,Instant}};
+
+#[derive(PartialEq)]
+struct MediaState {
+    identity:Option<(i64,String,String,String,i32)>,
+    cover:Option<PathBuf>,
+    playing:bool,
+    speed:f32,
+    queue_revision:u64,
+    queue_index:Option<usize>,
+    shuffle:bool,
+    repeat:String,
+    failed:Vec<u64>,
+}
+
+// MediaPlayer extrapolates time from the last time and rate we publish.
+#[derive(Default)]
+pub struct Publication {
+    last:Option<(MediaState,f32,Instant)>,
+}
+impl Publication {
+    pub fn should_publish(&mut self,snapshot:&LocalPlaybackSnapshot,artwork:Option<&Option<PathBuf>>)->bool {
+        self.changed_at(snapshot,artwork,Instant::now())
+    }
+    fn changed_at(&mut self,snapshot:&LocalPlaybackSnapshot,artwork:Option<&Option<PathBuf>>,now:Instant)->bool {
+        let state=MediaState{
+            identity:snapshot.track.as_ref().map(|track|(track.id,track.title.clone(),track.artist.clone(),track.album.clone(),track.duration)),
+            cover:artwork.cloned().unwrap_or_else(||snapshot.track.as_ref().and_then(|track|track.cover_art_path.clone())),
+            playing:snapshot.is_playing,
+            speed:system_playback_rate(snapshot),
+            queue_revision:snapshot.queue_revision,
+            queue_index:snapshot.queue_index,
+            shuffle:snapshot.shuffle,
+            repeat:snapshot.repeat.clone(),
+            failed:snapshot.failed_entries.clone(),
+        };
+        if let Some((prior,position,when))=&self.last {
+            let age=now.saturating_duration_since(*when);
+            let expected=position+age.as_secs_f32()*prior.speed;
+            let tolerance=if state.playing{0.65}else{0.005};
+            if state==*prior&&(snapshot.position-expected).abs()<tolerance&&(!state.playing||age<Duration::from_secs(8)) {
+                return false;
+            }
+        }
+        self.last=Some((state,snapshot.position,now));
+        true
+    }
+}
+fn system_playback_rate(snapshot:&LocalPlaybackSnapshot)->f32 {
+    if !snapshot.is_playing{return 0.;}
+    let entry=snapshot.queue_index.and_then(|index|snapshot.queue_entry_ids.get(index));
+    snapshot.listening.speed*snapshot.dj_transition.as_ref().filter(|transition|transition.active&&entry==Some(&transition.incoming_entry)).map_or(1.,|transition|transition.tempo)
+}
+
 struct Adapter {targets:Vec<(Retained<MPRemoteCommand>,Retained<AnyObject>)>,art_key:Option<std::path::PathBuf>,art:Option<Retained<MPMediaItemArtwork>>,menu:crate::native_playback_menu::PlaybackMenu}
 thread_local! {static ADAPTER:RefCell<Option<Adapter>>=const{RefCell::new(None)};}
 pub fn register(client:LocalPlaybackClient,app:tauri::AppHandle)->tauri::Result<()>{if ADAPTER.with(|slot|slot.borrow().is_some()){return Ok(());}let menu=crate::native_playback_menu::PlaybackMenu::new(app,client.clone())?;ADAPTER.with(|slot|{if slot.borrow().is_some(){return;}unsafe{
@@ -31,7 +85,7 @@ pub fn publish(snapshot:&LocalPlaybackSnapshot){ADAPTER.with(|slot|{let mut slot
  }
  let mut keys=vec![MPMediaItemPropertyTitle,MPMediaItemPropertyArtist,MPMediaItemPropertyAlbumTitle,MPMediaItemPropertyPlaybackDuration,MPNowPlayingInfoPropertyElapsedPlaybackTime,MPNowPlayingInfoPropertyPlaybackRate,MPNowPlayingInfoPropertyPlaybackQueueIndex,MPNowPlayingInfoPropertyPlaybackQueueCount,MPNowPlayingInfoPropertyDefaultPlaybackRate];
  let title=NSString::from_str(&track.title);let artist=NSString::from_str(&track.artist);let album=NSString::from_str(&track.album);
- let duration=NSNumber::new_f64(track.duration as f64);let position=NSNumber::new_f64(snapshot.position as f64);let rate=NSNumber::new_f64(if snapshot.is_playing{snapshot.listening.speed as f64}else{0.});
+ let duration=NSNumber::new_f64(track.duration as f64);let position=NSNumber::new_f64(snapshot.position as f64);let rate=NSNumber::new_f64(f64::from(system_playback_rate(snapshot)));
  let index=NSNumber::new_u64(snapshot.queue_index.unwrap_or(0) as u64);let count=NSNumber::new_u64(snapshot.queue.len() as u64);let default_rate=NSNumber::new_f64(1.);
  let mut values:Vec<&AnyObject>=vec![&title,&artist,&album,&duration,&position,&rate,&index,&count,&default_rate];
  if let Some(art)=&adapter.art {keys.push(MPMediaItemPropertyArtwork);values.push(art);}
@@ -42,3 +96,28 @@ pub fn shutdown(){ADAPTER.with(|slot|{if let Some(adapter)=slot.borrow_mut().tak
 
 fn repeat_steps(current:&str,target:&str)->usize{let index=|value:&str|match value{"all"=>1,"one"=>2,_=>0};(index(target)+3-index(current))%3}
 #[cfg(test)]mod tests{#[test]fn repeat_requests_follow_the_existing_runtime_cycle(){for (from,to,count) in [("none","all",1),("all","one",1),("one","none",1),("none","one",2),("all","none",2),("one","one",0)]{assert_eq!(super::repeat_steps(from,to),count);}}}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn idle_updates_are_suppressed_and_seeks_and_transport_publish_immediately() {
+        let mut publication=Publication::default();
+        let mut snapshot=LocalPlaybackSnapshot::default();
+        let start=Instant::now();
+        assert!(publication.changed_at(&snapshot,None,start));
+        assert!(!publication.changed_at(&snapshot,None,start+Duration::from_secs(40)));
+        snapshot.position=34.;
+        assert!(publication.changed_at(&snapshot,None,start+Duration::from_secs(41)));
+        snapshot.is_playing=true;
+        assert!(publication.changed_at(&snapshot,None,start+Duration::from_secs(42)));
+        snapshot.position=35.9;
+        assert!(!publication.changed_at(&snapshot,None,start+Duration::from_secs(44)));
+        snapshot.position=9.;
+        assert!(publication.changed_at(&snapshot,None,start+Duration::from_secs(44)));
+        snapshot.is_playing=false;
+        assert!(publication.changed_at(&snapshot,None,start+Duration::from_millis(44100)));
+        assert!(!publication.changed_at(&snapshot,None,start+Duration::from_secs(90)));
+    }
+}

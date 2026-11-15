@@ -74,6 +74,7 @@ pub struct DesktopPlayer {
     output: super::audio_output::AudioOutput,
     control: dj_audio::Control,
     decks: Vec<Deck>,
+    decoder_active: Arc<std::sync::atomic::AtomicBool>,
     errors: Arc<Mutex<Option<String>>>,
     queue: Vec<Entry>,
     current: Option<usize>,
@@ -114,6 +115,7 @@ impl DesktopPlayer {
         );
         let errors = Arc::new(Mutex::new(None));
         let mut decks = Vec::new();
+        let decoder_active = Arc::new(std::sync::atomic::AtomicBool::new(false));
         for (index, mut producer) in producers.into_iter().enumerate() {
             let (tx, rx) = mpsc::channel::<Load>();
             let generation = Arc::new(AtomicU64::new(0));
@@ -122,6 +124,7 @@ impl DesktopPlayer {
             let worker_parameters=parameters.clone();
             let errors = errors.clone();
             let clock = control.clock.clone();
+            let decoding_for_output=decoder_active.clone();
             let worker = thread::Builder::new()
                 .name(format!("musicos-deck-{index}"))
                 .spawn(move || {
@@ -180,13 +183,25 @@ impl DesktopPlayer {
                                                 frame = match e {
                                                     rtrb::PushError::Full(value) => value,
                                                 };
-                                                thread::sleep(Duration::from_millis(2));
+                                                if decoding_for_output.load(Ordering::Acquire) {
+                                                    let audible = clock.active.load(Ordering::Acquire) == index as u64
+                                                        || clock.mixing.load(Ordering::Acquire);
+                                                    // Both waits fit inside the deck's buffered audio.
+                                                    let wait = if audible { 6 } else { 24 };
+                                                    thread::park_timeout(Duration::from_millis(wait));
+                                                } else {
+                                                    // Resume or a new generation unparks this decoder.
+                                                    thread::park_timeout(Duration::from_millis(750));
+                                                }
                                             }
                                         }
                                     }
                                 }
                                 true
                             };
+                            let mut input = Vec::with_capacity(512 * 2);
+                            let mut output = Vec::new();
+                            let mut delayed = Vec::with_capacity(512 * 2);
                             loop {
                                 if token.load(Ordering::Acquire) != load.generation {
                                     return Ok(());
@@ -200,17 +215,17 @@ impl DesktopPlayer {
                                 stretch.set_transpose_factor(transpose,None);
                                 processing=(tempo-1.).abs()>0.0001||(transpose-1.).abs()>0.0001;
                                 // Avoid the channel converter size_hint: some decoders report a zero lower bound mid-frame.
-                                let mut input=Vec::with_capacity(512*2);
+                                input.clear();
                                 for _ in 0..512*2 {match source.next(){Some(sample)=>input.push(sample),None=>break}}
                                 if input.is_empty() {
                                     break;
                                 }
                                 let frames=((input.len()/2) as f32/tempo).round() as usize;
-                                let mut output=vec![0.;frames*2];
+                                output.resize(frames * 2, 0.);
                                 // Warm the processor even during exact PCM bypass, avoiding a cold
                                 // processor restart when speed or pitch first changes.
                                 stretch.process(&input,&mut output);
-                                let mut delayed=Vec::with_capacity(input.len());
+                                delayed.clear();
                                 for pair in input.chunks_exact(2) {delayed.extend_from_slice(&dry[dry_at]);dry[dry_at]=[pair[0],pair[1]];dry_at=(dry_at+1)%dry.len();}
                                 let target_wet=if processing {1.}else{0.};
                                 for i in 0..frames {
@@ -250,6 +265,7 @@ impl DesktopPlayer {
             output,
             control,
             decks,
+            decoder_active,
             errors,
             queue: vec![],
             current: None,
@@ -279,11 +295,28 @@ impl DesktopPlayer {
             plan_revision: 0,
         }
     }
+    fn wake_decoders(&self) {
+        for deck in &self.decks {
+            if let Some(worker)=&deck.worker { worker.thread().unpark(); }
+        }
+    }
     fn command(&mut self, c: Command) {
+        let pause=if let Command::Pause(paused)=&c {Some(*paused)} else {None};
         if self.control.commands.push(c).is_err() {
             *self.errors.lock().unwrap_or_else(|e| e.into_inner()) =
                 Some("Audio controls are busy; try again".into());
+            return;
         }
+        if let Some(paused)=pause {
+            self.decoder_active.store(!paused,Ordering::Release);
+            if paused {
+                self.output.suspend();
+            } else {
+                self.wake_decoders();
+                self.output.poll(true);
+            }
+        }
+        self.output.service_parked();
     }
     fn account(&mut self) {
         for deck in 0..2 {
@@ -328,7 +361,9 @@ impl DesktopPlayer {
         self.loaded[deck]=Some(key);
         self.control.clock.ready[deck].store(false,Ordering::Release);
         *self.decks[deck].parameters.lock().unwrap_or_else(|e|e.into_inner())=(tempo*self.listening.speed,self.listening.transpose(),self.rate_revision);
+        self.output.service_parked();
         self.decks[deck].load.send(Load{entry_key:key,path:track.path,start,transpose:self.listening.transpose(),generation}).context("Audio decoder stopped")?;
+        if let Some(worker)=&self.decks[deck].worker { worker.thread().unpark(); }
         Ok(())
     }
     fn outcome(&mut self,status:&str,reason:impl Into<String>){
@@ -472,8 +507,9 @@ impl DesktopPlayer {
     pub fn audition(&mut self,track:Track)->Result<()> {
         self.end_audition(true);
         self.settle_audible()?;
-        anyhow::ensure!(self.output.available(),"Audio output is unavailable");
         anyhow::ensure!(self.control.commands.slots()>=6,"Audio controls are busy; try again");
+        self.output.poll(true);
+        anyhow::ensure!(self.output.available(), "Audio output is unavailable");
         self.cancel_reason("song audition");
         let deck=1-self.active;let length=track.duration.max(0) as f32;
         let start=if length>40. {(length*0.25).min(length-30.)}else{0.};
@@ -499,10 +535,11 @@ impl DesktopPlayer {
         }
     }
     pub fn tick(&mut self) {
-        self.output.poll(false);
+        let idle=self.paused&&self.audition.is_none();
+        if idle { self.output.suspend(); } else { self.output.poll(false); }
         // Output outages must not expire a healthy prepared decoder or advance
         // the queue while its sample clock is stopped.
-        if !self.output.available(){self.preparing_since=std::time::Instant::now();return;}
+        if !idle&&!self.output.available(){self.preparing_since=std::time::Instant::now();return;}
         if let Some(a)=&self.audition {
             if self.control.clock.generations[a.deck].load(Ordering::Acquire)!=a.generation || self.control.clock.active.load(Ordering::Acquire)!=a.deck as u64 {
                 if a.started.elapsed()>Duration::from_secs(5){self.end_audition(true);}
@@ -651,8 +688,7 @@ impl DesktopPlayer {
         if self.current.is_none() {
             return;
         }
-        self.output.poll(true);
-        self.paused = self.output.available() && !self.paused;
+        self.paused = !self.paused;
         self.command(Command::Pause(self.paused));
     }
     pub fn seek(&mut self, position: f32) {
@@ -873,7 +909,7 @@ impl DesktopPlayer {
             volume: self.volume,
             shuffle: self.shuffle,
             loop_mode: self.repeat,
-            backend: if self.output.available() {
+            backend: if self.output.available() || (self.paused && self.audition.is_none()) {
                 "MusicOS two-deck"
             } else {
                 "unavailable"
@@ -895,6 +931,7 @@ impl Drop for DesktopPlayer {
             let old = std::mem::replace(&mut deck.load, tx);
             drop(old);
         }
+        self.wake_decoders();
         for deck in &mut self.decks {
             if let Some(worker) = deck.worker.take() {
                 let _ = worker.join();
@@ -931,7 +968,7 @@ pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS
  #[test]fn saturated_commands_do_not_publish_a_false_navigation(){let mut p=pending();let (commands,_held_consumer)=rtrb::RingBuffer::new(64);p.control.commands=commands;let held=p.control.commands.slots();for _ in 0..held {let _=p.control.commands.push(Command::Pause(true));}p.start(1,0.,false);assert_eq!(p.current,Some(0));}
  #[test]fn acknowledged_schedule_is_protected_before_controller_poll(){let mut p=pending();p.control.clock.schedule_id.store(42,Ordering::Release);p.control.clock.ready[1].store(true,Ordering::Release);let mut next=p.transition.clone().unwrap();next.request_id=99;assert!(p.prepare(next).is_err());assert_eq!(p.transition.as_ref().unwrap().request_id,42);}
  #[test]fn paused_preparation_keeps_its_deadline_frozen(){let mut p=pending();p.paused=true;p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_some());assert!(p.failed_entries.is_empty());}
- #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
+ #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();p.output.poll(true);for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
 }
 
 #[cfg(all(test,target_os="macos"))]
@@ -948,9 +985,10 @@ mod output_recovery_tests {
         let mut player=DesktopPlayer::new();player.set_volume(0.);player.restore_queue_paused(vec![track.clone(),track],1,2.);player.set_shuffle(true);player.pins.insert(player.entry_ids()[0]);
         let identities=player.entry_ids();let pins=player.pins.clone();
         wait(&mut player,|p|p.get_position()>=2.);let position=player.get_position();
+        assert!(!player.output.available(), "restored playback must leave the audio device idle");
         for _ in 0..3{player.output.simulate_disconnect();player.tick();assert!(!player.is_playing());assert_eq!(player.get_position(),position);assert_eq!(player.entry_ids(),identities);}
         player.play_pause();wait(&mut player,|p|p.get_position()>position+0.1);assert!(player.is_playing());assert_eq!(player.current,Some(1));assert_eq!(player.pins,pins);assert!(player.shuffle);assert_eq!(player.volume,0.);
         let before=player.get_position();player.output.simulate_disconnect();player.tick();wait(&mut player,|p|p.get_position()>before+0.1);assert!(player.is_playing());assert_eq!(player.entry_ids(),identities);
-        player.pause();thread::sleep(Duration::from_millis(50));player.tick();let paused=player.get_position();player.output.simulate_disconnect();player.tick();thread::sleep(Duration::from_millis(50));player.tick();assert!(!player.is_playing());assert_eq!(player.get_position(),paused);
+        player.pause();thread::sleep(Duration::from_millis(50));player.tick();let paused=player.get_position();assert!(!player.output.available(), "pausing must release the audio device");player.output.simulate_disconnect();player.tick();thread::sleep(Duration::from_millis(50));player.tick();assert!(!player.is_playing());assert_eq!(player.get_position(),paused);
     }
 }

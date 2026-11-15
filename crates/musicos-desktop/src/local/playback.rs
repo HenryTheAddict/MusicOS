@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, RwLock, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -168,9 +168,29 @@ impl Default for LocalPlaybackSnapshot {
     }
 }
 
+#[derive(Default)]
+struct SnapshotUpdates {
+    revision: Mutex<u64>,
+    changed: Condvar,
+}
+
+impl SnapshotUpdates {
+    fn publish(&self, revision: u64) {
+        *self.revision.lock().unwrap_or_else(|error|error.into_inner()) = revision;
+        self.changed.notify_all();
+    }
+    fn wait(&self, last: Option<u64>, timeout: Duration) -> bool {
+        let revision=self.revision.lock().unwrap_or_else(|error|error.into_inner());
+        let (revision, _)=self.changed.wait_timeout_while(revision, timeout, |revision|Some(*revision)==last)
+            .unwrap_or_else(|error|error.into_inner());
+        Some(*revision)!=last
+    }
+}
+
 pub struct LocalPlaybackService {
     sender: mpsc::Sender<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
+    updates: Arc<SnapshotUpdates>,
     worker: Option<thread::JoinHandle<()>>,
     visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 }
@@ -184,6 +204,7 @@ pub struct LocalPlaybackService {
 pub struct LocalPlaybackClient {
     sender: mpsc::Sender<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
+    updates: Arc<SnapshotUpdates>,
     visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 }
 
@@ -209,6 +230,10 @@ impl LocalPlaybackClient {
             .read()
             .map(|snapshot| snapshot.clone())
             .unwrap_or_default()
+    }
+
+    pub fn wait_for_snapshot(&self, last: Option<u64>, timeout: Duration) -> Option<LocalPlaybackSnapshot> {
+        self.updates.wait(last,timeout).then(||self.snapshot())
     }
 
     pub fn remote(&self,action:RemotePlayback)->Result<LocalPlaybackSnapshot>{
@@ -240,14 +265,17 @@ impl LocalPlaybackService {
         let (sender, receiver) = mpsc::channel();
         let snapshot = Arc::new(RwLock::new(LocalPlaybackSnapshot::default()));
         let worker_snapshot = snapshot.clone();
+        let updates=Arc::new(SnapshotUpdates::default());
+        let worker_updates=updates.clone();
         let visualizer=Arc::new(OnceLock::new());let worker_visualizer=visualizer.clone();
         let worker = thread::Builder::new()
             .name("musicos-local-playback".to_string())
-            .spawn(move || playback_loop(db_path, preferences, receiver, worker_snapshot, worker_visualizer))
+            .spawn(move || playback_loop(db_path, preferences, receiver, worker_snapshot, worker_updates, worker_visualizer))
             .context("starting local playback worker")?;
         Ok(Self {
             sender,
             snapshot,
+            updates,
             worker: Some(worker),
             visualizer,
         })
@@ -270,6 +298,7 @@ impl LocalPlaybackService {
         LocalPlaybackClient {
             sender: self.sender.clone(),
             snapshot: self.snapshot.clone(),
+            updates:self.updates.clone(),
             visualizer: self.visualizer.clone(),
         }
     }
@@ -289,12 +318,14 @@ fn playback_loop(
     preferences: PlaybackPreferences,
     receiver: mpsc::Receiver<LocalPlaybackCommand>,
     snapshot: Arc<RwLock<LocalPlaybackSnapshot>>,
+    updates: Arc<SnapshotUpdates>,
     visualizer: Arc<OnceLock<Arc<super::visualizer_audio::Tap>>>,
 ) {
     let db_path = match db_path.to_str() {
         Some(path) => path.to_string(),
         None => {
             set_error(&snapshot, "library database path is not valid UTF-8");
+            updates.publish(1);
             return;
         }
     };
@@ -302,6 +333,7 @@ fn playback_loop(
         Ok(db) => db,
         Err(error) => {
             set_error(&snapshot, format!("opening playback library: {error:#}"));
+            updates.publish(1);
             return;
         }
     };
@@ -409,6 +441,7 @@ fn playback_loop(
             revision,
             command_error.as_deref(),
         );
+        updates.publish(revision);
         if let Some((reply,result))=remote_reply{let _=reply.send(result);}
     }
 }

@@ -15,7 +15,7 @@ import type {Playback,Track} from './types';
 export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving:boolean;playing:boolean;cover?:string|null}){
  const host=useRef<HTMLDivElement>(null),[artColors,setArtColors]=useState<string[]|null>(null),state=useRef({phase:0,energy:[0,0,0]}),sceneColors=useRef(['#0064df','#54b9ff','#0064df']),painted=useRef(false);
  useEffect(()=>{let alive=true;if(active&&!cover)setArtColors(null);if(active&&cover)void resolveArtworkTheme([cover]).then(value=>{if(alive)setArtColors(value?(value.palette.swatches?.length===3?value.palette.swatches:[value.palette.accent,value.palette.blob,value.palette.background]):null);});return()=>{alive=false;};},[active,cover]);
- useEffect(()=>{const node=host.current,canvas=node?.querySelector('canvas'),ctx=canvas?.getContext('2d');if(!node||!canvas||!ctx||!active)return;node.dataset.renderer='canvas';node.dataset.soft='filter' in ctx?'canvas':'compositor';if('filter' in ctx)ctx.filter='blur(12px)';const media=matchMedia('(prefers-reduced-motion: reduce)');let frame=0,settleTimer=0,last=0,settleUntil=performance.now()+180,colorStarted=0,from=[...sceneColors.current],colors=[...sceneColors.current];
+ useEffect(()=>{const node=host.current,canvas=node?.querySelector('canvas'),ctx=canvas?.getContext('2d');if(!node||!canvas||!ctx||!active)return;ctx.setTransform(canvas.width/640,0,0,canvas.height/480,0,0);node.dataset.renderer='canvas';node.dataset.soft='filter' in ctx?'canvas':'compositor';if('filter' in ctx)ctx.filter='blur(12px)';const media=matchMedia('(prefers-reduced-motion: reduce)');let frame=0,settleTimer=0,last=0,nextPaint=0,settleUntil=performance.now()+180,colorStarted=0,from=[...sceneColors.current],colors=[...sceneColors.current];
   const palette=()=>{const style=getComputedStyle(node);from=[...sceneColors.current];colorStarted=performance.now();colors=(artColors??['--accent','--blob-color','--playback-tone'].map((key,i)=>style.getPropertyValue(key).trim()||colors[i])).map((color,i)=>{
     if(/^#[\da-f]{6}$/i.test(color))return color;
     ctx.fillStyle='#0064df';ctx.fillStyle=color;const normalized=String(ctx.fillStyle);
@@ -26,7 +26,7 @@ export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving
    });if(!painted.current||media.matches){from=[...colors];sceneColors.current=[...colors];painted.current=true;}if(from.every((color,i)=>color===colors[i]))colorStarted=-Infinity;};
   const paint=()=>{
    const elapsed=media.matches?1:Math.min(1,(performance.now()-colorStarted)/320),mix=elapsed*elapsed*(3-2*elapsed);
-   sceneColors.current=colors.map((color,i)=>'#'+[1,3,5].map(j=>Math.round(parseInt(from[i].slice(j,j+2),16)*(1-mix)+parseInt(color.slice(j,j+2),16)*mix).toString(16).padStart(2,'0')).join(''));
+   sceneColors.current=elapsed===1?colors:colors.map((color,i)=>'#'+[1,3,5].map(j=>Math.round(parseInt(from[i].slice(j,j+2),16)*(1-mix)+parseInt(color.slice(j,j+2),16)*mix).toString(16).padStart(2,'0')).join(''));
    const {phase,energy}=state.current;ctx.clearRect(0,0,640,480);
    for(let i=0;i<3;i++){
     const a=phase+i*2.1,bass=energy[0],detail=energy[i],wave=Math.sin(a*1.4),bend=Math.cos(a*.9);
@@ -36,12 +36,12 @@ export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving
    }
    ctx.globalAlpha=1;
   };
-  const draw=(at:number)=>{frame=0;if(document.hidden)return;const clock=currentPlaybackClock(),live=playing&&clock.playing&&moving&&!media.matches;const dt=Math.min(40,at-(last||at));last=at;for(let i=0;i<3;i++){const target=Math.max(0,Math.min(1,live?(clock.levels[i]??0):0)),previous=state.current.energy[i];state.current.energy[i]+=(target-previous)*(1-Math.exp(-dt/(target>previous?90:220)));}if(moving&&!media.matches)state.current.phase+=dt*.00024*(.4+state.current.energy[0]*2);paint();if(!media.matches&&(at<colorStarted+320||live||(moving&&state.current.energy.some(e=>e>.001)&&at<settleUntil)))frame=requestAnimationFrame(draw);};
-  const start=()=>{cancelAnimationFrame(frame);clearTimeout(settleTimer);last=0;settleUntil=performance.now()+180;palette();if(!document.hidden){paint();if(!media.matches)frame=requestAnimationFrame(draw);if(!playing)settleTimer=window.setTimeout(()=>{state.current.energy.fill(0);if(!document.hidden)paint();},180);}};
+  const draw=(at:number)=>{frame=0;if(document.hidden)return;const clock=currentPlaybackClock(),live=playing&&clock.playing&&moving&&!media.matches;if(at<nextPaint){frame=requestAnimationFrame(draw);return;}nextPaint=at+30;const dt=Math.min(75,at-(last||at));last=at;for(let i=0;i<3;i++){const target=Math.max(0,Math.min(1,live?(clock.levels[i]??0):0)),previous=state.current.energy[i];state.current.energy[i]+=(target-previous)*(1-Math.exp(-dt/(target>previous?90:220)));}if(moving&&!media.matches)state.current.phase+=dt*.00024*(.4+state.current.energy[0]*2);paint();if(!media.matches&&(at<colorStarted+320||live||(moving&&state.current.energy.some(e=>e>.001)&&at<settleUntil)))frame=requestAnimationFrame(draw);};
+  const start=()=>{cancelAnimationFrame(frame);clearTimeout(settleTimer);last=0;nextPaint=0;settleUntil=performance.now()+180;palette();if(!document.hidden){paint();if(!media.matches)frame=requestAnimationFrame(draw);if(!playing)settleTimer=window.setTimeout(()=>{state.current.energy.fill(0);if(!document.hidden)paint();},180);}};
   const off=subscribePlaybackClock(()=>{if(!frame&&playing&&moving&&!media.matches&&!document.hidden&&currentPlaybackClock().playing)start();});
   const observer=new MutationObserver(start);const dialog=node.closest('dialog');if(dialog)observer.observe(dialog,{attributes:true,attributeFilter:['style']});document.addEventListener('visibilitychange',start);media.addEventListener('change',start);start();return()=>{off();cancelAnimationFrame(frame);clearTimeout(settleTimer);observer.disconnect();document.removeEventListener('visibilitychange',start);media.removeEventListener('change',start);};
  },[active,moving,playing,artColors]);
- return <div ref={host} className="lyrics-liquid" aria-hidden="true"><><canvas width={640} height={480}/></><svg viewBox="0 0 640 480" preserveAspectRatio="xMidYMid slice"><defs><filter id="lyric-soft"><feGaussianBlur stdDeviation="30"/></filter></defs><g filter="url(#lyric-soft)"><ellipse cx="110" cy="160" rx="170" ry="120"/><ellipse cx="490" cy="290" rx="180" ry="130"/><ellipse cx="320" cy="450" rx="180" ry="150"/></g></svg></div>;
+ return <div ref={host} className="lyrics-liquid" aria-hidden="true"><><canvas width={384} height={288}/></><svg viewBox="0 0 640 480" preserveAspectRatio="xMidYMid slice"><defs><filter id="lyric-soft"><feGaussianBlur stdDeviation="30"/></filter></defs><g filter="url(#lyric-soft)"><ellipse cx="110" cy="160" rx="170" ry="120"/><ellipse cx="490" cy="290" rx="180" ry="130"/><ellipse cx="320" cy="450" rx="180" ry="150"/></g></svg></div>;
 }
 export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,variant='full',renderMenu}:{track:Track|undefined;player:Playback;active:boolean;onSeek:(seconds:number)=>Promise<unknown>;onPlay:()=>Promise<void>;onEdit?:()=>void;variant?:'full'|'panel'|'mini'|'visualizer';renderMenu?:(items:MenuItem[])=>ReactNode}){const visible=useViewActive();active=active&&visible;const {result,busy,error,find,select,retryIn}=useLyrics(track?.id,active,true,track?JSON.stringify([track.path,track.title,track.artist,track.album,track.duration]):''),scroll=useRef<HTMLDivElement>(null),[following,setFollowing]=useState(true),[position,setPosition]=useState(0),[playError,setPlayError]=useState(''),[starting,setStarting]=useState(false);const pane=useRef<HTMLElement>(null),longPress=useRef(0),touchOrigin=useRef({x:0,y:0});useEffect(()=>()=>clearTimeout(longPress.current),[active]);
  const edit=()=>{if(onEdit)onEdit();else if(track)window.dispatchEvent(new CustomEvent('musicos-open-lyric-editor',{detail:track.id}));};
@@ -54,8 +54,50 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  const wordSegments=useMemo(()=>doc?.lines.map(lyricWordSegments)??[],[doc]);
  const wordSignature=doc?activeLyricIndices(doc,position).join('|'):'';
  const glowTick=useRef<(time:number)=>void>(()=>{}),glowPosition=useRef<()=>void>(()=>{});
+ const updateClock=useRef<(()=>void)|null>(null);
  const displayedKey=useRef(''),displayedDoc=useRef(doc);if(displayedDoc.current!==doc){displayedDoc.current=doc;displayedKey.current='';}
- useLayoutEffect(()=>{if(!active||!current)return;let frame=0,off:undefined|(()=>void);const update=()=>{if(document.hidden)return;const value=currentPlaybackClock();if(value.trackId!==track?.id)return;const pos=clockPosition(value),lyricTime=pos*1000-(doc?.metadata.offset_ms??0);for(const word of pane.current?.querySelectorAll<HTMLElement>('.lyric-line[data-current=true] .lyric-word')??[]){const start=Number(word.dataset.wordStart),end=word.dataset.wordEnd===undefined?undefined:Number(word.dataset.wordEnd);const progress=wordProgress(start,end,lyricTime);word.style.setProperty('--word-progress',`${progress*100}%`);word.style.setProperty('--word-feather',progress>0&&progress<1?'5%':'0%');if(lyricTime>=start&&(end===undefined||lyricTime<end))word.dataset.wordActive='true';else delete word.dataset.wordActive;if(lyricTime>=start)word.dataset.sung='true';else delete word.dataset.sung;}glowTick.current(lyricTime);const at=doc?lyricIndex(doc,pos):-1,voices=doc?activeLyricIndices(doc,pos):[],key=`${track?.id}:${at}:${voices.join(',')}`;if(key!==displayedKey.current){displayedKey.current=key;setPosition(pos);}if(player.is_playing&&!frame)frame=requestAnimationFrame(()=>{frame=0;update();});};const visibility=()=>{off?.();off=undefined;cancelAnimationFrame(frame);frame=0;if(!document.hidden){off=subscribePlaybackClock(update);update();}};visibility();document.addEventListener('visibilitychange',visibility);return()=>{off?.();cancelAnimationFrame(frame);document.removeEventListener('visibilitychange',visibility);};},[active,current,player.is_playing,track?.id,doc]);
+ useLayoutEffect(()=>{
+  if(!active||!current||!doc?.lines.length)return;
+  let frame=0,off:undefined|(()=>void),lastPane:string|undefined;
+  let words:{node:HTMLElement;start:number;end:number|undefined;progress:number;active:boolean;sung:boolean}[]=[];
+  const update=()=>{
+   if(document.hidden)return;
+   const value=currentPlaybackClock();
+   if(value.trackId!==track?.id)return;
+   const pos=clockPosition(value),lyricTime=pos*1000-doc.metadata.offset_ms;
+   // React commits active cues between frames. Re-read their elements only
+   // when the actual set of rendered lines changes.
+   const shown=pane.current?.dataset.currentCues;
+   if(shown!==lastPane){
+    lastPane=shown;
+    words=Array.from(pane.current?.querySelectorAll<HTMLElement>('.lyric-line[data-current=true] .lyric-word')??[],node=>({
+     node,start:Number(node.dataset.wordStart),end:node.dataset.wordEnd===undefined?undefined:Number(node.dataset.wordEnd),
+     progress:-1,active:node.dataset.wordActive==='true',sung:node.dataset.sung==='true',
+    }));
+   }
+   for(const word of words){
+    const progress=Math.round(wordProgress(word.start,word.end,lyricTime)*1000)/10;
+    if(progress!==word.progress){
+     const feather=progress>0&&progress<100,previous=word.progress>0&&word.progress<100;
+     word.node.style.setProperty('--word-progress',`${progress}%`);
+     if(word.progress<0||previous!==feather)word.node.style.setProperty('--word-feather',feather?'5%':'0%');
+     word.progress=progress;
+    }
+    const sung=lyricTime>=word.start,active=sung&&(word.end===undefined||lyricTime<word.end);
+    if(sung!==word.sung){if(sung)word.node.dataset.sung='true';else delete word.node.dataset.sung;word.sung=sung;}
+    if(active!==word.active){if(active)word.node.dataset.wordActive='true';else delete word.node.dataset.wordActive;word.active=active;}
+   }
+   if(words.length)glowTick.current(lyricTime);
+   const key=`${track?.id}:${lyricIndex(doc,pos)}:${activeLyricIndices(doc,pos).join(',')}`;
+   if(key!==displayedKey.current){displayedKey.current=key;setPosition(pos);}
+   if(value.playing&&words.length&&!frame)frame=requestAnimationFrame(()=>{frame=0;update();});
+  };
+  const visibility=()=>{off?.();off=undefined;cancelAnimationFrame(frame);frame=0;if(!document.hidden){off=subscribePlaybackClock(update);update();}};
+  updateClock.current=update;
+  visibility();
+  document.addEventListener('visibilitychange',visibility);
+  return()=>{updateClock.current=null;off?.();cancelAnimationFrame(frame);document.removeEventListener('visibilitychange',visibility);};
+ },[active,current,player.is_playing,track?.id,doc]);
 
  const index=doc&&current?lyricIndex(doc,position):-1,activeLines=doc&&current?activeLyricIndices(doc,position):[],activeKey=activeLines.join(','),activeSet=new Set(activeLines),focusLines=activeLines.length?activeLines:[Math.max(0,index)];
  const [layoutEpoch,setLayoutEpoch]=useState(0);
@@ -64,9 +106,10 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  const focus=activeLines[0]??(index<0&&doc?doc.lines.findIndex((_,i)=>visibleLyricLine(doc,i)):index);
  useLyricFollow(scroll,{active,following,doc,trackId:track?.id,variant,focus,last:activeLines.at(-1)??focus,layoutEpoch,onPosition:()=>glowPosition.current()});
  const glow=useLyricGlow(pane,scroll,active&&current&&!!doc,`${track?.id}:${result?.revision}:${wordSignature}`,variant,doc);glowTick.current=glow.tick;glowPosition.current=glow.position;
+ useLayoutEffect(()=>{updateClock.current?.();},[activeKey]);
  const state=doc?.metadata.instrumental?'Instrumental':doc&&!doc.lines.length?(doc.plain.trim()?'Plain lyrics':'No lyrics yet'):({offline:'You’re offline',not_found:'No lyrics found',missing:'No lyrics yet',choose:'Choose the right version',retry_later:'Lyrics provider is temporarily unavailable',provider_error:'Couldn’t load lyrics'} as Record<string,string>)[result?.state??''];
  const lyricActions:MenuItem[]=[{label:'Edit lyrics',icon:'Metadata',disabled:!track,onSelect:edit},{label:'Find lyrics',icon:'search',disabled:busy||retryIn>0||!track,onSelect:()=>void find()},{label:'Apple Music version',icon:'Lyrics',disabled:appleBusy||!track,onSelect:()=>void findApple()},{label:'Other versions',icon:'Lyrics',disabled:busy||retryIn>0||!track,onSelect:()=>void find(true)},...(result?.source?.url?[{label:`Source: ${result.source.label}`,icon:'Lyrics',onSelect:()=>void call('open_provider',{url:result.source!.url!})}]:[])];
- return <section ref={pane} className="lyrics-pane" data-variant={variant} data-following={following} aria-label="Lyrics" onContextMenu={e=>{e.preventDefault();e.stopPropagation();context({x:e.clientX,y:e.clientY});}} onKeyDown={e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();e.stopPropagation();context();}}} onPointerDown={e=>{if(e.pointerType==='touch'){const point={x:e.clientX,y:e.clientY};touchOrigin.current=point;longPress.current=window.setTimeout(()=>context(point),500);}}} onPointerUp={()=>clearTimeout(longPress.current)} onPointerCancel={()=>clearTimeout(longPress.current)} onPointerMove={e=>{if(Math.hypot(e.clientX-touchOrigin.current.x,e.clientY-touchOrigin.current.y)>6)clearTimeout(longPress.current);}}>
+ return <section ref={pane} className="lyrics-pane" data-current-cues={activeKey} data-variant={variant} data-following={following} aria-label="Lyrics" onContextMenu={e=>{e.preventDefault();e.stopPropagation();context({x:e.clientX,y:e.clientY});}} onKeyDown={e=>{if(e.key==='ContextMenu'||e.shiftKey&&e.key==='F10'){e.preventDefault();e.stopPropagation();context();}}} onPointerDown={e=>{if(e.pointerType==='touch'){const point={x:e.clientX,y:e.clientY};touchOrigin.current=point;longPress.current=window.setTimeout(()=>context(point),500);}}} onPointerUp={()=>clearTimeout(longPress.current)} onPointerCancel={()=>clearTimeout(longPress.current)} onPointerMove={e=>{if(Math.hypot(e.clientX-touchOrigin.current.x,e.clientY-touchOrigin.current.y)>6)clearTimeout(longPress.current);}}>
  <div className="lyrics-follow-slot" data-visible={!following&&!!doc?.lines.length&&current}><span className="lyrics-mini-identification">{track?.title}</span><button className="lyrics-follow" disabled={following||!doc?.lines.length||!current} tabIndex={following?-1:0} aria-hidden={following||undefined} onClick={()=>setFollowing(true)}><Icon name="sync"/>Follow lyrics</button></div>
  {renderMenu?renderMenu(lyricActions):<Overflow contextOnly items={lyricActions}/>}
 

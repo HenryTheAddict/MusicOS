@@ -53,8 +53,28 @@ export function formatStamp(ms:number){return `${Math.floor(ms/60000)}:${((ms%60
 export function parseStamp(value:string){const m=/^(\d+):(\d{1,2}(?:\.\d{1,3})?)$/.exec(value);return m&&Number(m[2])<60?Math.round((Number(m[1])*60+Number(m[2]))*1000):null;}
 
 /** A later cue does not end a voice whose explicit interval is still active. */
-const cueEnds=new WeakMap<LyricDocument,number[]>();
-export function activeLyricIndices(doc:LyricDocument,position:number){let ends=cueEnds.get(doc);if(!ends){ends=[];let next=doc.metadata.duration_ms??Infinity,group=Infinity;for(let i=doc.lines.length-1;i>=0;i--){const line=doc.lines[i];if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}const wordEnd=line.words?.reduce((end,word)=>Number.isFinite(word.end_ms)&&word.end_ms!>line.start_ms?Math.max(end,word.end_ms!):end,-Infinity);ends[i]=line.end_ms??(wordEnd!==undefined&&wordEnd>-Infinity?wordEnd:next);}cueEnds.set(doc,ends);}const ms=position*1000-doc.metadata.offset_ms;return doc.lines.flatMap((line,i)=>visibleLyricLine(doc,i)&&ms>=line.start_ms&&ms<ends![i]?[i]:[]);}
+const cueIntervals=new WeakMap<LyricDocument,{ends:number[];furthest:number[]}>();
+export function activeLyricIndices(doc:LyricDocument,position:number){
+ let intervals=cueIntervals.get(doc);
+ if(!intervals){
+  const ends:number[]=[],furthest:number[]=[];
+  let next=doc.metadata.duration_ms??Infinity,group=Infinity;
+  for(let i=doc.lines.length-1;i>=0;i--){
+   const line=doc.lines[i];
+   if(line.start_ms<group){if(group!==Infinity)next=group;group=line.start_ms;}
+   const wordEnd=line.words?.reduce((end,word)=>Number.isFinite(word.end_ms)&&word.end_ms!>line.start_ms?Math.max(end,word.end_ms!):end,-Infinity);
+   ends[i]=visibleLyricLine(doc,i)?line.end_ms??(wordEnd!==undefined&&wordEnd>-Infinity?wordEnd:next):-Infinity;
+  }
+  for(let i=0;i<ends.length;i++)furthest[i]=Math.max(furthest[i-1]??-Infinity,ends[i]);
+  intervals={ends,furthest};
+  cueIntervals.set(doc,intervals);
+ }
+ const ms=position*1000-doc.metadata.offset_ms,result:number[]=[];
+ for(let i=lyricIndex(doc,position);i>=0&&ms<intervals.furthest[i];i--){
+  if(ms<intervals.ends[i])result.push(i);
+ }
+ return result.reverse();
+}
 
 export function lyricVoice(line:LyricLine){return line['x-musicos']?.voice??(line['x-musicos']?.agents?.length?'unassigned':'lead');}
 export function lossyLrc(doc:LyricDocument){return doc.lines.some((l,i)=>l.words?.length||l['x-musicos']||l.end_ms!==undefined&&doc.lines.slice(i+1).some(n=>n.start_ms<l.end_ms!));}

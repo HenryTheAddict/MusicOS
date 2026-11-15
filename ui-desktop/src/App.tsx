@@ -1308,7 +1308,7 @@ export default function App() {
           </div>}
 
           {section === "Library" &&
-            !["album", "artist","search"].includes(route.view) && (
+            !["home", "album", "artist","search"].includes(route.view) && (
               <div className="library-toolbar">
                 {!compact&&navigation.history.length > 0 && (
                   <IconButton
@@ -1317,7 +1317,7 @@ export default function App() {
                     onClick={() => goBack()}
                   />
                 )}
-                {route.view === "home" ? <span className="toolbar-title">Your music</span> : route.view === "albums" ? <LibraryFilter library={library} value={{...defaultFilters,...preferences.library_filters}} onChange={library_filters=>changePreferences({...preferences,library_filters})}/> : <span className="toolbar-title">
+                {route.view === "albums" ? <LibraryFilter library={library} value={{...defaultFilters,...preferences.library_filters}} onChange={library_filters=>changePreferences({...preferences,library_filters})}/> : <span className="toolbar-title">
                   {route.view === "album"
                     ? album?.title
                     : route.view === "artist"

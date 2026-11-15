@@ -100,3 +100,28 @@ test('a dropped image can be reviewed and saved without a provider lookup',async
  await page.getByRole('button',{name:'Save cover only',exact:true}).click();
  await expect(page.getByRole('status').filter({hasText:'Cover updated'})).toBeVisible();
 });
+
+test('Appearance panels align and stay reachable in compact and wide settings',async({page})=>{
+ for(const width of [480,720,1280]){
+  await page.setViewportSize({width,height:width===1280?800:480});
+  await page.goto('/?fixture=1');
+  await page.getByRole('button',{name:'Choose section',exact:true}).click();
+  await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+  const panel=page.getByRole('tabpanel',{name:'Appearance'});
+  const cards=panel.locator('.appearance-bento .settings-tile:visible');
+  await expect(cards.first()).toBeVisible();
+  const bounds=await cards.evaluateAll(nodes=>nodes.map(node=>{
+   const {left,right,width}=node.getBoundingClientRect();
+   return {left,right,width};
+  }));
+  expect(bounds.length).toBeGreaterThan(3);
+  for(const card of bounds){
+   expect(Math.abs(card.left-bounds[0].left)).toBeLessThan(2);
+   expect(Math.abs(card.width-bounds[0].width)).toBeLessThan(2);
+   expect(card.right).toBeLessThanOrEqual(width);
+  }
+  const visualizer=panel.locator('.visualizer-preferences summary');
+  await visualizer.focus();
+  await expect(visualizer).toBeInViewport();
+ }
+});

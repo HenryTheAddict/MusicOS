@@ -1909,20 +1909,26 @@ pub fn run() {
                 let mut arranged=None;
                 let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
                 let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
-                let mut media_update=std::time::Instant::now()-Duration::from_secs(1);
+                let mut last_snapshot=None;
+                #[cfg(target_os="macos")]
+                let mut media_update=crate::system_media::Publication::default();
                 loop {
                     if handle.state::<AppState>().stopped.load(Ordering::Relaxed) { break; }
-                    let s = client.snapshot();
-                    #[cfg(target_os="macos")]
-                    if media_update.elapsed()>=Duration::from_millis(250) {
-                        media_update=std::time::Instant::now();let mut snapshot=s.clone();
-                        if let Some(track)=snapshot.track.as_mut(){if let Some(cover)=handle.state::<AppState>().album_artwork.lock().unwrap_or_else(|e|e.into_inner()).get(&track.id){track.cover_art_path=cover.clone();}}
-                        let _=handle.run_on_main_thread(move||crate::system_media::publish(&snapshot));
-                    }
+                    let Some(s)=client.wait_for_snapshot(last_snapshot,Duration::from_secs(1))else{continue;};
+                    last_snapshot=Some(s.revision);
                     let state=handle.state::<AppState>();
+                    #[cfg(target_os="macos")]
+                    {
+                        let artwork=s.track.as_ref().and_then(|track|state.album_artwork.lock().unwrap_or_else(|e|e.into_inner()).get(&track.id).cloned());
+                        if media_update.should_publish(&s,artwork.as_ref()) {
+                            let mut snapshot=s.clone();
+                            if let (Some(track),Some(artwork))=(snapshot.track.as_mut(),artwork){track.cover_art_path=artwork;}
+                            let _=handle.run_on_main_thread(move||crate::system_media::publish(&snapshot));
+                        }
+                    }
                     let analysis_progress=state.analysis.progress();
                     let mut config=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).dj_config.clone();config.enabled=s.dj_mode;
-                    if s.dj_mode && s.audition.is_none() {if let Some(current)=s.queue_index {
+                    if s.dj_mode && s.is_playing && s.audition.is_none() {if let Some(current)=s.queue_index {
                      let db=state.config().db_path;let upcoming=s.queue.iter().skip(current).take(5).collect::<Vec<_>>();state.analysis.prioritize(upcoming.iter().map(|t|t.id).collect());
                      if state.analysis.auto_allowed()&&!analysis_progress.running&&analysis_check.elapsed()>=Duration::from_secs(1) {
                         analysis_check=std::time::Instant::now();
@@ -1951,7 +1957,7 @@ pub fn run() {
                      }
                     }}
                     if !s.dj_mode { planned=None;arranged=None; }
-                    if s.dj_mode && s.audition.is_none() && s.dj_transition.is_none() {
+                    if s.dj_mode && s.is_playing && s.audition.is_none() && s.dj_transition.is_none() {
                     let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
                     let stamp=(s.queue_revision,s.plan_revision,s.queue_index,serde_json::to_string(&config).unwrap_or_default(),state.analysis.pair_revision(&relevant_ids));
                     if planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
@@ -1976,7 +1982,6 @@ pub fn run() {
                         }
                         let _=handle.emit("playback",value);
                     }
-                    std::thread::sleep(Duration::from_millis(50));
                 }
             });
             Ok(())
