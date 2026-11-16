@@ -95,6 +95,12 @@ export interface Preferences {
 }
 export interface AudioFeatures {track_id:number;bpm:number|null;bpm_confidence:number;key:string|null;key_index:number|null;key_confidence:number;structure?:StructuralAnalysis|null}
 export interface AnalysisStatus {running:boolean;paused:boolean;processed:number;total:number;features:AudioFeatures[];errors:string[]}
+export interface QueueMix {
+  outgoing_entry: number;
+  incoming_entry: number;
+  kind: 'beat_match' | 'outro_fade' | 'crossfade' | 'gapless';
+  seconds: number;
+}
 export interface Playback {
   listening?:Listening;
   listening_applied?:boolean;applied_reverb?:number;applied_reverb_depth?:number;reverb_processed_frames?:number;applied_listening_revision?:number;requested_listening_revision?:number;transition_outcome?:{request_id:number;outgoing_entry:number;incoming_entry:number;status:string;reason:string}|null;failed_entries?:number[];
@@ -104,6 +110,7 @@ export interface Playback {
   pinned_entries?:number[];
   arranged_entries?:number[];
   dj_mode?:boolean;
+  dj_queue_mixes?:QueueMix[];
   track: Track | null;
   queue: Track[];
   queue_index: number | null;

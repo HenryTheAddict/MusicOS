@@ -306,6 +306,7 @@
 .queue-track-copy { display:flex; flex-direction:column; gap:.125rem; flex:1; min-width:0; }
 .queue-row strong { font-weight:650; }
 .queue-row small { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:.7; }
+.queue-mix-label { font-weight: 650; color: var(--ink); }
 .queue-duration { font-size:.625rem; font-variant-numeric:tabular-nums; opacity:.7; flex:none; }
 .supercommand { position:fixed; inset:12vh 0 auto; margin:0 auto; width:min(36rem,calc(100vw - 2rem)); max-width:none; max-height:76vh; padding:0; overflow:hidden; border:1px solid color-mix(in srgb,var(--ink) 20%,transparent); border-radius:1.25rem; color:var(--ink); background:color-mix(in srgb,var(--surface-color) 75%,white); box-shadow:0 1.5rem 5rem color-mix(in srgb,var(--ink) 30%,transparent); animation:command-enter 160ms cubic-bezier(.2,.7,.2,1); }
 .supercommand::backdrop { background:color-mix(in srgb,var(--ink) 28%,transparent); backdrop-filter:blur(5px); }

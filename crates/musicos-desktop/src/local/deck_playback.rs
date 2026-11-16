@@ -815,11 +815,10 @@ impl DesktopPlayer {
             ids.len() == self.queue.len() - start,
             "Queue changed during arrangement"
         );
-        let before = self.queue[start..].to_vec();
-        let old = before
-            .iter()
-            .map(|e| e.key)
-            .collect::<std::collections::BTreeSet<_>>();
+        let next = self.next_playable().map(|index| self.queue[index].key);
+        let original_ids = self.queue[start..].iter().map(|entry| entry.key);
+
+        let old = original_ids.collect::<std::collections::BTreeSet<_>>();
         anyhow::ensure!(
             old == ids.iter().copied().collect(),
             "Queue changed during arrangement"
@@ -832,14 +831,18 @@ impl DesktopPlayer {
                 );
             }
         }
+        let mut positions = self.queue.drain(start..).enumerate().map(|(offset, entry)| (entry.key, (offset, entry)))
+            .collect::<std::collections::HashMap<_, _>>();
         for (offset, key) in ids.into_iter().enumerate() {
-            let entry = before.iter().find(|e| e.key == key).unwrap().clone();
-            if self.queue[start + offset].key != key {
+            let (old_offset, entry) = positions.remove(&key).expect("validated queue entry");
+            if old_offset != offset {
                 self.arranged.insert(key);
             }
-            self.queue[start + offset] = entry;
+            self.queue.push(entry);
         }
-        self.cancel();
+        if next != self.next_playable().map(|index| self.queue[index].key) {
+            self.cancel();
+        }
         Ok(())
     }
     pub fn queue_remove(&mut self, index: usize) -> Option<Track> {
@@ -1009,6 +1012,21 @@ pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS
      let next = player.transition.as_ref().unwrap();
      assert_eq!((next.outgoing, next.incoming), (1, 2));
      assert_eq!((next.outgoing_cue, next.incoming_cue, next.duration, next.tempo), (100., 0., 0., 1.));
+ }
+ #[test]
+ fn arranging_later_entries_keeps_the_accepted_mix_and_manual_pin() {
+     let mut player = pending();
+     let track = player.queue[0].track.clone();
+     for key in 3..=5 {
+         player.queue.push(Entry { key, track: track.clone() });
+     }
+     player.pins.insert(4);
+     player.scheduled_reported = true;
+     assert!(player.arrange(vec![2, 3, 5, 4]).is_err());
+     assert_eq!(player.entry_ids(), [1, 2, 3, 4, 5]);
+     player.arrange(vec![2, 5, 4, 3]).unwrap();
+     assert_eq!(player.entry_ids(), [1, 2, 5, 4, 3]);
+     assert_eq!(player.transition.as_ref().unwrap().request_id, 42);
  }
  #[test]fn readiness_expiry_is_bounded_and_never_remains_pending(){let mut p=pending();p.output.poll(true);for attempt in 1..=2{p.prepared=Some((2,1));p.transition=Some(Transition{request_id:attempt,outgoing:1,incoming:2,outgoing_cue:98.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()});p.preparing_since=std::time::Instant::now()-Duration::from_secs(6);p.tick();assert!(p.prepared.is_none());assert_eq!(p.transition_outcome.as_ref().unwrap().status,"failed");}assert!(p.failed_entries.contains(&2));assert_eq!(p.queue.len(),2);}
 }

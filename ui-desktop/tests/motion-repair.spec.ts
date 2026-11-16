@@ -46,7 +46,7 @@ test('DJ mode shows the current track waveform on the same playback slider',asyn
  await page.getByRole('button',{name:'Play collection',exact:true}).click();
  const bar=page.locator('.now-playing');
  await bar.getByRole('button',{name:'Open Up next',exact:true}).click();
- const dj=page.getByRole('switch',{name:'DJmode'});
+ const dj=page.getByRole('switch',{name:'DJ mode'});
  await page.locator('.queue-dj .themed-switch').click();
  await expect(dj).toBeChecked();
  const wave=bar.locator('.seek-wave');

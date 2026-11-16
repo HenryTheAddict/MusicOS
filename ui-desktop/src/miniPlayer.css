@@ -134,7 +134,7 @@
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-view .playback-time{display:none;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-row{height:24px;min-height:24px;padding:0 4px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track .cover{width:20px;height:20px;flex-basis:20px;}
-.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track-copy small{display:none;}
+.mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track-copy small:not(:has(.queue-mix-label)){display:none;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-track-copy strong{font-size:11px;line-height:16px;}
 .mini-player:is([data-density=compact],[data-density=wide]) .mini-queue-list .queue-remove{height:24px;}
 /* One footer geometry shared by all presets; only its density variables vary. */

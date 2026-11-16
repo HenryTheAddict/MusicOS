@@ -28,7 +28,7 @@ pub enum LocalPlaybackCommand {
     SetListening(super::listening::Listening),
     SetDjMode(bool),
     PlanTransition(Transition),
-    ArrangeUpcoming(Vec<u64>),
+    ArrangeUpcoming { ids: Vec<u64>, revision: u64 },
     ToggleShuffle,
     SetShuffle(bool),
     CycleRepeat,
@@ -399,6 +399,7 @@ fn playback_loop(
                 if result.is_ok(){command_error=None;}
                 remote_reply=Some((reply,result));
             }
+            Ok(LocalPlaybackCommand::ArrangeUpcoming { revision, .. }) if revision != queue_revision || !dj_mode => {}
             Ok(command) => {
                 if let LocalPlaybackCommand::SetDjMode(enabled) = &command {
                     dj_mode = *enabled;
@@ -503,7 +504,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
             if let Err(error)=player.prepare(plan){player.plan_revision=player.plan_revision.wrapping_add(1);
                 super::dj_diagnostics::record("rejected",None,None,error.to_string());return Err(error);}
         }
-        LocalPlaybackCommand::ArrangeUpcoming(ids) => {
+        LocalPlaybackCommand::ArrangeUpcoming { ids, .. } => {
             if player.audition_status().is_none(){player.arrange(ids)?;}
         }
         LocalPlaybackCommand::ToggleShuffle => player.toggle_shuffle(),

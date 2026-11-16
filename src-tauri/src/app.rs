@@ -84,6 +84,7 @@ pub struct AppState {
     player_window_operation: tokio::sync::Mutex<()>,
     wifi: crate::wifi::Service,
     analysis: crate::analysis::Analysis,
+    dj_queue_mixes: Mutex<Vec<QueueMix>>,
     integrations: IntegrationService,
     config: Mutex<ControlCenterConfig>,
     preferences: Mutex<Preferences>,
@@ -142,6 +143,7 @@ impl AppState {
             player_window_operation: tokio::sync::Mutex::new(()),
             wifi,
             analysis: Default::default(),
+            dj_queue_mixes: Default::default(),
             integrations,
             config: Mutex::new(config),
             preferences: Mutex::new(prefs),
@@ -614,7 +616,9 @@ impl<'a> PlaybackEvent<'a> {
 
 fn playback_value(state: &AppState) -> Value {
     let snapshot = state.playback.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
-    json!(PlaybackEvent::new(&snapshot, true))
+    let mut payload = json!(PlaybackEvent::new(&snapshot, true));
+    payload["dj_queue_mixes"] = json!(*state.dj_queue_mixes.lock().unwrap_or_else(|e| e.into_inner()));
+    payload
 }
 
 async fn blocking<T: Send + 'static>(
@@ -693,6 +697,107 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
 fn analyzed_dj_track(duration:f32,f:Option<&crate::analysis::Features>)->crate::dj_plan::Track<'_>{
     crate::dj_plan::Track{key_index:f.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:f.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(duration),bpm:f.and_then(|f|f.bpm),structure:f.and_then(|f|f.structure.as_ref())}
 }
+#[derive(Clone, Debug, PartialEq, Serialize)]
+struct QueueMix {
+    outgoing_entry: u64,
+    incoming_entry: u64,
+    kind: crate::dj_plan::Kind,
+    seconds: f32,
+}
+
+#[derive(Default)]
+struct DjQueue {
+    upcoming: Vec<u64>,
+    mixes: Vec<QueueMix>,
+    next: Option<(u64, u64, crate::dj_plan::Plan)>,
+}
+
+fn project_dj_queue(
+    snapshot: &LocalPlaybackSnapshot,
+    current: usize,
+    end: usize,
+    features: &[Option<crate::analysis::Features>],
+    config: &crate::dj_plan::Config,
+) -> DjQueue {
+    use crate::dj_plan::Kind;
+    let window = &snapshot.queue[current..end];
+    let entries = &snapshot.queue_entry_ids[current..end];
+    let feature = |index: usize| features[index].as_ref();
+    let safe_cue = snapshot.position + 2. * snapshot.listening.speed;
+    let mut candidates = std::collections::HashMap::new();
+    let mut pair = |from: usize, to: usize| candidates.entry((from, to)).or_insert_with(|| {
+        crate::dj_plan::plan_after(
+            analyzed_dj_track(window[from].duration as f32, feature(from)),
+            analyzed_dj_track(window[to].duration as f32, feature(to)),
+            config,
+            false,
+            if from == 0 && snapshot.dj_transition.is_none() { safe_cue } else { 0. },
+        )
+    }).clone();
+    let pins = entries.iter().enumerate().filter(|(_, id)| {
+        snapshot.pinned_entries.contains(id)
+            || snapshot.failed_entries.contains(id)
+            || snapshot.dj_transition.as_ref().is_some_and(|plan| plan.incoming_entry == **id)
+    }).map(|(index, _)| index).collect();
+    let order = if config.preserve_energy && window.len() > 2 && snapshot.dj_transition.is_none() {
+        crate::dj_plan::order_upcoming(window, 1, &pins, |previous, index| {
+            let Some(from) = previous else { return 0.; };
+            if snapshot.failed_entries.contains(&entries[from]) || snapshot.failed_entries.contains(&entries[index]) {
+                return 0.;
+            }
+            let (a, b) = (feature(from), feature(index));
+            let energy = match (a.and_then(|f| f.structure.as_ref()), b.and_then(|f| f.structure.as_ref())) {
+                (Some(a), Some(b)) => (a.energy - b.energy).abs() * 2.,
+                _ => 0.,
+            };
+            let mix_value = pair(from, index).map_or(0., |plan| match plan.kind {
+                Kind::BeatMatch => 3. + plan.confidence * 0.5,
+                Kind::OutroFade => 1.25,
+                Kind::Crossfade | Kind::Gapless => 0.,
+            });
+            crate::analysis::compatibility(a, b) + energy - mix_value
+        })
+    } else {
+        (1..entries.len()).collect()
+    };
+    let mut forecast = DjQueue {
+        upcoming: order.iter().map(|&index| entries[index]).collect(),
+        ..Default::default()
+    };
+    for (from, to) in std::iter::once(0).chain(order.iter().copied())
+        .filter(|&index| !snapshot.failed_entries.contains(&entries[index]))
+        .collect::<Vec<_>>().windows(2).map(|pair| (pair[0], pair[1]))
+    {
+        let Some(plan) = pair(from, to) else { continue; };
+        let (outgoing_entry, incoming_entry) = (entries[from], entries[to]);
+        let mut mix = QueueMix { outgoing_entry, incoming_entry, kind: plan.kind, seconds: plan.duration };
+        if from == 0 {
+            if let Some(actual) = snapshot.dj_transition.as_ref().filter(|actual| actual.incoming_entry == incoming_entry) {
+                mix.seconds = actual.source_seconds;
+                if mix.seconds == 0. {
+                    mix.kind = Kind::Gapless;
+                } else if (actual.incoming_cue - plan.incoming_cue).abs() > 0.02
+                    || (actual.outgoing_cue - plan.outgoing_cue).abs() > 0.02
+                {
+                    mix.kind = Kind::Crossfade;
+                }
+            }
+            forecast.next = Some((outgoing_entry, incoming_entry, plan));
+        }
+        forecast.mixes.push(mix);
+    }
+    forecast
+}
+
+fn publish_dj_queue(app: &tauri::AppHandle, state: &AppState, mixes: &[QueueMix]) {
+    let mut published = state.dj_queue_mixes.lock().unwrap_or_else(|e| e.into_inner());
+    if published.as_slice() != mixes {
+        *published = mixes.to_vec();
+        drop(published);
+        let _ = app.emit("playback", json!({ "dj_queue_mixes": mixes }));
+    }
+}
+
 #[tauri::command]
 async fn audition(state:tauri::State<'_,AppState>,action:String,track_id:Option<i64>)->ApiResult<Value>{
     let service=state.playback.lock().unwrap_or_else(|e|e.into_inner());
@@ -791,30 +896,8 @@ async fn playback(app: tauri::AppHandle, action: PlaybackAction) -> ApiResult<Va
                         t.title
                     );
                 }
-                let (mut ids, start_index) = sequence(ids, start_index, shuffle)?;
                 let dj_mode = service.snapshot().dj_mode;
-                if dj_mode {
-                    let tracks = ids
-                        .iter()
-                        .map(|id| {
-                            db.get_track_by_id(*id)?
-                                .context("A track is no longer in the library.")
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    let features = crate::analysis::cached_many(
-                        &config.db_path,
-                        &tracks
-                            .iter()
-                            .map(|t| (t.id, t.path.as_str()))
-                            .collect::<Vec<_>>(),
-                    );
-                    let artists = tracks.iter().map(|t| t.artist.as_str()).collect::<Vec<_>>();
-                    let order = dj_order(&features, &artists, start_index + 1, Some(start_index));
-                    let original = ids.clone();
-                    for (offset, index) in order.into_iter().enumerate() {
-                        ids[start_index + 1 + offset] = original[index];
-                    }
-                }
+                let (ids, start_index) = sequence(ids, start_index, shuffle && !dj_mode)?;
                 service.send(LocalPlaybackCommand::SetShuffle(shuffle && !dj_mode))?;
                 LocalPlaybackCommand::PlayTracks { ids, start_index }
             }
@@ -1978,8 +2061,8 @@ pub fn run() {
             std::thread::spawn(move || {
                 let mut last_sent: Option<LocalPlaybackSnapshot> = None;
                 let mut planned=None;
-                let mut planned_at=std::time::Instant::now();
-                let mut arranged=None;
+                let mut dj_queue_stamp=None;
+                let mut dj_queue=DjQueue::default();
                 let mut prioritized_queue=None;
                 let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
                 let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
@@ -2020,40 +2103,55 @@ pub fn run() {
                         if !missing.is_empty()&&state.analysis.start(db.clone(),missing.clone()).is_ok(){for(id,_,_)in missing{if let Some((_,key))=candidates.iter().find(|(t,_)|t.id==id){analysis_requested.insert(id,key.clone());}}}
                      }
 
-                     let window_end=(current+13).min(s.queue.len());
-                     let window=&s.queue[current..window_end];
-                     let queued_ids=window.iter().map(|track|track.id).collect::<Vec<_>>();
-                     let stamp=(s.queue_revision,s.queue_index,config.preserve_energy,state.analysis.pair_revision(&queued_ids));
-                     if window.len()>2&&config.preserve_energy&&s.dj_transition.is_none()&&arranged!=Some(stamp) {
-                      arranged=Some(stamp);
-                      let db=state.config().db_path;
-                      let features=crate::analysis::cached_many(&db,&window.iter().map(|track|(track.id,track.path.as_str())).collect::<Vec<_>>());
-                      let entries=&s.queue_entry_ids[current..window_end];
-                      let pins=entries.iter().enumerate().filter(|(_,id)|s.pinned_entries.contains(id)).map(|(index,_)|index).collect();
-                      let order=crate::dj_plan::order_upcoming(window,1,&pins,|previous,index|{
-                       let a=previous.and_then(|i|features[i].as_ref());let b=features[index].as_ref();
-                       let energy=match(a.and_then(|f|f.structure.as_ref()),b.and_then(|f|f.structure.as_ref())){(Some(a),Some(b))=>(a.energy-b.energy).abs()*2.,_=>0.};
-                       let musical=previous.and_then(|i|crate::dj_plan::plan(analyzed_dj_track(window[i].duration as f32,a),analyzed_dj_track(window[index].duration as f32,b),&config,false)).filter(|p|p.confidence>=0.5).map_or(0.,|p|1.+p.confidence);
-                       crate::analysis::compatibility(a,b)+energy-musical+if previous.is_some_and(|i|window[i].artist==window[index].artist){0.3}else{0.}
-                      });
-                      let ids=order.iter().map(|i|entries[*i]).chain(s.queue_entry_ids[window_end..].iter().copied()).collect::<Vec<_>>();
-                      if ids!=s.queue_entry_ids[current+1..]{let _=client.send(LocalPlaybackCommand::ArrangeUpcoming(ids));std::thread::sleep(Duration::from_millis(100));continue;}
-                     }
                     }}
-                    if !s.dj_mode { planned=None;arranged=None;prioritized_queue=None; }
-                    if s.dj_mode && s.is_playing && s.audition.is_none() && s.dj_transition.is_none() {
-                    let relevant_ids=s.queue_index.map(|i|s.queue.iter().skip(i).take(2).map(|t|t.id).collect::<Vec<_>>()).unwrap_or_default();
-                    let stamp=(s.queue_revision,s.plan_revision,s.queue_index,config.clone(),state.analysis.pair_revision(&relevant_ids));
-                    if planned.as_ref()!=Some(&stamp)||planned_at.elapsed()>Duration::from_secs(3) {planned=Some(stamp);planned_at=std::time::Instant::now();if let Some(index)=s.queue_index {if let Some(next)=(index+1..s.queue.len()).find(|&n|!s.failed_entries.contains(&s.queue_entry_ids[n])).filter(|_|s.repeat!="one") {
-                     let outgoing=&s.queue[index];let incoming=&s.queue[next];let db=state.config().db_path;
-                     let features=crate::analysis::cached_many(&db,&[(outgoing.id,outgoing.path.as_str()),(incoming.id,incoming.path.as_str())]);
-                     let (a,b)=(features[0].as_ref(),features[1].as_ref());
-                     // Album adjacency is not evidence of a continuous passage. Until verified
-                     // continuity metadata exists, use the normal confidence-aware blend.
-                     let contiguous=false;
-                     let plan=crate::dj_plan::plan_after(crate::dj_plan::Track{key_index:a.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:a.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(outgoing.duration as f32),bpm:a.and_then(|f|f.bpm),structure:a.and_then(|f|f.structure.as_ref())},crate::dj_plan::Track{key_index:b.filter(|f|f.key_confidence>=0.5).and_then(|f|f.key_index),duration:b.and_then(|f|f.structure.as_ref()).map(|s|s.duration).unwrap_or(incoming.duration as f32),bpm:b.and_then(|f|f.bpm),structure:b.and_then(|f|f.structure.as_ref())},&config,contiguous,s.position+2.*s.listening.speed);
-                     if let Some(plan)=plan.filter(|p|p.ready_to_schedule(config.mode,s.position,s.listening.speed)){musicos_desktop::local::dj_diagnostics::record("candidate",Some(s.queue_entry_ids[index]),Some(s.queue_entry_ids[next]),format!("{}; confidence {:.2}, cue {:.3}s overlap {:.3}s",plan.reason,plan.confidence,plan.outgoing_cue,plan.duration));if let Err(error)=client.send(LocalPlaybackCommand::PlanTransition(musicos_desktop::local::deck_playback::Transition{request_id:musicos_desktop::local::deck_playback::next_request_id(),outgoing:s.queue_entry_ids[index],incoming:s.queue_entry_ids[next],outgoing_cue:plan.outgoing_cue,incoming_cue:plan.incoming_cue,duration:plan.duration,tempo:plan.incoming_tempo,effect:serde_json::to_value(plan.effect).ok().and_then(|v|v.as_str().map(str::to_owned)).unwrap_or_default()})){planned=None;musicos_desktop::local::dj_diagnostics::record("delivery_failed",None,None,error.to_string());}}
-                    }}}
+                    let current = s.queue_index.filter(|&index| index < s.queue.len() && s.queue.len() == s.queue_entry_ids.len());
+                    if let Some(current) = current.filter(|_| s.dj_mode && s.repeat != "one" && s.audition.is_none()) {
+                        let end = (current + 13).min(s.queue.len());
+                        let window = &s.queue[current..end];
+                        let ids = window.iter().map(|track| track.id).collect::<Vec<_>>();
+                        let stamp = (s.queue_revision, s.plan_revision, current, config.clone(), state.analysis.pair_revision(&ids),
+                            s.dj_transition.as_ref().map(|plan| plan.plan_id));
+                        if dj_queue_stamp.as_ref() != Some(&stamp) {
+                            dj_queue_stamp = Some(stamp);
+                            let features = crate::analysis::cached_many(&state.config().db_path,
+                                &window.iter().map(|track| (track.id, track.path.as_str())).collect::<Vec<_>>());
+                            let forecast = project_dj_queue(&s, current, end, &features, &config);
+                            if forecast.upcoming != s.queue_entry_ids[current + 1..end] && s.dj_transition.is_none() {
+                                let mut order = forecast.upcoming;
+                                order.extend_from_slice(&s.queue_entry_ids[end..]);
+                                if client.send(LocalPlaybackCommand::ArrangeUpcoming { ids: order, revision: s.queue_revision }).is_ok() {
+                                    continue;
+                                }
+                                dj_queue_stamp = None;
+                                dj_queue = DjQueue::default();
+                                publish_dj_queue(&handle, &state, &[]);
+                            } else {
+                                dj_queue = forecast;
+                                publish_dj_queue(&handle, &state, &dj_queue.mixes);
+                            }
+                        }
+                        if s.is_playing && s.dj_transition.is_none() {
+                            if let Some((outgoing, incoming, plan)) = dj_queue.next.as_ref() {
+                                let request = (s.plan_revision, *outgoing, *incoming);
+                                if planned != Some(request) && plan.ready_to_schedule(config.mode, s.position, s.listening.speed) {
+                                    let effect = serde_json::to_value(&plan.effect).ok()
+                                        .and_then(|value| value.as_str().map(str::to_owned)).unwrap_or_default();
+                                    let transition = musicos_desktop::local::deck_playback::Transition {
+                                        request_id: musicos_desktop::local::deck_playback::next_request_id(),
+                                        outgoing: *outgoing, incoming: *incoming, outgoing_cue: plan.outgoing_cue,
+                                        incoming_cue: plan.incoming_cue, duration: plan.duration, tempo: plan.incoming_tempo, effect,
+                                    };
+                                    if client.send(LocalPlaybackCommand::PlanTransition(transition)).is_ok() {
+                                        planned = Some(request);
+                                    }
+                                }
+                            }
+                        }
+                    } else if dj_queue_stamp.take().is_some() {
+                        planned = None;
+                        prioritized_queue = None;
+                        dj_queue = DjQueue::default();
+                        publish_dj_queue(&handle, &state, &[]);
                     }
 
                     let queue_changed = last_sent.as_ref().is_none_or(|last| last.queue_revision != s.queue_revision);
@@ -2114,6 +2212,47 @@ mod tests {
         snapshot.queue_index=Some(2);snapshot.position=163.7;snapshot.volume=0.4;
         let saved=saved_playback(&snapshot);assert_eq!(saved.queue_index,2);assert_eq!(saved.position,163.7);assert_eq!(saved.volume,0.4);
     }
+    #[test]
+    fn dj_queue_previews_the_beats_in_the_order_it_selects() {
+        let mut snapshot = LocalPlaybackSnapshot {
+            queue: [1, 2, 3, 2, 4].map(|id| Track { id, duration: 180, available: true, ..Default::default() }).into(),
+            queue_entry_ids: vec![11, 12, 13, 14, 15],
+            pinned_entries: vec![14],
+            queue_index: Some(0),
+            dj_mode: true,
+            ..Default::default()
+        };
+        let feature = |id, period: f32| Some(crate::analysis::Features {
+            track_id: id, bpm: Some(60. / period), bpm_confidence: 0.9, key: None, key_index: None,
+            key_confidence: 0.,
+            structure: Some(crate::structure::Structure {
+                duration: 180.,
+                beat_confidence: 0.9,
+                beats: (0..400).map(|i| i as f32 * period).collect(),
+                ..Default::default()
+            }),
+        });
+        let features = [feature(1, 0.5), feature(2, 0.68), feature(3, 0.51), feature(2, 0.68), None];
+        let config = crate::dj_plan::Config { enabled: true, ..Default::default() };
+        let forecast = project_dj_queue(&snapshot, 0, 5, &features, &config);
+        assert_eq!(forecast.upcoming[0], 13);
+        assert_eq!(forecast.upcoming[2], 14);
+        let (outgoing, incoming, mix) = forecast.next.unwrap();
+        assert_eq!((outgoing, incoming, mix.kind), (11, 13, crate::dj_plan::Kind::BeatMatch));
+        assert_eq!(forecast.mixes[0].seconds, mix.duration);
+        let order = [11].into_iter().chain(forecast.upcoming.iter().copied()).collect::<Vec<_>>();
+        assert_eq!(forecast.mixes.iter().map(|mix| (mix.outgoing_entry, mix.incoming_entry)).collect::<Vec<_>>(),
+            order.windows(2).map(|pair| (pair[0], pair[1])).collect::<Vec<_>>());
+
+        snapshot.dj_transition = Some(TransitionStatus {
+            outgoing_entry: 11, incoming_entry: 12, plan_id: 20, active: false, status: "scheduled",
+            outgoing_cue: 180., incoming_cue: 0., seconds: 0., source_seconds: 0., tempo: 1.,
+        });
+        let locked = project_dj_queue(&snapshot, 0, 5, &features, &config);
+        assert_eq!(locked.upcoming, [12, 13, 14, 15]);
+        assert_eq!(locked.mixes[0].kind, crate::dj_plan::Kind::Gapless);
+    }
+
     #[test]
     fn dj_order_preserves_anchor_and_prefers_compatible_upcoming_tracks() {
         let feature = |id, bpm, key| {

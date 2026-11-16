@@ -24,8 +24,8 @@ export default function MiniPlayer({preview=false,density="standard",player,cove
  const upcomingCount=Math.max(0,player.queue.length-(player.queue_index===null?0:player.queue_index+1));
  const queueContent=useMemo(()=>{
   const offset=player.queue_index===null?0:player.queue_index+1,upcoming=player.queue.slice(offset);
-  return upcoming.length?<QueueRows tracks={upcoming} entryIds={player.queue_entry_ids?.slice(offset)} arranged={player.arranged_entries} pinned={player.pinned_entries} current={null} scale={.625} firstLabel={density!=="standard"?"Up next":undefined} onSelect={index=>void onAction({type:'select',index:index+offset})} onRemove={index=>void onAction({type:'remove',index:index+offset})} onMove={(from,to)=>void onAction({type:'move',from:from+offset,to:to+offset})}/>:<p className="mini-queue-empty">Nothing up next.<span>Add music in Library.</span></p>;
- },[player.queue,player.queue_entry_ids,player.queue_index,player.arranged_entries,player.pinned_entries,onAction,density]);
+  return upcoming.length?<QueueRows tracks={upcoming} entryIds={player.queue_entry_ids?.slice(offset)} arranged={player.arranged_entries} pinned={player.pinned_entries} mixes={player.dj_mode?player.dj_queue_mixes:undefined} precedingEntry={player.queue_entry_ids?.[offset-1]} current={null} scale={.625} firstLabel={density!=="standard"?"Up next":undefined} onSelect={index=>void onAction({type:'select',index:index+offset})} onRemove={index=>void onAction({type:'remove',index:index+offset})} onMove={(from,to)=>void onAction({type:'move',from:from+offset,to:to+offset})}/>:<p className="mini-queue-empty">Nothing up next.<span>Add music in Library.</span></p>;
+ },[player.queue,player.queue_entry_ids,player.queue_index,player.arranged_entries,player.pinned_entries,player.dj_mode,player.dj_queue_mixes,onAction,density]);
  const actions=useRef({onMode});actions.current={onMode};
  const root=useRef<HTMLElement>(null);
  useLayoutEffect(()=>{if(!preview&&root.current)return animateOwned(root.current,'mini-window-enter',[{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}],180);},[preview]);
