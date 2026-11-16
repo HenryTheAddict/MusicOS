@@ -97,6 +97,46 @@ pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
             return Some(Tail { drop, cue, overlap });
         }
     }
+    gradual_tail(envelope, duration, first)
+}
+
+fn gradual_tail(envelope: Envelope<'_>, duration: f32, first: f32) -> Option<Tail> {
+    const WINDOW: f32 = 1.5;
+    let ending = envelope.mean(duration - WINDOW, duration)?;
+    // Compare long windows so a few quiet beats cannot trigger this path.
+    let start = (duration - 5.5).max(first);
+    let mut cue = start;
+    while cue <= duration - 2. {
+        let reference = envelope.mean(cue - 5., cue - 3.);
+        let before = envelope.mean(cue - 3., cue - WINDOW);
+        let current = envelope.mean(cue - WINDOW * 0.5, cue + WINDOW * 0.5);
+        if let (Some(reference), Some(before), Some(current)) = (reference, before, current) {
+            if reference >= 0.002 && before >= reference * 0.72
+                && current <= before * 0.85 && current <= reference * 0.68
+                && ending <= current * 0.72
+            {
+                let mut window = cue + WINDOW * 0.5;
+                let mut level = current;
+                let mut falling = true;
+                while window + 0.5 <= duration {
+                    let Some(next) = envelope.mean(window, (window + WINDOW).min(duration)) else {
+                        falling = false;
+                        break;
+                    };
+                    if next > level + reference * 0.085 {
+                        falling = false;
+                        break;
+                    }
+                    level = level.min(next);
+                    window += WINDOW * 0.5;
+                }
+                if falling {
+                    return Some(Tail { drop: cue, cue, overlap: duration - cue });
+                }
+            }
+        }
+        cue += 0.25;
+    }
     None
 }
 
@@ -154,6 +194,19 @@ mod tests {
         samples[220..].fill(0.);
         let fade = tail(envelope(&samples), 60.).unwrap();
         assert!(fade.cue < fade.drop);
+    }
+
+    #[test]
+    fn slow_fade_uses_the_energy_decline_and_keeps_its_final_notes() {
+        let mut samples = vec![0.7; 240];
+        for (i, value) in samples[213..].iter_mut().enumerate() {
+            *value = 0.7 - i as f32 * 0.016;
+        }
+        let fade = tail(envelope(&samples), 60.).expect("gradual fade");
+        assert!((56. ..=58.).contains(&fade.cue));
+        assert_eq!(fade.cue + fade.overlap, 60.);
+        samples[232..].fill(0.7);
+        assert!(tail(envelope(&samples), 60.).is_none());
     }
 
     #[test]

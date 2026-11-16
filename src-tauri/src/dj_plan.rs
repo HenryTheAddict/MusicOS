@@ -207,7 +207,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     let duration = end - cue;
                     if cue < earliest_cue || !(2. ..=max_overlap).contains(&duration)
                         || !preserves_section(sa, cue)
-                        || outgoing_tail.is_some_and(|t| cue < t.drop - 2. || cue > t.drop + 3.)
+                        || outgoing_tail.is_some_and(|t| cue < t.cue - 0.45 || cue > t.drop + 1.25)
                         || incoming_cue + duration * tempo >= incoming_length
                     {
                         continue;

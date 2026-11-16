@@ -56,3 +56,37 @@ test('final WebKit sample can arrive after phase end and resized pages still pre
  await expect(target.locator('.collection-grid')).toBeVisible();
  await expect(page.locator('.back-page-preview')).toHaveCount(0);
 });
+
+test('Back holds the landed artwork while the live tile is still a placeholder',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await expect(page.locator('.album-cover-transfer')).toHaveCount(0);
+ const id=await page.locator('.album-detail').getAttribute('data-album-id');
+ await page.evaluate(id=>{
+  const column=document.querySelector('.content-column')!;
+  const observer=new MutationObserver(()=>{
+   if(column.getAttribute('data-back-swipe')!=='handoff')return;
+   const live=column.querySelector<HTMLImageElement>(`#library-content [data-collection-id="${CSS.escape(id!)}"] img.cover`);
+   if(!live)return;
+   observer.disconnect();
+   live.classList.add('placeholder');
+   (window as any).releaseLiveCover=()=>live.classList.remove('placeholder');
+  });
+  observer.observe(column,{attributes:true,attributeFilter:['data-back-swipe']});
+ },id);
+ await page.locator('.album-detail h1').hover();
+ await phase(page,1);
+ await page.mouse.wheel(-1400,0);
+ await phase(page,2);
+ const handoff=page.locator('.content-column[data-back-swipe="handoff"]');
+ await expect(handoff).toHaveCount(1);
+ const result=await page.evaluate(async()=>{
+  await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const kept=!!document.querySelector('.swipe-cover-transfer');
+  (window as any).releaseLiveCover();
+  return kept;
+ });
+ expect(result).toBe(true);
+ await expect(page.locator('.swipe-cover-transfer,.back-page-preview')).toHaveCount(0);
+});

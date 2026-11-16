@@ -80,6 +80,8 @@ impl Preferences {
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
         self.listening=self.listening.normalize();
+        self.dj_config.mode = crate::dj_plan::Mode::SmartTransition;
+        self.dj_config.preserve_energy = true;
         self.appearance=self.appearance.normalize();
         self.coverflow_colors=self.appearance.source=="artwork";
         if !["recent","title"].contains(&self.library_filters.sort.as_str()){self.library_filters.sort="recent".into();}

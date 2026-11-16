@@ -1,6 +1,8 @@
-import {render, screen, within} from '@testing-library/react';
-import {expect, test} from 'vitest';
+import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
+import {expect, test, vi} from 'vitest';
 import {QueueRows} from '../src/components';
+import AudioPanel from '../src/AudioPanel';
+import {emptyPlayback} from '../src/bridge';
 import type {QueueMix, Track} from '../src/types';
 
 test('transition labels follow the exact neighboring queue entries after a move', () => {
@@ -23,4 +25,24 @@ test('transition labels follow the exact neighboring queue entries after a move'
  expect(plays()[0]).not.toHaveAccessibleDescription();
  expect(plays()[1]).not.toHaveAccessibleDescription();
  expect(plays()[2]).not.toHaveAccessibleDescription();
+});
+
+test('the DJ switch sends one action and the orbit follows active playback', async () => {
+ const player = {...emptyPlayback, dj_mode: true, is_playing: true, dj_transition: {
+  outgoing_entry: 10, incoming_entry: 11, active: true, status: 'active' as const,
+  outgoing_cue: 172, incoming_cue: 0, seconds: 5, tempo: 1,
+ }};
+ const onAction = vi.fn().mockResolvedValue(undefined);
+ const props = {scale: 1, presentation: 'embedded' as const, onClose: () => {}, onSettings: () => {}, onAction};
+ const {container, rerender} = render(<AudioPanel {...props} player={player}/>);
+ const switchControl = screen.getByRole('switch', {name: 'DJ mode'});
+ expect(switchControl).toBeChecked();
+ expect(container.querySelector('.queue-dj')).toHaveAttribute('data-mixing', 'true');
+ expect(container.querySelectorAll('.dj-orbit')).toHaveLength(2);
+ expect(screen.getByRole('status')).toHaveTextContent('Mixing');
+ fireEvent.click(switchControl);
+ expect(onAction).toHaveBeenCalledExactlyOnceWith({type: 'dj_mode', enabled: false});
+ await waitFor(() => expect(switchControl).toBeEnabled());
+ rerender(<AudioPanel {...props} player={{...player, is_playing: false}}/>);
+ expect(container.querySelector('.queue-dj')).not.toHaveAttribute('data-mixing');
 });

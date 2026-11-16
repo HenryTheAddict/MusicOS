@@ -205,7 +205,18 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    // Keep the destination visible while the live page restores layout and paints.
    delete page.dataset.swiping;
    animation?.cancel();animation=null;
-   handoffFrame=requestAnimationFrame(()=>{handoffFrame=requestAnimationFrame(clear);});
+   const deadline=performance.now()+260;
+   const swap=()=>{
+    if(disposed||owner!==release)return;
+    if(cover&&!cover.destinationPaintable()&&performance.now()<deadline){
+     handoffFrame=requestAnimationFrame(swap);
+     return;
+    }
+    // Leave the transfer over the first decoded paint; otherwise WebKit can
+    // show the destination placeholder for a frame as the overlay disappears.
+    handoffFrame=requestAnimationFrame(clear);
+   };
+   handoffFrame=requestAnimationFrame(swap);
   };
   // A fast swipe can finish the geometry almost instantly. Give the
   // broad palette change its own minimum travel so it cannot flash one frame.

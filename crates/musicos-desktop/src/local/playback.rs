@@ -400,6 +400,7 @@ fn playback_loop(
                 remote_reply=Some((reply,result));
             }
             Ok(LocalPlaybackCommand::ArrangeUpcoming { revision, .. }) if revision != queue_revision || !dj_mode => {}
+            Ok(LocalPlaybackCommand::PlanTransition(_)) if !dj_mode => {}
             Ok(command) => {
                 if let LocalPlaybackCommand::SetDjMode(enabled) = &command {
                     dj_mode = *enabled;

@@ -1,7 +1,7 @@
 import {haptic} from './haptics';
 import {KeepView} from './ViewScope';
 import {usePlayerHandoff} from './usePlayerHandoff';
-import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
+import {useEffect,useLayoutEffect,useId,useRef,useState,type CSSProperties} from 'react';
 import {Cover,Icon,QueueRows,duration} from './components';
 import LyricsView from './LyricsView';
 import ThemedSwitch from './ThemedSwitch';
@@ -10,8 +10,27 @@ import {useViewActive} from './ViewScope';
 
 import {songDragFeedback,type SongDrag} from './songDrag';
 import type {Playback,PlaybackAction} from './types';
+function DjModeIcon(){
+ const gradient=useId();
+ return <svg className="dj-mode-icon" viewBox="0 0 32 32" aria-hidden="true" fill="none">
+  <defs><linearGradient id={gradient} x2="0%" y2="100%">
+   <stop stopColor="currentColor" stopOpacity=".18"/>
+   <stop offset=".8" stopColor="currentColor"/>
+  </linearGradient></defs>
+  <g className="dj-orbit dj-orbit-first"><circle cx="13" cy="19" r="7" stroke={`url(#${gradient})`} strokeWidth="2"/></g>
+  <g className="dj-orbit dj-orbit-second"><circle cx="19" cy="13" r="6" stroke={`url(#${gradient})`} strokeWidth="4"/></g>
+ </svg>;
+}
+
 export default function AudioPanel({player,scale,presentation,closing=false,onClose,onAction,onSettings,theme,view='queue'}:{view?:'queue'|'lyrics';theme?:CSSProperties;player:Playback;scale:number;closing?:boolean;presentation:'sidebar'|'floating'|'embedded';onClose:()=>void;onAction:(action:PlaybackAction)=>void|Promise<void>;onSettings:()=>void}){
  const active=useViewActive();
+ const [changingDj,setChangingDj]=useState(false);
+ const mixing=active&&!closing&&view==='queue'&&player.is_playing&&player.dj_transition?.active===true;
+ async function changeDj(enabled:boolean){
+  setChangingDj(true);
+  try{await onAction({type:'dj_mode',enabled});}
+  finally{setChangingDj(false);}
+ }
  const offset=player.queue_index===null?0:player.queue_index+1,upcoming=player.queue.slice(offset);
  const panel=useRef<HTMLElement>(null),opener=useRef(document.querySelector<HTMLElement>('[aria-label="Open Up next"]')??document.activeElement as HTMLElement|null);
  usePlayerHandoff(panel,player.track?.id,view,player.queue_entry_ids?.[player.queue_index??-1]);
@@ -71,7 +90,7 @@ export default function AudioPanel({player,scale,presentation,closing=false,onCl
  },[embedded]);
  return <aside style={theme} data-embedded={presentation==='embedded'||undefined} data-closing={closing} aria-hidden={closing} inert={closing} data-song-drop={songDrop} ref={panel} className={`audio-panel queue-panel ${docked?'audio-docked':'audio-floating'}`} aria-label={view==='lyrics'?'Lyrics':'Up next'}><ListeningPanelHeader title={view==='lyrics'?'Lyrics':'Up next'} closeLabel={view==='lyrics'?'Close lyrics':'Close Up next'} onClose={onClose} track={player.track}/>
 
- <KeepView className="retained-queue" active={view==='queue'}><div className="queue-dj"><Icon name="DJmode"/><ThemedSwitch label="DJ mode" checked={!!player.dj_mode} onChange={enabled=>onAction({type:"dj_mode",enabled})}/>{player.dj_transition?.status==='active'&&<small role="status">Mixing</small>}</div>
+ <KeepView className="retained-queue" active={view==='queue'}><div className="queue-dj" data-mixing={mixing||undefined}><DjModeIcon/><ThemedSwitch label="DJ mode" checked={!!player.dj_mode} disabled={changingDj} onChange={enabled=>void changeDj(enabled)}/>{mixing&&<span className="sr-only" role="status">Mixing</span>}</div>
  <div className="audio-up-next"><small>{upcoming.length} songs · {duration(upcoming.reduce((sum,t)=>sum+t.duration,0))}</small>{upcoming.length>0&&<button onClick={()=>onAction({type:'clear_upcoming'})}>Clear upcoming</button>}</div>
  {upcoming.length?<QueueRows tracks={upcoming} entryIds={player.queue_entry_ids?.slice(offset)} arranged={player.arranged_entries} pinned={player.pinned_entries} mixes={player.dj_mode?player.dj_queue_mixes:undefined} precedingEntry={player.queue_entry_ids?.[offset-1]} current={null} scale={scale} onSelect={index=>onAction({type:'select',index:index+offset})} onRemove={index=>onAction({type:'remove',index:index+offset})} onMove={(from,to)=>onAction({type:'move',from:from+offset,to:to+offset})}/>:<div className="queue-empty"><Icon name="Song"/><strong>Your next listen starts here</strong><p>Play an album or add songs to Up next.</p></div>}</KeepView><KeepView className="retained-panel-lyrics" active={view==='lyrics'}><LyricsView variant="panel" track={player.track??undefined} player={player} active={active&&!closing} onSeek={async position=>{await onAction({type:'seek',position});}} onPlay={async()=>{}}/></KeepView>
  </aside>;

@@ -672,26 +672,16 @@ async fn refresh_library(app: tauri::AppHandle) -> ApiResult<library::Library> {
 #[tauri::command]
 fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResult<Preferences> {
     preferences.validate().map_err(AppError::from)?;
-    let normalized = preferences.normalize();
-    let previous = state
-        .preferences
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
-    preferences::save(&normalized).map_err(AppError::from)?;
-    *state.preferences.lock().unwrap_or_else(|e| e.into_inner()) = normalized.clone();
+    let mut normalized = preferences.normalize();
+    let previous = {
+        let mut current = state.preferences.lock().unwrap_or_else(|e| e.into_inner());
+        // The playback switch owns DJ mode. A settings save can carry an older copy.
+        normalized.dj_config.enabled = current.dj_config.enabled;
+        preferences::save(&normalized).map_err(AppError::from)?;
+        std::mem::replace(&mut *current, normalized.clone())
+    };
     if previous.sparklist_beta && !normalized.sparklist_beta {let _=state.analysis.control("cancel");crate::spark_install::cancel();}
     if previous.listening != normalized.listening || {let s=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();s.listening!=normalized.listening||!s.listening_applied||(s.applied_reverb-normalized.listening.reverb).abs()>0.001||(s.applied_reverb_depth-normalized.listening.reverb_depth).abs()>0.001} {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
-    if previous.dj_config.enabled != normalized.dj_config.enabled {
-        state
-            .playback
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .send(LocalPlaybackCommand::SetDjMode(
-                normalized.dj_config.enabled,
-            ))
-            .map_err(AppError::from)?;
-    }
     Ok(normalized)
 }
 fn analyzed_dj_track(duration:f32,f:Option<&crate::analysis::Features>)->crate::dj_plan::Track<'_>{
@@ -902,12 +892,26 @@ async fn playback(app: tauri::AppHandle, action: PlaybackAction) -> ApiResult<Va
                 LocalPlaybackCommand::PlayTracks { ids, start_index }
             }
             PlaybackAction::DjMode { enabled } => {
-                let mut prefs = state.preferences.lock().unwrap_or_else(|e| e.into_inner());
-                let mut next = prefs.clone();
-                next.dj_config.enabled = enabled;
-                preferences::save(&next)?;
-                *prefs = next;
-                LocalPlaybackCommand::SetDjMode(enabled)
+                {
+                    let mut prefs = state.preferences.lock().unwrap_or_else(|e| e.into_inner());
+                    let mut next = prefs.clone().normalize();
+                    next.dj_config.enabled = enabled;
+                    preferences::save(&next)?;
+                    *prefs = next;
+                }
+                let client = service.client();
+                let mut snapshot = client.snapshot();
+                if snapshot.dj_mode != enabled {
+                    client.send(LocalPlaybackCommand::SetDjMode(enabled))?;
+                    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+                    while snapshot.dj_mode != enabled {
+                        snapshot = client.wait_for_snapshot(Some(snapshot.revision),
+                            deadline.saturating_duration_since(std::time::Instant::now()))
+                            .context("DJ mode did not respond")?;
+                    }
+                }
+                drop(service);
+                return Ok(playback_value(&state));
             }
             PlaybackAction::DjOrder => {
                 anyhow::ensure!(
