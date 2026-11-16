@@ -47,12 +47,33 @@ test("100% smooth artwork matches Sketch exported control points and scales its 
   expect(smoothPath(256,256,32,1)).toContain("30.1699");
   expect(smoothPath(128,128,16,.6)).not.toEqual(path);
 });
-test('time visibility and confirmed transition marks follow authoritative state',()=>{
+test('the rail marks planned and active mixes for the exact queue entry without adding a hit target',async()=>{
  const seek=vi.fn().mockResolvedValue(undefined);
- const transition={outgoing_entry:1,incoming_entry:2,status:'preparing' as const,active:false,outgoing_cue:178,incoming_cue:0,seconds:2,tempo:1};
- const {container,rerender}=render(<PlaybackProgress trackId={1} position={60} duration={180} seek={seek} transition={transition}/>);
- expect(container.querySelector('output')).toHaveTextContent('1:00 / 3:00');expect(container.querySelector('.transition-region')).toBeNull();
- rerender(<PlaybackProgress trackId={1} position={60} duration={180} seek={seek} showTime={false} transition={{...transition,status:'scheduled'}}/>);
- expect(container.querySelector('output')).toBeNull();expect(screen.getByRole('button',{name:/DJ transition scheduled at 2:58/})).toBeInTheDocument();
- rerender(<PlaybackProgress trackId={1} position={61} duration={180} seek={seek}/>);expect(container.querySelector('.transition-region')).toBeNull();
+ const plannedMix={outgoing_entry:1,incoming_entry:2,kind:'beat_match' as const,outgoing_cue:170,seconds:10};
+ const transition={outgoing_entry:1,incoming_entry:2,status:'scheduled' as const,active:false,
+  outgoing_cue:172,incoming_cue:1,seconds:8,source_seconds:8,tempo:1.05};
+ const props={trackId:1,entryId:1,djMode:true,position:60,duration:180,seek,live:false,plannedMix};
+ const {container,rerender}=render(<PlaybackProgress {...props}/>);
+ const band=()=>container.querySelector('.transition-region');
+ const slider=()=>screen.getByRole('slider');
+ expect(container.querySelector('output')).toHaveTextContent('1:00 / 3:00');
+ expect(band()).toHaveAttribute('data-state','planned');
+ expect(slider()).toHaveAccessibleDescription('AutoMix planned, 2:50 to 3:00');
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();
+ fireEvent.change(slider(),{target:{value:'174'}});
+ await waitFor(()=>expect(seek).toHaveBeenCalledExactlyOnceWith(174));
+
+ rerender(<PlaybackProgress {...props} transition={transition} showTime={false}/>);
+ expect(container.querySelector('output')).toBeNull();
+ expect(band()).toHaveAttribute('data-state','scheduled');
+ expect(slider()).toHaveAccessibleDescription('AutoMix scheduled, 2:52 to 3:00');
+
+ rerender(<PlaybackProgress {...props} entryId={2} duration={220} transition={{...transition,active:true}}/>);
+ expect(band()).toHaveAttribute('data-state','active');
+ expect(slider()).toHaveAccessibleDescription('AutoMix active, 0:01 to 0:09');
+
+ rerender(<PlaybackProgress {...props} entryId={3} transition={transition}/>);
+ expect(band()).toBeNull();
+ rerender(<PlaybackProgress {...props} djMode={false} transition={transition}/>);
+ expect(band()).toBeNull();
 });

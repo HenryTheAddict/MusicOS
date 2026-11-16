@@ -15,7 +15,7 @@ const colored=(color:string)=>{const c=rgb(color),hi=Math.max(...c),difference=h
 function artworkAccent(color:string,dark:boolean){
  const channels=rgb(color),hi=Math.max(...channels),lo=Math.min(...channels),chroma=hi-lo;
  if(!chroma)return dark?'#b7bac3':'#535965';
- const ceiling=dark?220:168,saturation=Math.min(.72,chroma/Math.max(1,hi)),floor=ceiling*(1-saturation);
+ const ceiling=dark?204:168,saturation=Math.min(.72,chroma/Math.max(1,hi)),floor=ceiling*(1-saturation);
  return hex(channels.map(channel=>floor+(channel-lo)/chroma*(ceiling-floor)));
 }
 export function themePalette(a:Appearance,art:Palette|null,systemDark:boolean):Palette|null{
@@ -32,8 +32,8 @@ export function themePalette(a:Appearance,art:Palette|null,systemDark:boolean):P
   // Monochrome artwork and a zero tint retain the neutral charcoal foundation.
   const tint=Math.max(0,Math.min(40,a.tint))/100;
   const tone=a.source==='artwork'&&!artworkColor?null:color;
-  let background=tone?mix('#202124',tone,tint*.45):'#202124';
-  let blob=tone?mix('#2b2d32',tone,tint*.5):'#2b2d32';
+  let background=tone?mix('#202124',tone,tint*.33):'#202124';
+  let blob=tone?mix('#2b2d32',tone,tint*.40):'#2b2d32';
   for(let n=0;n<30&&contrast(ink,background)<7;n++)background=mix(background,'#202124',.08);
   for(let n=0;n<30&&contrast(ink,blob)<7;n++)blob=mix(blob,'#202124',.08);
   for(let n=0;n<30&&Math.min(contrast(accent,background),contrast(accent,blob))<4.5;n++)accent=mix(accent,'#ffffff',.08);

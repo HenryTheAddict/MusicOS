@@ -39,6 +39,7 @@ test('the DJ switch sends one action and the orbit follows active playback', asy
  expect(switchControl).toBeChecked();
  expect(container.querySelector('.queue-dj')).toHaveAttribute('data-mixing', 'true');
  expect(container.querySelectorAll('.dj-orbit')).toHaveLength(2);
+ expect([...container.querySelectorAll('.dj-letter > b')].map(letter=>letter.textContent).join('')).toBe('DJ mode');
  expect(screen.getByRole('status')).toHaveTextContent('Mixing');
  fireEvent.click(switchControl);
  expect(onAction).toHaveBeenCalledExactlyOnceWith({type: 'dj_mode', enabled: false});

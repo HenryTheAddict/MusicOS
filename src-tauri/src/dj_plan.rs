@@ -112,9 +112,16 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
         });
     }
     let fallback = |reason:&str| {
-        let duration = 2_f32.min(length / 4.).min(incoming_length / 4.);
+        let limit: f32 = if config.mode == Mode::FullSong { 2. } else { 3.5 };
+        let duration = limit.min(length / 4.).min(incoming_length / 4.);
+        let duration = if config.mode == Mode::SmartTransition {
+            let available = duration.min((length - earliest).max(0.));
+            if available < 2. { 0. } else { available }
+        } else {
+            duration
+        };
         Plan {
-            kind: Kind::Crossfade,
+            kind: if duration > 0. { Kind::Crossfade } else { Kind::Gapless },
             outgoing_cue: length - duration,
             incoming_cue: 0.,
             duration,
@@ -150,7 +157,9 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                 reason: "Sustained drop in outro energy".into(),
             };
         }
-        Plan { incoming_cue, ..fallback(reason) }
+        let mut plan = fallback(reason);
+        if plan.duration > 0. { plan.incoming_cue = incoming_cue; }
+        plan
     };
     if length < 45. || incoming_length < 30. {
         return Some(ending("Short track"));
@@ -171,9 +180,9 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
     if !valid_beats(&sa.beats)||!valid_beats(&sb.beats) {
         return Some(ending("Measured beats unavailable"));
     }
-    let earliest_cue = (length - 12.).max(earliest);
+    let earliest_cue = (length - 16.).max(earliest);
     let earliest_anchor_end = outgoing_tail.map_or(length - 2.25, |tail| tail.drop - 1.25);
-    let max_overlap = if config.character == Character::Subtle { 8. } else { 12. };
+    let max_overlap = if config.character == Character::Subtle { 12. } else { 16. };
     let tail_start = sa.beats.partition_point(|&beat| beat < earliest_cue);
     let tail_end = sa.beats.partition_point(|&beat| beat <= length);
     let head_start = sb.beats.partition_point(|&beat| beat < incoming_cue);
@@ -181,7 +190,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
     let mut best: Option<(f32, Plan)> = None;
     let exits = transition_boundaries(sa);
     let entries = transition_boundaries(sb);
-    for count in [4_usize, 8, 16] {
+    for count in [4_usize, 8, 12, 16, 24, 32] {
         for (a_step, b_step) in [(1, 1), (1, 2), (2, 1)] {
             let a_count = count * a_step;
             let b_count = count * b_step;
@@ -197,7 +206,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     if anchor_end < earliest_anchor_end { continue; }
                     // Let the fade cover the last note after the measured beat window.
                     let end = outgoing_tail.map_or(length, |tail| anchor_end.max(tail.drop));
-                    if !preserves_section(sa, end) { continue; }
+                    if end < length - 12. || !preserves_section(sa, end) { continue; }
                     let a_span = anchor_end - a_beats[0];
                     let tempo = b_span / a_span;
                     if !(0.94..=1.06).contains(&tempo) || !stable_window(a_beats, ba) { continue; }
@@ -216,7 +225,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     let rhythmic_confidence = sa.beat_confidence.min(sb.beat_confidence);
                     // A structural cue strengthens the timing. Without one, rely on a
                     // stronger measured grid and a short overlap near the song ending.
-                    if exit_confidence < 0.5 && (rhythmic_confidence < 0.58 || duration > 6.) {
+                    if exit_confidence < 0.5 && rhythmic_confidence < (if duration > 7. { 0.70 } else { 0.58 }) {
                         continue;
                     }
                     let drift = (0..=count)
@@ -229,12 +238,16 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     let dense_overlap = outgoing_density * incoming_density;
                     let harmonic = harmonic_distance(a.key_index, b.key_index);
                     let energy = (outgoing_density - incoming_density).abs();
+                    // Avoid long stretches with two full arrangements competing. Favor
+                    // a longer phrase when the measured outro or intro leaves space.
+                    if duration > 8. && dense_overlap > 0.38 { continue; }
+                    let preferred_duration = if dense_overlap < 0.25 { 10. } else { 6. };
                     let target = outgoing_tail.map_or(length, |t| t.drop);
                     let cut = if outgoing_tail.is_some() { (cue - target).abs() } else { length - end };
                     let confidence = rhythmic_confidence.min(exit_confidence.max(0.5) + 0.12);
                     let score = cut * 0.10 + dense_overlap * 0.35 + harmonic * 0.15 + energy * 0.2
                         + (1. - confidence) * 0.25 + drift / 0.05 * 0.2 + lead * 0.075
-                        + (duration - 5.).abs() * 0.015 - exit_confidence * 0.14 - entry_confidence * 0.05
+                        + (duration - preferred_duration).abs() * 0.025 - exit_confidence * 0.14 - entry_confidence * 0.05
                         + if a_step == b_step { 0. } else { 0.06 };
                     let effect = if config.character == Character::Subtle || dense_overlap < 0.2 {
                         Effect::CleanBlend
@@ -358,7 +371,7 @@ mod tests {
     #[test]
     fn same_album_adjacency_does_not_imply_a_continuous_passage() {
         let p=plan(track(180.,None,None),track(180.,None,None),&config(),false).unwrap();
-        assert_eq!(p.duration,2.);assert_eq!(p.outgoing_cue,178.);
+        assert_eq!(p.duration,3.5);assert_eq!(p.outgoing_cue,176.5);
         let p=plan(track(180.,None,None),track(180.,None,None),&config(),true).unwrap();
         assert_eq!(p.duration,0.);assert_eq!(p.incoming_cue,0.);
     }
@@ -476,6 +489,27 @@ mod tests {
         let ai=boundary_beat(&a.beats,p.outgoing_cue).unwrap();let bi=boundary_beat(&b.beats,p.incoming_cue).unwrap();
         for j in 0..=16 {let drift=((a.beats[ai+j]-p.outgoing_cue)-(b.beats[bi+j]-p.incoming_cue)/p.incoming_tempo).abs();assert!(drift<=0.05);}
     }
+    #[test]
+    fn gives_open_arrangements_longer_blends_than_dense_pairs() {
+        let mut a = measured(0.5);
+        let mut b = measured(0.5);
+        a.energy_step = 0.25;
+        b.energy_step = 0.25;
+        a.envelope = vec![0.3; 720];
+        b.envelope = vec![0.25; 720];
+        let blend = |a:&Structure,b:&Structure| plan(
+            track(180., Some(120.), Some(a)), track(180., Some(120.), Some(b)), &config(), false,
+        ).unwrap();
+        let spacious = blend(&a,&b);
+        assert_eq!(spacious.kind, Kind::BeatMatch);
+        assert!((9. ..=12.).contains(&spacious.duration), "{spacious:?}");
+        a.envelope.fill(0.85);
+        b.envelope.fill(0.9);
+        let dense = blend(&a,&b);
+        assert!(dense.duration <= 8.);
+        assert_eq!(spacious.outgoing_cue + spacious.duration, 180.);
+        assert_eq!(dense.outgoing_cue + dense.duration, 180.);
+    }
     #[test]fn constant_ratio_cannot_hide_local_drift(){
         let a=measured(0.5);let mut b=measured(0.5);
         for (i,beat) in b.beats.iter_mut().enumerate(){if i%2==1{*beat+=0.055;}}
@@ -487,7 +521,7 @@ mod tests {
         let p=plan_after(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false,162.).unwrap();
         assert!(p.outgoing_cue>=162.);assert!(p.confidence>=0.5);
         let p=plan_after(track(180.,Some(120.),Some(&a)),track(180.,Some(120.),Some(&b)),&config(),false,178.1).unwrap();
-        assert_eq!(p.kind,Kind::Crossfade);assert_eq!(p.outgoing_cue,178.);
+        assert_eq!(p.kind,Kind::Gapless);assert_eq!(p.outgoing_cue,180.);
     }
     #[test]fn overlap_must_not_finish_inside_a_protected_section(){
         let mut a=measured(0.5);let b=measured(0.5);
@@ -559,11 +593,12 @@ mod tests {
         let measured = plan(a, b, &config(), false).unwrap();
         assert!((53.5..=54.5).contains(&measured.outgoing_cue));
         assert_eq!(measured.incoming_cue, 1.75);
-        assert!(measured.outgoing_cue + measured.duration < 60.);
+        assert_eq!(measured.outgoing_cue + measured.duration, 60.);
+        assert!(measured.duration > 5.);
         assert_eq!(measured.incoming_tempo, 1.);
         let passed = plan_after(a, b, &config(), false, 56.).unwrap();
-        assert_eq!(passed.outgoing_cue, 58.);
-        assert_eq!(passed.duration, 2.);
+        assert_eq!(passed.outgoing_cue, 56.5);
+        assert_eq!(passed.duration, 3.5);
         let mut full = config();
         full.mode = Mode::FullSong;
         let full = plan(a, b, &full, false).unwrap();

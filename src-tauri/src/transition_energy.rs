@@ -92,7 +92,7 @@ pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
             .mean(drop, (drop + 1.).min(duration))
             .is_some_and(|v| v < before * 0.09);
         let cue = if near_silence { drop - 0.65 } else { drop };
-        let overlap = (duration - cue).min(if near_silence { 3. } else { 4.5 });
+        let overlap = (duration - cue).min(if near_silence { 3. } else { 7.5 });
         if overlap >= 2. {
             return Some(Tail { drop, cue, overlap });
         }
@@ -104,7 +104,7 @@ fn gradual_tail(envelope: Envelope<'_>, duration: f32, first: f32) -> Option<Tai
     const WINDOW: f32 = 1.5;
     let ending = envelope.mean(duration - WINDOW, duration)?;
     // Compare long windows so a few quiet beats cannot trigger this path.
-    let start = (duration - 5.5).max(first);
+    let start = (duration - 7.5).max(first);
     let mut cue = start;
     while cue <= duration - 2. {
         let reference = envelope.mean(cue - 5., cue - 3.);
@@ -190,7 +190,7 @@ mod tests {
         samples[220..].fill(0.12);
         let fade = tail(envelope(&samples), 60.).unwrap();
         assert!((54.5..=55.5).contains(&fade.drop));
-        assert!(fade.cue + fade.overlap < 60.);
+        assert_eq!(fade.cue + fade.overlap, 60.);
         samples[220..].fill(0.);
         let fade = tail(envelope(&samples), 60.).unwrap();
         assert!(fade.cue < fade.drop);

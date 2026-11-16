@@ -34,3 +34,27 @@
   box-shadow:0 0 0 1px var(--surface-color);
   translate:-50% 0;
 }
+
+/* The mix window is drawn over the rail. The range input owns the entire hit area. */
+.playback-progress .transition-region {
+  position:absolute;
+  top:50%;
+  height:12px;
+  transform:translateY(-50%);
+  min-width:3px;
+  z-index:2;
+  border-radius:3px;
+  pointer-events:none;
+  background:light-dark(#18252dc7,#0c121bcf);
+  border:1px solid light-dark(#18252d,#a5b8cbe0);
+}
+.playback-progress [data-waveform] > .transition-region {height:clamp(12px,86%,20px);}
+.playback-progress .transition-region[data-state=planned] {border-style:dashed;}
+.playback-progress .transition-region[data-state=active] {
+  border-color:light-dark(#12202a,#c3dbf5);
+  background:light-dark(#14212aed,#0b1423ed);
+  box-shadow:0 0 0 1px light-dark(#dce7efcc,#93b2ca55);
+}
+.playback-progress .seek{z-index:3;}
+.playback-progress[data-scrubbing=true] .seek{cursor:grabbing;}
+.playback-progress .seek:disabled{cursor:default;}

@@ -110,6 +110,7 @@ const Devices = lazy(()=>import("./Devices"));
 const LibraryTools = lazy(()=>import("./LibraryTools"));
 import { usePageEntrance } from "./motion";
 import { useSmoothCorners,useWindowContour } from "./smoothCorners";
+import {queuedMixForCurrent} from './playbackPresentation';
 import PlaybackProgress from "./PlaybackProgress";
 import AudioQuality from "./AudioQuality";
 import AlbumDescription from "./AlbumDescription";
@@ -1205,7 +1206,7 @@ export default function App() {
               {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:""}</span>
-            <PlaybackProgress djMode={!!player.dj_mode} revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} trackId={player.track?.id} position={player.position}
+            <PlaybackProgress djMode={!!player.dj_mode} revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} plannedMix={queuedMixForCurrent(player)} trackId={player.track?.id} entryId={player.queue_entry_ids?.[player.queue_index??-1]} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
           </div>

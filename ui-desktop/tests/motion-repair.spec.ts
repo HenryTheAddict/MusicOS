@@ -269,3 +269,32 @@ test('navigation icons press independently and respect Reduce Motion',async({pag
  await page.emulateMedia({reducedMotion:'reduce'});
  await expect(sectionIcon).toHaveCSS('animation-name','none');
 });
+
+test('the AutoMix band leaves pointer and cursor ownership with the seek slider',async({page})=>{
+ await page.goto('/?fixture=1');
+ await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ const slider=page.locator('.now-playing').getByRole('slider',{name:'Playback position'});
+ await expect(slider).toBeEnabled();
+ await slider.evaluate(input=>{
+  const band=document.createElement('div');
+  band.className='transition-region';
+  band.dataset.state='scheduled';
+  Object.assign(band.style,{left:'54%',width:'12%'});
+  input.before(band);
+ });
+ const band=page.locator('.now-playing .transition-region');
+ await expect(band).toHaveCSS('pointer-events','none');
+ await slider.hover();
+ const box=(await band.boundingBox())!;
+ const point={x:box.x+box.width/2,y:box.y+box.height/2};
+ expect(await page.evaluate(({x,y})=>document.elementFromPoint(x,y)?.classList.contains('seek'),point)).toBe(true);
+ await page.mouse.move(point.x,point.y);
+ await expect(slider).toHaveCSS('cursor','pointer');
+ await page.mouse.down();
+ await expect(slider).toHaveCSS('cursor','grabbing');
+ await page.mouse.up();
+ await expect(slider).toHaveCSS('cursor','pointer');
+ await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'&&c.args.action.type==='seek').length)).toBe(1);
+});

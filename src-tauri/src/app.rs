@@ -693,6 +693,7 @@ struct QueueMix {
     incoming_entry: u64,
     kind: crate::dj_plan::Kind,
     seconds: f32,
+    outgoing_cue: f32,
 }
 
 #[derive(Default)]
@@ -760,10 +761,11 @@ fn project_dj_queue(
     {
         let Some(plan) = pair(from, to) else { continue; };
         let (outgoing_entry, incoming_entry) = (entries[from], entries[to]);
-        let mut mix = QueueMix { outgoing_entry, incoming_entry, kind: plan.kind, seconds: plan.duration };
+        let mut mix = QueueMix { outgoing_entry, incoming_entry, kind: plan.kind, seconds: plan.duration, outgoing_cue: plan.outgoing_cue };
         if from == 0 {
             if let Some(actual) = snapshot.dj_transition.as_ref().filter(|actual| actual.incoming_entry == incoming_entry) {
                 mix.seconds = actual.source_seconds;
+                mix.outgoing_cue = actual.outgoing_cue;
                 if mix.seconds == 0. {
                     mix.kind = Kind::Gapless;
                 } else if (actual.incoming_cue - plan.incoming_cue).abs() > 0.02

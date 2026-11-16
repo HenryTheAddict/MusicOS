@@ -100,6 +100,7 @@ export interface QueueMix {
   incoming_entry: number;
   kind: 'beat_match' | 'outro_fade' | 'crossfade' | 'gapless';
   seconds: number;
+  outgoing_cue?: number;
 }
 export interface Playback {
   listening?:Listening;

@@ -1,6 +1,6 @@
 import {usePlaybackClock} from './playbackFeed';
 import {memo,useEffect,useLayoutEffect,useRef,useState,type CSSProperties,type PointerEvent} from 'react';
-import type {Playback} from './types';
+import type {Playback,QueueMix} from './types';
 import {duration as formatTime} from './components';
 import {animateOwned,cancelOwned} from './presentationMotion';
 import {call} from './bridge';
@@ -40,7 +40,24 @@ const SeekWave = memo(function SeekWave({wave}:{wave:Wave}){
  </svg>;
 });
 
-export default function PlaybackProgress({trackId,entryId,position,duration,seek,showTime=true,revealTime=false,transition,live=true,roundedFill=false,djMode=false}:{revealTime?:boolean;live?:boolean;roundedFill?:boolean;showTime?:boolean;transition?:Playback['dj_transition'];trackId?:number;entryId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>;djMode?:boolean}){
+function mixWindow(entryId:number|undefined, duration:number, transition:Playback['dj_transition'], plan:QueueMix|undefined){
+ if(entryId===undefined||duration<=0)return;
+ const live=transition&&(transition.outgoing_entry===entryId||
+  (transition.active&&transition.incoming_entry===entryId))?transition:undefined;
+ const incoming=live?.active&&live.incoming_entry===entryId;
+ const forecast=plan?.outgoing_entry===entryId?plan:undefined;
+ const cue=live?(incoming?live.incoming_cue:live.outgoing_cue):forecast?.outgoing_cue;
+ const span=live?(live.source_seconds??live.seconds)*(incoming?live.tempo:1):forecast?.seconds;
+ if(cue===undefined||span===undefined||!Number.isFinite(cue)||!Number.isFinite(span)||span<=0||cue>=duration)return;
+ const start=Math.max(0,cue);
+ const end=Math.min(duration,cue+span);
+ if(end<=start)return;
+ const state=live?.active?'active':live?.status??'planned';
+ return {left:start/duration*100,width:(end-start)/duration*100,state,
+  description:`AutoMix ${state}, ${formatTime(start)} to ${formatTime(end)}`};
+}
+
+export default function PlaybackProgress({trackId,entryId,position,duration,seek,showTime=true,revealTime=false,transition,plannedMix,live=true,roundedFill=false,djMode=false}:{revealTime?:boolean;live?:boolean;roundedFill?:boolean;showTime?:boolean;transition?:Playback['dj_transition'];plannedMix?:QueueMix;trackId?:number;entryId?:number;position:number;duration:number;seek:(position:number)=>Promise<void>;djMode?:boolean}){
  const clock=usePlaybackClock(live);if(live&&clock.trackId===trackId)position=clock.position;
  const [draft,setDraft]=useState<number|null>(null),[pending,setPending]=useState(false),[scrubbing,setScrubbing]=useState(false),[error,setError]=useState('');
  const [wave,setWave]=useState<{id:number;data:Wave}>();
@@ -56,6 +73,7 @@ export default function PlaybackProgress({trackId,entryId,position,duration,seek
  const input=useRef<HTMLInputElement>(null),host=useRef<HTMLDivElement>(null),slot=useRef<HTMLDivElement>(null),rail=useRef<HTMLDivElement>(null),time=useRef<HTMLOutputElement>(null),drag=useRef<Drag|null>(null),operation=useRef(0);
  const identity=`${trackId??''}:${entryId??''}`,last=useRef(identity);
  const maximum=Math.max(0,Number.isFinite(duration)?duration:0),value=Math.max(0,Math.min(maximum,draft??position)),fraction=maximum>0?value/maximum:0;
+ const blend=djMode?mixWindow(entryId,maximum,transition,plannedMix):undefined;
  function release(){const pointer=drag.current;drag.current=null;setScrubbing(false);slot.current?.style.removeProperty('--frozen-rail-width');if(pointer&&input.current?.hasPointerCapture?.(pointer.pointerId))input.current.releasePointerCapture(pointer.pointerId);}
  function cancel(){release();setDraft(null);}
  useLayoutEffect(()=>{
@@ -77,7 +95,9 @@ export default function PlaybackProgress({trackId,entryId,position,duration,seek
  function pointerValue(event:PointerEvent<HTMLInputElement>){const held=drag.current;return held&&held.width>0&&Number.isFinite(event.clientX)?Math.max(0,Math.min(held.maximum,(event.clientX-held.left)/held.width*held.maximum)):Number(event.currentTarget.value);}
  return <div ref={host} className="playback-progress" data-reveal-time={revealTime&&showTime&&!!trackId||undefined} data-seeking={pending||scrubbing||undefined} data-scrubbing={scrubbing||undefined}>
   <div ref={slot} className="playback-rail-slot" data-waveform={waveform?true:undefined}><div ref={rail} className="progress-rail" aria-hidden="true">{waveform?<><SeekWave wave={waveform}/><i className="seek-wave-position" style={{transform:`translateX(${fraction*100}%)`}}/></>:<span style={roundedFill?{width:`${fraction*100}%`}:{width:'100%',transform:`scaleX(${fraction})`}}/>}</div>
-   <input ref={input} className="seek" type="range" aria-label="Playback position" aria-valuetext={`${formatTime(value)} of ${formatTime(maximum)}`} min={0} max={Math.max(1,maximum)} step={.1} value={value} disabled={!trackId||maximum===0} style={{'--progress':`${fraction*100}%`} as CSSProperties}
+   {blend&&<div className="transition-region" aria-hidden="true" data-state={blend.state}
+    style={{left:`${blend.left}%`,width:`${blend.width}%`}}/>}
+   <input ref={input} className="seek" type="range" aria-label="Playback position" aria-description={blend?.description} aria-valuetext={`${formatTime(value)} of ${formatTime(maximum)}`} min={0} max={Math.max(1,maximum)} step={.1} value={value} disabled={!trackId||maximum===0} style={{'--progress':`${fraction*100}%`} as CSSProperties}
     onPointerDown={event=>{
      if(event.button!==undefined&&event.button!==0)return;
      const box=event.currentTarget.getBoundingClientRect();drag.current={pointerId:event.pointerId,left:box.left,width:box.width,maximum};
@@ -89,7 +109,6 @@ export default function PlaybackProgress({trackId,entryId,position,duration,seek
     onPointerUp={event=>{if(drag.current&&drag.current.pointerId===event.pointerId){const next=pointerValue(event);release();void commit(next);}}}
     onPointerCancel={cancel} onLostPointerCapture={()=>{if(drag.current)cancel();}} onBlur={()=>{if(drag.current)cancel();}} onKeyDown={event=>{if(event.key==='Escape'&&drag.current){event.preventDefault();event.stopPropagation();cancel();}}}
    />
-   {transition&&(transition.status==='scheduled'||transition.active)&&transition.seconds>0&&maximum>0&&<span className="transition-region" style={{left:`${Math.min(100,transition.outgoing_cue/maximum*100)}%`,width:`${Math.max(.25,Math.min(100-transition.outgoing_cue/maximum*100,(transition.source_seconds??transition.seconds)/maximum*100))}%`}}><button aria-label={`DJ transition ${transition.active?'active':'scheduled'} at ${formatTime(transition.outgoing_cue)}, ${transition.seconds.toFixed(1)} seconds`} title={`DJmode ${transition.active?'mixing':'starts'} · ${formatTime(transition.outgoing_cue)} · ${transition.seconds.toFixed(1)} s`}/></span>}
   </div>
   {showTime&&trackId&&<output ref={time} className="playback-time" aria-label={revealTime?`${formatTime(maximum-value)} remaining`:undefined}>{revealTime?<span className="remaining-time">−{formatTime(maximum-value)}</span>:<>{formatTime(value)} <span>/ {formatTime(maximum)}</span></>}</output>}
   {error&&<span className="seek-error" role="alert">{error}</span>}

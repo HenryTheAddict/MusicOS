@@ -802,8 +802,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible { outline:2px solid v
 .playback-progress:has(.playback-time) { margin-bottom:0; margin-right:4.75rem; }
 .playback-time { position:absolute; top:50%; transform:translateY(-50%); right:-4.75rem; font-size:.5625rem; font-variant-numeric:tabular-nums; color:var(--ink); white-space:nowrap; line-height:1.4; }
 .playback-time span { opacity:.55; }
-.transition-region { position:absolute; top:0; height:100%; pointer-events:none; z-index:2; background:color-mix(in srgb,var(--accent) 35%,transparent); border-left:2px solid var(--ink); }
-.transition-region > button { position:absolute; top:-.25rem; left:-.25rem; height:.75rem; width:.5rem; padding:0; border:0; background:transparent; pointer-events:auto; }
 .settings { max-width:64rem; margin-inline:auto; }
 .settings-tabs { display:flex; flex-wrap:wrap; gap:.25rem; padding:.25rem; margin:1rem 0; border:0; background:color-mix(in srgb,var(--ink) 7%,var(--surface-color)); border-radius:1rem; box-shadow:none; }
 .settings-tabs [role=tab] { flex:1 1 auto; padding:.625rem .75rem; min-width:0; border:0; border-radius:.75rem; color:var(--ink); background:transparent; font-size:.8125rem; font-weight:550; }
