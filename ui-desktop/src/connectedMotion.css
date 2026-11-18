@@ -10,8 +10,12 @@
 .home-album-card>.menu-trigger>.icon,.home-collection-grid [data-action-surface]>.menu-trigger>.icon{width:1.2rem;height:1.2rem;}
 .home-recommendations>[data-action-surface]{display:flex;align-items:center;position:relative;min-width:0;gap:.25rem;border-radius:.85rem;padding:.5rem;background:var(--control-surface);}
 .home-recommendations>[data-action-surface]>.menu-trigger{position:static;opacity:1;flex:0 0 1.5rem;width:1.5rem;}
-.home-collection-grid>[data-action-surface]>.icon-button{position:absolute;right:.5rem;top:auto;bottom:.625rem;border-radius:.65rem;}
-.home-collection-grid>[data-action-surface]>.menu-trigger{right:.5rem;top:.5rem;}
+.home-collection-grid>[data-action-surface]>.icon-button{position:absolute;left:1.125rem;right:auto;top:50%;bottom:auto;transform:translateY(-50%);border-radius:.65rem;background:var(--control-surface);}
+.home-collection-grid>[data-action-surface]>.menu-trigger{right:.375rem;top:50%;transform:translateY(-50%);width:36px;height:36px;}
+@container(max-width:30rem){.home-collection-grid>[data-action-surface]>.icon-button{left:.625rem;}}
+.personal-home [data-action-surface]>.icon-button,.personal-home .home-resume-action{opacity:0;pointer-events:none;transition:opacity 140ms ease-out;}
+.personal-home [data-action-surface]:is(:hover,:focus-within)>.icon-button,.personal-home .home-resume:is(:hover,:focus-within)>.home-resume-action{opacity:1;pointer-events:auto;}
+@media(hover:none){.personal-home [data-action-surface]>.icon-button,.personal-home .home-resume-action{opacity:1;pointer-events:auto;}}
 .home-album .card-artwork{transform:none!important;scale:1!important;translate:none!important;}
 .home-album .cover{transform:none!important;scale:1!important;translate:none!important;}
 .home-album .card-artwork,.home-collection-open>.playlist-artwork-tone{transition:opacity 140ms ease-out,scale 140ms ease-out;}
