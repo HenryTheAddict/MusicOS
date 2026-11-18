@@ -295,11 +295,16 @@ struct LibrarySnapshot {
 impl LibrarySnapshot {
     fn load(path: &str, sort: LibrarySort, query: &str) -> anyhow::Result<Self> {
         let db = Db::open_background(path)?;
+        Ok(Self::from_db(&db, sort, query))
+    }
+
+    fn from_db(db: &Db, sort: LibrarySort, query: &str) -> Self {
         let mut tracks = db.get_tracks().ok();
         if let Some(tracks) = &mut tracks {
             sort_tracks(tracks, sort);
+            tracks.shrink_to_fit();
         }
-        Ok(Self {
+        Self {
             tracks,
             albums: db.get_albums().ok(),
             artists: db.get_artists().ok(),
@@ -308,7 +313,7 @@ impl LibrarySnapshot {
             counts: db.library_counts().unwrap_or_default(),
             search: (!query.trim().is_empty())
                 .then(|| db.search_tracks(query, 200).unwrap_or_default()),
-        })
+        }
     }
 }
 
@@ -325,8 +330,12 @@ fn lower_scan_priority() {
     }
 }
 
-fn metadata_worker_count(available: usize) -> usize {
-    available.clamp(1, 2)
+fn metadata_worker_count(available: usize, playing: bool) -> usize {
+    if playing {
+        available.clamp(1, 2)
+    } else {
+        available.max(1)
+    }
 }
 
 #[derive(Debug)]
@@ -1001,6 +1010,12 @@ impl MusicOs {
         let revision = self.library_revision;
         let sort = self.library_sort;
         let search_query = self.search_query.clone();
+        let workers = metadata_worker_count(
+            std::thread::available_parallelism()
+                .map(usize::from)
+                .unwrap_or(1),
+            self.player.is_playing(),
+        );
         let (tx, rx) = std::sync::mpsc::channel();
         self.scan_rx = Some(rx);
 
@@ -1008,18 +1023,14 @@ impl MusicOs {
             lower_scan_priority();
             let started = Instant::now();
             let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(metadata_worker_count(
-                    std::thread::available_parallelism()
-                        .map(usize::from)
-                        .unwrap_or(1),
-                ))
+                .num_threads(workers)
                 .start_handler(|_| lower_scan_priority())
                 .build();
-            let indexed = pool.map_err(|err| err.to_string()).and_then(|pool| {
+            let result = pool.map_err(|err| err.to_string()).and_then(|pool| {
                 pool.install(|| {
                     crate::database::Db::open_background(&db_path)
                         .and_then(|db| {
-                            if let Some(source_id) = source_id {
+                            let indexed = if let Some(source_id) = source_id {
                                 crate::media::index_library_source_with_progress(
                                     &db,
                                     source_id,
@@ -1089,21 +1100,17 @@ impl MusicOs {
                                     }
                                     LibraryScanPolicy::ReadOnlyPreview => Ok(0),
                                 }
-                            }
+                            };
+                            indexed.map(|count| {
+                                (count, LibrarySnapshot::from_db(&db, sort, &search_query))
+                            })
                         })
                         .map_err(|err| format!("{err:#}"))
                 })
             });
-            let library = if indexed.is_ok() {
-                match LibrarySnapshot::load(&db_path, sort, &search_query) {
-                    Ok(library) => Some(Box::new(library)),
-                    Err(err) => {
-                        log::warn!("library reload failed: {err:#}");
-                        None
-                    }
-                }
-            } else {
-                None
+            let (indexed, library) = match result {
+                Ok((count, library)) => (Ok(count), Some(Box::new(library))),
+                Err(err) => (Err(err), None),
             };
             let _ = tx.send(ScanMessage::Finished(ScanResult {
                 indexed,
@@ -3042,6 +3049,7 @@ impl MusicOs {
         std::thread::spawn(move || {
             lower_scan_priority();
             let start = Instant::now();
+            drop(result.library.take());
             result.library = LibrarySnapshot::load(&path, result.sort, &result.search_query)
                 .ok()
                 .map(Box::new);
@@ -4590,6 +4598,13 @@ mod deadline_tests {
         }
         let data = LibrarySnapshot::load(path, LibrarySort::Title, "Alpha").unwrap();
         assert_eq!(data.tracks.as_ref().unwrap()[0].title, "Alpha");
+        assert_eq!(data.tracks.as_ref().unwrap().capacity(), 2);
+        assert_eq!(
+            LibrarySnapshot::from_db(&db, LibrarySort::Title, "Alpha")
+                .counts
+                .tracks,
+            data.counts.tracks
+        );
         assert_eq!(data.search.as_ref().unwrap().len(), 1);
         assert_eq!(data.counts.tracks, 2);
         let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, path);
@@ -4636,9 +4651,12 @@ mod deadline_tests {
 
     #[test]
     fn metadata_parallelism_is_bounded_even_on_large_hosts() {
-        assert_eq!(metadata_worker_count(0), 1);
-        assert_eq!(metadata_worker_count(1), 1);
-        assert_eq!(metadata_worker_count(64), 2);
+        for playing in [false, true] {
+            assert_eq!(metadata_worker_count(0, playing), 1);
+            assert_eq!(metadata_worker_count(1, playing), 1);
+        }
+        assert_eq!(metadata_worker_count(64, true), 2);
+        assert_eq!(metadata_worker_count(64, false), 64);
     }
 
     #[test]
