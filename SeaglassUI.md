@@ -241,28 +241,29 @@ The focus cursor is one object, owned by the screen, that **travels** between fo
 - On sorted lists, a large letter bubble (`display`, `r-xl`, `blob`) shows the current initial while held repeat runs.
 - A thin scroll indicator (8 logical wide, `r-pill`, `ink2` at 40 %) appears on the right edge only while scrolling and fades after 600 ms. Replaces the permanent `ipod_scrollbar`.
 
-### 9.3 Button roles
+### 9.3 Input map
 
-The device has **no touch**: four buttons (**Back**, **Home**, **Play/Pause**, **Context**) and a **trackpad** (Henry). One **input map** (data, per screen) drives both dispatch and the legend bar, so a legend can never lie. Each entry is `(physical control, screen, action, legend verb)`.
+Seaglass is defined in **actions**, never in physical buttons: `MoveFocus(dir)`, `Select`, `Back`, `Home`, `PlayPause`, `Context`. One input map per device (data, per screen) binds physical controls to actions and drives both dispatch and the legend bar, so a legend can never lie. No device has touch.
 
-| Control | Action | Notes |
+| Action | RG35XX 2024 (H700), the test device (today's evdev map) | Target device (Henry: 4 buttons + Apple TV-style trackpad) |
 | --- | --- | --- |
-| Trackpad swipe | Move focus, Apple TV style: a short swipe moves one item; a long or fast swipe glides through a list with momentum and decelerates; lists and grids both | Henry: "Apple TV like". Motion follows the finger 1:1 while touching, then the focus engine snaps to the nearest item |
-| Trackpad edge click (up/down/left/right) | One precise step in that direction | Acts like a D-pad for exact moves |
-| Trackpad click (center) | **Select**: open / play the focused item | Replaces the gamepad Confirm |
-| Trackpad rest | While a thumb rests on the pad, the focused tile tilts a few degrees toward it and its highlight shifts (tvOS-style parallax) | Optional, gated (§13.1); off under Reduced Motion |
-| Back | Back one level; on Home, bonk | |
-| Home | **Home**, unconditional, from every screen; playback continues | Never reassigned per screen |
-| Play/Pause | Toggle playback, from every screen | |
-| Context | Context sheet for the focused item; on Now Playing and Home, the quick settings sheet (volume, brightness, shuffle, repeat, sleep timer, theme) | Brightness lives here, since there is no Y + Volume modifier |
+| `MoveFocus` | D-pad (held repeat 360 ms delay, 105 ms interval) | Swipe: short swipe = one item; long/fast swipe glides with momentum and snaps to the nearest item. Edge click = one precise step |
+| `Select` | A (Anbernic layout swaps A/B; detection is a release-file check) | Center click |
+| `Back` | B, L1 | Back button |
+| `Home` | Y, unconditional from every screen | Home button |
+| `PlayPause` | Mapped key or Now Playing transport | Play/Pause button |
+| `Context` | X, R1 | Context button |
+| Brightness | Y + Volume (keep) | Quick settings sheet (`Context` on Home / Now Playing) |
+| Previous / next track | L2 / R2 | Now Playing transport |
+| Apps / USB Sync | Start / Menu (keep) | Settings |
 
 Rules:
-- Because there are only four buttons, actions the gamepad map had on extra buttons move into sheets: previous/next track and seek are on Now Playing's transport (focus + select), brightness is in quick settings, and **USB Sync stays reachable** from Settings (today it is behind Start → Apps).
-- Do not promise paging, seek steps or a Search shortcut unless a control is mapped to it for that screen.
-- Today's evdev map (A Confirm, B/L1 Back, X/R1 Context, Y Home + brightness modifier, Start Apps, L2/R2 skip) is the migration source; map those codes onto the four actions and verify the real codes on each intended H700 image instead of relying on the layout env fallback.
-- There is no pointer; the trackpad only drives focus.
-- Now Playing (like tvOS): swipe left/right on the focused seek bar scrubs; edge click left/right skips 10 s back/forward; previous/next track are transport buttons.
-- Swipe sensitivity and momentum are tuned on hardware; the trackpad's evdev events (relative or absolute) need confirming on the H700 image.
+- `Home` is always one press away and never reassigned per screen.
+- On Home, `MoveFocus(right)` moves focus into the preview panel and `MoveFocus(left)` or `Back` returns to the rows (Henry).
+- Screens may only show a legend for an action that is bound on the current device; extra gamepad buttons are conveniences, never the only path to a feature.
+- Now Playing on the trackpad (like tvOS): swipe on the focused seek bar scrubs, edge click left/right skips 10 s. On the D-pad: Left/Right on the focused seek bar step 5 s.
+- Optional on the trackpad: while a thumb rests on the pad, the focused tile tilts a few degrees toward it (tvOS-style parallax), gated (§13.1) and off under Reduced Motion.
+- Verify the real codes on each intended image (D-pad and trackpad evdev events) instead of relying on the layout env fallback.
 
 ### 9.4 Legend bar
 
@@ -383,7 +384,7 @@ Each maps to a value of `app::Screen`.
 Henry's call: **rows with a live preview panel on the side**, the iPod layout redrawn in Seaglass.
 
 - Left (≈ 300 physical wide): big rounded rows, 50 physical tall with 6 gaps: **Now Playing** (level glyph), **Albums**, **Artists**, **Songs**, **Playlists** (counts right-aligned), **Search**, **Settings**. Each has a 36 circular icon badge in `blob`; the focused row gets the cursor pill and its badge turns `accent`.
-- Right: a `surface` panel (`r-xl`) that previews the focused row: Now Playing shows the cover, title, artist and progress; Albums shows six recent covers and **Shuffle all**; Artists shows portraits; Songs shows recently added; Settings shows the current theme swatch, brightness and storage. The preview cross-fades (140 ms) on focus change and uses already-cached thumbnails only.
+- Right: a `surface` panel (`r-xl`) that previews the focused row, led by a **square** cover (full panel width minus 16 padding, `r-lg`) with title, subtitle and one control under it and a tight 16 bottom margin: Now Playing shows the cover, title, artist and progress; Albums shows six recent covers and **Shuffle all**; Artists shows portraits; Songs shows recently added; Settings shows the current theme swatch, brightness and storage. Albums uses a 2×2 cover mosaic as its square. On focus change the cursor springs to the new row (with a slight squash), the old preview fades out and lifts 6 px in 90 ms, and the new one fades in and settles from 10 px below in 180 ms; previews use already-cached thumbnails only.
 - Swipe up/down moves through the rows; swipe right (or edge click right) moves focus into the preview panel (e.g. onto a cover or Shuffle all), swipe left or Back returns to the rows.
 - Legend: Select · Back · More (from the input map).
 - Concept frames: see the PR description.
@@ -491,7 +492,7 @@ Decided: **Home uses rows with a side preview panel** (Henry).
 
 Still open (defaults in brackets):
 
-1. **Controls**: confirmed as Back, Home, Play/Pause, Context plus an Apple TV-style trackpad (swipe, edge click, click). Open: should a left/right swipe on Home's rows do anything (e.g. jump into the preview panel)? [yes: swipe right moves focus into the panel]
+1. **Target device order**: testing is on the RG35XX D-pad; which device ships first is with Henry and OSetta. The action map covers both.
 2. **Name**: Seaglass UI [yes].
 3. **Default color for new installs**: Artwork [yes] vs. musicOS blue.
 4. **Albums**: 3-column grid [yes] vs. 2 columns.
