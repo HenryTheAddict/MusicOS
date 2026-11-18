@@ -9,12 +9,13 @@ vi.mock('../src/SongSelector',()=>({default:({onSelect,onConfirm}:{onSelect:(id:
 import CollectionCreate from '../src/CollectionDesign';
 const library={tracks:[{id:1,title:'First song',duration:120},{id:2,title:'Second song',duration:180}]} as Library;
 const props=()=>({kind:'manual' as const,library,items:[],onChange:vi.fn(),onOpen:vi.fn(),onClose:vi.fn()});
-beforeEach(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
+beforeEach(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');this.querySelector('button')?.focus();};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 
 test('live artwork and name retain the ordered song selection through artwork edits and save',async()=>{
  const handlers=props(),saved={id:'saved',name:'Evening',track_ids:[2,1],spark:null,artwork_choice:'playlist/Lake'};
  bridge.call.mockResolvedValue([saved]);render(<CollectionCreate {...handlers}/>);
+ expect(screen.getByRole('textbox',{name:'Name'})).toHaveFocus();
  expect(screen.getByRole('button',{name:'Create playlist'})).toBeDisabled();
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:' Evening '}});
  expect(screen.getByText('Evening')).toBeVisible();
