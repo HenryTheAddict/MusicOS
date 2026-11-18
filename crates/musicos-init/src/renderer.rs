@@ -35,13 +35,18 @@ pub fn get_latest_screenshot() -> Option<ScreenshotFrame> {
 }
 
 fn screenshot_due(state: &ScreenshotState, now: Instant) -> bool {
+    let interval = if state
+        .last_demand
+        .is_some_and(|last| now.saturating_duration_since(last) < Duration::from_secs(2))
+    {
+        Duration::from_millis(100)
+    } else {
+        Duration::from_secs(1)
+    };
     state.frame.is_none()
         || state
-            .last_demand
-            .is_some_and(|last| now.saturating_duration_since(last) < Duration::from_secs(2))
-            && state.last_update.is_none_or(|last| {
-                now.saturating_duration_since(last) >= Duration::from_millis(100)
-            })
+            .last_update
+            .is_none_or(|last| now.saturating_duration_since(last) >= interval)
 }
 
 pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
@@ -71,7 +76,7 @@ mod screenshot_tests {
     use super::*;
 
     #[test]
-    fn screenshot_publication_requires_recent_demand_after_initial_frame() {
+    fn screenshot_publication_uses_fast_demand_and_slow_background_intervals() {
         let now = Instant::now();
         let mut state = ScreenshotState {
             frame: None,
@@ -87,12 +92,17 @@ mod screenshot_tests {
             },
         });
         state.last_update = Some(now);
-        assert!(!screenshot_due(&state, now + Duration::from_secs(10)));
+        assert!(!screenshot_due(&state, now + Duration::from_millis(999)));
+        assert!(screenshot_due(&state, now + Duration::from_secs(1)));
+        assert!(screenshot_due(&state, now + Duration::from_secs(10)));
         state.last_demand = Some(now);
         assert!(!screenshot_due(&state, now + Duration::from_millis(99)));
         assert!(screenshot_due(&state, now + Duration::from_millis(100)));
         assert!(screenshot_due(&state, now + Duration::from_millis(1999)));
+        state.last_update = Some(now + Duration::from_millis(1900));
         assert!(!screenshot_due(&state, now + Duration::from_secs(2)));
+        assert!(!screenshot_due(&state, now + Duration::from_millis(2899)));
+        assert!(screenshot_due(&state, now + Duration::from_millis(2900)));
         state.last_demand = Some(now + Duration::from_secs(10));
         assert!(screenshot_due(&state, now + Duration::from_secs(10)));
     }
