@@ -46,10 +46,10 @@ The desktop app already has a clear, owned identity: Figtree, large-radius solid
 | --- | --- | --- |
 | Physical framebuffer is 640×480 on RG35XX; code draws in a **1280×960 logical canvas** and `Resolution::offsets()` scales by 0.5 | `renderer.rs` | All values below are given as **logical px (physical px)**. Design at 1280×960, verify at 640×480. |
 | 3.5-inch screen, ~229 ppi, held ~30 cm away | Hardware | Body text must be ≥ 36 logical (18 physical) px. Nothing interactive smaller than 88 logical (44 physical) px tall. |
-| D-pad, A/B/X/Y, L1/R1, L2/R2, Start/Select/Menu; optional touch on some devices | `input.rs` | Focus-driven UI. Every action reachable by buttons; touch is a bonus, never required. |
+| No touch. Four buttons (**Back, Home, Play/Pause, Context**) and a **trackpad** (Henry); the current evdev map still assumes a gamepad (D-pad, A/B/X/Y, L1/R1, L2/R2, Start/Select) | `input.rs`, §9.3 | Focus-driven UI. Every action reachable by the physical controls; one input map drives both dispatch and legends. |
 | Button meaning: `Confirm`, `Back`, `Context`, `Home`, `Menu`, `PreviousTrack`/`NextTrack` (L2/R2), volume, sleep | `input.rs` `Button` | Legends use these roles. Physical letters follow `MUSICOS_GAMEPAD_LAYOUT` (Anbernic swaps A/B). |
 | Software renderer: `rect`, `rounded_rect`, gradients, `shadow_rounded_rect` (layered), `circle`, `draw_svg` (resvg), `draw_image_rounded`, `rusttype` text | `renderer.rs` | Seaglass needs: squircle-ish rounded rects (already), cached SVG rasters, cached blurred artwork, a text cache. |
-| Default 30 fps, idle 1 fps redraw | `main.rs` | Motion is designed to look good at 30 fps: fewer, larger moves; springs that settle within ~10 frames. |
+| Default 30 fps, idle 1 fps redraw; 30 fps is a scheduler target, **not measured on H700**. fbdev presents by copying the full frame (~1.17 MiB per frame, ~35 MiB/s at 30 fps before drawing) | `main.rs`, `display.rs` | Ship the static visual layer first; every continuous effect is gated on H700 measurements (§13.1). |
 | `resvg`/`usvg` already linked | `Cargo.toml` | Use the desktop's supplied SVG icons directly (`assets/icons/ui`). |
 
 ---
@@ -77,7 +77,7 @@ Seaglass uses the same roles as the desktop (`DesignGuidelines.md` §4) so the t
 
 Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
 
-1. **Artwork mode (default).** Extract `background`, `blob`, `accent` from the current track's cover once, when the track changes (the OS already decodes `CoverArt`). Cache the palette with the cover. Never re-extract on navigation.
+1. **Artwork mode (default).** Extract `background`, `blob`, `accent` from a bounded rendition of the cover, off the UI and audio threads. Cache by artwork identity/revision (not by track). Never extract per focus change or across the whole library.
 2. **Seed mode.** If there is no artwork or the user chooses a fixed color, use a seed. Existing `ThemeName` values become seeds:
 
    | `ThemeName` | Seed | Note |
@@ -87,25 +87,27 @@ Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
    | `Green` | `#1e955c` | Kept |
    | `Purple` | `#895bc4` | Kept |
 
-   Add **Artwork** as a fifth choice and make it the default for new devices (matches desktop "From artwork").
-3. **Light / Dark / Auto.** Port the desktop algorithm literally so both platforms resolve the same palette for the same album:
+   Add **Artwork** as a fifth choice and make it the default for **new installs only**. Upgrades keep the serialized `ThemeName` seed.
+3. **Light / Dark / Auto.** Start from the desktop algorithm and pin it with shared golden fixtures (the desktop also has a default-palette shortcut, a >15 % artwork-tint branch and a 40 % dark-tint clamp, which the port must match or deliberately drop):
    - Light: `surface` = mix(`#f7f9fc`, artwork background, tint/15), `blob` = mix(`#e6ebf4`, artwork blob, tint/15), ink `#12202a`; lift toward white until contrast ≥ 4.8:1.
    - Dark: `surface` = mix(`#202124`, tone, tint×0.33), `blob` = mix(`#2b2d32`, tone, tint×0.40), ink `#dedfe3`; darken until ink contrast ≥ 7:1; lighten accent until ≥ 4.5:1 on both.
    - Default tint **15 %**, saturation **100 %**, like the desktop. Light artwork mode stays visibly colorful.
-   - Auto follows the clock (dark 19:00–07:00) since the device has no system appearance.
+   - Auto follows the clock (dark 19:00–07:00) only once the clock is validated (today's status clock is saved hour/minute plus uptime); otherwise Auto falls back to the saved mode.
 4. **Shell.** `shell` = `surface` darkened 6 % in Light, `surface` darkened 25 % in Dark. The shell shows as a frame around the content sheet and under the status bar.
 5. **Hero.** `hero` = artwork accent at full saturation, used only as the Now Playing backdrop and the Home "Now Playing" tile.
 
 ### 3.3 Transitions between palettes
 
 - When the track changes, cross-fade every role from the displayed palette to the new one over **320 ms** (same as desktop cover transfer). Interpolate in linear RGB.
-- Keep the previous palette while the next cover decodes. Never flash the default blue between songs.
+- Keep the previous palette until the new extraction succeeds or no-art is confirmed. Never flash the default blue between songs.
+- Light ↔ Dark switches swap the text/background polarity in one step (or fade through the shell color); never interpolate ink and its background through equal luminance.
 - On first boot before any track, use the seed palette.
 
 ### 3.4 Contrast and safety
 
 - Text on any surface ≥ 4.5:1; big titles (≥ 56 logical px) ≥ 3:1. The resolver enforces it; screens never apply arbitrary alpha to "fix" contrast.
-- Focus cursor vs. the surface behind it ≥ 3:1 (WCAG non-text).
+- Focus ring, focused text, legend text and hero text are resolved against the **actual composited surface** they sit on (e.g. the 30 %-accent focused fill), not against white. Muted art fails otherwise: flat gray `#808080` art through the desktop Light resolver gives a 2.09:1 ring and 4.02:1 focused text.
+- Focus ring vs. the surface behind it ≥ 3:1 (WCAG non-text), at its **minimum** animated opacity.
 - Monochrome artwork keeps a neutral foundation; do not invent a blue.
 - Covers and photos stay at their own brightness. No filters on artwork.
 
@@ -124,7 +126,7 @@ Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
 
 - **Figtree**, the desktop family (`assets/fonts/Figtree-Variable.ttf`). Replace `RasterGothic` as the UI font.
 - `rusttype` does not read variable-font axes, so ship **static instances** generated once from the variable file (for example `fonttools varLib.instancer`): **Figtree-Regular (400)**, **Figtree-SemiBold (600)**, **Figtree-Bold (700)**, **Figtree-Black (900)**. Keep the OFL notice (`Figtree-OFL.txt`).
-- Keep **Noto Sans JP / SC** as fallbacks for CJK, as today.
+- **Noto Sans JP / SC**: for Japanese and Chinese UI locales they stay the primary face (as today); for other locales they are the missing-glyph fallback. Check mixed-script truncation at 640×480.
 - `FontWeight` grows from `Regular | Bold` to `Regular | SemiBold | Bold | Black`.
 - RasterGothic may stay as an *easter-egg* "Classic" option in Settings, never the default.
 
@@ -184,7 +186,7 @@ Base unit **8 logical (4 physical) px**. Allowed steps: 8, 12, 16, 24, 32, 48, 6
 │ │  page title 64 + 24 gap                                   │ │
 │ │  content (list / grid / player)                           │ │
 │ └──────────────────────────────────────────────────────────┘ │
-│ legend bar  80 (40)   Ⓐ Play  Ⓑ Back  Ⓧ More    ♪ mini     │  shell
+│ legend bar  80 (40)   Play   Back   More          ♪ mini     │  shell
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -196,7 +198,6 @@ Base unit **8 logical (4 physical) px**. Allowed steps: 8, 12, 16, 24, 32, 48, 6
 ### 6.3 Targets
 
 - Focusable rows ≥ 104 (52) tall. Grid tiles ≥ 256 (128). Icon buttons 88 (44) square, matching the desktop's 44 px rule.
-- With touch present, the same sizes satisfy touch.
 
 ---
 
@@ -212,7 +213,7 @@ Base unit **8 logical (4 physical) px**. Allowed steps: 8, 12, 16, 24, 32, 48, 6
 ## 8. Iconography
 
 - Use the desktop's supplied icons (`assets/icons/ui/*.svg`: `Home`, `Library`, `album`, `artist`, `song`, `playlist`, `queue`, `search`, `settings`, `play`, `pause`, `next`, `previous`, `shuffle`, `repeat`, `repeat-one`, `favorite`, `volume`, `DJmode`, `Lossless`, …) and `assets/icons/nowplaying` for transport.
-- Icons are tinted at draw time with `ink` (or `accent_ink` on accent), preserving their two-tone shading where the SVG has it. Cache each tinted raster by `(path, size, color)`.
+- Icons are rasterized once per physical size as an alpha mask and tinted at blit time with `ink` (or `accent_ink` on accent). Two-tone icons keep two masks. Caches are byte-bounded and never keyed by interpolated RGB values. Reference icons by exact, case-sensitive paths (e.g. `assets/icons/ui/Album.svg`); the current SVG draw API is path/rect only, so icons that need more are pre-flattened.
 - Sizes: 32 (16) inline, 48 (24) in rows and legends, 64 (32) buttons, 96 (48) Home tiles, 128 (64) transport Play.
 - Retire the `assets/icons/appicons` iPod-style menu set (`Music.svg`/`MusicSelected.svg`, etc.). Selected state is shown by the cursor, not a second icon.
 - Do not hand-draw icons in Rust (`draw_globe` stays only for the Language screen illustration).
@@ -228,60 +229,66 @@ The focus cursor is one object, owned by the screen, that **travels** between fo
 - **Shape:** a filled `blob`-to-`accent` pill behind the focused item plus a 6 (3) px `accent` ring with a 4 (2) px gap (`focus_halo`, redrawn with Seaglass tokens). Rows: filled pill. Tiles and artwork: ring only, so the artwork stays visible.
 - **Travel:** when focus moves, the cursor's rect animates from the old item to the new one with a spring (stiffness 520, damping 32 → settles in ≈ 180 ms, ≤ 6 % overshoot). This replaces the current cosine `Position::interpolate` and is the single most important "feel" change.
 - **Squash:** on the frame focus leaves, the cursor stretches 6 % along the direction of travel and returns to 100 % as it lands. Content never scales; only the cursor does.
-- **Breath:** an idle focused ring pulses its ring alpha 70 %→100 % over 1.6 s (the Switch's "you are here"). Pauses during input and under Reduced Motion.
+- **Breath:** optional, gated (§13.1). A static ring that meets 3:1 is always drawn; the breath only adds a brighter outer glow over it for a finite number of cycles, then stops so the loop can idle. Off under Reduced Motion and Battery Saver.
 - **Edge bump:** pressing past the first/last item nudges the cursor 12 logical px in that direction and springs back (140 ms), with the "bonk" sound. Lists do not wrap unless the screen says so (Home tiles do wrap).
 - **Press:** `Confirm` presses the focused item 2 % inward for 80 ms (the desktop's maximum press response), then the action happens. The action is never delayed by the animation.
 
 ### 9.2 Scrolling
 
-- Lists keep the cursor in the middle third. The list scrolls under a stationary cursor once it reaches that band (iPod-style *content* scroll, not cursor scroll), with the same spring.
-- Holding a direction repeats at 6/s after 350 ms, accelerating to 15/s after 1.5 s. After 2 s on a sorted list, a large letter bubble (`display`, `r-xl`, `blob`) shows the current initial, like a jump-scroll.
-- L1/R1 page up/down by one screen of rows. On sorted lists they jump to the previous/next letter.
+- Lists keep the cursor in the middle third. The list scrolls under a stationary cursor once it reaches that band, with the same spring.
+- Scroll targeting, list painting and navigation share one geometry (row pitch, clip bounds, viewport). Today both duplicate a 144 px pitch, so changing row drawing alone breaks the focus viewport.
+- Held direction keeps today's repeat (360 ms delay, 105 ms interval, about 9.5/s). Acceleration is a separate, later change.
+- On sorted lists, a large letter bubble (`display`, `r-xl`, `blob`) shows the current initial while held repeat runs.
 - A thin scroll indicator (8 logical wide, `r-pill`, `ink2` at 40 %) appears on the right edge only while scrolling and fades after 600 ms. Replaces the permanent `ipod_scrollbar`.
 
 ### 9.3 Button roles
 
-| Role | Default action | Never |
+The device has **no touch**: four buttons (**Back**, **Home**, **Play/Pause**, **Context**) and a **trackpad** (Henry). One **input map** (data, per screen) drives both dispatch and the legend bar, so a legend can never lie. Each entry is `(physical control, screen, action, legend verb)`.
+
+| Control | Action | Notes |
 | --- | --- | --- |
-| `Confirm` | Open / play the focused item | Destructive actions without a confirm sheet |
-| `Back` | Go back one level; on Home, does nothing (bonk) | Exit playback |
-| `Context` | Open the context sheet for the focused item | — |
-| `Home` | Go to Home from anywhere (playback continues) | — |
-| `Menu` | Quick settings sheet (volume, brightness, shuffle, repeat, sleep timer, theme) | — |
-| `PreviousTrack` / `NextTrack` | Skip, anywhere | — |
-| Play/Pause key | Toggle playback, anywhere | — |
+| Trackpad swipe | Move focus, Apple TV style: a short swipe moves one item; a long or fast swipe glides through a list with momentum and decelerates; lists and grids both | Henry: "Apple TV like". Motion follows the finger 1:1 while touching, then the focus engine snaps to the nearest item |
+| Trackpad edge click (up/down/left/right) | One precise step in that direction | Acts like a D-pad for exact moves |
+| Trackpad click (center) | **Select**: open / play the focused item | Replaces the gamepad Confirm |
+| Trackpad rest | While a thumb rests on the pad, the focused tile tilts a few degrees toward it and its highlight shifts (tvOS-style parallax) | Optional, gated (§13.1); off under Reduced Motion |
+| Back | Back one level; on Home, bonk | |
+| Home | **Home**, unconditional, from every screen; playback continues | Never reassigned per screen |
+| Play/Pause | Toggle playback, from every screen | |
+| Context | Context sheet for the focused item; on Now Playing and Home, the quick settings sheet (volume, brightness, shuffle, repeat, sleep timer, theme) | Brightness lives here, since there is no Y + Volume modifier |
+
+Rules:
+- Because there are only four buttons, actions the gamepad map had on extra buttons move into sheets: previous/next track and seek are on Now Playing's transport (focus + select), brightness is in quick settings, and **USB Sync stays reachable** from Settings (today it is behind Start → Apps).
+- Do not promise paging, seek steps or a Search shortcut unless a control is mapped to it for that screen.
+- Today's evdev map (A Confirm, B/L1 Back, X/R1 Context, Y Home + brightness modifier, Start Apps, L2/R2 skip) is the migration source; map those codes onto the four actions and verify the real codes on each intended H700 image instead of relying on the layout env fallback.
+- There is no pointer; the trackpad only drives focus.
+- Now Playing (like tvOS): swipe left/right on the focused seek bar scrubs; edge click left/right skips 10 s back/forward; previous/next track are transport buttons.
+- Swipe sensitivity and momentum are tuned on hardware; the trackpad's evdev events (relative or absolute) need confirming on the H700 image.
 
 ### 9.4 Legend bar
 
 - Always visible at the bottom (except fullscreen Now Playing idle, where it fades with the chrome after 2.2 s like the desktop expanded player).
-- Each legend: round button glyph (48 logical circle in `control`, letter in Bold `caption`) + verb in `caption` SemiBold `ink2`. Spaced 32 apart, left aligned.
-- Glyph letters match the physical layout (`MUSICOS_GAMEPAD_LAYOUT`), so on Anbernic `Confirm` shows **A** on the right face button.
+- Each legend: a small glyph for the control (trackpad click, Back, Home, Play/Pause, Context; 48 logical circle in `control`, supplied icon or short label in Bold `caption`) + verb in `caption` SemiBold `ink2`. Spaced 32 apart, left aligned.
+- Glyphs come from the input map, so they always match the physical control.
 - Verbs are specific: **Play**, **Open**, **Back**, **More**, **Shuffle**, never "OK"/"Select".
 - When a legend's action changes (e.g. focused row is a song vs. an album), cross-fade the verb (140 ms); glyphs stay put.
 
 ### 9.5 Sound
 
-Short UI sounds are part of the character. All are optional (Settings → Sounds: On / Quiet / Off; default Quiet), mixed under music at −18 dB, never while scrubbing.
+UI sounds are part of the intended character but are **off and unavailable** until a shared single-output mix is designed with AutoMixer. The H700 build uses ALSA; the player deliberately avoids opening a parallel stream, and the ALSA write loop reads one music source and stops supplying samples when paused, so there is no idle path for UI sounds today.
 
-| Event | Sound |
-| --- | --- |
-| Focus move | Soft "tick" (pitch rises 1 semitone per step within a 6-step run, resets after 400 ms idle) |
-| Confirm | Two-note "pop" |
-| Back | Lower "pop" |
-| Edge bump | Muted "bonk" |
-| Sheet open / close | Airy "swish" up / down |
-| Favorite | Little heart "ding" |
-| Error | Two low notes |
+Before enabling a "Quiet" setting, test paused / idle / playing, mute, volume limit, clipping and headroom, seek/skip/scrub, and underruns on speaker and headphones.
+
+Intended palette once enabled: focus tick, confirm pop, back pop, edge bonk, sheet swish, favorite ding, error tone, mixed well under music.
+
+Sound and haptics have their own settings; Reduced Motion never silently changes them.
 
 ### 9.6 Rumble
 
-Devices with rumble: 20 ms light pulse on edge bump and favorite only. Respect the same master/beat/interaction switches as desktop haptics (`DesignGuidelines.md` §15). Silent on unsupported hardware.
-
----
+Capability-gated. The current input code has no force-feedback output path, so rumble is out of scope until one exists. If added: 20 ms light pulse on edge bump and favorite only, under the same switches as desktop haptics (`DesignGuidelines.md` §15).
 
 ## 10. Motion
 
-The desktop motion contract applies, re-timed for 30 fps where noted.
+The desktop motion contract applies, re-timed for 30 fps where noted. Motion ships **after** the static layer and reuses the existing Reduced and Battery Saver profiles from the first step. Every animation is finite and schedules its own redraw deadline so the loop returns to idle cadence; continuous effects (breath, marquee, backdrop drift) and the Play/Pause morph are gated on H700 measurements (§13.1). Until then Play/Pause swaps a static glyph (or a small authored frame set).
 
 | Motion | Duration / curve |
 | --- | --- |
@@ -336,11 +343,11 @@ See §6.2. Height 64 (32). Time left, battery right. No title, no gradient, no b
 ### 11.6 Toggle, segmented, slider
 - Toggle: 96×56 track `r-pill` in `control` (off) / `accent` (on), 44 knob in `surface`, knob travels 140 ms.
 - Segmented: one `control` pill containing options; the selected option is a `surface` pill that slides between options (140 ms). Options have identical widths.
-- Slider (volume, brightness, EQ): 16 tall rail `r-pill` `control`, `accent` fill, 40 knob only when focused; Left/Right step 5 %, L1/R1 step 25 %.
+- Slider (volume, brightness, EQ): 16 tall rail `r-pill` `control`, `accent` fill, 40 knob only when focused; edge click steps 5 %, swipe drags continuously.
 
 ### 11.7 Progress / seek
 - 16 (8) tall rail `r-pill` in `control`, filled `accent`. Elapsed left, remaining right in `caption` tabular.
-- When the seek bar has focus, the rail grows to 24 and a 40 knob appears; Left/Right seek 5 s, hold to accelerate, L1/R1 ±30 s.
+- When the seek bar has focus, the rail grows to 24 and a 40 knob appears; swipe scrubs (finger distance maps to time, faster swipes cover more), edge click left/right ±10 s, click confirms the new position.
 
 ### 11.8 Sheet (context menu, quick settings, confirm)
 - Rises from the bottom, full width minus 32, `r-xl` top corners, `surface` fill, quiet shadow; content behind dims with `shell` at 50 %.
@@ -358,7 +365,7 @@ See §6.2. Height 64 (32). Time left, battery right. No title, no gradient, no b
 - Supplied icon at 128 in a 224 `blob` circle, `headline` title, `body` `ink2` line, optional primary button. One per screen, centered in the sheet. No outlined white card (the current Now Playing "No song selected" box goes away).
 
 ### 11.12 On-screen keyboard (Search)
-- Grid of `r-md` keys, 96×96, on `surface`. Focused key gets the cursor. Space/Delete/Clear wider. Results preview above the keyboard updates live. Y types a space, X deletes (legend shows it).
+- Grid of `r-md` keys, 96×96, on `surface`. Focused key gets the cursor. Space/Delete/Clear wider. Results preview above the keyboard updates live. Space and Delete are keys; Back deletes the last character before it leaves Search.
 
 ---
 
@@ -372,19 +379,20 @@ Each maps to a value of `app::Screen`.
 - Keep the 640×480 half-scale relationship from `docs/figma-target.md`; the iPod-style frames there are superseded by this document.
 
 ### 12.2 Home
-Nintendo-style row of big tiles instead of the iPod two-pane menu.
 
-- Top: greeting/user name in `title` (desktop: saved display name, else **Your library**).
-- Middle: a horizontal row of **tiles** 320×320 (160): **Now Playing** (current cover, `hero` backdrop, level glyph), **Albums**, **Artists**, **Songs**, **Playlists**, **Search**, **Settings**. Left/Right moves; the row scrolls so the focused tile stays one slot from the left. Wraps.
-- Below the row: one **Continue listening** row (cover, title, artist, Resume), visible when something is paused.
-- Legend: Ⓐ Open · Ⓧ More · Ⓨ Search.
-- The "Extras/Apps" entry folds into Settings → Extras unless it hosts more than one real app.
+Henry's call: **rows with a live preview panel on the side**, the iPod layout redrawn in Seaglass.
+
+- Left (≈ 300 physical wide): big rounded rows, 50 physical tall with 6 gaps: **Now Playing** (level glyph), **Albums**, **Artists**, **Songs**, **Playlists** (counts right-aligned), **Search**, **Settings**. Each has a 36 circular icon badge in `blob`; the focused row gets the cursor pill and its badge turns `accent`.
+- Right: a `surface` panel (`r-xl`) that previews the focused row: Now Playing shows the cover, title, artist and progress; Albums shows six recent covers and **Shuffle all**; Artists shows portraits; Songs shows recently added; Settings shows the current theme swatch, brightness and storage. The preview cross-fades (140 ms) on focus change and uses already-cached thumbnails only.
+- Swipe up/down moves through the rows; swipe right (or edge click right) moves focus into the preview panel (e.g. onto a cover or Shuffle all), swipe left or Back returns to the rows.
+- Legend: Select · Back · More (from the input map).
+- Concept frames: see the PR description.
 
 ### 12.3 MusicApp (library root)
 If kept as a screen: a 2×3 grid of category tiles (Albums, Artists, Songs, Playlists, Genres, Search). Otherwise Home tiles go straight to the lists and this screen is removed.
 
 ### 12.4 AlbumsList / ArtistsList / ArtistAlbumsList
-- Albums: **3-column cover grid**, tiles 352 (176) square, title + artist below. Left/Right/Up/Down move the cursor; L1/R1 jump letters. `Context` opens the album sheet.
+- Albums: **3-column cover grid**, tiles ≈ 352 (176) square, title + artist below, scrolling vertically (about 1.5 rows are visible at once at 640×480; a full second row does not fit). Grid thumbnails are bounded renditions; decode visible cells first. Left/Right/Up/Down move the cursor; L1/R1 jump letters. `Context` opens the album sheet.
 - Artists: list rows with 80 circular portraits (fallback: initial in a `blob` circle).
 - ArtistAlbumsList: artist header (portrait 160 circle, name `title`, counts `body`) above an album grid.
 
@@ -402,19 +410,21 @@ The showpiece.
 - Backdrop: the current cover, downscaled to 64×48, blurred once per track, scaled up and laid under a `hero` → `shell` tint at 70 %. Cached; no per-frame blur. Optional very slow drift (≤ 2 px/s) of the backdrop, off under Reduced Motion.
 - Left: artwork 560 (280) square, `r-xl`, quiet shadow. Right: title `display`/`headline` (fits 2 lines, then marquee), artist `body-strong`, album `body` `ink2`, heart.
 - Bottom: seek bar (§11.7) and transport: previous / **Play-Pause** (128 circle, `accent` fill, `accent_ink` glyph, authored morph) / next; shuffle and repeat as icon buttons at the ends.
-- Up/Down move focus between transport, seek and the info row; Left/Right move within the transport. L2/R2 skip anywhere.
+- Up/Down move focus between transport, seek and the info row; Left/Right move within the transport. Play/Pause works anywhere; skipping is on the transport.
 - Small heart next to the title beats with the song's BPM only when BPM is known and the song is playing (desktop §15).
 - Chrome (legend, status bar) fades after 2.2 s idle; any input brings it back.
-- `Context` opens the song sheet; Ⓨ opens Up Next (Queue).
+- `Context` opens the song sheet; Up Next (Queue) is a row in the context sheet.
 
 ### 12.8 Queue (Up Next)
 - Sheet-like page with the playing song pinned at the top (`blob` card), then upcoming rows. `Context` on a row: Play now, Move up, Move down, Remove. Reordering moves the row with the cursor (pick up with Ⓐ, move, drop with Ⓐ).
 
 ### 12.9 Search
-- Keyboard (§11.12) with live results grouped Songs / Albums / Artists above it. Results become focusable with Up from the keyboard.
+
+- Today's live search covers tracks only; grouped Songs / Albums / Artists results need a service change first.
+- The keyboard and results cannot share the sheet at the proposed key size (a five-row 96 px keyboard leaves ~144 logical px), so Search has two focus modes: typing (keyboard, with a one-line result count) and results (a full list view). Back returns from results to typing.
 
 ### 12.10 RatingPicker
-- Five large hearts (or stars, matching the desktop rating glyph) in a row inside a sheet; Left/Right sets, Ⓐ saves. Each step plays the tick with rising pitch.
+- Five large hearts (or stars, matching the desktop rating glyph) in a row inside a sheet; Left/Right sets, Select saves. Each step plays the tick with rising pitch.
 
 ### 12.11 ContextMenu
 - §11.8 sheet.
@@ -448,6 +458,14 @@ Seaglass is mostly a refactor of shared helpers, not of every screen at once.
 | Legends | — | `seaglass::legend_bar(&[(Button, &str)])` |
 | Sounds | — | Small PCM clips through the existing audio path, mixed under music |
 
+### 13.1 H700 gates
+
+- Ship the static layer (tokens, palette, Figtree, rows, sheets, legends) first.
+- Every optional effect is enabled only after release-build measurements on H700 with music playing, mixed artwork sizes and input bursts: report frame intervals and deadline misses, not just last-frame draw time, plus memory.
+- Image scaling is per output pixel and shadows loop over their bounds per layer, so the Now Playing backdrop is **precomposited** once per (cover, size, palette), not resampled and tinted each draw.
+- Glyph, icon and artwork caches are byte-bounded and keyed by physical size; SVG cache hits must not clone the raster each frame.
+- Focusable transport, queue pick-up/drop, gapless and BPM-linked feedback are behavior work with their own service contracts, not styling.
+
 **Migration order** (each step shippable on its own and visible in `musicos-snapshot`):
 
 1. Tokens + palette resolver + Figtree. Swap `IPOD_*` uses for palette roles; remove gradients/borders. *(Biggest visual change for least code.)*
@@ -461,35 +479,22 @@ Seaglass is mostly a refactor of shared helpers, not of every screen at once.
 
 ## 14. Verification
 
-- Render every screen with the snapshot tool at both sizes and both modes:
-
-  ```sh
-  cargo build -p musicos-init --bin musicos-snapshot
-  for s in welcome theme home music albums queue context now settings apps about volume-hud brightness-hud; do
-    MUSICOS_MEDIA_DB=/tmp/snap.sqlite3 MUSICOS_SETTINGS_PATH=/tmp/snap.json \
-    MUSICOS_RESOLUTION=640x480 MUSICOS_SNAPSHOT_SCREEN=$s \
-      ./target/debug/musicos-snapshot out/seaglass-$s.bmp
-  done
-  ```
-
-  (`MUSICOS_SNAPSHOT_TRANSITION` and `MUSICOS_SNAPSHOT_SECONDS` capture mid-transition frames.)
-- Check each at Light and Dark, Artwork with a colorful cover, a monochrome cover and no cover, and each seed.
-- Long titles (60+ chars), CJK titles, empty library, 5 000-song lists, queue of 500.
-- Contrast: run the resolver tests; spot-check focused row text and legend text.
-- Performance on the device: 30 fps sustained while scrolling a long list and while the cursor travels; idle stays at 1 fps. Measure, do not assume.
-- Reduced Motion on: no movement except instant focus and fades.
-- On hardware: legend letters match the buttons on the RG35XX layout; sounds are audible but under the music; QEMU cannot prove audio, rumble or feel.
-
----
+- Fix the snapshot tool first: fail on unknown `MUSICOS_SNAPSHOT_SCREEN` names (today `search`, `rating`, `songs`, `artists`, `playlist-tracks` silently render the default screen), create the output directory, and add named fixtures: paired art/mode/seed, flat-gray and colorful art, no art, long and mixed-script labels, empty and dense lists, focus and mid-transition states. `nowplaying` must seed real artwork.
+- Render every screen at 640×480 and 1280×960, Light and Dark, each seed and Artwork.
+- Contrast: resolver goldens shared with desktop, plus checks of focused text, ring (at minimum opacity) and legends against the composited surface.
+- QEMU covers boot, keyboard and image regressions only; it does not exercise the H700 display path.
+- On each intended H700 image: panel mode, stride and orientation; that fbdev actually presents (32 bpp) instead of falling back to memory; face/shoulder bindings vs. legends; text legibility; cold and warm frame pacing with playback; idle redraw.
 
 ## 15. Open design calls
 
-Defaults are chosen above; these are the ones worth Henry's eye.
+Decided: **Home uses rows with a side preview panel** (Henry).
 
-1. **Name**: *Seaglass UI* (default) for the handheld design language.
-2. **Home**: Nintendo-style horizontal tile row (default) vs. a vertical list of big rows.
-3. **Default color**: Artwork (default, matches desktop "From artwork") vs. musicOS blue.
-4. **UI sounds**: on at "Quiet" by default (default) vs. off by default.
-5. **Albums**: 3-column cover grid (default) vs. 2 columns with bigger covers.
-6. **Classic font**: keep RasterGothic as a hidden "Classic" option (default) vs. remove it.
-7. **Extras/Apps**: fold into Settings (default) unless more apps are planned.
+Still open (defaults in brackets):
+
+1. **Controls**: confirmed as Back, Home, Play/Pause, Context plus an Apple TV-style trackpad (swipe, edge click, click). Open: should a left/right swipe on Home's rows do anything (e.g. jump into the preview panel)? [yes: swipe right moves focus into the panel]
+2. **Name**: Seaglass UI [yes].
+3. **Default color for new installs**: Artwork [yes] vs. musicOS blue.
+4. **Albums**: 3-column grid [yes] vs. 2 columns.
+5. **Classic font**: keep RasterGothic as a hidden option [yes] vs. remove.
+6. **Extras/Apps**: fold into Settings [yes], keeping USB Sync reachable.
+
