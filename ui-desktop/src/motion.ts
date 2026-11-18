@@ -70,6 +70,3 @@ export function jelly(element:HTMLElement,active:boolean,_previous?:JellyAnimati
  const now=performance.now();springs.set(element,{element,x:0,y:0,vx:0,vy:0,last:now,start:now,active,handle});
  if(!springFrame)springFrame=requestAnimationFrame(tickSprings);return handle;
 }
-export function useJellyMotion(){
- // Controls use 140 ms color/opacity transitions; artwork depth owns its motion.
-}
