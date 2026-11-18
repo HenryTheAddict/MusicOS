@@ -55,7 +55,6 @@
 @media(prefers-reduced-motion:reduce){.mini-composition,.mini-player button{transition:none!important;}.mini-actions-popover:popover-open{animation:none!important;}}
 .mini-track-fade{position:relative;min-width:0;}
 :is(.mini-player-art,.mini-player-thumb) .mini-track-fade,:is(.mini-player-art,.mini-player-thumb) .mini-track-content{width:100%;height:100%;}
-.mini-track-ghost{position:absolute;inset:0;pointer-events:none;overflow:hidden;background:var(--surface-color);}
 .mini-track-fade .cover{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit;}
 @container(max-height:360px){.mini-tall-view .mini-player-copy{width:100%;min-width:0;}}
 /* Density owns pixel metrics independently of the desktop interface scale. */
