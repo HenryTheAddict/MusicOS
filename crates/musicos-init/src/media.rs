@@ -768,7 +768,7 @@ struct StorageScan {
 
 fn storage_identity(root: &Path) -> Option<String> {
     let metadata = std::fs::metadata(root).ok()?;
-    if !metadata.is_dir() {
+    if !metadata.is_dir() && !metadata.is_file() {
         return None;
     }
     #[cfg(unix)]

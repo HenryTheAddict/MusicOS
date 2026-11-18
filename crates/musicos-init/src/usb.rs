@@ -2,11 +2,14 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::database::Db;
+
+static UPDATE_MUTEX: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UsbStatus {
@@ -149,7 +152,8 @@ pub fn get_update_from_usb() -> Result<UsbStatus> {
     })
 }
 
-pub fn install_pending_update() -> Result<Option<PathBuf>> {
+pub fn cleanup_interrupted_updates() -> Result<()> {
+    let _guard = UPDATE_MUTEX.lock().unwrap_or_else(|error| error.into_inner());
     let stage_dir = writable_stage_dir()?;
     for kind in [UpdateKind::Squashfs, UpdateKind::Elf] {
         let target = update_target(kind);
@@ -169,6 +173,11 @@ pub fn install_pending_update() -> Result<Option<PathBuf>> {
             }
         }
     }
+    Ok(())
+}
+
+pub fn install_pending_update() -> Result<Option<PathBuf>> {
+    let stage_dir = writable_stage_dir()?;
     for kind in [UpdateKind::Squashfs, UpdateKind::Elf] {
         let staged = stage_dir.join(kind.staged_name());
         if staged.is_file() {
@@ -306,6 +315,7 @@ fn stage_update_from_root(root: &Path) -> Result<Option<StagedUpdate>> {
 }
 
 fn stage_update(source: &Path) -> Result<StagedUpdate> {
+    let _guard = UPDATE_MUTEX.lock().unwrap_or_else(|error| error.into_inner());
     let result = stage_update_inner(source);
     if result.is_err() {
         if let Ok(directory) = writable_stage_dir() {
@@ -340,6 +350,7 @@ fn stage_update_inner(source: &Path) -> Result<StagedUpdate> {
 }
 
 fn install_staged_update(staged: &Path) -> Result<PathBuf> {
+    let _guard = UPDATE_MUTEX.lock().unwrap_or_else(|error| error.into_inner());
     let result = install_staged_update_inner(staged);
     if result.is_err() {
         if let Ok(kind) = detect_update_kind(staged) {
@@ -362,7 +373,11 @@ fn install_staged_update_inner(staged: &Path) -> Result<PathBuf> {
     let backup = stage_dir.join(kind.backup_name());
     if target.is_file() {
         std::fs::copy(&target, &backup).context("creating previous update backup")?;
-        File::open(&backup)?.sync_all()?;
+        File::options()
+            .read(true)
+            .write(cfg!(windows))
+            .open(&backup)?
+            .sync_all()?;
         sync_parent(&backup)?;
     }
 
@@ -514,11 +529,14 @@ fn writable_stage_dir() -> Result<PathBuf> {
 }
 
 fn sync_parent(path: &Path) -> Result<()> {
+    #[cfg(unix)]
     if let Some(parent) = path.parent() {
         File::open(parent)?
             .sync_all()
             .with_context(|| format!("syncing directory {}", parent.display()))?;
     }
+    #[cfg(not(unix))]
+    let _ = path;
     Ok(())
 }
 

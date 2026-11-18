@@ -104,6 +104,7 @@ fn boot_cleans_interrupted_copies_and_rejects_partial_next() {
     std::fs::write(root.join("stage/musicos-init.tmp"), b"partial").unwrap();
     std::fs::write(root.join("target/.init.installing"), b"partial").unwrap();
     std::fs::write(root.join("stage/musicos-init.next"), &elf()[..64]).unwrap();
+    usb::cleanup_interrupted_updates().unwrap();
     assert!(usb::install_pending_update().is_err());
     assert!(!root.join("stage/musicos-init.tmp").exists());
     assert!(!root.join("target/.init.installing").exists());
@@ -134,6 +135,53 @@ fn boot_cleans_interrupted_copies_and_rejects_partial_next() {
         std::fs::read(root.join("target/knulli")).unwrap(),
         squashfs()
     );
+}
+
+#[test]
+fn valid_update_stages_and_installs() {
+    let _guard = ENV.lock().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    configure(root.path());
+    let root = root.path();
+    std::fs::write(root.join("target/init"), b"original").unwrap();
+    std::fs::write(root.join("usb/musicos-init"), elf()).unwrap();
+    let db = Db::open(":memory:").unwrap();
+    let status = usb::sync_from_usb(&db).unwrap();
+    assert!(status.staged_update.is_some());
+    assert_eq!(
+        std::fs::read(root.join("stage/musicos-init.next")).unwrap(),
+        elf()
+    );
+    assert!(usb::install_pending_update().unwrap().is_some());
+    assert_eq!(std::fs::read(root.join("target/init")).unwrap(), elf());
+    assert_eq!(
+        std::fs::read(root.join("stage/musicos-init.previous")).unwrap(),
+        b"original"
+    );
+}
+
+#[test]
+fn pending_install_preserves_active_stage_copy() {
+    let _guard = ENV.lock().unwrap();
+    let root = tempfile::tempdir().unwrap();
+    configure(root.path());
+    let root = root.path();
+    let active = root.join("stage/musicos-init.tmp");
+    std::fs::write(&active, b"active copy").unwrap();
+    assert!(usb::install_pending_update().unwrap().is_none());
+    assert_eq!(std::fs::read(&active).unwrap(), b"active copy");
+    std::fs::write(root.join("stage/musicos-init.next"), elf()).unwrap();
+    assert!(usb::install_pending_update().unwrap().is_some());
+    assert_eq!(std::fs::read(&active).unwrap(), b"active copy");
+}
+
+#[test]
+fn single_audio_file_can_be_indexed() {
+    let root = tempfile::tempdir().unwrap();
+    let song = root.path().join("song.mp3");
+    std::fs::write(&song, b"fixture").unwrap();
+    let db = Db::open(":memory:").unwrap();
+    assert_eq!(media::index_location(&db, &song).unwrap(), 1);
 }
 
 #[test]
