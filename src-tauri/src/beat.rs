@@ -77,7 +77,12 @@ pub fn track(flux: &[f32], step: f32, hint: Option<f32>) -> Evidence {
     // than one. Prefer the denser pulse only with substantial independent support;
     // a slow pulse without intervening attacks must not be doubled by the prior.
     let half = best.0 / 2.;
-    if 60. / (half * step) <= 200. {
+    let bpm = 60. / (best.0 * step);
+    // Preserve an explicit matching slow tempo even when subdivisions are strong.
+    let hinted_slow = hint.is_some_and(|v| {
+        v.is_finite() && (60. ..=200.).contains(&v) && (bpm / v - 1.).abs() <= 0.03
+    });
+    if !hinted_slow && 60. / (half * step) <= 200. {
         let corr = correlation(half);
         if corr >= 0.5 && corr >= best.1 * 0.65 {
             best = (half, corr, best.2);
@@ -209,16 +214,40 @@ mod tests {
             (174., false),
         ] {
             let flux = fixture_flux(bpm, 45., melodic);
-            let e = track(&flux, 256. / 11025., None);
-            println!(
-                "expected {bpm}, detected {:?}, confidence {}",
-                e.bpm, e.confidence
-            );
-            if !e.bpm.is_some_and(|v| (v - bpm).abs() <= 1.) {
-                failures.push(bpm);
+            for hint in [None, Some(bpm)] {
+                let e = track(&flux, 256. / 11025., hint);
+                println!(
+                    "expected {bpm}, hint {hint:?}, detected {:?}, confidence {}",
+                    e.bpm, e.confidence
+                );
+                if !e.bpm.is_some_and(|v| (v - bpm).abs() <= 1.) {
+                    failures.push(bpm);
+                }
             }
         }
         assert!(failures.is_empty(), "wrong tempo for {failures:?}");
+    }
+    #[test]
+    fn matching_slow_hint_preserves_accented_beats() {
+        let step = 256. / 11025.;
+        let mut flux = vec![0.; (90. / step) as usize];
+        for i in 0..215 {
+            let t = 0.2 + i as f32 * 60. / 144.;
+            flux[(t / step).round() as usize] = if i % 2 == 0 { 1. } else { 0.7 };
+        }
+        for (hint, expected) in [
+            (Some(72.), 72.),
+            (Some(73.5), 72.),
+            (Some(144.), 144.),
+            (None, 144.),
+        ] {
+            let e = track(&flux, step, hint);
+            println!("accented fixture hint {hint:?}, detected {:?}", e.bpm);
+            assert!(
+                e.bpm.is_some_and(|bpm| (bpm - expected).abs() < 1.),
+                "{e:?}"
+            );
+        }
     }
     #[test]
     #[ignore = "manual analysis timing"]
