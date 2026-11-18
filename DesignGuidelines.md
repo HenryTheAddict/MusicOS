@@ -299,6 +299,7 @@ These are different surfaces: **creation** chooses a mix; **setup** manages the 
 - Start/progress feedback must be immediate even when verifying/transcoding takes time. Do not label sharing Off while a task is actively preparing without explaining that state.
 - Existing Wi-Fi copying supports offline listening. Keep original and supported Vorbis quality choices clear; avoid technical setup language in the main flow.
 - Do not add Google Drive placeholders; that integration was explicitly dropped.
+- The handheld OS (`crates/musicos-init`) follows **`SeaglassUI.md`**, which translates these rules for its 640×480 D-pad screen.
 - Native audio/notification/platform acceptance is separate from visual similarity. Do not claim it works solely because a browser preview looks correct.
 
 ## 15. Visualizers and haptics
