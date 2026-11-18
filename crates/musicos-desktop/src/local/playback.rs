@@ -42,7 +42,7 @@ pub enum LocalPlaybackCommand {
     ClearQueue,
     RefreshPaths,
     Remote { action: RemotePlayback, reply: mpsc::SyncSender<Result<()>> },
-    HoldAudioIfIdle { hold: Weak<()>, reply: mpsc::SyncSender<bool> },
+    HoldAudioForUpdate { pause: bool, hold: Weak<()>, reply: mpsc::SyncSender<Result<()>> },
     Shutdown,
 }
 
@@ -244,11 +244,11 @@ impl LocalPlaybackClient {
         Ok(self.snapshot())
     }
 
-    pub fn hold_audio_if_idle(&self) -> Result<Arc<()>> {
+    pub fn hold_audio_for_update(&self, pause: bool) -> Result<Arc<()>> {
         let hold = Arc::new(());
         let (reply, receive) = mpsc::sync_channel(1);
-        self.send(LocalPlaybackCommand::HoldAudioIfIdle { hold: Arc::downgrade(&hold), reply })?;
-        anyhow::ensure!(receive.recv_timeout(Duration::from_secs(8))?, "Pause playback before restarting to update.");
+        self.send(LocalPlaybackCommand::HoldAudioForUpdate { pause, hold: Arc::downgrade(&hold), reply })?;
+        receive.recv_timeout(Duration::from_secs(8)).context("Playback did not respond. Try again.")??;
         Ok(hold)
     }
 }
@@ -389,6 +389,7 @@ fn playback_loop(
     let mut audio_hold = Weak::new();
     loop {
         let mut remote_reply=None;
+        let mut update_reply = None;
         let timeout = if player.is_playing() || player.audition_status().is_some() {
             Duration::from_millis(100)
         } else {
@@ -396,15 +397,23 @@ fn playback_loop(
         };
         match receiver.recv_timeout(timeout) {
             Ok(LocalPlaybackCommand::Shutdown) => break,
-            Ok(LocalPlaybackCommand::HoldAudioIfIdle { hold, reply }) => {
-                let idle = audio_hold.strong_count() == 0
-                    && !player.is_playing()
-                    && player.audition_status().is_none()
-                    && !player.transition_status().is_some_and(|transition| transition.active);
-                if idle {
+            Ok(LocalPlaybackCommand::HoldAudioForUpdate { pause, hold, reply }) => {
+                let result = (|| {
+                    anyhow::ensure!(hold.strong_count() > 0, "The update request expired.");
+                    anyhow::ensure!(audio_hold.strong_count() == 0, "musicOS is updating.");
+                    if pause {
+                        player.pause_for_update()?;
+                    } else {
+                        anyhow::ensure!(!player.is_playing() && player.audition_status().is_none()
+                            && !player.transition_status().is_some_and(|transition| transition.active),
+                            "Music is playing. Choose Pause and restart to update.");
+                    }
+                    Ok(())
+                })();
+                if result.is_ok() {
                     audio_hold = hold;
                 }
-                let _ = reply.send(idle);
+                update_reply = Some((reply, result));
             }
             Ok(command) if audio_hold.strong_count() > 0 => {
                 if let LocalPlaybackCommand::Remote { reply, .. } = command {
@@ -449,10 +458,12 @@ fn playback_loop(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        if audio_hold.strong_count() > 0 {
+        if update_reply.is_none() && audio_hold.strong_count() > 0 {
             continue;
         }
-        player.tick();
+        if audio_hold.strong_count() == 0 {
+            player.tick();
+        }
         if !player.has_entry_order(
             &snapshot.read().unwrap_or_else(|e| e.into_inner()).queue_entry_ids,
         ) {
@@ -472,6 +483,7 @@ fn playback_loop(
         );
         updates.publish(revision);
         if let Some((reply,result))=remote_reply{let _=reply.send(result);}
+        if let Some((reply, result)) = update_reply { let _ = reply.send(result); }
     }
 }
 
@@ -584,7 +596,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
         LocalPlaybackCommand::ClearUpcoming => player.queue_clear_upcoming(),
         LocalPlaybackCommand::ClearQueue => player.queue_clear(),
         LocalPlaybackCommand::RefreshPaths => {let tracks=player.queue_tracks().into_iter().filter_map(|t|db.get_track_by_id(t.id).ok().flatten()).collect::<Vec<_>>();player.refresh_paths(&tracks);}
-        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::HoldAudioIfIdle{..}|LocalPlaybackCommand::Shutdown => {}
+        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::HoldAudioForUpdate{..}|LocalPlaybackCommand::Shutdown => {}
     }
     Ok(())
 }
@@ -992,18 +1004,20 @@ mod tests {
      let service = LocalPlaybackService::start_with_preferences(path, PlaybackPreferences { volume: 0., ..Default::default() }).unwrap();
      let client = service.client();
      let play = || RemotePlayback::Play { ids: vec![id], start: 0 };
-     let hold = client.hold_audio_if_idle().unwrap();
+     let hold = client.hold_audio_for_update(false).unwrap();
      assert!(client.remote(play()).is_err());
      drop(hold);
      client.remote(play()).unwrap();
      wait_for(&service, |snapshot| snapshot.is_playing);
-     assert!(client.hold_audio_if_idle().is_err());
+     assert!(client.hold_audio_for_update(false).is_err());
      client.send(LocalPlaybackCommand::Audition(id)).unwrap();
      wait_for(&service, |snapshot| snapshot.audition.is_some());
-     assert!(client.hold_audio_if_idle().is_err());
-     client.send(LocalPlaybackCommand::Pause).unwrap();
-     wait_for(&service, |snapshot| !snapshot.is_playing && snapshot.audition.is_none());
-     assert!(client.hold_audio_if_idle().is_ok());
+     assert!(client.hold_audio_for_update(false).is_err());
+     let hold = client.hold_audio_for_update(true).unwrap();
+     let saved = service.snapshot();
+     assert!(!saved.is_playing && saved.audition.is_none());
+     assert!(client.remote(play()).is_err());
+     drop(hold);
  }
  #[test]fn auditions_restore_duplicate_queue_identity_position_and_pause_state(){
   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("audition.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let main=temp.path().join("main.wav");let excerpt=temp.path().join("excerpt.wav");wave(&main,12);wave(&excerpt,2);

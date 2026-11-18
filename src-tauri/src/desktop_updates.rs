@@ -176,7 +176,7 @@ pub async fn desktop_update_check(
         .await
         .map_err(|error| {
             eprintln!("Could not check for desktop updates: {error}");
-            "Could not check GitHub Releases. Check your connection and try again."
+            "Couldn't check for updates. Check your connection and try again."
         })?;
     let version = update.as_ref().map(|update| update.version.clone());
     *pending = update;
@@ -235,6 +235,7 @@ fn install_ready(
     path: &Path,
     expected: Option<&str>,
     hold: Option<Arc<()>>,
+    pause_playback: bool,
 ) -> Result<bool> {
     let restored = restore(app, path);
     let Some((update, mut file)) = (match restored {
@@ -268,7 +269,7 @@ fn install_ready(
     // Claim the audio worker after verification so a racing Play command cannot interrupt an install.
     let hold = match hold {
         Some(hold) => hold,
-        None => crate::app::hold_audio_for_update(app)?,
+        None => crate::app::hold_audio_for_update(app, pause_playback)?,
     };
     crate::app::save_playback_session(app);
     #[cfg(target_os = "windows")]
@@ -289,7 +290,7 @@ pub fn apply_on_launch(app: &AppHandle) {
     let Some(path) = state.cache.get().filter(|path| path.is_file()).cloned() else {
         return;
     };
-    let hold = match crate::app::hold_audio_for_update(app) {
+    let hold = match crate::app::hold_audio_for_update(app, false) {
         Ok(hold) => hold,
         Err(error) => {
             *state.launch_error.lock().unwrap() = Some(error.to_string());
@@ -302,7 +303,7 @@ pub fn apply_on_launch(app: &AppHandle) {
         let _operation = state.checked.lock().await;
         let handle = app.clone();
         if let Ok(Err(error)) = tauri::async_runtime::spawn_blocking(move || {
-            install_ready(&handle, &path, None, Some(hold))
+            install_ready(&handle, &path, None, Some(hold), false)
         })
         .await
         {
@@ -317,11 +318,12 @@ pub async fn desktop_update_restart(
     app: AppHandle,
     state: State<'_, PendingUpdate>,
     version: String,
+    pause_playback: bool,
 ) -> Result<(), String> {
     let path = state.cache.get().ok_or(UNAVAILABLE)?.clone();
     let _operation = state.checked.try_lock().map_err(|_| BUSY)?;
     match tauri::async_runtime::spawn_blocking(move || {
-        install_ready(&app, &path, Some(&version), None)
+        install_ready(&app, &path, Some(&version), None, pause_playback)
     })
     .await
     {

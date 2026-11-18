@@ -211,11 +211,15 @@
 .settings .setting-inline .settings-summary{flex:1;min-width:12rem;}
 .settings .software-updates .settings-summary{min-width:min(12rem,100%);}
 .settings .software-updates .settings-summary p{margin-bottom:0;}
-.settings .software-updates .soft-action{background:var(--surface-color);}
-.settings .software-updates .soft-action:is(:hover,:focus-visible):not(:disabled){background:var(--blob-color);}
+.settings .software-updates .setting-inline{min-height:44px;}
+.settings .software-updates button.soft-action{min-height:44px;padding:.625rem .875rem;font-size:.8125rem;font-weight:650;}
+.settings .software-updates .soft-action:not(.primary){background:var(--surface-color);}
+.settings .software-updates .soft-action:not(.primary):is(:hover,:focus-visible):not(:disabled){background:var(--blob-color);}
 .settings .software-updates .software-update-status:not(:empty),.settings .software-updates .inline-error{margin:.625rem 0 0;}
 .settings .software-updates .software-update-status:empty{margin:0;}
-.settings .software-updates progress{display:block;width:min(100%,18rem);height:.5rem;margin-top:.5rem;accent-color:var(--accent);}
+.settings .software-update-notes{display:inline-block;margin-top:.25rem;font-size:.75rem;color:var(--ink);text-decoration:underline;text-underline-offset:.15em;}
+.settings .software-update-progress{display:flex;gap:.5rem;align-items:center;width:min(100%,20rem);margin-top:.5rem;font-size:.75rem;font-variant-numeric:tabular-nums;}
+.settings .software-update-progress progress{display:block;flex:1;min-width:0;height:.5rem;accent-color:var(--accent);}
 .settings .setting-inline .size-options,.settings .settings-choice-row .size-options{margin:0;flex:none;}
 .settings .settings-choice-row{padding:.5rem 0;min-height:44px;font-size:.8125rem;border-bottom:1px solid var(--control-border);}
 .settings .settings-tile>.themed-switch{padding:.625rem 0;}

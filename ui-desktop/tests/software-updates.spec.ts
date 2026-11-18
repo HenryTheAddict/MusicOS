@@ -24,7 +24,7 @@ test('desktop updates download first and wait for an explicit restart', async ({
         status: async () => ({version: '0.1.0', available: true, ready}),
         check: async () => {
           await new Promise(resolve => { finish = resolve; });
-          if (++checks === 1) throw Error('Could not check GitHub Releases.');
+          if (++checks === 1) throw Error("Couldn't check for updates. Check your connection and try again.");
           return checks === 2 ? null : '0.2.0';
         },
         download: async (version, progress) => {
@@ -36,8 +36,8 @@ test('desktop updates download first and wait for an explicit restart', async ({
           await new Promise(resolve => { finish = resolve; });
           ready = version;
         },
-        restart: async (version) => {
-          if (version !== ready) throw Error('Unexpected version');
+        restart: async (version, pausePlayback) => {
+          if (version !== ready || pausePlayback) throw Error('Unexpected restart request');
           window.restartCalls++;
           await new Promise(resolve => { finish = resolve; });
         },
@@ -54,26 +54,29 @@ test('desktop updates download first and wait for an explicit restart', async ({
   await capture('musicOS-updates-idle');
 
   await check.click();
-  await expect(tile.getByRole('status')).toHaveText('Checking GitHub Releases…');
+  await expect(tile.getByRole('status')).toHaveText('Checking for updates…');
   await expect(check).toBeDisabled();
   await capture('musicOS-updates-checking');
   await page.evaluate('window.finishUpdate()');
-  await expect(tile.getByRole('alert')).toHaveText('Could not check GitHub Releases.');
+  await expect(tile.getByRole('alert')).toHaveText("Couldn't check for updates. Check your connection and try again.");
   await capture('musicOS-updates-error');
   await check.click();
-  await expect(tile.getByRole('status')).toHaveText('Checking GitHub Releases…');
+  await expect(tile.getByRole('status')).toHaveText('Checking for updates…');
   await page.evaluate('window.finishUpdate()');
   await expect(tile.getByRole('status')).toHaveText('You’re up to date.');
   await check.click();
-  await expect(tile.getByRole('status')).toHaveText('Checking GitHub Releases…');
+  await expect(tile.getByRole('status')).toHaveText('Checking for updates…');
   await page.evaluate('window.finishUpdate()');
   await expect(tile.getByRole('status')).toContainText('Version 0.2.0 is available.');
   await expect(download).toBeEnabled();
+  await expect(tile.getByRole('link', {name: 'What’s new'}))
+    .toHaveAttribute('href', 'https://github.com/HenryTheAddict/MusicOS/releases/tag/v0.2.0');
   await capture('musicOS-updates-available');
 
   await download.click();
-  await expect(download).toBeDisabled();
+  await expect(download).toHaveCount(0);
   await expect(tile.getByRole('progressbar')).toHaveAttribute('value', '50');
+  await expect(tile.getByText('50%', {exact: true})).toBeVisible();
   await capture('musicOS-updates-downloading');
   await page.evaluate('window.finishUpdate()');
   await expect(tile.getByRole('alert')).toContainText('could not be verified');
@@ -93,19 +96,28 @@ test('desktop updates download first and wait for an explicit restart', async ({
   await expect.poll(() => page.evaluate('window.restartCalls')).toBe(1);
 });
 
-test('an already downloaded update cannot restart during playback', async ({page}) => {
+test('during playback a ready update asks to pause and restart', async ({page}) => {
   await page.route('**/src/desktopUpdateApi.ts*', route => route.fulfill({
     contentType: 'application/javascript',
     body: `export const desktopUpdateApi = {
       status: async () => ({version: '0.1.0', available: true, ready: '0.2.0'}),
+      restart: async (version, pausePlayback) => {
+        window.restartRequest = {version, pausePlayback};
+      },
     };`,
   }));
   const tile = await openUpdates(page, true);
-  const restart = tile.getByRole('button', {name: 'Restart to update'});
-  await expect(restart).toBeDisabled();
-  await expect(tile.getByRole('status')).toContainText('Pause playback to restart');
-  await page.getByRole('button', {name: 'Pause', exact: true}).click();
+  const restart = tile.getByRole('button', {name: 'Pause and restart'});
+  const player = page.getByRole('region', {name: 'Now playing'});
   await expect(restart).toBeEnabled();
+  await expect(tile.getByRole('status')).toContainText('update next time you open musicOS');
+  await player.getByRole('button', {name: 'Pause', exact: true}).click();
+  await expect(tile.getByRole('button', {name: 'Restart to update'})).toBeEnabled();
+  await player.getByRole('button', {name: 'Play', exact: true}).click();
+  await expect(restart).toBeEnabled();
+  await restart.click();
+  await expect.poll(() => page.evaluate('window.restartRequest'))
+    .toEqual({version: '0.2.0', pausePlayback: true});
 });
 
 test('browser-only preview does not offer desktop updates', async ({page}) => {

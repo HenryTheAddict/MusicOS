@@ -11,5 +11,6 @@ export const desktopUpdateApi = {
   check: (): Promise<string | null> => invoke('desktop_update_check'),
   download: (version: string, onProgress: (progress: DownloadProgress) => void): Promise<void> =>
     invoke('desktop_update_download', {version, progress: new Channel(onProgress)}),
-  restart: (version: string): Promise<void> => invoke('desktop_update_restart', {version}),
+  restart: (version: string, pausePlayback: boolean): Promise<void> =>
+    invoke('desktop_update_restart', {version, pausePlayback}),
 };

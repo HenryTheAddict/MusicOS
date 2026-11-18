@@ -1988,6 +1988,7 @@ fn open_provider(url: String) -> ApiResult<()> {
             || (host == "huggingface.co" && u.path().starts_with("/apple/coreml-depth-anything-v2-small"))
             || host == "www.last.fm"
             || host == "last.fm"
+            || (host == "github.com" && u.path().starts_with("/HenryTheAddict/MusicOS/releases/tag/v"))
             || (host == "discord.com" && u.path().starts_with("/developers/applications")))
     {
         return Err(AppError {
@@ -2213,10 +2214,10 @@ pub fn run() {
         }
     });
 }
-pub(crate) fn hold_audio_for_update(handle: &tauri::AppHandle) -> Result<Arc<()>> {
+pub(crate) fn hold_audio_for_update(handle: &tauri::AppHandle, pause: bool) -> Result<Arc<()>> {
     let state = handle.state::<AppState>();
     let client = state.playback.lock().unwrap_or_else(|e| e.into_inner()).client();
-    client.hold_audio_if_idle()
+    client.hold_audio_for_update(pause)
 }
 pub(crate) fn stop_preview_runtime(handle: &tauri::AppHandle) -> Result<()> {
     handle.state::<AppState>().runtime.lock().unwrap_or_else(|e| e.into_inner()).stop().map(|_| ())

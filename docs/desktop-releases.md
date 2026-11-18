@@ -4,8 +4,9 @@ The updater supports Apple Silicon macOS apps, Windows x64 NSIS installs,
 and Linux x64 AppImages. In a release build, open **Settings → General →
 Software updates** to check GitHub Releases and choose **Download update**.
 Once verified, the update stays ready until you choose **Restart to update**
-or next launch musicOS. The app does not restart during playback, and it does
-not check or download in the background. Development builds, browser
+(or **Pause and restart** during playback), or until you next open musicOS.
+The app never restarts without stopping audio first and does not check or
+download in the background. Development builds, browser
 previews and other package formats are not updateable in-app.
 
 ## One-time setup

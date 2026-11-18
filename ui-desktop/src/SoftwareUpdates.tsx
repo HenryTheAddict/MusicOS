@@ -1,5 +1,5 @@
 import {useEffect, useState} from 'react';
-import {errorText} from './bridge';
+import {call, errorText} from './bridge';
 import {desktopUpdateApi, type DownloadProgress, type UpdateStatus} from './desktopUpdateApi';
 
 export default function SoftwareUpdates({audioPlaying}: {audioPlaying: boolean}) {
@@ -59,11 +59,11 @@ export default function SoftwareUpdates({audioPlaying}: {audioPlaying: boolean})
   }
 
   async function restart() {
-    if (!ready || audioPlaying) return;
+    if (!ready) return;
     setPhase('restarting');
     setError('');
     try {
-      await desktopUpdateApi.restart(ready);
+      await desktopUpdateApi.restart(ready, audioPlaying);
     } catch (reason) {
       setError(errorText(reason));
       const next = await desktopUpdateApi.status().catch(() => null);
@@ -72,14 +72,18 @@ export default function SoftwareUpdates({audioPlaying}: {audioPlaying: boolean})
     }
   }
 
-  const message = phase === 'checking' ? 'Checking GitHub Releases…'
+  const message = phase === 'checking' ? 'Checking for updates…'
     : phase === 'downloading' ? 'Downloading the update…'
     : phase === 'verifying' ? 'Verifying the update…'
     : phase === 'restarting' ? 'Installing and restarting musicOS…'
-    : ready ? `Version ${ready} is ready. ${audioPlaying ? 'Pause playback to restart, or update next time you open musicOS.' : 'Restart now or update next time you open musicOS.'}`
+    : ready ? `Version ${ready} is ready. ${audioPlaying ? 'Pause playback and restart now, or update next time you open musicOS.' : 'Restart now or update next time you open musicOS.'}`
     : update ? `Version ${update} is available. Downloading won’t interrupt playback.`
     : current ? 'You’re up to date.'
     : '';
+  const releaseNotes = update && phase === 'idle'
+    ? `https://github.com/HenryTheAddict/MusicOS/releases/tag/v${encodeURIComponent(update)}`
+    : null;
+  const percent = download?.total ? Math.min(100, Math.floor(download.received / download.total * 100)) : null;
 
   return <article className="settings-tile software-updates" aria-labelledby="software-updates-title">
     <div className="setting-inline">
@@ -87,17 +91,24 @@ export default function SoftwareUpdates({audioPlaying}: {audioPlaying: boolean})
         <h2 id="software-updates-title">Software updates</h2>
         <p>Installed version {status.version}</p>
       </div>
-      {status.available && <button className="soft-action" type="button"
-        disabled={phase !== 'idle' || (!!ready && audioPlaying)}
+      {status.available && phase !== 'downloading' && phase !== 'verifying' && <button
+        className={update || ready ? 'soft-action primary' : 'soft-action'} type="button"
+        disabled={phase !== 'idle'}
         onClick={ready ? restart : update ? downloadUpdate : check}>
-        {ready ? 'Restart to update' : update ? 'Download update' : 'Check for updates'}
+        {ready ? (audioPlaying ? 'Pause and restart' : 'Restart to update') : update ? 'Download update' : 'Check for updates'}
       </button>}
     </div>
     {status.available ? <>
       <p role="status" className="software-update-status">{message}</p>
-      {phase === 'downloading' && <progress aria-label="Update download"
-        max={download?.total || undefined}
-        value={download?.total ? Math.min(download.received, download.total) : undefined}/>}
+      {releaseNotes && <a className="software-update-notes" href={releaseNotes} onClick={event => {
+        event.preventDefault();
+        void call('open_provider', {url: releaseNotes}).catch(reason => setError(errorText(reason)));
+      }}>What’s new <span aria-hidden="true">↗</span></a>}
+      {phase === 'downloading' && <div className="software-update-progress">
+        <progress aria-label="Update download" max={download?.total || undefined}
+          value={download?.total ? Math.min(download.received, download.total) : undefined}/>
+        {percent !== null && <span aria-hidden="true">{percent}%</span>}
+      </div>}
       {error && <p role="alert" className="inline-error">{error}</p>}
     </> : <p className="software-update-status">In-app updates are available in supported release builds.</p>}
   </article>;
