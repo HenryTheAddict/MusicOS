@@ -22,8 +22,8 @@ function readWave(id:number){
 const SeekWave = memo(function SeekWave({wave}:{wave:Wave}){
  const count=wave.low.length;
  if(count<2)return null;
- // An unbroken envelope keeps its shape on wide rails and thin header players.
- // Bass sits at the center, with mid and high energy contributing to the silhouette.
+ // Keep the waveform joined up so it survives a skinny header or a wide player.
+ // Bass holds the middle. Mids and highs give the outline its shape.
  const energy=wave.low.map((value,index)=>Math.hypot(value*.78,wave.mid[index]*.58,wave.high[index]*.44));
  const peak=Math.max(1,...energy);
  const envelope=(height:(index:number)=>number)=>{
@@ -44,6 +44,8 @@ function mixWindow(entryId:number|undefined, duration:number, transition:Playbac
  if(entryId===undefined||duration<=0)return;
  const live=transition&&(transition.outgoing_entry===entryId||
   (transition.active&&transition.incoming_entry===entryId))?transition:undefined;
+ // Halfway through a mix, the incoming song can own the player.
+ // Put the marker on its intro once that happens.
  const incoming=live?.active&&live.incoming_entry===entryId;
  const forecast=plan?.outgoing_entry===entryId?plan:undefined;
  const cue=live?(incoming?live.incoming_cue:live.outgoing_cue):forecast?.outgoing_cue;

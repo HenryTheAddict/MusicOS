@@ -1,6 +1,6 @@
 import {smoothPath} from './smoothCorners';
-/** The interactive gesture owns this artwork from pickup through commit/retract.
- * Measure once; each pointer frame only advances a paused native timeline. */
+/** This swipe gets the cover until it lands or comes back.
+ * Measure once, then let the pointer scrub the animation. */
 export function swipeCover(page:HTMLElement,preview:HTMLElement){
  const detail=page.querySelector<HTMLElement>('.album-detail[data-album-id],.artist-detail[data-artist-id]');if(!detail)return;
  const artist=!!detail.dataset.artistId,id=detail.dataset.artistId??detail.dataset.albumId!;

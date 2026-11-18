@@ -4,7 +4,7 @@ import {listen} from '@tauri-apps/api/event';
 import {native} from './bridge';
 import {swipeCover} from './swipeCover';
 import type {Palette} from './types';
-// History retains bounded inert markup, never live page components or subscriptions.
+// A small stack of frozen pages is enough for Back. Keep their old subscriptions out of it.
 function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:${r.id??''}:${r.search??''}`;}catch{return raw}}
 export type BackArtwork={request:string;result:{palette:Palette;path:string}|null};
 const swipeColors=['shell-color','page-color','surface-color','blob-color','accent'] as const;
@@ -25,8 +25,8 @@ function freezeMarkup(source:HTMLElement){
  const content=source.querySelector(':scope > .page-content');
  const sourceImages:HTMLImageElement[]=[];
  if(content){
-  // Retained Home, search and settings views are hidden siblings. Do not
-  // clone their contents or eagerly load their artwork for a Back snapshot.
+  // Home, search and settings can still be mounted while hidden.
+  // Copy the page on screen and leave the rest alone.
   const visible=content.cloneNode(false);
   for(const child of content.children){
    if(child.matches('[hidden]'))continue;
@@ -197,12 +197,12 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    column.dataset.backSwipe='handoff';
    document.documentElement.dataset.swipeNavigation='true';
    flushSync(()=>latest.current.onBack(true,theme?.artwork));
-   // Switch to the equivalent native color values while transitions are held.
-   // Removing color-mix() and enabling transitions together would retint the shell.
+   // Settle the colors before letting transitions run again.
+   // Doing both at once gives the shell another unwanted tint change.
    if(theme&&swipeColors.every(color=>themeRoot.style.getPropertyValue(`--${color}`)===theme?.colors[color])){
     themeRoot.dataset.backSwipeTheme='handoff';
    }
-   // Keep the destination visible while the live page restores layout and paints.
+   // Keep the preview up while the real page finds its place.
    delete page.dataset.swiping;
    animation?.cancel();animation=null;
    const deadline=performance.now()+260;
@@ -212,14 +212,14 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
      handoffFrame=requestAnimationFrame(swap);
      return;
     }
-    // Leave the transfer over the first decoded paint; otherwise WebKit can
-    // show the destination placeholder for a frame as the overlay disappears.
+    // Keep the cover here until the real tile can paint.
+    // Removing it early gives us that one-frame flash again.
     handoffFrame=requestAnimationFrame(clear);
    };
    handoffFrame=requestAnimationFrame(swap);
   };
-  // A fast swipe can finish the geometry almost instantly. Give the
-  // broad palette change its own minimum travel so it cannot flash one frame.
+  // A fast swipe can finish moving in a blink.
+  // Give the palette a little time to catch up without flashing.
   const floor=theme&&commit?128:0;
   const duration=commit?Math.max(floor,180*(1-progress)):Math.min(140,70+progress*140);
   if(duration<8){if(commit)cover?.seek(1);done();return;}
@@ -239,7 +239,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   const key=locationKey(latest.current.previousKey),cached=prepared.current,saved=snapshots.get(key);
   if(!saved||media.matches)return;
   preview=cached?.saved===saved?cached.preview:preparePreview(saved);
-  // Each gesture owns its copy, so reversing or restarting never reuses altered markup.
+  // Fresh swipe, fresh copy. The last gesture may have moved things around.
   prepared.current=null;
   column.append(preview.frame);
   preview.page.scrollTop=preview.scroll;
@@ -327,8 +327,8 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
    }else if(locked||axis==='ignored'||now-last>50)reset();
    last=now;
   }else if(value===2||value===4){
-   // AppKit's phase message and the final WebKit wheel event travel separately.
-   // Give the last finger sample a frame to arrive before deciding the release.
+   // AppKit can announce the release before WebKit delivers the last wheel event.
+   // Give that final sample a frame to catch up.
    fingers=false;ending=true;
    if(value===4)momentum=true;
    settle(24);

@@ -207,15 +207,16 @@ impl DesktopPlayer {
                                 if token.load(Ordering::Acquire) != load.generation {
                                     return Ok(());
                                 }
-                                // Latest parameters are read off-thread once per 10.7 ms block.
-                                // Keep the decoder and stretch history alive across slider changes.
+                                // Pick up slider changes here, once per 10.7 ms block.
+                                // The decoder and stretch history can keep their place.
                                 let (speed,pitch,revision)=*worker_parameters.lock().unwrap_or_else(|e|e.into_inner());
                                 let target=speed.clamp(0.47,2.12);
                                 tempo=smooth_parameter(tempo,target);
                                 transpose=smooth_parameter(transpose,pitch);
                                 stretch.set_transpose_factor(transpose,None);
                                 processing=(tempo-1.).abs()>0.0001||(transpose-1.).abs()>0.0001;
-                                // Avoid the channel converter size_hint: some decoders report a zero lower bound mid-frame.
+                                // Some decoders report a zero size_hint halfway through a frame.
+                                // Read the samples themselves before calling it finished.
                                 input.clear();
                                 for _ in 0..512*2 {match source.next(){Some(sample)=>input.push(sample),None=>break}}
                                 if input.is_empty() {
@@ -223,8 +224,8 @@ impl DesktopPlayer {
                                 }
                                 let frames=((input.len()/2) as f32/tempo).round() as usize;
                                 output.resize(frames * 2, 0.);
-                                // Warm the processor even during exact PCM bypass, avoiding a cold
-                                // processor restart when speed or pitch first changes.
+                                // Keep the stretch processor warm during PCM bypass too.
+                                // The first speed change should not wake it up from scratch.
                                 stretch.process(&input,&mut output);
                                 delayed.clear();
                                 for pair in input.chunks_exact(2) {delayed.extend_from_slice(&dry[dry_at]);dry[dry_at]=[pair[0],pair[1]];dry_at=(dry_at+1)%dry.len();}
@@ -469,8 +470,8 @@ impl DesktopPlayer {
         }
         let position = self.get_position();
         if plan.duration > 0. && position + 0.5*self.listening.speed >= plan.outgoing_cue {
-            // Revalidate against the audible source clock. Never activate a missed
-            // phrase. Leave preparation time and use an unwarped ending instead.
+            // That cue already passed while we were getting ready.
+            // Check the audible clock and leave room for a clean ending blend.
             let ending = self.queue[current].track.duration as f32;
             let remaining = (ending - position - 0.75*self.listening.speed).max(0.);
             plan.duration = remaining.min(2.*self.listening.speed);
@@ -547,8 +548,8 @@ impl DesktopPlayer {
     pub fn tick(&mut self) {
         let idle=self.paused&&self.audition.is_none();
         if idle { self.output.suspend(); } else { self.output.poll(false); }
-        // Output outages must not expire a healthy prepared decoder or advance
-        // the queue while its sample clock is stopped.
+        // The output stopped, so its clock stopped too.
+        // Keep the prepared decoder around until playback can move again.
         if !idle&&!self.output.available(){self.preparing_since=std::time::Instant::now();return;}
         if let Some(a)=&self.audition {
             if self.control.clock.generations[a.deck].load(Ordering::Acquire)!=a.generation || self.control.clock.active.load(Ordering::Acquire)!=a.deck as u64 {
@@ -682,9 +683,9 @@ impl DesktopPlayer {
             .and_then(|i| self.queue.get(i))
             .map(|e| &e.track)
     }
-    // A gapless prefetch is authoritative once accepted by the mixer. In DJmode
-    // it must not win the race against the musical planner at track start.
-    // Keep a bounded standalone fallback near EOF if no plan was delivered.
+    // Give the DJ planner first dibs on the spare deck. An accepted gapless
+    // prefetch would lock it out for the whole song. Near EOF, prepare a fallback
+    // so we can still hand off if the planner never sends anything.
     fn automatic_prepare_due(&self)->bool {
         if !self.dj_mode || self.control.clock.drained[self.active].load(Ordering::Acquire) {return true;}
         let generation=self.decks[self.active].generation.load(Ordering::Acquire);

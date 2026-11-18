@@ -29,3 +29,27 @@ The locally ad-hoc signed app passes deep/strict signature verification. It is n
 The previous and updated bundles plus release record are retained in `releases/desktop-dj-scheduling-2026-10-21/`. Current preferences were checkpointed privately before replacement. MusicOS was closed while paused and reopened successfully: Borderline remained paused at 3:16, with 507 songs, 20 favorites and saved mixes present. No main-library playback, queue edits or DJ preference changes were used for testing.
 
 Evidence: `out/qa/os-foundation/dj-scheduling/`. Listening with DJmode enabled on real queued songs remains an acceptance gate. The muted probe cannot establish that transitions sound musically good.
+
+## DJ AutoMix follow-up — 2026-11-18
+
+The desktop implementation through `6717771` chooses an upcoming order and forecasts each handoff using the same planner. DJ mode has one on/off switch. Queue forecasts identify the exact outgoing and incoming occurrences, and the playback bar shows the predicted mix range. Once the mixer accepts a schedule, its timing takes precedence over the forecast.
+
+The November 15 comparison used cached analysis for 96 tracks and evaluated 9,120 directed pairs. The final comparison reported 240 beat-matched plans and a mean overlap of about 5.0 seconds, compared with 220 and 3.5 seconds before that change. It reported zero incoming starts more than 50 ms after detected first audio and zero outgoing cuts over 12 seconds. Those are planner measurements. Audible quality still needs review using the production decoder and mixer.
+
+The useful next step is to find the transitions people actually dislike and keep those pairs as regression fixtures. A higher match count alone cannot tell us whether the result sounds better.
+
+### What needs improvement
+
+- **Energy-based exits.** Check gradual fades, quiet breakdowns that return to a chorus, reverb tails, and abrupt endings. Record the energy envelope and selected cue beside the rendered audio. The sustained-drop check should avoid treating a temporary break as the ending.
+- **Phrase and vocal overlap.** Current density scoring estimates how crowded a blend will be. It does not establish whether two vocal lines clash. Review long blends with vocals, percussion-only intros, and sparse outros, then adjust scoring against those examples.
+- **Beat alignment.** Keep the incoming pickup audible while aligning later measured beats. Test half-time and double-time grids, local timing drift, and weak beat evidence. Report maximum phase error across the overlap as well as the selected tempo ratio.
+- **Blend length.** Current limits allow up to 12 source seconds in Subtle and 16 in Creative when the measured arrangement supports it. Review the whole gain envelope, perceived loudness, and final note. A longer overlap can still sound rushed if the useful handoff happens in its last second.
+- **Queue decisions.** Test the sequence of transitions across a set, including pins, duplicate entries, removed songs, and analysis arriving late. Explain why a song was selected. Verify that each prediction belongs to the current queue revision and that edits invalidate stale forecasts.
+- **Failure recovery.** Delay or starve the spare decoder, seek during preparation, cancel during an overlap, and disable DJ mode with queued work still pending. Capture plan IDs, cancellation epochs, decoder generations, and source positions. A missed mix should recover to the same playable next entry.
+- **Playback presentation.** Check marker position before scheduling, during the overlap, and after the incoming song owns the player. Scrubbing must work through the marked region. Check the letter animation, dark-mode contrast, and Reduced Motion during actual playback.
+
+### Evidence to attach to the next fix
+
+For each failing pair, save the source identities and analysis versions, queue-entry IDs and revision, planner decision, mixer acknowledgement, activation time, and decoder readiness events. Render audio through the production mixer and include a short account of what the listener heard.
+
+Compare the old and proposed result on the same inputs. Check clipping, silence gaps, source positions, overlap length, pitch preservation, underruns, and CPU usage. Include unrelated pairs in the check so tuning one ending does not break another. Keep listening observations separate from automated measurements in the review.

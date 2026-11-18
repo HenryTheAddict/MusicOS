@@ -399,6 +399,8 @@ fn playback_loop(
                 if result.is_ok(){command_error=None;}
                 remote_reply=Some((reply,result));
             }
+            // The queue may have moved while the planner was thinking.
+            // Only apply its order to the revision it actually saw.
             Ok(LocalPlaybackCommand::ArrangeUpcoming { revision, .. }) if revision != queue_revision || !dj_mode => {}
             Ok(LocalPlaybackCommand::PlanTransition(_)) if !dj_mode => {}
             Ok(command) => {

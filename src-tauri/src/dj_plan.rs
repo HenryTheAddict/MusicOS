@@ -1,5 +1,4 @@
-//! Pure desktop transition planning. Plans are estimates and are not audio
-//! scheduling; the sample-clocked engine must validate them before execution.
+//! Pick the mix here. The audio engine gets the final say on when it can run.
 use crate::{structure::Structure, transition_energy::{self, Envelope}};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -64,9 +63,8 @@ pub struct Plan {
     pub reason: String,
 }
 impl Plan {
-    /// A weak ending blend is provisional until preparation is actually due.
-    /// Otherwise analysis completing during the song can never improve it:
-    /// accepted mixer schedules correctly remain protected from replacement.
+    /// Give analysis time to finish before booking the spare deck.
+    /// Once the mixer accepts a plan, that slot is spoken for.
     pub fn ready_to_schedule(&self,mode:Mode,position:f32,speed:f32)->bool {
         mode == Mode::FullSong || self.duration == 0. || self.outgoing_cue - position <= 12. * speed
     }
@@ -89,7 +87,8 @@ fn safe_duration(value: f32) -> f32 {
 pub fn plan(a: Track<'_>, b: Track<'_>, config: &Config, contiguous_album: bool) -> Option<Plan> {
     plan_after(a,b,config,contiguous_album,0.)
 }
-/// Earliest cue is in audible source seconds, leaving time for deck preparation.
+/// Earliest is the first source position we can still prepare for.
+/// Anything before it has already missed the decoder's window.
 pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,earliest:f32)->Option<Plan> {
     if !config.enabled {
         return None;
@@ -176,7 +175,7 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
     {
         return Some(ending("Beat grid uncertain"));
     }
-    // These are evidence-supported beat sequences, not an extrapolated BPM clock.
+    // Use beats we actually found in the audio. A BPM guess needs more evidence.
     if !valid_beats(&sa.beats)||!valid_beats(&sb.beats) {
         return Some(ending("Measured beats unavailable"));
     }
@@ -204,14 +203,14 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     let a_beats = &sa.beats[ai..=ai + a_count];
                     let anchor_end = a_beats[a_count];
                     if anchor_end < earliest_anchor_end { continue; }
-                    // Let the fade cover the last note after the measured beat window.
+                    // The beat grid can stop before the music does. Let the last note finish.
                     let end = outgoing_tail.map_or(length, |tail| anchor_end.max(tail.drop));
                     if end < length - 12. || !preserves_section(sa, end) { continue; }
                     let a_span = anchor_end - a_beats[0];
                     let tempo = b_span / a_span;
                     if !(0.94..=1.06).contains(&tempo) || !stable_window(a_beats, ba) { continue; }
-                    // Start the incoming deck at its safe entrance. Its pickup plays before
-                    // the anchor, which lands on the outgoing beat after time stretching.
+                    // Let the pickup play. Start early enough that its first steady beat
+                    // lands on the outgoing beat after stretching.
                     let cue = a_beats[0] - lead / tempo;
                     let duration = end - cue;
                     if cue < earliest_cue || !(2. ..=max_overlap).contains(&duration)
@@ -223,8 +222,8 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     }
                     let exit_confidence = boundary_confidence(&exits, a_beats[0]);
                     let rhythmic_confidence = sa.beat_confidence.min(sb.beat_confidence);
-                    // A structural cue strengthens the timing. Without one, rely on a
-                    // stronger measured grid and a short overlap near the song ending.
+                    // With no useful section boundary, the beat grid needs stronger evidence.
+                    // Longer blends need stronger evidence.
                     if exit_confidence < 0.5 && rhythmic_confidence < (if duration > 7. { 0.70 } else { 0.58 }) {
                         continue;
                     }
@@ -238,8 +237,8 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
                     let dense_overlap = outgoing_density * incoming_density;
                     let harmonic = harmonic_distance(a.key_index, b.key_index);
                     let energy = (outgoing_density - incoming_density).abs();
-                    // Avoid long stretches with two full arrangements competing. Favor
-                    // a longer phrase when the measured outro or intro leaves space.
+                    // Two full arrangements can get crowded fast.
+                    // Give longer blends to intros and outros with some breathing room.
                     if duration > 8. && dense_overlap > 0.38 { continue; }
                     let preferred_duration = if dense_overlap < 0.25 { 10. } else { 6. };
                     let target = outgoing_tail.map_or(length, |t| t.drop);
@@ -320,8 +319,8 @@ fn density(s: &Structure, start: f32, duration: f32) -> f32 {
         values.iter().sum::<f32>() / values.len() as f32
     }
 }
-/// Return upcoming positions only. Pins identify queue positions, not track IDs;
-/// duplicate queue occurrences and the current/past queue remain stable.
+/// Arrange what comes next. Pins hold queue positions, and each copy of a song
+/// has its own entry ID. The bit we already played stays put.
 pub fn order_upcoming<T>(
     items: &[T],
     start: usize,

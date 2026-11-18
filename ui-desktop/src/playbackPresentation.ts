@@ -1,6 +1,6 @@
 import type {Playback} from './types';
-/** Native position/level ticks omit queue membership, but include these marks.
- * Keep unchanged mark identities so clock updates do not rebuild queue views. */
+/** Clock ticks bring fresh position and level data. Keep the existing queue
+ * marks when they match, so the queue view can sit this update out. */
 export function mergePlaybackUpdate(previous:Playback,update:Partial<Playback>):Playback{
  const next={...previous,...update};
  for(const key of ['queue_entry_ids','arranged_entries','pinned_entries'] as const){
@@ -10,7 +10,7 @@ export function mergePlaybackUpdate(previous:Playback,update:Partial<Playback>):
  return next;
 }
 
-/** A prediction becomes stale if the adjacent queue occurrence changes. */
+/** The next queue entry changed? That old mix prediction missed its invitation. */
 export function queuedMixForCurrent(player: Playback){
  const index=player.queue_index??-1, entries=player.queue_entry_ids;
  if(index<0||!entries)return;

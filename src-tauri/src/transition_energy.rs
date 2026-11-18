@@ -40,8 +40,7 @@ pub struct Tail {
     pub overlap: f32,
 }
 
-/// Prefer a sustained decline, and leave the original ending alone if energy
-/// comes back (a break before the last chorus, for example).
+/// Wait for the energy to stay down. That quiet break might have one more chorus in it.
 pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
     if !duration.is_finite() || duration < 10. {
         return None;
@@ -78,8 +77,8 @@ pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
         if !stays_quiet {
             continue;
         }
-        // The window test confirms the decline. Refine the cue near the first
-        // quiet bin so averaging across a sharp ending does not start the fade early.
+        // The drop checks out. Find its first quiet bin so the averaging
+        // does not talk us into fading before the actual ending.
         let drop = (0..=4)
             .map(|n| drop + 0.25 * n as f32)
             .find(|&time| {
@@ -103,7 +102,7 @@ pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
 fn gradual_tail(envelope: Envelope<'_>, duration: f32, first: f32) -> Option<Tail> {
     const WINDOW: f32 = 1.5;
     let ending = envelope.mean(duration - WINDOW, duration)?;
-    // Compare long windows so a few quiet beats cannot trigger this path.
+    // Give it a proper listen. A couple of quiet beats do not make an outro.
     let start = (duration - 7.5).max(first);
     let mut cue = start;
     while cue <= duration - 2. {
@@ -140,8 +139,7 @@ fn gradual_tail(envelope: Envelope<'_>, duration: f32, first: f32) -> Option<Tai
     None
 }
 
-/// Skip only the measured dead air before the first audible event. A quiet
-/// intro or a single pickup remains part of the song.
+/// Trim the dead air. The quiet intro and that single pickup still belong to the song.
 pub fn intro(envelope: Envelope<'_>) -> f32 {
     let cue = first_audible(envelope)
         .map_or(0., |start| (start - envelope.step.max(0.12)).max(0.));

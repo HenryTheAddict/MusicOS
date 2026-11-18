@@ -2,6 +2,8 @@ import {useEffect,useRef,useState,type RefObject} from 'react';
 import {call,native} from './bridge';
 import {useViewActive} from './ViewScope';
 const requests=new Map<string,Promise<string>>();
+// Returning to a page should not make its cover start loading all over again.
+// Keep a small cache of renditions that have already come back.
 const recent=new Map<string,string>();
 const renditionKey=(source:string,revision:number)=>JSON.stringify([source,revision]);
 

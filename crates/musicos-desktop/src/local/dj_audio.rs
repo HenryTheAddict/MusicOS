@@ -155,8 +155,8 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
     let clock = Arc::new(Clock::default());
     let (meter, mut samples) = RingBuffer::<[f32; 2]>::new(RATE as usize / 5);
     let meter_clock = Arc::downgrade(&clock);
-    // Spectral/envelope work runs here, never in the output callback. The
-    // bounded ring drops telemetry on overload; audio never waits for the meter.
+    // The meter does its homework here. If its ring fills up, drop telemetry
+    // and let the audio keep going.
     std::thread::spawn(move || {
         let mut low = 0_f32; let mut high_cut = 0_f32; let mut smoothed=[0_f32;3];
         let low_alpha = 1. - (-2. * std::f32::consts::PI * 250. / RATE as f32).exp();
@@ -281,8 +281,8 @@ impl Mixer {
                 }
             }
         }
-        // Cancellation cannot be dropped by a saturated command ring. Old queued
-        // plans are invalidated too, while a new plan in the current epoch survives.
+        // A full command ring still has to respect cancellation.
+        // Retire old plans and let work from the current epoch through.
         if self.plan.is_some_and(|p|p.cancel_revision!=self.clock.cancel_revision.load(Ordering::Acquire)){self.cancel();}
     }
     fn read(&mut self, deck: usize) -> Option<Frame> {
@@ -341,7 +341,7 @@ impl Mixer {
         if self.elapsed.is_none() {
             if let Some(plan) = self.plan {
                 if plan.frames > 0 && outgoing.source_frame >= plan.cue {
-                    // Missed preparation deadlines never trigger a late phrase cut.
+                    // Missed the cue? Leave the outgoing phrase alone.
                     if outgoing.source_frame - plan.cue <= RATE as f64 * 0.03
                         && self.pending[plan.incoming].is_some()
                     {
@@ -383,8 +383,8 @@ impl Mixer {
                     self.elapsed = Some(elapsed + 1);
                 }
             } else {
-                // A decoder starvation cancels the blend rather than moving source time on
-                // invented samples. Controller can recover at the natural ending.
+                // The incoming decoder ran dry. Cancel this blend and let the controller
+                // recover at the ending. Source time needs real samples to move.
                 self.clock.underruns.fetch_add(1, Ordering::Relaxed);
                 self.cancel();
                 self.clock.failed_schedule.store(plan.id, Ordering::Release);

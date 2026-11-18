@@ -1,7 +1,7 @@
 import {useLayoutEffect,useRef,useState} from 'react';
 export type ArtworkImage={url:string;path?:string;original?:string;version:number};
-// Publish the URL and depth identity together, after decode. Routine analysis
-// must not replace an already visible cover with a loading frame.
+// Decode first, then hand over the image and its depth identity together.
+// A routine refresh should not send a perfectly good cover back to loading.
 export function useArtworkImage(wanted:ArtworkImage,identity:string,keepCurrent:boolean,failed:()=>void,pending=false){
  const [shown,setShown]=useState({identity,image:wanted});
  const failure=useRef(failed);failure.current=failed;
