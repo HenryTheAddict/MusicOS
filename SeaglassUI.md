@@ -101,7 +101,7 @@ Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
 - When the track changes, cross-fade every role from the displayed palette to the new one over **320 ms** (same as desktop cover transfer). Interpolate in linear RGB.
 - Keep the previous palette until the new extraction succeeds or no-art is confirmed. Never flash the default blue between songs.
 - Light ↔ Dark switches swap the text/background polarity in one step (or fade through the shell color); never interpolate ink and its background through equal luminance.
-- On first boot before any track, use the seed palette.
+- **Nothing playing** (Henry): follow the connected computer. Appearance settings (color source Artwork or seed, Light/Dark/Auto, last album) transfer from desktop musicOS over USB Sync, and the device does what the desktop does with nothing playing. Until the first sync, use the device's own saved seed (musicOS Blue on a new install).
 
 ### 3.4 Contrast and safety
 
@@ -495,8 +495,8 @@ Still open (defaults in brackets):
 
 1. **Devices**: the RG35XX D-pad is the target for this build; the 4-button trackpad device is a separate, later device. The action map covers both.
 2. **Name**: Seaglass UI [yes].
-3. **Default color for new installs**: Artwork [yes] vs. musicOS blue.
-4. **Albums**: 3-column grid [yes] vs. 2 columns.
+3. **Default color for new installs**: Artwork [yes] vs. musicOS blue. With nothing playing, follow the connected computer's synced appearance settings (decided by Henry, §3.3).
+4. **Albums**: 3-column grid (decided by Henry).
 5. **Classic font**: keep RasterGothic as a hidden option [yes] vs. remove.
 6. **Extras/Apps**: fold into Settings [yes], keeping USB Sync reachable.
 
