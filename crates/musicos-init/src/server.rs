@@ -1631,20 +1631,6 @@ impl CompanionServer {
                     false
                 };
 
-                if skipped {
-                    push_runtime_log("upload", format!("Skipped unchanged {}", relative_path));
-                    let response = json_response(&serde_json::json!({
-                        "status": "skipped",
-                        "path": relative_path,
-                        "sha256": incoming_sha,
-                    }));
-                    let _ = request.respond(response);
-                    continue;
-                }
-
-                if let Some(parent) = dest_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
                 let temp_path = dest_path.with_extension(format!(
                     "{}.uploading-{}",
                     dest_path
@@ -1653,17 +1639,27 @@ impl CompanionServer {
                         .unwrap_or("tmp"),
                     now_unix_ms()
                 ));
-                match std::fs::write(&temp_path, &body)
-                    .and_then(|_| replace_file(&temp_path, &dest_path))
-                {
+                let result = if skipped {
+                    sync_existing_upload(&dest_path)
+                } else {
+                    write_upload(&temp_path, &dest_path, &body)
+                };
+                match result {
                     Ok(_) => {
-                        log::info!("Uploaded file saved to {}", dest_path.display());
-                        push_runtime_log("upload", format!("Saved {}", relative_path));
-                        if trigger_scan {
-                            let _ = self.tx.send(ServerEvent::UploadComplete);
+                        if skipped {
+                            push_runtime_log(
+                                "upload",
+                                format!("Skipped unchanged {}", relative_path),
+                            );
+                        } else {
+                            log::info!("Uploaded file saved to {}", dest_path.display());
+                            push_runtime_log("upload", format!("Saved {}", relative_path));
+                            if trigger_scan {
+                                let _ = self.tx.send(ServerEvent::UploadComplete);
+                            }
                         }
                         let response = json_response(&serde_json::json!({
-                            "status": "ok",
+                            "status": if skipped { "skipped" } else { "ok" },
                             "path": relative_path,
                             "sha256": incoming_sha,
                         }));
@@ -2448,12 +2444,52 @@ fn write_cover_art_bmp<W: Write>(w: &mut W, art: &renderer::CoverArt) -> Result<
     write_bmp(w, art.width as usize, art.height as usize, &bgra)
 }
 
-fn replace_file(temp_path: &std::path::Path, dest_path: &std::path::Path) -> std::io::Result<()> {
+fn write_upload(
+    temp_path: &std::path::Path,
+    dest_path: &std::path::Path,
+    body: &[u8],
+) -> std::io::Result<()> {
+    if let Some(parent) = dest_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    {
+        let mut file = std::fs::File::create(temp_path)?;
+        file.write_all(body)?;
+        if cfg!(all(target_os = "linux", feature = "pid1")) {
+            file.sync_all()?;
+        }
+    }
     #[cfg(windows)]
     if dest_path.exists() {
         std::fs::remove_file(dest_path)?;
     }
-    std::fs::rename(temp_path, dest_path)
+    std::fs::rename(temp_path, dest_path)?;
+    sync_upload_directories(dest_path)
+}
+
+fn sync_existing_upload(path: &std::path::Path) -> std::io::Result<()> {
+    if cfg!(all(target_os = "linux", feature = "pid1")) {
+        std::fs::File::open(path)?.sync_all()?;
+    }
+    sync_upload_directories(path)
+}
+
+fn sync_upload_directories(_path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(all(target_os = "linux", feature = "pid1"))]
+    if let Some(parent) = _path.parent() {
+        use std::os::unix::fs::MetadataExt;
+
+        // A nested upload can have created more than just its immediate parent.
+        let directory = parent.canonicalize()?;
+        let device = directory.metadata()?.dev();
+        for ancestor in directory.ancestors() {
+            if ancestor.metadata()?.dev() != device {
+                break;
+            }
+            std::fs::File::open(ancestor)?.sync_all()?;
+        }
+    }
+    Ok(())
 }
 
 fn write_bmp<W: Write>(w: &mut W, width: usize, height: usize, bgra: &[u8]) -> Result<()> {
