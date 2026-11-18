@@ -27,8 +27,21 @@ export default function ExpandedPlayer({background="flowing",layout="compact",on
  useLayoutEffect(()=>{const node=dialog.current?.querySelector<HTMLElement>('.expanded-playing-view'),from=viewOrigin.current;viewOrigin.current=null;if(!node||!from)return;cancelOwned(node);const to=node.getBoundingClientRect();return animateOwned(node,'player-view-handoff',[{transform:`translate(${from.left-to.left}px,${from.top-to.top}px)`},{transform:'none'}],180);},[view]);
  const menuEscape=useRef(false),visible=useRef(open);visible.current=open;
  // Handle the outer Escape before a retained, inert Radix layer can consume it.
- // The first Escape still belongs entirely to the active nested menu.
- useEffect(()=>{const escape=(event:KeyboardEvent)=>{if(event.key!=='Escape'||event.defaultPrevented||!visible.current)return;menuEscape.current=!!document.querySelector('[role=menu]:not([inert])');if(menuEscape.current)return;if([...document.querySelectorAll('dialog[open]')].at(-1)!==dialog.current)return;event.preventDefault();event.stopImmediatePropagation();dismiss.current();};window.addEventListener('keydown',escape,true);return()=>window.removeEventListener('keydown',escape,true);},[]);
+ // Nested menus and an active seek drag own their first Escape.
+ useEffect(()=>{
+  const escape=(event:KeyboardEvent)=>{
+   if(event.key!=='Escape'||event.defaultPrevented||!visible.current)return;
+   menuEscape.current=!!document.querySelector('[role=menu]:not([inert])');
+   if(menuEscape.current)return;
+   if([...document.querySelectorAll('dialog[open]')].at(-1)!==dialog.current)return;
+   // Let PlaybackProgress cancel its draft and release pointer capture in place.
+   if(event.target instanceof Element&&dialog.current?.contains(event.target)&&
+    event.target.matches('.playback-progress[data-scrubbing=true] .seek'))return;
+   event.preventDefault();event.stopImmediatePropagation();dismiss.current();
+  };
+  window.addEventListener('keydown',escape,true);
+  return()=>window.removeEventListener('keydown',escape,true);
+ },[]);
  const dismiss=useRef(onClose);dismiss.current=onClose;
  useEffect(()=>{const node=dialog.current!;node.showModal();return()=>{node.close();if(opener.current?.isConnected&&!document.querySelector('dialog[open]'))opener.current.focus({preventScroll:true});};},[]);
  useLayoutEffect(()=>{const node=dialog.current;if(!node)return;return animateOwned(node,'expanded-player-presence',open?[{opacity:0,transform:'translateY(4px)'},{opacity:1,transform:'none'}]:[{opacity:1,transform:'none'},{opacity:0,transform:'translateY(4px)'}],open?180:140);},[open]);
