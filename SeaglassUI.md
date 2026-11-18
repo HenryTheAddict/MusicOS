@@ -101,7 +101,7 @@ Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
 - When the track changes, cross-fade every role from the displayed palette to the new one over **320 ms** (same as desktop cover transfer). Interpolate in linear RGB.
 - Keep the previous palette until the new extraction succeeds or no-art is confirmed. Never flash the default blue between songs.
 - Light ↔ Dark switches swap the text/background polarity in one step (or fade through the shell color); never interpolate ink and its background through equal luminance.
-- **Nothing playing** (Henry): follow the connected computer. Appearance settings (color source Artwork or seed, Light/Dark/Auto, last album) transfer from desktop musicOS over USB Sync, and the device does what the desktop does with nothing playing. Until the first sync, use the device's own saved seed (musicOS Blue on a new install).
+- **Nothing playing** (Henry): follow the connected computer. Appearance settings (color source Artwork or seed, Light/Dark/Auto, last album) transfer from desktop musicOS over USB Sync, and the device does what the desktop does with nothing playing. The device saves the last synced appearance locally and uses it whenever no computer is connected; if no computer has ever synced, or the clock is unset (Auto mode can't resolve), it falls back to the saved seed, else the default (musicOS Blue, Light).
 
 ### 3.4 Contrast and safety
 
@@ -495,4 +495,4 @@ Seaglass is mostly a refactor of shared helpers, not of every screen at once.
 4. **Color**: Artwork by default; with nothing playing, follow the connected computer's synced appearance settings (§3.3).
 5. **Albums**: 3-column grid.
 6. **RasterGothic**: deleted, no hidden Classic option.
-7. **Extras/Apps**: folded into Settings, keeping USB Sync reachable.
+7. **Extras/Apps**: folded into Settings. USB Sync is the update recovery path, so it stays within two presses of Settings (a top-level Settings row, never buried in a sub-page) and keeps its existing Start/Menu shortcut on the RG35XX.
