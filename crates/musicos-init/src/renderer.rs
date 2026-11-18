@@ -21,14 +21,27 @@ pub struct ScreenshotFrame {
 struct ScreenshotState {
     frame: Option<ScreenshotFrame>,
     last_update: Option<Instant>,
+    last_demand: Option<Instant>,
 }
 
 static LATEST_SCREENSHOT: OnceLock<Mutex<ScreenshotState>> = OnceLock::new();
 
 pub fn get_latest_screenshot() -> Option<ScreenshotFrame> {
-    LATEST_SCREENSHOT
-        .get()
-        .and_then(|mutex| mutex.lock().ok()?.frame.clone())
+    LATEST_SCREENSHOT.get().and_then(|mutex| {
+        let mut state = mutex.lock().ok()?;
+        state.last_demand = Some(Instant::now());
+        state.frame.clone()
+    })
+}
+
+fn screenshot_due(state: &ScreenshotState, now: Instant) -> bool {
+    state.frame.is_none()
+        || state
+            .last_demand
+            .is_some_and(|last| now.saturating_duration_since(last) < Duration::from_secs(2))
+            && state.last_update.is_none_or(|last| {
+                now.saturating_duration_since(last) >= Duration::from_millis(100)
+            })
 }
 
 pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
@@ -36,14 +49,11 @@ pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
         Mutex::new(ScreenshotState {
             frame: None,
             last_update: None,
+            last_demand: None,
         })
     });
     if let Ok(mut guard) = mutex.lock() {
-        if guard.frame.is_some()
-            && guard
-                .last_update
-                .is_some_and(|last| last.elapsed() < Duration::from_millis(100))
-        {
+        if !screenshot_due(&guard, Instant::now()) {
             return;
         }
         guard.frame = Some(ScreenshotFrame {
@@ -55,6 +65,38 @@ pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
 }
 
 static ICON_CACHE: OnceLock<Mutex<HashMap<String, tiny_skia::Pixmap>>> = OnceLock::new();
+
+#[cfg(test)]
+mod screenshot_tests {
+    use super::*;
+
+    #[test]
+    fn screenshot_publication_requires_recent_demand_after_initial_frame() {
+        let now = Instant::now();
+        let mut state = ScreenshotState {
+            frame: None,
+            last_update: None,
+            last_demand: None,
+        };
+        assert!(screenshot_due(&state, now));
+        state.frame = Some(ScreenshotFrame {
+            bytes: Arc::from([0_u8; 4]),
+            resolution: Resolution {
+                width: 1,
+                height: 1,
+            },
+        });
+        state.last_update = Some(now);
+        assert!(!screenshot_due(&state, now + Duration::from_secs(10)));
+        state.last_demand = Some(now);
+        assert!(!screenshot_due(&state, now + Duration::from_millis(99)));
+        assert!(screenshot_due(&state, now + Duration::from_millis(100)));
+        assert!(screenshot_due(&state, now + Duration::from_millis(1999)));
+        assert!(!screenshot_due(&state, now + Duration::from_secs(2)));
+        state.last_demand = Some(now + Duration::from_secs(10));
+        assert!(screenshot_due(&state, now + Duration::from_secs(10)));
+    }
+}
 
 fn get_svg_pixmap(path: &str, width: u32, height: u32) -> Option<tiny_skia::Pixmap> {
     let mut cache = ICON_CACHE

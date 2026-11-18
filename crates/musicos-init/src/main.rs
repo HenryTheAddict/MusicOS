@@ -116,7 +116,8 @@ fn run() -> Result<()> {
             }
         }
 
-        let realtime_redraw = app.animation_in_progress() || app.player.is_playing();
+        let animating = app.animation_in_progress();
+        let realtime_redraw = animating || app.player.is_playing();
         let redraw_budget = if realtime_redraw {
             frame_budget
         } else {
@@ -130,14 +131,43 @@ fn run() -> Result<()> {
             next_frame = now + redraw_budget;
         }
 
-        std::thread::sleep(if realtime_redraw {
-            Duration::from_millis(2)
-        } else {
-            Duration::from_millis(20)
-        });
+        inputs.wait(wait_timeout(Instant::now(), next_frame, animating))?;
     }
 
     info!("MusicOS stopping gracefully...");
     app.save_preferences(true);
     Ok(())
+}
+
+fn wait_timeout(now: Instant, next_frame: Instant, animating: bool) -> Duration {
+    // Animation state in tick() advances per call, so retain its existing cadence.
+    let tick_budget = Duration::from_millis(if animating { 2 } else { 20 });
+    next_frame.saturating_duration_since(now).min(tick_budget)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wait_respects_frames_ticks_and_overdue_work() {
+        let now = Instant::now();
+        assert_eq!(wait_timeout(now, now, false), Duration::ZERO);
+        assert_eq!(
+            wait_timeout(now, now - Duration::from_millis(1), false),
+            Duration::ZERO
+        );
+        assert_eq!(
+            wait_timeout(now, now + Duration::from_secs(1), false),
+            Duration::from_millis(20)
+        );
+        assert_eq!(
+            wait_timeout(now, now + Duration::from_millis(5), false),
+            Duration::from_millis(5)
+        );
+        assert_eq!(
+            wait_timeout(now, now + Duration::from_secs(1), true),
+            Duration::from_millis(2)
+        );
+    }
 }
