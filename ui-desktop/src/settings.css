@@ -209,6 +209,13 @@
 .app-shell .settings .settings-tabs [role=tab][aria-selected=true],.app-shell[data-theme-mode=dark] .settings .settings-tabs [role=tab][aria-selected=true]{background:var(--accent);color:var(--accent-ink);font-weight:650;}
 .settings .setting-inline,.settings .settings-choice-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;}
 .settings .setting-inline .settings-summary{flex:1;min-width:12rem;}
+.settings .software-updates .settings-summary{min-width:min(12rem,100%);}
+.settings .software-updates .settings-summary p{margin-bottom:0;}
+.settings .software-updates .soft-action{background:var(--surface-color);}
+.settings .software-updates .soft-action:is(:hover,:focus-visible):not(:disabled){background:var(--blob-color);}
+.settings .software-updates .software-update-status:not(:empty),.settings .software-updates .inline-error{margin:.625rem 0 0;}
+.settings .software-updates .software-update-status:empty{margin:0;}
+.settings .software-updates progress{display:block;width:min(100%,18rem);height:.5rem;margin-top:.5rem;accent-color:var(--accent);}
 .settings .setting-inline .size-options,.settings .settings-choice-row .size-options{margin:0;flex:none;}
 .settings .settings-choice-row{padding:.5rem 0;min-height:44px;font-size:.8125rem;border-bottom:1px solid var(--control-border);}
 .settings .settings-tile>.themed-switch{padding:.625rem 0;}

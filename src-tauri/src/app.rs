@@ -2015,7 +2015,10 @@ fn open_provider(url: String) -> ApiResult<()> {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(crate::desktop_updates::PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![audition,controller,lyric_edition,trackpad_feedback,
+            crate::desktop_updates::desktop_update_status, crate::desktop_updates::desktop_update_check, crate::desktop_updates::desktop_update_install,
             audio_analysis, audio_tempos, playlist_file, sparklist,
             present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task, activity_jobs, track_waveform,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
@@ -2181,14 +2184,9 @@ pub fn run() {
         }
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<crate::controller::Service>().shutdown();
-            let state=handle.state::<AppState>();
-            let snapshot=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
-            let mut config=state.config.lock().unwrap_or_else(|e|e.into_inner());
-            config.playback=saved_playback(&snapshot);
-            if let Err(error)=storage::save_config(&config) {eprintln!("Could not save playback session: {error:#}");}
-            drop(config);
+            save_playback_session(handle);
             #[cfg(target_os="macos")]
-            {drop(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();crate::player_shortcuts::shutdown();}
+            {let state=handle.state::<AppState>();drop(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();crate::player_shortcuts::shutdown();}
             crate::spark_install::cancel();
             handle.state::<AppState>().integrations.shutdown();
             let _ = handle.state::<AppState>().analysis.control("cancel");
@@ -2208,6 +2206,15 @@ pub fn run() {
                 .stop();
         }
     });
+}
+pub(crate) fn save_playback_session(handle: &tauri::AppHandle) {
+    let state = handle.state::<AppState>();
+    let snapshot = state.playback.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+    let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+    config.playback = saved_playback(&snapshot);
+    if let Err(error) = storage::save_config(&config) {
+        eprintln!("Could not save playback session: {error:#}");
+    }
 }
 #[cfg(test)]
 mod tests {
