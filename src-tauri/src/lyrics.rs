@@ -1088,7 +1088,7 @@ mod embedded_tests {
     fn container_lyrics_retain_local_precedence_and_export_identity() {
         let tmp = tempfile::tempdir().unwrap();
         let audio = tmp.path().join("song.flac");
-        assert!(std::process::Command::new("/opt/homebrew/bin/ffmpeg")
+        assert!(std::process::Command::new("ffmpeg")
             .args([
                 "-v",
                 "error",
