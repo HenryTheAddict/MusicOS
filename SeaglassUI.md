@@ -128,7 +128,7 @@ Exactly like the desktop's `themePalette()` (`ui-desktop/src/appearance.ts`):
 - `rusttype` does not read variable-font axes, so ship **static instances** generated once from the variable file (for example `fonttools varLib.instancer`): **Figtree-Regular (400)**, **Figtree-SemiBold (600)**, **Figtree-Bold (700)**, **Figtree-Black (900)**. Keep the OFL notice (`Figtree-OFL.txt`).
 - **Noto Sans JP / SC**: for Japanese and Chinese UI locales they stay the primary face (as today); for other locales they are the missing-glyph fallback. Check mixed-script truncation at 640×480.
 - `FontWeight` grows from `Regular | Bold` to `Regular | SemiBold | Bold | Black`.
-- RasterGothic may stay as an *easter-egg* "Classic" option in Settings, never the default.
+- RasterGothic is removed entirely, with no hidden Classic option (Henry).
 
 ### 4.2 Scale
 
@@ -432,7 +432,7 @@ The showpiece.
 - §11.8 sheet.
 
 ### 12.12 Settings / SettingsDetail
-- Grouped rows like the desktop's compact grouped settings: **Appearance** (Theme: Artwork/Blue/Red/Green/Purple, Mode, Tint, Reduced Motion, Classic font), **Sound** (EQ, Volume limit, UI sounds), **Playback** (Shuffle, Repeat, Gapless, Sleep timer), **Library** (Rescan, Storage), **Device** (Brightness, Date & time, Language, Name), **About**.
+- Grouped rows like the desktop's compact grouped settings: **Appearance** (Theme: Artwork/Blue/Red/Green/Purple, Mode, Tint, Reduced Motion), **Sound** (EQ, Volume limit, UI sounds), **Playback** (Shuffle, Repeat, Gapless, Sleep timer), **Library** (Rescan, Storage), **Device** (Brightness, Date & time, Language, Name), **About**.
 - Group titles `caption` SemiBold `ink2` uppercase-free, 48 above the group. Values right-aligned.
 - Changes apply immediately with a live preview (theme changes cross-fade).
 
@@ -451,7 +451,7 @@ Seaglass is mostly a refactor of shared helpers, not of every screen at once.
 | Tokens | `RADIUS_*`, `IPOD_*` consts in `ui.rs`; `ThemeName::primary_color/gradient_colors` | New `ui/seaglass.rs`: `Palette { shell, surface, blob, control, border, ink, ink2, accent, accent_ink, hero }`, `Radius`, `Space`, `Type` consts, `Motion` consts |
 | Palette resolver | Fixed per-theme colors | `seaglass::resolve(appearance, artwork_palette, is_dark) -> Palette`, a direct port of `themePalette`/`secondaryInk` from `ui-desktop/src/appearance.ts`, with unit tests mirroring `ui-desktop/tests/appearance.test.ts` |
 | Artwork palette | — | Extract on track change next to `CoverArt` decode; cache alongside the cover |
-| Fonts | `assets.rs` RasterGothic | Figtree static instances + Noto fallbacks; `FontWeight` gains `SemiBold`, `Black` |
+| Fonts | `assets.rs` RasterGothic (delete) | Figtree static instances + Noto fallbacks; `FontWeight` gains `SemiBold`, `Black` |
 | Rows, buttons, panels | `figma_list_row`, `button_with_radius`, `panel_gradient`, `figma_split_panels` | `seaglass::row`, `seaglass::button`, `seaglass::sheet`, `seaglass::tile` |
 | Focus | `focus_halo`, `register_selected`, `transitions::Position::interpolate` | `seaglass::Cursor` (spring, squash, breath) owned by each screen |
 | Status bar | `ipod_status_bar` | `seaglass::status_bar` |
@@ -487,16 +487,12 @@ Seaglass is mostly a refactor of shared helpers, not of every screen at once.
 - QEMU covers boot, keyboard and image regressions only; it does not exercise the H700 display path.
 - On each intended H700 image: panel mode, stride and orientation; that fbdev actually presents (32 bpp) instead of falling back to memory; face/shoulder bindings vs. legends; text legibility; cold and warm frame pacing with playback; idle redraw.
 
-## 15. Open design calls
+## 15. Design calls (all decided by Henry)
 
-Decided: **Home uses rows with a side preview panel** (Henry).
-
-Still open (defaults in brackets):
-
-1. **Devices**: the RG35XX D-pad is the target for this build; the 4-button trackpad device is a separate, later device. The action map covers both.
-2. **Name**: Seaglass UI [yes].
-3. **Default color for new installs**: Artwork [yes] vs. musicOS blue. With nothing playing, follow the connected computer's synced appearance settings (decided by Henry, §3.3).
-4. **Albums**: 3-column grid (decided by Henry).
-5. **Classic font**: keep RasterGothic as a hidden option [yes] vs. remove.
-6. **Extras/Apps**: fold into Settings [yes], keeping USB Sync reachable.
-
+1. **Home**: rows with a side preview panel led by square art (round pictures for Artists).
+2. **Devices**: the RG35XX D-pad is the target for this build; the 4-button trackpad device is a separate, later device. The action map covers both.
+3. **Name**: Seaglass UI.
+4. **Color**: Artwork by default; with nothing playing, follow the connected computer's synced appearance settings (§3.3).
+5. **Albums**: 3-column grid.
+6. **RasterGothic**: deleted, no hidden Classic option.
+7. **Extras/Apps**: folded into Settings, keeping USB Sync reachable.
