@@ -564,6 +564,36 @@ impl MusicOs {
         app
     }
 
+    pub fn next_tick_deadline(&self, now: Instant) -> Instant {
+        let mut deadline = self.last_runtime_snapshot + Duration::from_millis(250);
+        if self.animation_in_progress() || self.hud_timer > 0.0 {
+            deadline = deadline.min(now + Duration::from_millis(2));
+        }
+        if self.scan_rx.is_some() || self.cover_art_rx.is_some() {
+            deadline = deadline.min(now + Duration::from_millis(20));
+        }
+        if self.current_track_id.is_some() {
+            deadline = deadline.min(self.last_session_save + Duration::from_secs(5));
+        }
+        if !self.is_asleep {
+            if !self.display_dimmed && self.dim_timeout_seconds > 0 {
+                deadline = deadline.min(
+                    self.last_interaction + Duration::from_secs(self.dim_timeout_seconds as u64),
+                );
+            }
+            if self.sleep_timeout_minutes > 0 && !self.player.is_playing() {
+                deadline = deadline.min(
+                    self.last_interaction
+                        + Duration::from_secs(self.sleep_timeout_minutes as u64 * 60),
+                );
+            }
+        }
+        if let Some(sleep) = self.sleep_timer_deadline {
+            deadline = deadline.min(sleep);
+        }
+        deadline
+    }
+
     pub fn tick(&mut self) {
         self.player.tick();
         self.poll_library_scan();
@@ -4370,6 +4400,46 @@ impl MusicOs {
             }
             log::info!("System woke up from suspend!");
         }
+    }
+}
+
+#[cfg(test)]
+mod deadline_tests {
+    use super::*;
+
+    #[test]
+    fn deadlines_preserve_snapshots_animation_and_timers() {
+        let mut app = MusicOs::new(Resolution {
+            width: 640,
+            height: 480,
+        });
+        let now = Instant::now();
+        app.last_runtime_snapshot = now;
+        app.outline_animating = false;
+        app.screen_transition = 1.0;
+        app.hud_t = 0.0;
+        app.hud_timer = 0.0;
+        app.theme_colors_initialized = false;
+        app.scroll_offset = app.target_scroll_offset;
+        app.dim_timeout_seconds = 0;
+        app.sleep_timeout_minutes = 0;
+        assert_eq!(
+            app.next_tick_deadline(now),
+            now + Duration::from_millis(250)
+        );
+        app.sleep_timer_deadline = Some(now + Duration::from_millis(7));
+        assert_eq!(app.next_tick_deadline(now), now + Duration::from_millis(7));
+        app.outline_animating = true;
+        assert_eq!(app.next_tick_deadline(now), now + Duration::from_millis(2));
+        app.outline_animating = false;
+        app.sleep_timer_deadline = None;
+        app.last_interaction = now - Duration::from_secs(1);
+        app.dim_timeout_seconds = 1;
+        assert_eq!(app.next_tick_deadline(now), now);
+        app.display_dimmed = true;
+        app.current_track_id = Some(1);
+        app.last_session_save = now - Duration::from_secs(5);
+        assert_eq!(app.next_tick_deadline(now), now);
     }
 }
 

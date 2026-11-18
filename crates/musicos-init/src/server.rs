@@ -560,19 +560,61 @@ fn now_unix_ms() -> u128 {
 
 pub struct CompanionServer {
     server: Server,
-    tx: Sender<ServerEvent>,
+    tx: EventSender,
     db_path: String,
+}
+
+struct EventSender {
+    tx: Sender<ServerEvent>,
+    wake: Option<crate::input::WakeSignal>,
+}
+
+#[cfg(test)]
+mod event_sender_tests {
+    use super::*;
+
+    #[test]
+    fn sends_events_and_reports_a_disconnected_receiver() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let sender = EventSender {
+            tx,
+            wake: Some(crate::input::WakeSignal::new().unwrap()),
+        };
+        assert!(sender.send(ServerEvent::ShowControls).is_ok());
+        assert!(matches!(rx.try_recv(), Ok(ServerEvent::ShowControls)));
+        drop(rx);
+        assert!(sender.send(ServerEvent::ShowControls).is_err());
+    }
+}
+
+impl EventSender {
+    fn send(&self, event: ServerEvent) -> Result<(), std::sync::mpsc::SendError<ServerEvent>> {
+        self.tx.send(event)?;
+        if let Some(wake) = &self.wake {
+            wake.signal();
+        }
+        Ok(())
+    }
 }
 
 impl CompanionServer {
     pub fn start(port: u16, tx: Sender<ServerEvent>, db_path: String) -> Result<()> {
+        Self::start_with_wake(port, tx, db_path, None)
+    }
+
+    pub fn start_with_wake(
+        port: u16,
+        tx: Sender<ServerEvent>,
+        db_path: String,
+        wake: Option<crate::input::WakeSignal>,
+    ) -> Result<()> {
         let server = Server::http(format!("0.0.0.0:{port}"))
             .map_err(|e| anyhow::anyhow!("failed to start HTTP server: {e}"))?;
         log::info!("Companion HTTP server listening on port {port}");
 
         let companion = Self {
             server,
-            tx,
+            tx: EventSender { tx, wake },
             db_path,
         };
         thread::spawn(move || {
