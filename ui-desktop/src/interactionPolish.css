@@ -64,12 +64,6 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 .section-control>.menu-trigger:first-child[data-state=open]{border-radius:1rem 1rem 0 0;}
 .dropdown.section-dropdown{border-radius:0 0 1rem 1rem;}
 .library-sidebar .sidebar-home>.icon{width:1.4rem;height:1.4rem;flex:0 0 1.4rem;}
-/* Home opens with a deliberate resume action and nearby saved collections. */
-.home-resume-action{display:flex;align-items:center;justify-content:center;gap:.35rem;flex:none;min-height:2.25rem;padding:.375rem .625rem;border:0;border-radius:.65rem;background:var(--surface-color);color:var(--ink);font-size:.8rem;font-weight:650;}
-.home-resume-action>.icon{width:1.5rem;height:1.5rem;}
-.personal-home{gap:1.5rem;}
-.home-collections .home-collection-grid{grid-template-columns:repeat(auto-fill,minmax(min(100%,8rem),min(100%,11rem)));}
-.home-collections .home-collection-grid .playlist-artwork-tone{aspect-ratio:1;}
 .home-recent>article>button{display:flex;align-items:center;gap:.65rem;min-width:0;width:100%;padding:.45rem;border-radius:.65rem;background:transparent;border:0;color:var(--ink);text-align:left;}
 .home-recent>article>button>span{flex:1;min-width:0;}
 .home-recent>article>button>.icon{width:1.3rem;height:1.3rem;flex:none;}
