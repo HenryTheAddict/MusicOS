@@ -138,6 +138,19 @@ pub fn plan_after(a:Track<'_>,b:Track<'_>,config:&Config,contiguous_album:bool,e
     }
     let outgoing_tail = a.structure.and_then(|s| transition_energy::tail(envelope(s), length));
     let incoming_cue = b.structure.map_or(0., |s| transition_energy::intro(envelope(s)));
+    if outgoing_tail.is_none() && a.structure.and_then(|s| transition_energy::cold_ending(envelope(s), length)).is_some() {
+        // An equal-power fade over a cold ending buries the last hit.
+        return Some(Plan {
+            kind: Kind::Gapless,
+            outgoing_cue: length,
+            incoming_cue,
+            duration: 0.,
+            incoming_tempo: 1.,
+            effect: Effect::CleanBlend,
+            confidence: 0.7,
+            reason: "Cold ending: let the final hit ring, then start the next track".into(),
+        });
+    }
     let ending = |reason: &str| {
         if let Some(tail) = outgoing_tail.filter(|tail| {
             tail.cue >= earliest
@@ -480,6 +493,41 @@ mod tests {
     fn measured(period:f32)->Structure {
         Structure{beat_confidence:0.9,beats:(0..=400).map(|i|i as f32*period).collect(),
             phrases:(0..=25).map(|i|Boundary{seconds:i as f32*16.*period,confidence:0.9}).collect(),..Default::default()}
+    }
+    #[test]
+    fn cold_ending_preserves_final_hit_with_measured_beats_and_trimmed_pickup() {
+        let mut a = measured(0.5);
+        let mut b = measured(0.5);
+        a.energy_step = 0.025;
+        a.envelope = (0..7200).map(|i| {
+            let t = i as f32 * 0.025;
+            if t < 179. { 0.7 } else if t < 179.7 {
+                0.9 * (-(t - 179.) * 4.).exp() * (1. - (t - 179.) / 0.7)
+            } else { 0. }
+        }).collect();
+        a.beats.retain(|t| *t <= 179.);
+        b.energy_step = 0.025;
+        b.envelope = vec![0.7; 7200];
+        b.envelope[..80].fill(0.);
+        b.envelope[80..100].fill(0.02);
+        b.beats.iter_mut().for_each(|t| *t += 2.5);
+        assert!(transition_energy::tail(envelope(&a), 180.).is_none());
+        let p = plan(track(180., Some(120.), Some(&a)), track(180., Some(120.), Some(&b)), &config(), false).unwrap();
+        assert_eq!(p.kind, Kind::Gapless, "{p:?}");
+        assert_eq!(p.outgoing_cue, 180.);
+        assert_eq!(p.duration, 0.);
+        assert_eq!(p.incoming_cue, transition_energy::intro(envelope(&b)));
+        assert!(p.incoming_cue > 1.8 && p.incoming_cue < 2.);
+        assert_eq!(p.incoming_tempo, 1.);
+        assert_eq!(p.effect, Effect::CleanBlend);
+        assert!(p.confidence > 0.);
+        let full = plan(track(180., Some(120.), Some(&a)), track(180., Some(120.), Some(&b)), &Config { mode: Mode::FullSong, ..config() }, false).unwrap();
+        assert_eq!(full.kind, Kind::Crossfade);
+        assert_eq!(full.incoming_cue, 0.);
+        assert_eq!(full.duration, 2.);
+        let album = plan(track(180., Some(120.), Some(&a)), track(180., Some(120.), Some(&b)), &config(), true).unwrap();
+        assert_eq!(album.kind, Kind::Gapless);
+        assert_eq!(album.incoming_cue, 0.);
     }
     #[test]fn measured_beats_override_bpm_rounding_and_octave_hints(){
         let a=measured(0.502);let b=measured(0.49);

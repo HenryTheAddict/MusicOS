@@ -40,6 +40,39 @@ pub struct Tail {
     pub overlap: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ColdEnding {
+    pub hit: f32,
+}
+
+pub fn cold_ending(envelope: Envelope<'_>, duration: f32) -> Option<ColdEnding> {
+    if !duration.is_finite() || duration < 10. || !envelope.step.is_finite()
+        || envelope.step <= 0. || envelope.step > 0.1
+    {
+        return None;
+    }
+    let body = envelope.mean(duration - 8., duration - 4.)?;
+    let late_body = envelope.mean(duration - 4., duration - 1.6)?;
+    let ending = envelope.mean(duration - 0.2, duration)?;
+    if body < 0.12 || late_body < body * 0.8 || late_body > body * 1.25
+        || ending > body * 0.12
+    {
+        return None;
+    }
+    for offset in 0..=12 {
+        let hit = duration - 1.6 + offset as f32 * 0.1;
+        let before = envelope.mean(hit - 0.5, hit)?;
+        let attack = envelope.mean(hit, hit + 0.1)?;
+        let ring = envelope.mean(hit + 0.2, hit + 0.4)?;
+        if before >= body * 0.8 && attack >= body * 0.65
+            && ring >= body * 0.025 && ring <= body * 0.55
+        {
+            return Some(ColdEnding { hit });
+        }
+    }
+    None
+}
+
 /// Wait for the energy to stay down. That quiet break might have one more chorus in it.
 pub fn tail(envelope: Envelope<'_>, duration: f32) -> Option<Tail> {
     if !duration.is_finite() || duration < 10. {
@@ -178,6 +211,60 @@ mod tests {
             step: 0.25,
             values,
         }
+    }
+
+    fn cold_samples() -> Vec<f32> {
+        (0..7200).map(|i| {
+            let time = i as f32 * 0.025;
+            if time < 179. { 0.7 } else if time < 179.7 {
+                0.9 * (-(time - 179.) * 4.).exp() * (1. - (time - 179.) / 0.7)
+            } else { 0. }
+        }).collect()
+    }
+    fn fine(values: &[f32]) -> Envelope<'_> { Envelope { start: 0., step: 0.025, values } }
+
+    #[test]
+    fn cold_ending_keeps_a_short_final_hit_and_ring() {
+        let values = cold_samples();
+        assert!(tail(fine(&values), 180.).is_none());
+        let ending = cold_ending(fine(&values), 180.).unwrap();
+        assert!((ending.hit - 179.).abs() <= 0.15, "{ending:?}");
+    }
+
+    #[test]
+    fn cold_ending_rejects_cuts_fades_drops_silence_and_breaks() {
+        let original = cold_samples();
+        for case in ["loud_cut", "fade", "drop", "quiet", "silent", "break", "trailing_silence"] {
+            let mut values = original.clone();
+            for (i, value) in values.iter_mut().enumerate() {
+                let time = i as f32 * 0.025;
+                *value = match case {
+                    "loud_cut" => 0.7,
+                    "fade" => 0.7 * ((180. - time) / 8.).clamp(0., 1.),
+                    "drop" if time >= 174. => 0.07,
+                    "quiet" => *value * 0.01,
+                    "silent" => 0.,
+                    "break" if (170. ..174.).contains(&time) => 0.07,
+                    "trailing_silence" if time >= 174. => 0.,
+                    _ => *value,
+                };
+            }
+            assert!(cold_ending(fine(&values), 180.).is_none(), "{case}");
+        }
+        let mut legacy = vec![0.7; 240];
+        legacy[200..216].fill(0.07);
+        assert!(cold_ending(envelope(&legacy), 60.).is_none());
+    }
+
+    #[test]
+    fn cold_ending_rejects_missing_invalid_and_partial_evidence() {
+        assert!(cold_ending(fine(&[]), 180.).is_none());
+        let mut values = cold_samples();
+        values[7000] = f32::NAN;
+        assert!(cold_ending(fine(&values), 180.).is_none());
+        assert!(cold_ending(fine(&values), f32::INFINITY).is_none());
+        assert!(cold_ending(Envelope { step: 0., ..fine(&values) }, 180.).is_none());
+        assert!(cold_ending(fine(&values[..7100]), 180.).is_none());
     }
 
     #[test]
