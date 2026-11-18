@@ -162,6 +162,46 @@ fn removed_root_during_scan_preserves_rows_and_marks_unavailable() {
 }
 
 #[test]
+fn storage_loss_during_indexing_preserves_rows_and_marks_unavailable() {
+    let count = std::thread::available_parallelism()
+        .map(|workers| workers.get())
+        .unwrap_or(4) * 4 + 8;
+    for remove_root in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let media_root = root.path().join("removable");
+        std::fs::create_dir(&media_root).unwrap();
+        for number in 0..count {
+            std::fs::write(media_root.join(format!("song-{number:02}.mp3")), b"fixture").unwrap();
+        }
+        let db = Db::open(root.path().join("db.sqlite").to_str().unwrap()).unwrap();
+        let source = db
+            .add_library_source("reference", media_root.to_str().unwrap(), "USB")
+            .unwrap();
+        media::index_library_source_with_progress(&db, source.id, true, |_| {}).unwrap();
+        let before = db.library_source_track_count(source.id).unwrap();
+        assert_eq!(before, count);
+        let mut removed = false;
+        media::index_library_source_with_progress(&db, source.id, true, |progress| {
+            if !removed && progress.processed > 0 && progress.processed < count {
+                if remove_root {
+                    std::fs::remove_dir_all(&media_root).unwrap();
+                } else {
+                    for entry in std::fs::read_dir(&media_root).unwrap() {
+                        std::fs::remove_file(entry.unwrap().path()).unwrap();
+                    }
+                }
+                removed = true;
+            }
+        })
+        .unwrap();
+        assert!(removed);
+        assert_eq!(media_root.exists(), !remove_root);
+        assert_eq!(db.library_source_track_count(source.id).unwrap(), before);
+        assert!(!db.library_source(source.id).unwrap().unwrap().available);
+    }
+}
+
+#[test]
 fn unopenable_persistent_database_uses_independent_memory_databases() {
     let _guard = ENV.lock().unwrap();
     let root = tempfile::tempdir().unwrap();

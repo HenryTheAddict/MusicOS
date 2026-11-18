@@ -216,7 +216,7 @@ where
         let processed_before = result.processed;
         let local_processed = std::cell::Cell::new(0usize);
         let discovered = result.discovered;
-        result.indexed += index_files(
+        let indexed = index_files(
             &db,
             &files,
             request.mode == ScanMode::Full,
@@ -232,6 +232,7 @@ where
                 });
             },
         )?;
+        result.indexed += indexed.indexed;
         result.processed += local_processed.get();
         if cancel.load(Ordering::Relaxed) {
             result.cancelled = true;
@@ -241,7 +242,7 @@ where
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
-        if scan.available(root) {
+        if scan.available(root) && indexed.storage_available {
             db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
             db.mark_library_source(source.id, true, None)?;
         } else {
@@ -559,7 +560,7 @@ where
             });
         },
     )?;
-    if scan.available(root) {
+    if scan.available(root) && indexed.storage_available {
         db.remove_missing_tracks_for_source(
             source.id,
             &files
@@ -576,12 +577,12 @@ where
         )?;
     }
     progress(ScanProgress {
-        indexed,
+        indexed: indexed.indexed,
         processed: files.len(),
         discovered: files.len(),
         current_root: None,
     });
-    Ok(indexed)
+    Ok(indexed.indexed)
 }
 
 fn index_default_locations_with_mode<F>(
@@ -630,7 +631,7 @@ where
             current_root: Some(root.clone()),
         });
 
-        indexed += index_files(
+        let outcome = index_files(
             db,
             &files,
             reindex_all,
@@ -645,11 +646,12 @@ where
                 });
             },
         )?;
+        indexed += outcome.indexed;
         let existing_paths = files
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
-        if scan.available(root_path) {
+        if scan.available(root_path) && outcome.storage_available {
             db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
             db.mark_library_source(source.id, true, None)?;
         } else {
@@ -750,7 +752,13 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
         "storage unavailable during USB scan: {}",
         root.display()
     );
-    index_files(db, &files, false, None, None, |_, _| {})
+    let indexed = index_files(db, &files, false, None, None, |_, _| {})?;
+    anyhow::ensure!(
+        scan.available(root) && indexed.storage_available,
+        "storage unavailable during USB indexing: {}",
+        root.display()
+    );
+    Ok(indexed.indexed)
 }
 
 struct StorageScan {
@@ -828,6 +836,27 @@ fn audio_files_under(root: &Path) -> (Vec<PathBuf>, StorageScan) {
     (files, scan)
 }
 
+struct IndexResult {
+    indexed: usize,
+    storage_available: bool,
+}
+
+fn storage_read_failed(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        let Some(error) = cause.downcast_ref::<std::io::Error>() else {
+            return false;
+        };
+        if error.kind() == std::io::ErrorKind::NotFound {
+            return true;
+        }
+        #[cfg(unix)]
+        if matches!(error.raw_os_error(), Some(libc::EIO | libc::ENODEV | libc::ENXIO)) {
+            return true;
+        }
+        false
+    })
+}
+
 fn index_files<F>(
     db: &Db,
     files: &[PathBuf],
@@ -835,13 +864,14 @@ fn index_files<F>(
     source_id: Option<i64>,
     cancel: Option<&AtomicBool>,
     mut progress: F,
-) -> Result<usize>
+) -> Result<IndexResult>
 where
     F: FnMut(usize, usize),
 {
     use rayon::prelude::*;
 
     let mut indexed = 0;
+    let mut storage_available = true;
     let reindex_all = reindex_all || std::env::var("MUSICOS_REINDEX_ALL").as_deref() == Ok("1");
     let imported_hashes = managed_import_hashes(files);
 
@@ -867,10 +897,15 @@ where
             break;
         }
         let path_str = path.display().to_string();
-        let Ok(stats) = file_stats(path) else {
-            processed += 1;
-            report(indexed, processed);
-            continue;
+        let stats = match file_stats(path) {
+            Ok(stats) => stats,
+            Err(error) => {
+                storage_available &= !storage_read_failed(&error);
+                log::warn!("failed to stat file {}: {error}", path.display());
+                processed += 1;
+                report(indexed, processed);
+                continue;
+            }
         };
         if !reindex_all {
             if let Ok(true) = db.track_is_fresh(&path_str, stats.file_size, stats.modified_at) {
@@ -909,7 +944,10 @@ where
                     Ok(()) => indexed += 1,
                     Err(err) => log::warn!("failed to index file {}: {err}", entry.0.display()),
                 },
-                Err(err) => log::warn!("failed to index file {}: {err}", entry.0.display()),
+                Err(err) => {
+                    storage_available &= !storage_read_failed(&err);
+                    log::warn!("failed to index file {}: {err}", entry.0.display());
+                }
             }
             processed += 1;
             report(indexed, processed);
@@ -920,7 +958,10 @@ where
     }
     log::info!("[INDEXING] 100%");
 
-    Ok(indexed)
+    Ok(IndexResult {
+        indexed,
+        storage_available,
+    })
 }
 
 struct PreparedTrack {
@@ -941,7 +982,7 @@ struct PreparedTrack {
 fn prepare_index(path: &Path, stats: FileStats, known_hash: Option<&str>) -> Result<PreparedTrack> {
     let path_str = path.display().to_string();
     let fallback = metadata_from_path(path);
-    let scraped = scrape_embedded_metadata(path).unwrap_or_default();
+    let scraped = scrape_embedded_metadata(path)?;
 
     let track_number = scraped.track_number.or(fallback.track_number).unwrap_or(0);
     let title = prefer(scraped.title, Some(fallback.title), "Untitled");
@@ -1088,8 +1129,23 @@ fn file_stats(path: &Path) -> Result<FileStats> {
 /// Read-only destination hints for managed copies; files need no existing hierarchy.
 pub fn organization_tags(path:&Path)->(Option<String>,Option<String>){let Ok(file)=lofty::read_from_path(path)else{return(None,None)};let Some(tag)=file.primary_tag().or_else(||file.first_tag())else{return(None,None)};let artist=clean_tag(tag.get_string(&lofty::tag::ItemKey::AlbumArtist)).or_else(||clean_tag(tag.artist().as_deref()));(artist,clean_tag(tag.album().as_deref()))}
 
-fn scrape_embedded_metadata(path: &Path) -> Option<EmbeddedMetadata> {
-    let tagged_file = lofty::read_from_path(path).ok()?;
+fn scrape_embedded_metadata(path: &Path) -> Result<EmbeddedMetadata> {
+    let tagged_file = match lofty::read_from_path(path) {
+        Ok(file) => file,
+        Err(error) => {
+            if let lofty::error::ErrorKind::Io(error) = error.kind() {
+                let error = error
+                    .raw_os_error()
+                    .map(std::io::Error::from_raw_os_error)
+                    .unwrap_or_else(|| std::io::Error::new(error.kind(), error.to_string()));
+                let error = anyhow::Error::new(error);
+                if storage_read_failed(&error) {
+                    return Err(error);
+                }
+            }
+            return Ok(EmbeddedMetadata::default());
+        }
+    };
     let tag = tagged_file
         .primary_tag()
         .or_else(|| tagged_file.first_tag());
@@ -1117,7 +1173,7 @@ fn scrape_embedded_metadata(path: &Path) -> Option<EmbeddedMetadata> {
             .filter(|value| *value > 0);
     }
 
-    Some(metadata)
+    Ok(metadata)
 }
 
 fn metadata_from_path(path: &Path) -> PathMetadata {
@@ -1358,6 +1414,31 @@ fn unsupported_opus_files_are_not_indexed() {
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn storage_read_failures_preserve_io_error_context() {
+        let missing = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::NotFound))
+            .context("opening media");
+        assert!(storage_read_failed(&missing));
+        assert!(!storage_read_failed(&anyhow::anyhow!("invalid metadata")));
+        assert!(!storage_read_failed(&anyhow::Error::new(std::io::Error::from(
+            std::io::ErrorKind::PermissionDenied
+        ))));
+        #[cfg(unix)]
+        for code in [libc::EIO, libc::ENODEV, libc::ENXIO] {
+            assert!(storage_read_failed(
+                &anyhow::Error::new(std::io::Error::from_raw_os_error(code)).context("reading media")
+            ));
+        }
+    }
+
+    #[test]
+    fn cached_hash_does_not_hide_missing_media() {
+        let root = tempfile::tempdir().unwrap();
+        let stats = FileStats { file_size: 128, modified_at: 0 };
+        let result = prepare_index(&root.path().join("missing.mp3"), stats, Some("cached"));
+        assert!(result.is_err_and(|error| storage_read_failed(&error)));
+    }
 
     #[test]
     fn explicit_scan_request_uses_its_paths_and_reports_cancellation() {
