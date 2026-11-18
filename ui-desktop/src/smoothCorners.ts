@@ -4,7 +4,7 @@ import { getSvgPath } from "figma-squircle";
 // Values read from musicosdesk.sketch: panels 16px / .6, artwork 16px / 1.
 // The generator's 128px, r16, smoothing1 outline matches the exported Sketch
 // Bézier control points (15.084945, 22.627417, 27.313708, 4.6862915).
-const surfaces = ".section-control > .menu-trigger:first-child, .now-playing, .library-toolbar, .search, .card-artwork, .mini-player-art, .album-artwork, .viewer-artwork, .artist-portrait-button, .cover, .genre-art, .album-strip, .artist-about, .library-shortcuts, .library-sidebar nav button, .personal-library > button, .sketch-button, .puffy-toggle, .puffy-toggle > button, .personal-collection";
+const surfaces = ".section-control > .menu-trigger:first-child, .now-playing, .library-toolbar, .search, .card-artwork, .mini-player-art, .album-artwork, .viewer-artwork, .artist-portrait-button, .cover, .genre-art, .album-strip, .artist-about, .library-shortcuts, .library-sidebar nav button, .personal-library > button, .sketch-button, .personal-collection";
 const paths = new Map<string, string>();
 export function smoothPath(width: number, height: number, radius: number, smoothing: number) {
   const key = `${width}:${height}:${radius}:${smoothing}`;

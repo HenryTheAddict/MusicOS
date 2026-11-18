@@ -480,11 +480,8 @@
 .cover-options button[aria-pressed=true] { border-color:var(--accent); }
 .cover-options img { display:block;width:100%;height:100%;object-fit:cover;border-radius:.25rem; }
 .collage-choice { font-size:.75rem;padding:.375rem; }
-.puffy-toggle { display:flex;padding:.25rem;gap:0;border-radius:1rem;background:color-mix(in srgb,var(--surface-color) 60%,#d6defd);box-shadow:none; }
-.puffy-toggle>button { flex:1;min-width:0;padding:.5rem .625rem;border-radius:.75rem;font-weight:600;background:color-mix(in srgb,var(--accent) 35%,#5cd5f3);transition:background-color 160ms,box-shadow 160ms; }
-.puffy-toggle>button[aria-pressed=true] { background:color-mix(in srgb,var(--accent) 40%,#667cff);box-shadow:none; }
 @container sidebar (max-width:240px){.collection-create-actions{grid-template-columns:1fr}}
-@media(prefers-reduced-motion:reduce){.sketch-button,.puffy-toggle>button{transition:none}.sketch-button:active:not(:disabled){transform:none}}
+@media(prefers-reduced-motion:reduce){.sketch-button{transition:none}.sketch-button:active:not(:disabled){transform:none}}
 
 .library-sidebar { container-type:inline-size; container-name:sidebar; }
 .personal-library { min-height:0; flex:0 1 auto; max-height:none; }
