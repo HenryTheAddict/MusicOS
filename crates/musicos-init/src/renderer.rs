@@ -61,6 +61,13 @@ pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
         if !screenshot_due(&guard, Instant::now()) {
             return;
         }
+        if guard
+            .frame
+            .as_ref()
+            .is_some_and(|frame| frame.resolution == resolution && frame.bytes.as_ref() == bytes)
+        {
+            return;
+        }
         guard.frame = Some(ScreenshotFrame {
             bytes: Arc::from(bytes),
             resolution,
@@ -287,7 +294,41 @@ pub enum Renderer {
     Memory(MemorySurface),
 }
 
+#[derive(Default)]
+pub(crate) struct FrameTracker {
+    previous: Option<Vec<u8>>,
+    pub draws: u64,
+    pub presents: u64,
+    pub bytes: u64,
+}
+
+impl FrameTracker {
+    pub fn update(&mut self, bytes: &[u8]) -> bool {
+        self.draws += 1;
+        if self.previous.as_deref() == Some(bytes) {
+            return false;
+        }
+        let previous = self.previous.get_or_insert_with(Vec::new);
+        previous.clear();
+        previous.extend_from_slice(bytes);
+        self.presents += 1;
+        self.bytes += bytes.len() as u64;
+        true
+    }
+}
+
 impl Renderer {
+    pub fn presentation_stats(&self) -> (u64, u64, u64) {
+        match self {
+            Self::Fb(fb) => fb.presentation_stats(),
+            Self::Memory(surface) => (
+                surface.frames.draws,
+                surface.frames.presents,
+                surface.frames.bytes,
+            ),
+        }
+    }
+
     pub fn open(resolution: Resolution) -> Result<Self> {
         let deadline = Instant::now() + Duration::from_secs(3);
         loop {
@@ -321,6 +362,7 @@ impl Renderer {
                 let mut canvas = surface.canvas()?;
                 f(&mut canvas);
                 update_latest_screenshot(canvas.buffer, canvas.resolution);
+                surface.frames.update(&surface.buffer);
                 Ok(())
             }
         }
@@ -330,6 +372,47 @@ impl Renderer {
 pub struct MemorySurface {
     resolution: Resolution,
     buffer: Vec<u8>,
+    frames: FrameTracker,
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::*;
+
+    #[test]
+    fn first_empty_changed_and_resized_frames_are_presented() {
+        let mut frames = FrameTracker::default();
+        assert!(frames.update(&[]));
+        assert!(!frames.update(&[]));
+        assert!(frames.update(&[0, 1, 2, 3]));
+        assert!(!frames.update(&[0, 1, 2, 3]));
+        assert!(frames.update(&[0, 1, 2, 4]));
+        assert!(frames.update(&[0, 1]));
+        assert_eq!((frames.draws, frames.presents, frames.bytes), (6, 4, 10));
+    }
+
+    #[test]
+    fn screenshot_skips_identical_bytes_but_publishes_a_deferred_change() {
+        let resolution = Resolution {
+            width: 1,
+            height: 1,
+        };
+        update_latest_screenshot(&[0; 4], resolution);
+        let first = get_latest_screenshot().unwrap();
+        let state = LATEST_SCREENSHOT.get().unwrap();
+        state.lock().unwrap().last_update = Some(Instant::now() - Duration::from_secs(1));
+        update_latest_screenshot(&[0; 4], resolution);
+        assert!(Arc::ptr_eq(
+            &first.bytes,
+            &get_latest_screenshot().unwrap().bytes
+        ));
+        state.lock().unwrap().last_update = Some(Instant::now());
+        update_latest_screenshot(&[1; 4], resolution);
+        assert_eq!(get_latest_screenshot().unwrap().bytes.as_ref(), &[0; 4]);
+        state.lock().unwrap().last_update = Some(Instant::now() - Duration::from_secs(1));
+        update_latest_screenshot(&[1; 4], resolution);
+        assert_eq!(get_latest_screenshot().unwrap().bytes.as_ref(), &[1; 4]);
+    }
 }
 
 impl MemorySurface {
@@ -338,6 +421,7 @@ impl MemorySurface {
         Self {
             resolution,
             buffer: vec![0; len],
+            frames: FrameTracker::default(),
         }
     }
 

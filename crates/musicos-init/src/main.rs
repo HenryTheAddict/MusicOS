@@ -106,6 +106,8 @@ fn run() -> Result<()> {
     }
 
     let mut next_frame = Instant::now();
+    let render_metrics = std::env::var_os("MUSICOS_RENDER_METRICS").is_some();
+    let mut last_metrics = Instant::now();
     while running.load(std::sync::atomic::Ordering::SeqCst) {
         app.tick();
 
@@ -138,6 +140,14 @@ fn run() -> Result<()> {
         }
 
         let now = Instant::now();
+        if render_metrics && last_metrics.elapsed() >= Duration::from_secs(1) {
+            let (draws, presents, bytes) = renderer.presentation_stats();
+            info!(
+                "render_metrics elapsed_ms={} draws={draws} presents={presents} bytes={bytes}",
+                started_at.elapsed().as_millis()
+            );
+            last_metrics = now;
+        }
         inputs.wait(
             wait_timeout(now, next_frame, app.next_tick_deadline(now)),
             &wake,
@@ -145,6 +155,10 @@ fn run() -> Result<()> {
     }
 
     info!("MusicOS stopping gracefully...");
+    if std::env::var_os("MUSICOS_RENDER_METRICS").is_some() {
+        let (draws, presents, bytes) = renderer.presentation_stats();
+        info!("render_metrics draws={draws} presents={presents} bytes={bytes}");
+    }
     app.save_preferences(true);
     Ok(())
 }
