@@ -262,7 +262,6 @@ pub struct MusicOs {
     pub sleep_timer_deadline: Option<Instant>,
     scan_rx: Option<std::sync::mpsc::Receiver<ScanMessage>>,
     scan_pending: bool,
-    library_revision: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -275,58 +274,6 @@ pub enum HudType {
 struct ScanResult {
     indexed: Result<usize, String>,
     elapsed_ms: u128,
-    library: Option<Box<LibrarySnapshot>>,
-    revision: u64,
-    sort: LibrarySort,
-    search_query: String,
-}
-
-#[derive(Debug)]
-struct LibrarySnapshot {
-    tracks: Option<Vec<Track>>,
-    albums: Option<Vec<String>>,
-    artists: Option<Vec<String>>,
-    playlists: Option<Vec<Playlist>>,
-    pins: Option<Vec<Pin>>,
-    counts: LibraryCounts,
-    search: Option<Vec<Track>>,
-}
-
-impl LibrarySnapshot {
-    fn load(path: &str, sort: LibrarySort, query: &str) -> anyhow::Result<Self> {
-        let db = Db::open_background(path)?;
-        let mut tracks = db.get_tracks().ok();
-        if let Some(tracks) = &mut tracks {
-            sort_tracks(tracks, sort);
-        }
-        Ok(Self {
-            tracks,
-            albums: db.get_albums().ok(),
-            artists: db.get_artists().ok(),
-            playlists: db.get_playlists().ok(),
-            pins: db.get_pins().ok(),
-            counts: db.library_counts().unwrap_or_default(),
-            search: (!query.trim().is_empty())
-                .then(|| db.search_tracks(query, 200).unwrap_or_default()),
-        })
-    }
-}
-
-fn lower_scan_priority() {
-    #[cfg(target_os = "linux")]
-    {
-        // SAFETY: Linux applies who=0 to the calling thread, never the audio thread.
-        if unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, 10) } != 0 {
-            log::warn!(
-                "could not lower scan worker priority: {}",
-                std::io::Error::last_os_error()
-            );
-        }
-    }
-}
-
-fn metadata_worker_count(available: usize) -> usize {
-    available.clamp(1, 2)
 }
 
 #[derive(Debug)]
@@ -612,7 +559,6 @@ impl MusicOs {
             sleep_timer_deadline: None,
             scan_rx: None,
             scan_pending: false,
-            library_revision: 0,
         };
         app.refresh_library();
         app
@@ -758,19 +704,6 @@ impl MusicOs {
     }
 
     pub fn handle_input(&mut self, event: InputEvent) -> bool {
-        if matches!(
-            event,
-            InputEvent::Tap
-                | InputEvent::Button(
-                    Button::Confirm
-                        | Button::Context
-                        | Button::PlayPause
-                        | Button::PreviousTrack
-                        | Button::NextTrack
-                )
-        ) {
-            self.library_revision = self.library_revision.wrapping_add(1);
-        }
         if self.is_asleep {
             if let InputEvent::Button(_) = event {
                 self.is_asleep = false;
@@ -998,32 +931,33 @@ impl MusicOs {
         crate::server::push_runtime_log("scan", status.to_string());
         let db_path = self.db_path.clone();
         let scan_policy = self.scan_policy.clone();
-        let revision = self.library_revision;
-        let sort = self.library_sort;
-        let search_query = self.search_query.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         self.scan_rx = Some(rx);
 
         std::thread::spawn(move || {
-            lower_scan_priority();
             let started = Instant::now();
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(metadata_worker_count(
-                    std::thread::available_parallelism()
-                        .map(usize::from)
-                        .unwrap_or(1),
-                ))
-                .start_handler(|_| lower_scan_priority())
-                .build();
-            let indexed = pool.map_err(|err| err.to_string()).and_then(|pool| {
-                pool.install(|| {
-                    crate::database::Db::open_background(&db_path)
-                        .and_then(|db| {
-                            if let Some(source_id) = source_id {
-                                crate::media::index_library_source_with_progress(
+            let indexed = crate::database::Db::open(&db_path)
+                .and_then(|db| {
+                    if let Some(source_id) = source_id {
+                        crate::media::index_library_source_with_progress(
+                            &db,
+                            source_id,
+                            reindex_all,
+                            |progress| {
+                                let _ = tx.send(ScanMessage::Progress {
+                                    indexed: progress.indexed,
+                                    processed: progress.processed,
+                                    discovered: progress.discovered,
+                                    current_root: progress.current_root,
+                                    elapsed_ms: started.elapsed().as_millis(),
+                                });
+                            },
+                        )
+                    } else {
+                        match scan_policy {
+                            LibraryScanPolicy::EmbeddedDefaults if reindex_all => {
+                                crate::media::reindex_default_locations_with_progress(
                                     &db,
-                                    source_id,
-                                    reindex_all,
                                     |progress| {
                                         let _ = tx.send(ScanMessage::Progress {
                                             indexed: progress.indexed,
@@ -1034,84 +968,52 @@ impl MusicOs {
                                         });
                                     },
                                 )
-                            } else {
-                                match scan_policy {
-                                    LibraryScanPolicy::EmbeddedDefaults if reindex_all => {
-                                        crate::media::reindex_default_locations_with_progress(
-                                            &db,
-                                            |progress| {
-                                                let _ = tx.send(ScanMessage::Progress {
-                                                    indexed: progress.indexed,
-                                                    processed: progress.processed,
-                                                    discovered: progress.discovered,
-                                                    current_root: progress.current_root,
-                                                    elapsed_ms: started.elapsed().as_millis(),
-                                                });
-                                            },
-                                        )
-                                    }
-                                    LibraryScanPolicy::EmbeddedDefaults => {
-                                        crate::media::index_default_locations_with_progress(
-                                            &db,
-                                            |progress| {
-                                                let _ = tx.send(ScanMessage::Progress {
-                                                    indexed: progress.indexed,
-                                                    processed: progress.processed,
-                                                    discovered: progress.discovered,
-                                                    current_root: progress.current_root,
-                                                    elapsed_ms: started.elapsed().as_millis(),
-                                                });
-                                            },
-                                        )
-                                    }
-                                    LibraryScanPolicy::Explicit(mut request) => {
-                                        request.mode = if reindex_all {
-                                            crate::media::ScanMode::Full
-                                        } else {
-                                            crate::media::ScanMode::Changed
-                                        };
-                                        let cancel = std::sync::atomic::AtomicBool::new(false);
-                                        crate::media::scan_library_with_progress(
-                                            std::path::Path::new(&db_path),
-                                            &request,
-                                            &cancel,
-                                            |progress| {
-                                                let _ = tx.send(ScanMessage::Progress {
-                                                    indexed: progress.indexed,
-                                                    processed: progress.processed,
-                                                    discovered: progress.discovered,
-                                                    current_root: progress.current_root,
-                                                    elapsed_ms: started.elapsed().as_millis(),
-                                                });
-                                            },
-                                        )
-                                        .map(|result| result.indexed)
-                                    }
-                                    LibraryScanPolicy::ReadOnlyPreview => Ok(0),
-                                }
                             }
-                        })
-                        .map_err(|err| format!("{err:#}"))
-                })
-            });
-            let library = if indexed.is_ok() {
-                match LibrarySnapshot::load(&db_path, sort, &search_query) {
-                    Ok(library) => Some(Box::new(library)),
-                    Err(err) => {
-                        log::warn!("library reload failed: {err:#}");
-                        None
+                            LibraryScanPolicy::EmbeddedDefaults => {
+                                crate::media::index_default_locations_with_progress(
+                                    &db,
+                                    |progress| {
+                                        let _ = tx.send(ScanMessage::Progress {
+                                            indexed: progress.indexed,
+                                            processed: progress.processed,
+                                            discovered: progress.discovered,
+                                            current_root: progress.current_root,
+                                            elapsed_ms: started.elapsed().as_millis(),
+                                        });
+                                    },
+                                )
+                            }
+                            LibraryScanPolicy::Explicit(mut request) => {
+                                request.mode = if reindex_all {
+                                    crate::media::ScanMode::Full
+                                } else {
+                                    crate::media::ScanMode::Changed
+                                };
+                                let cancel = std::sync::atomic::AtomicBool::new(false);
+                                crate::media::scan_library_with_progress(
+                                    std::path::Path::new(&db_path),
+                                    &request,
+                                    &cancel,
+                                    |progress| {
+                                        let _ = tx.send(ScanMessage::Progress {
+                                            indexed: progress.indexed,
+                                            processed: progress.processed,
+                                            discovered: progress.discovered,
+                                            current_root: progress.current_root,
+                                            elapsed_ms: started.elapsed().as_millis(),
+                                        });
+                                    },
+                                )
+                                .map(|result| result.indexed)
+                            }
+                            LibraryScanPolicy::ReadOnlyPreview => Ok(0),
+                        }
                     }
-                }
-            } else {
-                None
-            };
+                })
+                .map_err(|err| format!("{err:#}"));
             let _ = tx.send(ScanMessage::Finished(ScanResult {
                 indexed,
                 elapsed_ms: started.elapsed().as_millis(),
-                library,
-                revision,
-                sort,
-                search_query,
             }));
         });
     }
@@ -1158,20 +1060,10 @@ impl MusicOs {
             }
         };
 
-        if result.indexed.is_ok()
-            && (result.revision != self.library_revision
-                || result.sort != self.library_sort
-                || result.search_query != self.search_query)
-        {
-            self.retry_library_reload(result);
-            return;
-        }
         match result.indexed {
             Ok(indexed) => {
-                if let Some(library) = result.library {
-                    self.apply_library_snapshot(*library);
-                }
-                let counts = self.cached_library_counts;
+                self.refresh_library();
+                let counts = self.library_counts();
                 self.scan.state = "complete".to_string();
                 self.scan.indexed = indexed;
                 self.scan.elapsed_ms = result.elapsed_ms;
@@ -1202,19 +1094,6 @@ impl MusicOs {
     }
 
     pub fn handle_server_event(&mut self, event: ServerEvent) -> bool {
-        if let ServerEvent::Control(command) = &event {
-            if !matches!(
-                command,
-                crate::server::ControlCommand::Volume { .. }
-                    | crate::server::ControlCommand::Brightness { .. }
-                    | crate::server::ControlCommand::Seek { .. }
-                    | crate::server::ControlCommand::SeekRelative { .. }
-                    | crate::server::ControlCommand::SeekAbsolute { .. }
-                    | crate::server::ControlCommand::SleepTimer { .. }
-            ) {
-                self.library_revision = self.library_revision.wrapping_add(1);
-            }
-        }
         match event {
             ServerEvent::Button(b) => self.handle_input(InputEvent::Button(b)),
             ServerEvent::Pointer(ev) => self.handle_input(ev),
@@ -3032,55 +2911,7 @@ impl MusicOs {
         self.save_preferences(false);
     }
 
-    fn retry_library_reload(&mut self, mut result: ScanResult) {
-        let (tx, rx) = std::sync::mpsc::channel();
-        self.scan_rx = Some(rx);
-        result.revision = self.library_revision;
-        result.sort = self.library_sort;
-        result.search_query = self.search_query.clone();
-        let path = self.db_path.clone();
-        std::thread::spawn(move || {
-            lower_scan_priority();
-            let start = Instant::now();
-            result.library = LibrarySnapshot::load(&path, result.sort, &result.search_query)
-                .ok()
-                .map(Box::new);
-            result.elapsed_ms += start.elapsed().as_millis();
-            let _ = tx.send(ScanMessage::Finished(result));
-        });
-    }
-
-    fn apply_library_snapshot(&mut self, mut library: LibrarySnapshot) {
-        if let Some(tracks) = &mut library.tracks {
-            std::mem::swap(&mut self.library_tracks, tracks);
-        }
-        if let Some(albums) = &mut library.albums {
-            std::mem::swap(&mut self.albums_list, albums);
-        }
-        if let Some(artists) = &mut library.artists {
-            std::mem::swap(&mut self.artists_list, artists);
-        }
-        if let Some(playlists) = &mut library.playlists {
-            std::mem::swap(&mut self.playlists_list, playlists);
-        }
-        if let Some(pins) = &mut library.pins {
-            std::mem::swap(&mut self.pins_list, pins);
-        }
-        if let Some(search) = &mut library.search {
-            std::mem::swap(&mut self.search_results, search);
-            self.selected_index = self
-                .selected_index
-                .min(self.search_results.len().saturating_sub(1));
-        }
-        self.cached_library_counts = library.counts;
-        std::thread::spawn(move || {
-            lower_scan_priority();
-            drop(library);
-        });
-    }
-
     pub fn refresh_library(&mut self) {
-        self.library_revision = self.library_revision.wrapping_add(1);
         if let Ok(tracks) = self.db.get_tracks() {
             self.library_tracks = tracks.clone();
         }
@@ -4575,71 +4406,6 @@ impl MusicOs {
 #[cfg(test)]
 mod deadline_tests {
     use super::*;
-
-    #[test]
-    fn library_snapshot_loads_sorted_data_and_retries_stale_results() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("library.sqlite3");
-        let path = path.to_str().unwrap();
-        let db = Db::open(path).unwrap();
-        let empty = LibrarySnapshot::load(path, LibrarySort::Title, "").unwrap();
-        assert!(empty.tracks.unwrap().is_empty());
-        for title in ["Zulu", "Alpha"] {
-            db.insert_track(title, title, "Artist", "Album", 10, 1, 1)
-                .unwrap();
-        }
-        let data = LibrarySnapshot::load(path, LibrarySort::Title, "Alpha").unwrap();
-        assert_eq!(data.tracks.as_ref().unwrap()[0].title, "Alpha");
-        assert_eq!(data.search.as_ref().unwrap().len(), 1);
-        assert_eq!(data.counts.tracks, 2);
-        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, path);
-        let (tx, rx) = std::sync::mpsc::channel();
-        app.scan_rx = Some(rx);
-        tx.send(ScanMessage::Finished(ScanResult {
-            indexed: Ok(2),
-            elapsed_ms: 1,
-            library: Some(Box::new(data)),
-            revision: app.library_revision.wrapping_sub(1),
-            sort: app.library_sort,
-            search_query: app.search_query.clone(),
-        }))
-        .unwrap();
-        app.poll_library_scan();
-        assert!(app.scan_rx.is_some());
-        let limit = Instant::now() + Duration::from_secs(5);
-        while app.scan_rx.is_some() {
-            assert!(Instant::now() < limit);
-            std::thread::sleep(Duration::from_millis(5));
-            app.poll_library_scan();
-        }
-        assert_eq!(app.scan.state, "complete");
-        assert_eq!(app.cached_library_counts.tracks, 2);
-        assert_eq!(app.library_tracks[0].title, "Alpha");
-        assert!(
-            LibrarySnapshot::load(dir.path().to_str().unwrap(), LibrarySort::Title, "").is_err()
-        );
-        let (tx, rx) = std::sync::mpsc::channel();
-        app.scan_rx = Some(rx);
-        tx.send(ScanMessage::Finished(ScanResult {
-            indexed: Err("test scan error".into()),
-            elapsed_ms: 0,
-            library: None,
-            revision: app.library_revision,
-            sort: app.library_sort,
-            search_query: app.search_query.clone(),
-        }))
-        .unwrap();
-        app.poll_library_scan();
-        assert_eq!(app.scan.state, "error");
-        assert_eq!(app.library_tracks.len(), 2);
-    }
-
-    #[test]
-    fn metadata_parallelism_is_bounded_even_on_large_hosts() {
-        assert_eq!(metadata_worker_count(0), 1);
-        assert_eq!(metadata_worker_count(1), 1);
-        assert_eq!(metadata_worker_count(64), 2);
-    }
 
     #[test]
     fn deadlines_preserve_snapshots_animation_and_timers() {
