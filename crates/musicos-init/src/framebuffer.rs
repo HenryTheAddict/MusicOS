@@ -98,7 +98,6 @@ pub struct FbDev {
     line_length: usize,
     resolution: Resolution,
     back_buffer: Vec<u8>,
-    frames: crate::renderer::FrameTracker,
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -185,7 +184,6 @@ impl FbDev {
             line_length,
             resolution: expected,
             back_buffer: vec![0; visible_len],
-            frames: crate::renderer::FrameTracker::default(),
         })
     }
 
@@ -193,14 +191,8 @@ impl FbDev {
         let _keep_fd_alive = self.file.as_raw_fd();
         let mut canvas = Canvas::new(self.resolution, &mut self.back_buffer)?;
         f(&mut canvas);
-        if self.frames.update(&self.back_buffer) {
-            self.present();
-        }
+        self.present();
         Ok(())
-    }
-
-    pub fn presentation_stats(&self) -> (u64, u64, u64) {
-        (self.frames.draws, self.frames.presents, self.frames.bytes)
     }
 
     fn present(&mut self) {
@@ -218,10 +210,6 @@ impl FbDev {
 
 #[cfg(not(target_os = "linux"))]
 impl FbDev {
-    pub fn presentation_stats(&self) -> (u64, u64, u64) {
-        (0, 0, 0)
-    }
-
     pub fn open(path: impl AsRef<Path>, _expected: Resolution) -> Result<Self> {
         anyhow::bail!(
             "framebuffer devices are only supported on Linux: {}",
