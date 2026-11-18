@@ -152,6 +152,24 @@ pub fn get_update_from_usb() -> Result<UsbStatus> {
 pub fn install_pending_update() -> Result<Option<PathBuf>> {
     let stage_dir = writable_stage_dir()?;
     for kind in [UpdateKind::Squashfs, UpdateKind::Elf] {
+        let target = update_target(kind);
+        for path in [
+            stage_dir.join(kind.staged_name()).with_extension("tmp"),
+            installing_path(&target),
+        ] {
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+                sync_parent(&path)?;
+                log::warn!("removed interrupted update leftover {}", path.display());
+                record_update_result(
+                    &path,
+                    "cleanup interrupted copy",
+                    &Ok::<(), anyhow::Error>(()),
+                );
+            }
+        }
+    }
+    for kind in [UpdateKind::Squashfs, UpdateKind::Elf] {
         let staged = stage_dir.join(kind.staged_name());
         if staged.is_file() {
             return install_staged_update(&staged).map(Some);
@@ -288,15 +306,29 @@ fn stage_update_from_root(root: &Path) -> Result<Option<StagedUpdate>> {
 }
 
 fn stage_update(source: &Path) -> Result<StagedUpdate> {
+    let result = stage_update_inner(source);
+    if result.is_err() {
+        if let Ok(directory) = writable_stage_dir() {
+            for kind in [UpdateKind::Elf, UpdateKind::Squashfs] {
+                remove_failed_copy(&directory.join(kind.staged_name()).with_extension("tmp"));
+            }
+        }
+    }
+    record_update_result(source, "stage", &result);
+    result
+}
+
+fn stage_update_inner(source: &Path) -> Result<StagedUpdate> {
     let kind = detect_update_kind(source)?;
     let stage_dir = writable_stage_dir()?;
     let dest = stage_dir.join(kind.staged_name());
     let temp = dest.with_extension("tmp");
     copy_update_file(source, &temp, kind)
         .with_context(|| format!("copying update from {}", source.display()))?;
+    detect_update_kind(&temp)?;
     std::fs::rename(&temp, &dest)
         .with_context(|| format!("staging update to {}", dest.display()))?;
-    sync_parent(&dest);
+    sync_parent(&dest)?;
     std::fs::write(
         stage_dir.join("README.txt"),
         format!(
@@ -308,6 +340,17 @@ fn stage_update(source: &Path) -> Result<StagedUpdate> {
 }
 
 fn install_staged_update(staged: &Path) -> Result<PathBuf> {
+    let result = install_staged_update_inner(staged);
+    if result.is_err() {
+        if let Ok(kind) = detect_update_kind(staged) {
+            remove_failed_copy(&installing_path(&update_target(kind)));
+        }
+    }
+    record_update_result(staged, "install", &result);
+    result
+}
+
+fn install_staged_update_inner(staged: &Path) -> Result<PathBuf> {
     let kind = detect_update_kind(staged)?;
     let target = update_target(kind);
     let parent = target
@@ -318,20 +361,17 @@ fn install_staged_update(staged: &Path) -> Result<PathBuf> {
     let stage_dir = writable_stage_dir()?;
     let backup = stage_dir.join(kind.backup_name());
     if target.is_file() {
-        let _ = std::fs::copy(&target, &backup);
+        std::fs::copy(&target, &backup).context("creating previous update backup")?;
+        File::open(&backup)?.sync_all()?;
+        sync_parent(&backup)?;
     }
 
-    let temp = parent.join(format!(
-        ".{}.installing",
-        target
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("musicos-update")
-    ));
+    let temp = installing_path(&target);
     copy_update_file(staged, &temp, kind)?;
+    detect_update_kind(&temp)?;
     std::fs::rename(&temp, &target)
         .with_context(|| format!("installing update to {}", target.display()))?;
-    sync_parent(&target);
+    sync_parent(&target)?;
 
     let _ = std::fs::remove_file(staged);
     std::fs::write(
@@ -351,8 +391,67 @@ fn detect_update_kind(path: &Path) -> Result<UpdateKind> {
     file.read_exact(&mut magic)
         .with_context(|| format!("reading {}", path.display()))?;
     match magic {
-        [0x7f, b'E', b'L', b'F'] => Ok(UpdateKind::Elf),
-        [b'h', b's', b'q', b's'] => Ok(UpdateKind::Squashfs),
+        [0x7f, b'E', b'L', b'F'] => {
+            let mut header = [0; 64];
+            header[..4].copy_from_slice(&magic);
+            file.read_exact(&mut header[4..])
+                .context("truncated ELF header")?;
+            let u16_at = |n| u16::from_le_bytes([header[n], header[n + 1]]);
+            let u64_at = |n| u64::from_le_bytes(header[n..n + 8].try_into().unwrap());
+            anyhow::ensure!(
+                header[4] == 2 && header[5] == 1 && header[6] == 1,
+                "ELF must be 64-bit little-endian version 1"
+            );
+            anyhow::ensure!(matches!(u16_at(16), 2 | 3), "ELF type must be EXEC or DYN");
+            anyhow::ensure!(
+                header[20..24] == 1u32.to_le_bytes(),
+                "ELF header version must be 1"
+            );
+            let machine = match std::env::consts::ARCH {
+                "aarch64" => 183,
+                "x86_64" => 62,
+                arch => anyhow::bail!("unsupported ELF target architecture {arch}"),
+            };
+            anyhow::ensure!(
+                u16_at(18) == machine,
+                "ELF architecture mismatch: expected machine {machine}, got {}",
+                u16_at(18)
+            );
+            let length = file.metadata()?.len();
+            anyhow::ensure!(u16_at(52) == 64, "invalid ELF header size");
+            let offset = u64_at(32);
+            let count = u64::from(u16_at(56));
+            anyhow::ensure!(
+                count > 0 && u16_at(54) == 56 && offset >= 64,
+                "invalid ELF program header table"
+            );
+            let end = offset
+                .checked_add(count * 56)
+                .context("ELF program header table overflow")?;
+            anyhow::ensure!(end <= length, "truncated ELF program header table");
+            Ok(UpdateKind::Elf)
+        }
+        [b'h', b's', b'q', b's'] => {
+            let mut header = [0; 96];
+            header[..4].copy_from_slice(&magic);
+            file.read_exact(&mut header[4..])
+                .context("truncated SquashFS superblock")?;
+            let block = u32::from_le_bytes(header[12..16].try_into().unwrap());
+            let used = u64::from_le_bytes(header[40..48].try_into().unwrap());
+            anyhow::ensure!(
+                u16::from_le_bytes([header[28], header[29]]) == 4,
+                "SquashFS major version must be 4"
+            );
+            anyhow::ensure!(
+                block.is_power_of_two() && (4096..=1048576).contains(&block),
+                "invalid SquashFS block size"
+            );
+            anyhow::ensure!(
+                used >= 96 && used <= file.metadata()?.len(),
+                "truncated or invalid SquashFS bytes_used"
+            );
+            Ok(UpdateKind::Squashfs)
+        }
         _ => anyhow::bail!(
             "{} is not a supported MusicOS update (expected ELF or SquashFS)",
             path.display()
@@ -375,6 +474,7 @@ fn copy_update_file(source: &Path, dest: &Path, _kind: UpdateKind) -> Result<()>
             std::fs::set_permissions(dest, perms)?;
         }
     }
+    output.sync_all()?;
     Ok(())
 }
 
@@ -413,10 +513,59 @@ fn writable_stage_dir() -> Result<PathBuf> {
     anyhow::bail!("no writable update staging directory");
 }
 
-fn sync_parent(path: &Path) {
+fn sync_parent(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
-        if let Ok(dir) = File::open(parent) {
-            let _ = dir.sync_all();
+        File::open(parent)?
+            .sync_all()
+            .with_context(|| format!("syncing directory {}", parent.display()))?;
+    }
+    Ok(())
+}
+
+fn installing_path(target: &Path) -> PathBuf {
+    target.with_file_name(format!(
+        ".{}.installing",
+        target.file_name().unwrap_or_default().to_string_lossy()
+    ))
+}
+
+fn remove_failed_copy(path: &Path) {
+    if path.exists() {
+        if let Err(error) = std::fs::remove_file(path)
+            .map_err(anyhow::Error::from)
+            .and_then(|()| sync_parent(path))
+        {
+            log::error!(
+                "cannot remove failed update copy {}: {error:#}",
+                path.display()
+            );
         }
+    }
+}
+
+fn record_update_result<T>(package: &Path, operation: &str, result: &Result<T>) {
+    let reason = result
+        .as_ref()
+        .err()
+        .map(|error| format!("{error:#}"))
+        .unwrap_or_default();
+    let outcome = if result.is_ok() { "success" } else { "failure" };
+    log::info!(
+        "update {operation} {outcome}: {} {reason}",
+        package.display()
+    );
+    let write = || -> Result<()> {
+        let path = writable_stage_dir()?.join("last-update-result");
+        let diagnostic = serde_json::json!({
+            "timestamp": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
+            "package": package, "operation": operation, "outcome": outcome, "reason": reason
+        });
+        let mut file = File::create(&path)?;
+        writeln!(file, "{diagnostic}")?;
+        file.sync_all()?;
+        sync_parent(&path)
+    };
+    if let Err(error) = write() {
+        log::error!("cannot persist update diagnostic: {error:#}");
     }
 }

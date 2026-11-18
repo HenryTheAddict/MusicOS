@@ -199,7 +199,8 @@ where
             db.mark_library_source(source.id, false, Some("Folder is unavailable"))?;
             continue;
         }
-        let files = audio_files_under(root)
+        let (files, scan) = audio_files_under(root);
+        let files = files
             .into_iter()
             .filter(|path| claimed_paths.insert(path.clone()))
             .collect::<Vec<_>>();
@@ -240,8 +241,16 @@ where
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
-        db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
-        db.mark_library_source(source.id, true, None)?;
+        if scan.available(root) {
+            db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
+            db.mark_library_source(source.id, true, None)?;
+        } else {
+            db.mark_library_source(
+                source.id,
+                false,
+                Some("Storage changed or traversal failed during scan"),
+            )?;
+        }
     }
     progress(ScanProgress {
         indexed: result.indexed,
@@ -528,7 +537,7 @@ where
         db.mark_library_source(source.id, false, Some("Folder is unavailable"))?;
         anyhow::bail!("{} is unavailable", source.display_name);
     }
-    let files = audio_files_under(root);
+    let (files, scan) = audio_files_under(root);
     progress(ScanProgress {
         indexed: 0,
         processed: 0,
@@ -550,14 +559,22 @@ where
             });
         },
     )?;
-    db.remove_missing_tracks_for_source(
-        source.id,
-        &files
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>(),
-    )?;
-    db.mark_library_source(source.id, true, None)?;
+    if scan.available(root) {
+        db.remove_missing_tracks_for_source(
+            source.id,
+            &files
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>(),
+        )?;
+        db.mark_library_source(source.id, true, None)?;
+    } else {
+        db.mark_library_source(
+            source.id,
+            false,
+            Some("Storage changed or traversal failed during scan"),
+        )?;
+    }
     progress(ScanProgress {
         indexed,
         processed: files.len(),
@@ -600,7 +617,8 @@ where
             continue;
         }
 
-        let files = audio_files_under(root_path)
+        let (files, scan) = audio_files_under(root_path);
+        let files = files
             .into_iter()
             .filter(|path| claimed_paths.insert(path.clone()))
             .collect::<Vec<_>>();
@@ -631,8 +649,16 @@ where
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>();
-        let _ = db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
-        db.mark_library_source(source.id, true, None)?;
+        if scan.available(root_path) {
+            db.remove_missing_tracks_for_source(source.id, &existing_paths)?;
+            db.mark_library_source(source.id, true, None)?;
+        } else {
+            db.mark_library_source(
+                source.id,
+                false,
+                Some("Storage changed or traversal failed during scan"),
+            )?;
+        }
         processed += files.len();
     }
 
@@ -718,24 +744,88 @@ pub fn index_location(db: &Db, root: &Path) -> Result<usize> {
         return Ok(0);
     }
 
-    let files = audio_files_under(root);
+    let (files, scan) = audio_files_under(root);
+    anyhow::ensure!(
+        scan.available(root),
+        "storage unavailable during USB scan: {}",
+        root.display()
+    );
     index_files(db, &files, false, None, None, |_, _| {})
 }
 
-fn audio_files_under(root: &Path) -> Vec<PathBuf> {
+struct StorageScan {
+    identity: Option<String>,
+    complete: bool,
+}
+
+fn storage_identity(root: &Path) -> Option<String> {
+    let metadata = std::fs::metadata(root).ok()?;
+    if !metadata.is_dir() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let mut identity = format!("{}:{}", metadata.dev(), metadata.ino());
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let file = std::fs::File::open(root).ok()?;
+            let info =
+                std::fs::read_to_string(format!("/proc/self/fdinfo/{}", file.as_raw_fd())).ok()?;
+            identity.push_str(info.lines().find(|line| line.starts_with("mnt_id:"))?);
+        }
+        Some(identity)
+    }
+    #[cfg(not(unix))]
+    {
+        Some(format!(
+            "{:?}:{:?}",
+            root.canonicalize().ok()?,
+            metadata.created().ok()
+        ))
+    }
+}
+
+impl StorageScan {
+    fn available(&self, root: &Path) -> bool {
+        let available =
+            self.complete && self.identity.is_some() && self.identity == storage_identity(root);
+        if !available {
+            log::warn!(
+                "storage changed or traversal failed; preserving library rows for {}",
+                root.display()
+            );
+        }
+        available
+    }
+}
+
+fn audio_files_under(root: &Path) -> (Vec<PathBuf>, StorageScan) {
     let mut files = Vec::new();
+    let mut scan = StorageScan {
+        identity: storage_identity(root),
+        complete: true,
+    };
     for entry in WalkDir::new(root)
         .follow_links(false)
         .into_iter()
         .filter_entry(|entry| !ignored_library_entry(entry.path(), entry.depth()))
-        .flatten()
     {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                log::warn!("storage traversal failed: {error}");
+                scan.complete = false;
+                continue;
+            }
+        };
         if entry.file_type().is_file() && is_audio(entry.path()) {
             files.push(entry.into_path());
         }
     }
     files.sort_unstable();
-    files
+    (files, scan)
 }
 
 fn index_files<F>(
@@ -1485,7 +1575,7 @@ mod tests {
         std::fs::write(album.join("02 Song.oga"), b"fixture").unwrap();
         std::fs::write(application.join("alert.wav"), b"fixture").unwrap();
 
-        let files = audio_files_under(&root);
+        let (files, _) = audio_files_under(&root);
         assert_eq!(files.len(), 2);
         assert!(files
             .iter()
