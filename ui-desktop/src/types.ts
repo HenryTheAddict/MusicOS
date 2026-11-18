@@ -103,6 +103,7 @@ export interface QueueMix {
   outgoing_cue?: number;
 }
 export interface Playback {
+  audition?: {track_id:number;position:number;duration:number;preparing:boolean}|null;
   listening?:Listening;
   listening_applied?:boolean;applied_reverb?:number;applied_reverb_depth?:number;reverb_processed_frames?:number;applied_listening_revision?:number;requested_listening_revision?:number;transition_outcome?:{request_id:number;outgoing_entry:number;incoming_entry:number;status:string;reason:string}|null;failed_entries?:number[];
   audio_levels?:number[];

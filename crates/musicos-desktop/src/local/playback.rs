@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock, OnceLock, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -42,6 +42,7 @@ pub enum LocalPlaybackCommand {
     ClearQueue,
     RefreshPaths,
     Remote { action: RemotePlayback, reply: mpsc::SyncSender<Result<()>> },
+    HoldAudioIfIdle { hold: Weak<()>, reply: mpsc::SyncSender<bool> },
     Shutdown,
 }
 
@@ -242,6 +243,14 @@ impl LocalPlaybackClient {
         receive.recv_timeout(Duration::from_secs(8)).context("Mac playback did not respond")??;
         Ok(self.snapshot())
     }
+
+    pub fn hold_audio_if_idle(&self) -> Result<Arc<()>> {
+        let hold = Arc::new(());
+        let (reply, receive) = mpsc::sync_channel(1);
+        self.send(LocalPlaybackCommand::HoldAudioIfIdle { hold: Arc::downgrade(&hold), reply })?;
+        anyhow::ensure!(receive.recv_timeout(Duration::from_secs(8))?, "Pause playback before restarting to update.");
+        Ok(hold)
+    }
 }
 
 impl LocalPlaybackService {
@@ -377,6 +386,7 @@ fn playback_loop(
         None,
     );
 
+    let mut audio_hold = Weak::new();
     loop {
         let mut remote_reply=None;
         let timeout = if player.is_playing() || player.audition_status().is_some() {
@@ -386,6 +396,22 @@ fn playback_loop(
         };
         match receiver.recv_timeout(timeout) {
             Ok(LocalPlaybackCommand::Shutdown) => break,
+            Ok(LocalPlaybackCommand::HoldAudioIfIdle { hold, reply }) => {
+                let idle = audio_hold.strong_count() == 0
+                    && !player.is_playing()
+                    && player.audition_status().is_none()
+                    && !player.transition_status().is_some_and(|transition| transition.active);
+                if idle {
+                    audio_hold = hold;
+                }
+                let _ = reply.send(idle);
+            }
+            Ok(command) if audio_hold.strong_count() > 0 => {
+                if let LocalPlaybackCommand::Remote { reply, .. } = command {
+                    let _ = reply.send(Err(anyhow::anyhow!("musicOS is updating.")));
+                }
+                continue;
+            }
             Ok(LocalPlaybackCommand::Remote{action,reply})=>{
                 let result=action.command(&player,queue_revision).and_then(|command|{
                     let mutates_queue=command.mutates_queue();
@@ -422,6 +448,9 @@ fn playback_loop(
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+        if audio_hold.strong_count() > 0 {
+            continue;
         }
         player.tick();
         if !player.has_entry_order(
@@ -555,7 +584,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
         LocalPlaybackCommand::ClearUpcoming => player.queue_clear_upcoming(),
         LocalPlaybackCommand::ClearQueue => player.queue_clear(),
         LocalPlaybackCommand::RefreshPaths => {let tracks=player.queue_tracks().into_iter().filter_map(|t|db.get_track_by_id(t.id).ok().flatten()).collect::<Vec<_>>();player.refresh_paths(&tracks);}
-        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::Shutdown => {}
+        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::HoldAudioIfIdle{..}|LocalPlaybackCommand::Shutdown => {}
     }
     Ok(())
 }
@@ -951,6 +980,31 @@ mod tests {
  use super::*;
  fn wave(path:&PathBuf,seconds:u32){let rate=8000u32;let length=rate*seconds*2;let mut w=Vec::new();w.extend(b"RIFF");w.extend((36+length).to_le_bytes());w.extend(b"WAVEfmt ");w.extend(16u32.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(rate.to_le_bytes());w.extend((rate*2).to_le_bytes());w.extend(2u16.to_le_bytes());w.extend(16u16.to_le_bytes());w.extend(b"data");w.extend(length.to_le_bytes());w.resize(44+length as usize,0);std::fs::write(path,w).unwrap();}
  fn wait_for(service:&LocalPlaybackService,condition:impl Fn(&LocalPlaybackSnapshot)->bool)->LocalPlaybackSnapshot{let end=std::time::Instant::now()+Duration::from_secs(6);loop{let s=service.snapshot();if condition(&s){return s;}assert!(std::time::Instant::now()<end,"Timed out: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
+ #[test]
+ fn audio_hold_blocks_playback_until_released() {
+     let temp = tempfile::tempdir().unwrap();
+     let path = temp.path().join("update.sqlite");
+     let song = temp.path().join("song.wav");
+     wave(&song, 12);
+     let db = Db::open(path.to_str().unwrap()).unwrap();
+     let id = db.insert_track(song.to_str().unwrap(), "Song", "Artist", "Album", 12, 100, 0).unwrap();
+     drop(db);
+     let service = LocalPlaybackService::start_with_preferences(path, PlaybackPreferences { volume: 0., ..Default::default() }).unwrap();
+     let client = service.client();
+     let play = || RemotePlayback::Play { ids: vec![id], start: 0 };
+     let hold = client.hold_audio_if_idle().unwrap();
+     assert!(client.remote(play()).is_err());
+     drop(hold);
+     client.remote(play()).unwrap();
+     wait_for(&service, |snapshot| snapshot.is_playing);
+     assert!(client.hold_audio_if_idle().is_err());
+     client.send(LocalPlaybackCommand::Audition(id)).unwrap();
+     wait_for(&service, |snapshot| snapshot.audition.is_some());
+     assert!(client.hold_audio_if_idle().is_err());
+     client.send(LocalPlaybackCommand::Pause).unwrap();
+     wait_for(&service, |snapshot| !snapshot.is_playing && snapshot.audition.is_none());
+     assert!(client.hold_audio_if_idle().is_ok());
+ }
  #[test]fn auditions_restore_duplicate_queue_identity_position_and_pause_state(){
   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("audition.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let main=temp.path().join("main.wav");let excerpt=temp.path().join("excerpt.wav");wave(&main,12);wave(&excerpt,2);
   let id=db.insert_track(main.to_str().unwrap(),"Main","Artist","Album",12,100,0).unwrap();let preview=db.insert_track(excerpt.to_str().unwrap(),"Preview","Artist","Other",2,100,1).unwrap();drop(db);

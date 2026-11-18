@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  MUSICOS_RELEASE_REPOSITORY: ${{ vars.MUSICOS_RELEASE_REPOSITORY }}
+  MUSICOS_RELEASE_REPOSITORY: ${{ github.repository }}
   MUSICOS_UPDATER_PUBLIC_KEY: ${{ vars.MUSICOS_UPDATER_PUBLIC_KEY }}
 
 jobs:
@@ -123,6 +123,8 @@ jobs:
     name: Verify release and prepare handoff
     needs: bundle
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,15 +147,14 @@ jobs:
           name: verified-desktop-release
           path: release-assets/
           if-no-files-found: error
-      - name: Create draft release in the configured repository
+      - name: Create draft release in MusicOS
         if: inputs.create_draft
         env:
-          GH_TOKEN: ${{ secrets.MUSICOS_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(node scripts/desktop-release.mjs version)
           visibility=$(gh repo view "$MUSICOS_RELEASE_REPOSITORY" --json isPrivate --jq .isPrivate)
           test "$visibility" = false || { echo 'The configured update repository must be public.' >&2; exit 1; }
-          branch=$(gh repo view "$MUSICOS_RELEASE_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name')
           gh release create "v$version" release-assets/* --repo "$MUSICOS_RELEASE_REPOSITORY" \
-            --target "$branch" --draft --title "musicOS $version" \
+            --target "$GITHUB_SHA" --draft --title "musicOS $version" \
             --notes "Desktop installers for macOS (Apple Silicon), Windows (x64), and Linux (x64 AppImage)."
