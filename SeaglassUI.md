@@ -382,7 +382,7 @@ Each maps to a value of `app::Screen`.
 
 ### 12.2 Home
 
-Henry's call: **rows with a live preview panel on the side**, the iPod layout redrawn in Seaglass.
+Henry's call: **rows with a live preview panel on the side**, the iPod layout redrawn in Seaglass. The row list is data, so later sections (Henry: reading, watching videos) can be added as rows without changing the layout; they are out of scope for this build.
 
 - Left (≈ 300 physical wide): big rounded rows, 50 physical tall with 6 gaps: **Now Playing** (level glyph), **Albums**, **Artists**, **Songs**, **Playlists** (counts right-aligned), **Search**, **Settings**. Each has a 36 circular icon badge in `blob`; the focused row gets the cursor pill and its badge turns `accent`.
 - Right: a `surface` panel (`r-xl`) that previews the focused row, led by a **square** cover (full panel width minus 16 padding, `r-lg`) with title, subtitle and one control under it and a tight 16 bottom margin: Now Playing shows the cover, title, artist and progress; Albums shows a 2×2 cover mosaic with a round **Shuffle all** button beside the title (never overlapping the subtitle); Artists shows round artist profile pictures (one large, a few small, overlapping on `blob`), never square crops; Songs shows recently added; Settings shows the current theme swatch, brightness and storage. Albums uses a 2×2 cover mosaic as its square. On focus change the cursor springs to the new row (with a slight squash), the old preview fades out and lifts 6 px in 90 ms, and the new one fades in and settles from 10 px below in 180 ms; previews use already-cached thumbnails only.
@@ -432,7 +432,8 @@ The showpiece.
 - §11.8 sheet.
 
 ### 12.12 Settings / SettingsDetail
-- Grouped rows like the desktop's compact grouped settings: **Appearance** (Theme: Artwork/Blue/Red/Green/Purple, Mode, Tint, Reduced Motion), **Sound** (EQ, Volume limit, UI sounds), **Playback** (Shuffle, Repeat, Gapless, Sleep timer), **Library** (Rescan, Storage), **Device** (Brightness, Date & time, Language, Name), **About**.
+- Top level is a short list of rows that open **submenus** (Henry): **Appearance** (Theme: Artwork/Blue/Red/Green/Purple, Mode, Tint, Reduced Motion), **Sound** (EQ, Volume limit, UI sounds), **Playback** (Shuffle, Repeat, Gapless, Sleep timer), **Library** (Rescan, Storage), **Device** (Brightness, Date & time, Language, Name), **Apps** (the former Extras), **About**. **USB Sync** is its own top-level row, never inside a submenu.
+- Each submenu is one level deep and uses the same row and preview-panel layout as Home; Back returns to the parent row with focus restored.
 - Group titles `caption` SemiBold `ink2` uppercase-free, 48 above the group. Values right-aligned.
 - Changes apply immediately with a live preview (theme changes cross-fade).
 
