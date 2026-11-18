@@ -46,7 +46,7 @@ The desktop app already has a clear, owned identity: Figtree, large-radius solid
 | --- | --- | --- |
 | Physical framebuffer is 640×480 on RG35XX; code draws in a **1280×960 logical canvas** and `Resolution::offsets()` scales by 0.5 | `renderer.rs` | All values below are given as **logical px (physical px)**. Design at 1280×960, verify at 640×480. |
 | 3.5-inch screen, ~229 ppi, held ~30 cm away | Hardware | Body text must be ≥ 36 logical (18 physical) px. Nothing interactive smaller than 88 logical (44 physical) px tall. |
-| No touch. Four buttons (**Back, Home, Play/Pause, Context**) and a **trackpad** (Henry); the current evdev map still assumes a gamepad (D-pad, A/B/X/Y, L1/R1, L2/R2, Start/Select) | `input.rs`, §9.3 | Focus-driven UI. Every action reachable by the physical controls; one input map drives both dispatch and legends. |
+| No touch. This build targets the RG35XX D-pad gamepad (D-pad, A/B/X/Y, L1/R1, L2/R2, Start/Select); a separate 4-button + trackpad device comes later | `input.rs`, §9.3 | Focus-driven UI. Every action reachable by the physical controls; one input map drives both dispatch and legends. |
 | Button meaning: `Confirm`, `Back`, `Context`, `Home`, `Menu`, `PreviousTrack`/`NextTrack` (L2/R2), volume, sleep | `input.rs` `Button` | Legends use these roles. Physical letters follow `MUSICOS_GAMEPAD_LAYOUT` (Anbernic swaps A/B). |
 | Software renderer: `rect`, `rounded_rect`, gradients, `shadow_rounded_rect` (layered), `circle`, `draw_svg` (resvg), `draw_image_rounded`, `rusttype` text | `renderer.rs` | Seaglass needs: squircle-ish rounded rects (already), cached SVG rasters, cached blurred artwork, a text cache. |
 | Default 30 fps, idle 1 fps redraw; 30 fps is a scheduler target, **not measured on H700**. fbdev presents by copying the full frame (~1.17 MiB per frame, ~35 MiB/s at 30 fps before drawing) | `main.rs`, `display.rs` | Ship the static visual layer first; every continuous effect is gated on H700 measurements (§13.1). |
@@ -246,7 +246,7 @@ The focus cursor is one object, owned by the screen, that **travels** between fo
 
 Seaglass is defined in **actions**, never in physical buttons: `MoveFocus(dir)`, `Select`, `Back`, `Home`, `PlayPause`, `Context`. One input map per device (data, per screen) binds physical controls to actions and drives both dispatch and the legend bar, so a legend can never lie. No device has touch.
 
-| Action | RG35XX 2024 (H700), the test device (today's evdev map) | Target device (Henry: 4 buttons + Apple TV-style trackpad) |
+| Action | RG35XX 2024 (H700): **the target for this build** (today's evdev map) | Future separate trackpad device (Henry: 4 buttons + Apple TV-style trackpad), not this build |
 | --- | --- | --- |
 | `MoveFocus` | D-pad (held repeat 360 ms delay, 105 ms interval) | Swipe: short swipe = one item; long/fast swipe glides with momentum and snaps to the nearest item. Edge click = one precise step |
 | `Select` | A (Anbernic layout swaps A/B; detection is a release-file check) | Center click |
@@ -493,7 +493,7 @@ Decided: **Home uses rows with a side preview panel** (Henry).
 
 Still open (defaults in brackets):
 
-1. **Target device order**: testing is on the RG35XX D-pad; which device ships first is with Henry and OSetta. The action map covers both.
+1. **Devices**: the RG35XX D-pad is the target for this build; the 4-button trackpad device is a separate, later device. The action map covers both.
 2. **Name**: Seaglass UI [yes].
 3. **Default color for new installs**: Artwork [yes] vs. musicOS blue.
 4. **Albums**: 3-column grid [yes] vs. 2 columns.
