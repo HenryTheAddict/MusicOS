@@ -76,6 +76,7 @@ export const defaultPreferences: Preferences = {
   appearance:product.defaults.appearance,
   onboarding_version:0,
   coverflow_colors: false,
+  copy_only_non_library_drops: false,
 };
 export const emptyPlayback: Playback = {
   track: null,
@@ -141,7 +142,7 @@ type Commands = {
   save_preferences: { args: { preferences: Preferences }; result: Preferences };
   playback: { args: { action: PlaybackAction }; result: Playback };
   library_task: {
-    args: { request: { kind: string; paths?: string[]; root?: string; album_id?: string } };
+    args: { request: { kind: string; paths?: string[]; root?: string; album_id?: string; dropped?: boolean } };
     result: void;
   };
   cancel_task: { args: undefined; result: void };

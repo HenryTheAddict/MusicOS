@@ -824,14 +824,29 @@ fn settings_command_persists_validated_user_audio_and_library_values() {
 }
 
 fn elf_update_payload() -> Vec<u8> {
-    let mut payload = b"\x7fELFMusicOS test update".to_vec();
-    payload.resize(64, 0);
+    let mut payload = vec![0; 120];
+    payload[..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+    payload[16..18].copy_from_slice(&2u16.to_le_bytes());
+    let machine: u16 = if std::env::consts::ARCH == "aarch64" {
+        183
+    } else {
+        62
+    };
+    payload[18..20].copy_from_slice(&machine.to_le_bytes());
+    payload[20..24].copy_from_slice(&1u32.to_le_bytes());
+    payload[32..40].copy_from_slice(&64u64.to_le_bytes());
+    payload[52..54].copy_from_slice(&64u16.to_le_bytes());
+    payload[54..56].copy_from_slice(&56u16.to_le_bytes());
+    payload[56..58].copy_from_slice(&1u16.to_le_bytes());
     payload
 }
 
 fn squashfs_update_payload() -> Vec<u8> {
-    let mut payload = b"hsqsMusicOS test squashfs update".to_vec();
-    payload.resize(128, 0);
+    let mut payload = vec![0; 128];
+    payload[..4].copy_from_slice(b"hsqs");
+    payload[12..16].copy_from_slice(&4096u32.to_le_bytes());
+    payload[28..30].copy_from_slice(&4u16.to_le_bytes());
+    payload[40..48].copy_from_slice(&128u64.to_le_bytes());
     payload
 }
 
