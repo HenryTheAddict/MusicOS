@@ -16,7 +16,7 @@ export function downbeatGlyph(beat:number|null,index:number){
  const bar=Math.floor(beat/4),group=index%7;
  return Math.max(0,Math.floor((bar+6-group)/7))%3;
 }
-export function gridSize(width:number,height:number){return {columns:Math.max(3,Math.round(width/112)),rows:Math.max(3,Math.round(height/112))};}
+export function gridSize(width:number,height:number){return {columns:Math.max(1,Math.floor(width/104)),rows:Math.max(1,Math.floor(height/104))};}
 const glyphs=['Song','hearted','play'];
 export default function BeatPulseGrid({bpm,offset,trackId,playing,active,reduced,palette}:{bpm?:number;offset?:number;trackId?:number;playing:boolean;active:boolean;reduced:boolean;palette?:AlbumPalette}){
  const host=useRef<HTMLDivElement>(null),[size,setSize]=useState({columns:3,rows:3});
@@ -41,5 +41,5 @@ export default function BeatPulseGrid({bpm,offset,trackId,playing,active,reduced
   sync();const off=subscribePlaybackClock(sync);document.addEventListener('visibilitychange',sync);
   return()=>{stop();off();document.removeEventListener('visibilitychange',sync);};
  },[size,bpm,offset,trackId,playing,active,reduced]);
- return <div ref={host} className="beat-pulse-grid" aria-hidden="true" style={{gridTemplateColumns:`repeat(${size.columns},1fr)`,gridTemplateRows:`repeat(${size.rows},1fr)`} as CSSProperties}>{Array.from({length:size.columns*size.rows},(_,index)=><div className="beat-pulse-cell" key={index} style={palette?.length?{'--beat-color':`rgb(${palette[index%palette.length].map(c=>Math.round(c*255)).join(' ')})`} as CSSProperties:undefined}>{glyphs.map(name=><AssetIcon key={name} name={name} motion={false}/>)}</div>)}</div>;
+ return <div className="beat-pulse-scene" aria-hidden="true"><div ref={host} className="beat-pulse-grid" aria-hidden="true" style={{gridTemplateColumns:`repeat(${size.columns},1fr)`,gridTemplateRows:`repeat(${size.rows},1fr)`} as CSSProperties}>{Array.from({length:size.columns*size.rows},(_,index)=><div className="beat-pulse-cell" key={index} style={palette?.length?{'--beat-color':`rgb(${palette[index%palette.length].map(c=>Math.round(c*255)).join(' ')})`} as CSSProperties:undefined}>{glyphs.map(name=><AssetIcon key={name} name={name} motion={false}/>)}</div>)}</div></div>;
 }

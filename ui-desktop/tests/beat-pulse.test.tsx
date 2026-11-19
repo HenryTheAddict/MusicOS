@@ -9,7 +9,8 @@ describe('beat pulse math',()=>{
  it('does not invent beats for missing or invalid tempo',()=>{for(const bpm of [undefined,0,NaN,Infinity,401])expect(beatPosition(2,bpm)).toBeNull();expect(beatPosition(NaN,120)).toBeNull();expect(ripplePulse(null,0)).toBe(0);});
  it('delays the pulse by distance from center',()=>{expect(ripplePulse(0,0)).toBe(1);expect(ripplePulse(.32,2)).toBeCloseTo(1);expect(ripplePulse(0,2)).toBe(0);});
  it('swaps only a few glyphs on fourth beats and cycles',()=>{expect(downbeatGlyph(3.99,0)).toBe(0);expect(downbeatGlyph(4,0)).toBe(1);expect(downbeatGlyph(4,1)).toBe(0);expect(downbeatGlyph(32,0)).toBe(2);expect(downbeatGlyph(60,0)).toBe(0);expect(downbeatGlyph(null,0)).toBe(0);});
- it('balances wide and compact counts',()=>{expect(gridSize(480,480)).toEqual({columns:4,rows:4});expect(gridSize(1280,800)).toEqual({columns:11,rows:7});});
+ it('balances counts within the chrome-free wide and compact areas',()=>{expect(gridSize(440,264)).toEqual({columns:4,rows:2});expect(gridSize(1240,584)).toEqual({columns:11,rows:5});expect(gridSize(0,0)).toEqual({columns:1,rows:1});});
+ it('leaves room for maximum pulse translation, scale and rotation',()=>{const extent=48*1.32*(Math.cos(8*Math.PI/180)+Math.sin(8*Math.PI/180))+24;for(const [width,height] of [[440,264],[1240,584]]){const {columns,rows}=gridSize(width,height);expect(width/columns).toBeGreaterThan(extent);expect(height/rows).toBeGreaterThan(extent);}});
 });
 describe('motion lifecycle',()=>{
  function setup(){vi.stubGlobal('ResizeObserver',class{observe(){}disconnect(){}});const request=vi.fn(()=>1),cancel=vi.fn();vi.stubGlobal('requestAnimationFrame',request);vi.stubGlobal('cancelAnimationFrame',cancel);return {request,cancel};}
