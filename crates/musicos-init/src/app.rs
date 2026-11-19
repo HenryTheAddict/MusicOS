@@ -816,21 +816,9 @@ impl MusicOs {
                 }
             }
             InputEvent::Button(Button::Context) => {
-                if self.screen == Screen::Home {
-                    if self.home_navigation.pane == HomePane::Main {
-                        if matches!(self.home_navigation.main_index, 0 | 1) {
-                            self.enter_home_detail();
-                        }
-                    } else if self.home_navigation.main_index == 0 && self.can_open_context_menu() {
-                        self.previous_screen = self.screen;
-                        self.previous_focus = self.focus;
-                        self.screen = Screen::ContextMenu;
-                        self.focus = Focus::ContextPlay;
-                    }
-                } else if self.screen == Screen::Search
-                    && self.focus == Focus::SearchKeyboard
-                    && !self.search_query.trim().is_empty()
-                {
+                if self.can_open_home_preview_with_context() {
+                    self.enter_home_detail();
+                } else if self.can_open_search_results_with_context() {
                     self.focus = Focus::SearchResults;
                     self.selected_index = 0;
                     self.scroll_offset = 0.0;
@@ -1440,36 +1428,7 @@ impl MusicOs {
             self.player.is_playing(),
         );
 
-        let legend = match (self.screen, self.focus) {
-            (Screen::First, _) => "D-pad  Move     A  Select",
-            (Screen::Theme, _) => "D-pad  Change theme     A  Select     B  Back",
-            (Screen::DateTimeSetup, _) => "D-pad  Adjust     A  Next     B  Back",
-            (Screen::RatingPicker, _) => "Left / Right  Rate     A  Save     B  Back",
-            (Screen::Search, Focus::SearchKeyboard) => {
-                "D-pad  Move     A  Type     B  Back     X  Results"
-            }
-            (Screen::Search, Focus::SearchResults) if self.search_results.is_empty() => {
-                "B  Keyboard"
-            }
-            (Screen::Search, Focus::SearchResults) => "A  Play     B  Keyboard     X  More",
-            (Screen::Home, _) => "D-pad  Move     A  Select     B  Back     X  More",
-            (
-                Screen::MusicApp
-                | Screen::AlbumsList
-                | Screen::ArtistsList
-                | Screen::ArtistAlbumsList
-                | Screen::AlbumTracksList
-                | Screen::SongsList
-                | Screen::PlaylistsList
-                | Screen::PlaylistTracksList
-                | Screen::Queue,
-                _,
-            ) => "A  Select     B  Back     X  More",
-            (Screen::Language | Screen::Apps | Screen::Settings, _) => {
-                "D-pad  Move     A  Select     B  Back"
-            }
-            _ => "",
-        };
+        let legend = self.button_legend();
         if !legend.is_empty() {
             ui::legend_bar(canvas, legend);
         }
@@ -2984,6 +2943,62 @@ impl MusicOs {
         };
     }
 
+    fn button_legend(&self) -> &'static str {
+        match (self.screen, self.focus) {
+            (Screen::First, _) => "D-pad  Move     A  Select",
+            (Screen::Theme, _) => "D-pad  Change theme     A  Select     B  Back",
+            (Screen::DateTimeSetup, _) => "D-pad  Adjust     A  Next     B  Back",
+            (Screen::RatingPicker, _) => "Left / Right  Rate     A  Save     B  Back",
+            (Screen::Search, Focus::SearchKeyboard)
+                if self.can_open_search_results_with_context() =>
+            {
+                "D-pad  Move     A  Type     B  Back     X  Results"
+            }
+            (Screen::Search, Focus::SearchKeyboard) => "D-pad  Move     A  Type     B  Back",
+            (Screen::Search, Focus::SearchResults) if self.can_open_context_menu() => {
+                "A  Play     B  Keyboard     X  More"
+            }
+            (Screen::Search, Focus::SearchResults) => "B  Keyboard",
+            (Screen::Home, _) if self.can_open_home_preview_with_context() => {
+                "D-pad  Move     A  Select     B  Back     X  Preview"
+            }
+            (Screen::Home | Screen::Language | Screen::Apps | Screen::Settings, _) => {
+                "D-pad  Move     A  Select     B  Back"
+            }
+            (Screen::MusicApp | Screen::ArtistAlbumsList, _) => "A  Select     B  Back",
+            (
+                Screen::AlbumsList
+                | Screen::ArtistsList
+                | Screen::AlbumTracksList
+                | Screen::SongsList
+                | Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue,
+                _,
+            ) => {
+                if self.can_open_context_menu() {
+                    "A  Select     B  Back     X  More"
+                } else {
+                    "A  Select     B  Back"
+                }
+            }
+            _ => "",
+        }
+    }
+
+    fn can_open_home_preview_with_context(&self) -> bool {
+        self.screen == Screen::Home
+            && self.home_navigation.pane == HomePane::Main
+            && matches!(self.home_navigation.main_index, 0 | 1)
+            && self.home_detail_item_count() > 0
+    }
+
+    fn can_open_search_results_with_context(&self) -> bool {
+        self.screen == Screen::Search
+            && self.focus == Focus::SearchKeyboard
+            && !self.search_query.trim().is_empty()
+    }
+
     fn can_open_context_menu(&self) -> bool {
         match self.screen {
             Screen::SongsList
@@ -2996,13 +3011,20 @@ impl MusicOs {
             Screen::AlbumsList => self
                 .albums_list
                 .get(self.selected_index)
-                .and_then(|album| self.filtered_tracks(|track| track.album == *album))
-                .is_some(),
-            Screen::ArtistsList => self
-                .artists_list
-                .get(self.selected_index)
-                .and_then(|artist| self.filtered_tracks(|track| track.artist == *artist))
-                .is_some(),
+                .is_some_and(|album| {
+                    self.db
+                        .has_tracks_in_collection(Some(album), None)
+                        .unwrap_or(false)
+                }),
+            Screen::ArtistsList => {
+                self.artists_list
+                    .get(self.selected_index)
+                    .is_some_and(|artist| {
+                        self.db
+                            .has_tracks_in_collection(None, Some(artist))
+                            .unwrap_or(false)
+                    })
+            }
             Screen::PlaylistsList => self.playlists_list.get(self.selected_index).is_some(),
             Screen::Home => false,
             Screen::NowPlaying => self.player.get_current_track().is_some(),
@@ -3182,7 +3204,7 @@ impl MusicOs {
                 .min(4),
             1 => {
                 usize::from(
-                    self.player.get_status().track.is_some()
+                    self.player.get_current_track().is_some()
                         || !self.library_tracks.is_empty()
                         || !self.tracks_queue.is_empty(),
                 ) * 4
@@ -4429,8 +4451,53 @@ impl MusicOs {
 }
 
 #[cfg(test)]
-mod deadline_tests {
+mod tests {
     use super::*;
+
+    #[test]
+    fn context_legend_matches_the_available_x_action() {
+        let root = tempfile::tempdir().unwrap();
+        let db_path = root.path().join("media.sqlite3");
+        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, db_path.to_str().unwrap());
+
+        for screen in [
+            Screen::MusicApp,
+            Screen::ArtistAlbumsList,
+            Screen::SongsList,
+        ] {
+            app.force_screen_for_snapshot(screen);
+            assert!(!app.button_legend().contains("X  More"));
+            app.handle_input(InputEvent::Button(Button::Context));
+            assert_eq!(app.screen, screen);
+        }
+
+        app.db
+            .insert_track("/music/demo.ogg", "Demo", "Artist", "Album", 120, 1, 1)
+            .unwrap();
+        app.refresh_library();
+
+        for screen in [Screen::AlbumsList, Screen::ArtistsList] {
+            app.force_screen_for_snapshot(screen);
+            assert!(app.button_legend().contains("X  More"));
+            app.handle_input(InputEvent::Button(Button::Context));
+            assert_eq!(app.screen, Screen::ContextMenu);
+        }
+
+        app.force_screen_for_snapshot(Screen::Home);
+        assert!(app.button_legend().contains("X  Preview"));
+        app.handle_input(InputEvent::Button(Button::Context));
+        assert_eq!(app.home_navigation.pane, HomePane::Detail);
+        assert!(!app.button_legend().contains("X  "));
+
+        app.force_screen_for_snapshot(Screen::Search);
+        assert!(!app.button_legend().contains("X  Results"));
+        app.search_query = "Demo".into();
+        app.refresh_search_results();
+        assert!(app.button_legend().contains("X  Results"));
+        app.handle_input(InputEvent::Button(Button::Context));
+        assert_eq!(app.focus, Focus::SearchResults);
+        assert!(app.button_legend().contains("X  More"));
+    }
 
     #[test]
     fn deadlines_preserve_snapshots_animation_and_timers() {
