@@ -1,8 +1,9 @@
 //! One desktop output, two streaming decoder workers, and a sample-clocked mixer.
 use super::dj_audio::{self, Command, Frame, Schedule, Tail, RATE};
+use super::{decoded_audio, resample::ResampledFrames};
 use anyhow::{Context, Result};
 use musicos_init::{audio::LoopMode, database::Track};
-use rodio::{source::UniformSourceIterator, Source};
+use rodio::Source;
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -50,6 +51,11 @@ struct Deck {
     generation: Arc<AtomicU64>,
     worker: Option<thread::JoinHandle<()>>,
 }
+
+fn deck_frames(decoder: decoded_audio::DecodedAudio) -> impl Iterator<Item = [f32; 2]> {
+    ResampledFrames::new(decoder, RATE)
+}
+
 #[derive(Clone)]
 struct Entry {
     key: u64,
@@ -133,22 +139,17 @@ impl DesktopPlayer {
                         if token.load(Ordering::Acquire)!=load.generation {continue;}
                         let result = (|| -> Result<()> {
                             let mut decoder =
-                                super::decoded_audio::open(std::path::Path::new(&load.path))?;
+                                decoded_audio::open(std::path::Path::new(&load.path))?;
                             let mut skip = 0;
                             if load.start > 0.
                                 && decoder
                                     .try_seek(Duration::from_secs_f32(load.start))
                                     .is_err()
                             {
-                                decoder=super::decoded_audio::open(std::path::Path::new(&load.path))?;
-                                skip = (load.start * RATE as f32) as usize * 2;
+                                decoder=decoded_audio::open(std::path::Path::new(&load.path))?;
+                                skip = (load.start * RATE as f32) as usize;
                             }
-                            let mut source = UniformSourceIterator::new(
-                                decoder.convert_samples::<f32>(),
-                                2,
-                                RATE,
-                            )
-                            .skip(skip);
+                            let mut source = deck_frames(decoder).skip(skip);
                             let mut stretch = signalsmith_stretch::Stretch::preset_default(2, RATE);
                             stretch.set_transpose_factor(load.transpose, None);
                             let mut tempo = (worker_parameters.lock().unwrap_or_else(|e|e.into_inner()).0).clamp(0.47, 2.12);
@@ -218,7 +219,9 @@ impl DesktopPlayer {
                                 // Some decoders report a zero size_hint halfway through a frame.
                                 // Read the samples themselves before calling it finished.
                                 input.clear();
-                                for _ in 0..512*2 {match source.next(){Some(sample)=>input.push(sample),None=>break}}
+                                for frame in source.by_ref().take(512) {
+                                    input.extend_from_slice(&frame);
+                                }
                                 if input.is_empty() {
                                     break;
                                 }
@@ -963,6 +966,47 @@ impl Drop for DesktopPlayer {
 
 // Approximately 45 ms of parameter smoothing, snapped exactly to the baseline.
 fn smooth_parameter(current:f32,target:f32)->f32 {if (target-current).abs()<0.0001 {target} else {current+(target-current)*0.25}}
+#[cfg(test)]
+mod deck_decode_tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn decoded_audio_keeps_a_late_cue_on_the_deck_clock() {
+        const SOURCE_RATE: u32 = 44_100;
+        const CUE: u32 = 2;
+        const SECONDS: u32 = 3;
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        let bytes = SECONDS * SOURCE_RATE * 4;
+        let mut wav = Vec::new();
+        wav.extend(b"RIFF");
+        wav.extend((36 + bytes).to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16_u32.to_le_bytes());
+        wav.extend(1_u16.to_le_bytes());
+        wav.extend(2_u16.to_le_bytes());
+        wav.extend(SOURCE_RATE.to_le_bytes());
+        wav.extend((SOURCE_RATE * 4).to_le_bytes());
+        wav.extend(4_u16.to_le_bytes());
+        wav.extend(16_u16.to_le_bytes());
+        wav.extend(b"data");
+        wav.extend(bytes.to_le_bytes());
+        for i in 0..SECONDS * SOURCE_RATE {
+            let left = if i < CUE * SOURCE_RATE { 0_i16 } else { 16_384 };
+            wav.extend(left.to_le_bytes());
+            wav.extend((-left).to_le_bytes());
+        }
+        file.write_all(&wav).unwrap();
+
+        let frames: Vec<_> = deck_frames(decoded_audio::open(file.path()).unwrap()).collect();
+        let cue = frames
+            .iter()
+            .position(|&[left, right]| left >= 0.25 && right <= -0.25);
+        assert_eq!(cue, Some((CUE * RATE) as usize));
+        assert_eq!(frames.len(), (SECONDS * RATE) as usize);
+    }
+}
+
 #[cfg(test)]mod parameter_tests {use super::*;#[test]fn reversals_remain_bounded_and_settle(){let mut value=1.;for _ in 0..60{value=smooth_parameter(value,2.);assert!((1. ..=2.).contains(&value));}assert_eq!(value,2.);for _ in 0..60{value=smooth_parameter(value,0.5);}assert_eq!(value,0.5);}}
 
 pub fn next_request_id()->u64{static IDS:AtomicU64=AtomicU64::new(1_000_000);IDS.fetch_add(1,Ordering::Relaxed)}
