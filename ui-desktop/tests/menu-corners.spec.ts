@@ -1,12 +1,15 @@
 import {test,expect} from '@playwright/test';
+import {settleAnimations} from './support/ui';
 
 async function corner(page:import('@playwright/test').Page,selector:string){
+ await settleAnimations(page);
  const box=await page.locator(selector).boundingBox();const png=await page.screenshot({clip:{x:Math.ceil(box!.x+1),y:Math.ceil(box!.y+1),width:1,height:1},scale:'css'});
  return page.evaluate(async png=>{const img=new Image();img.src='data:image/png;base64,'+png;await img.decode();const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const ctx=canvas.getContext('2d')!;ctx.drawImage(img,0,0);return [...ctx.getImageData(0,0,1,1).data];},png.toString('base64'));
 }
 function sameCorner(a:number[],b:number[]){expect(Math.max(...a.map((v,i)=>Math.abs(v-b[i])))).toBeLessThanOrEqual(2);}
 
 test('opening menus preserves each trigger contour instead of inheriting a square parent',async({page})=>{
+ await page.emulateMedia({reducedMotion:'reduce'});
  await page.goto('/?fixture=1');const more=page.getByRole('button',{name:'More library views',exact:true});await expect(more).toBeVisible();
  const appearance=(selector:string)=>page.locator(selector).evaluate(el=>{const s=getComputedStyle(el);return {radius:s.borderRadius,fill:s.backgroundColor};});
  const moreCorner=await corner(page,'.sidebar-more>button');const moreClosed=await appearance('.sidebar-more>button');expect(parseFloat(moreClosed.radius)).toBeGreaterThan(0);

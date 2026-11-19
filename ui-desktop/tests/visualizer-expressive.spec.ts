@@ -49,6 +49,7 @@ test('a real word end clears its highlight and glow during a vocal gap',async({p
 });
 
 test('RTL glyphs and detached glow share exact wrapping, then clean up in Reduced Motion',async({page})=>{
+ try{
  await page.setViewportSize({width:480,height:480});await page.goto('/visualizer-proof.html?lyrics=timed&lyricsCase=rtlwords');await page.getByRole('button',{name:'Open visualizer'}).click();await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');await page.mouse.move(300,120);
  const player=page.locator('.expanded-player');await expect(player.locator('.lyrics-lines .lyric-word')).not.toHaveCount(0);await player.getByRole('button',{name:'Play',exact:true}).click();await page.waitForTimeout(80);await player.getByRole('button',{name:'Pause',exact:true}).click();
  const line=player.locator('.lyrics-lines .lyric-line[data-current=true]'),clone=player.locator('.lyric-glow-clone');await expect(clone).toHaveCount(1);expect(await line.textContent()).toBe('مرحباً  بالعالم — هنا');expect(await clone.textContent()).toBe(await line.textContent());
@@ -56,6 +57,17 @@ test('RTL glyphs and detached glow share exact wrapping, then clean up in Reduce
  expect(await line.evaluate(el=>getComputedStyle(el).fontWeight)).toBe('600');expect(await line.evaluate(el=>getComputedStyle(el).webkitTextStrokeWidth)).toBe('0px');
  const viewport=player.locator('.lyrics-lines');await viewport.evaluate(el=>{el.scrollTop+=25;});await page.waitForTimeout(50);const moved=await line.boundingBox(),glow=await clone.boundingBox();expect(Math.abs(moved!.y-glow!.y)).toBeLessThan(.15);
  await page.addStyleTag({content:':root[data-native-visualizer=true] body{background:#101820!important}.app-shell{visibility:hidden}'});await page.screenshot({path:'out/lyric-glow-rtl.png'});await page.emulateMedia({reducedMotion:'reduce'});await expect(clone).toHaveCount(0);await page.keyboard.press('Escape');await expect(page.locator('.lyric-glow-layer')).toHaveCount(0);
+ }catch(error){
+  console.error('RTL glow geometry',JSON.stringify(await page.evaluate(()=>({devicePixelRatio,fontsStatus:document.fonts.status,elements:['.lyrics-lines .lyric-line[data-current=true]','.lyric-glow-clone','.lyrics-lines','.lyric-glow-layer','.expanded-player'].map(selector=>{const el=document.querySelector<HTMLElement>(selector);if(!el)return {selector,missing:true};const rect=el.getBoundingClientRect(),style=getComputedStyle(el);return {selector,rect:Object.fromEntries(['x','y','width','height'].map(key=>[key,rect[key as 'x'|'y'|'width'|'height'].toFixed(4)])),fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,lineHeight:style.lineHeight,transform:style.transform,position:style.position,top:style.top,left:style.left,scrollTop:el.scrollTop,inline:el.getAttribute('style')};})})),null,2));
+  const session=await page.context().newCDPSession(page);
+  try{
+   await session.send('DOM.enable');await session.send('CSS.enable');
+   const {root}=await session.send('DOM.getDocument');
+   const {nodeIds}=await session.send('DOM.querySelectorAll',{nodeId:root.nodeId,selector:'.lyrics-lines .lyric-line[data-current=true],.lyrics-lines .lyric-line[data-current=true] .lyric-word,.lyric-glow-clone,.lyric-glow-clone .lyric-word'});
+   console.error('RTL glow rendered fonts',JSON.stringify(await Promise.all(nodeIds.map(async nodeId=>({nodeId,...await session.send('CSS.getPlatformFontsForNode',{nodeId})}))),null,2));
+  }finally{await session.detach();}
+  throw error;
+ }
 });
 
 
