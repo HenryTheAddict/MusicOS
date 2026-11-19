@@ -196,6 +196,15 @@ fn absolute_normalized(path: &Path) -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
     };
+    #[cfg(windows)]
+    let absolute = absolute
+        .ancestors()
+        .find_map(|ancestor| {
+            ancestor.canonicalize().ok().map(|canonical| {
+                canonical.join(absolute.strip_prefix(ancestor).unwrap())
+            })
+        })
+        .unwrap_or(absolute);
     let normalized = normalize_components(&absolute);
     #[cfg(target_os = "macos")]
     {
