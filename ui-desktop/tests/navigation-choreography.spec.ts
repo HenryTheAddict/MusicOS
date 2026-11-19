@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
+import {openAlbums} from './support/ui';
 
 async function recordMotion(page:Page){
  await page.addInitScript(()=>{
@@ -14,7 +15,7 @@ async function recordMotion(page:Page){
 }
 
 test('Filter leaves without reserving space or retaining its open panel, and Back restores it',async({page})=>{
- await recordMotion(page);await page.goto('/?fixture=1');
+ await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);
  await page.getByRole('button',{name:'Filter',exact:true}).click();await expect(page.getByRole('region',{name:'Library filters'})).toBeVisible();
  await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  const ghost=page.locator('.library-toolbar-exit');await expect(ghost).toHaveCount(1);
@@ -27,7 +28,7 @@ test('Filter leaves without reserving space or retaining its open panel, and Bac
 });
 
 test('artist credits arrive independently and artist names reveal only on navigation',async({page})=>{
- await recordMotion(page);await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await recordMotion(page);await page.goto('/?fixture=1&contributors=1');await openAlbums(page);await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  const credits=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.id==='artist-credit-reveal'));
  expect(credits.length).toBeGreaterThan(0);expect(credits.length).toBeLessThanOrEqual(8);
  await page.getByRole('button',{name:'View artist M83',exact:true}).click();await expect(page.getByRole('heading',{name:'M83',exact:true})).toBeVisible();
@@ -43,7 +44,7 @@ test('artist credits arrive independently and artist names reveal only on naviga
 });
 
 test('Reduced Motion opens immediately with no exit copies or portrait motion',async({page})=>{
- await page.emulateMedia({reducedMotion:'reduce'});await recordMotion(page);await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await page.emulateMedia({reducedMotion:'reduce'});await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Junk',exact:true}).click();
  await expect(page.locator('.library-toolbar')).toHaveCount(0);await page.getByRole('button',{name:'View artist M83',exact:true}).click();
  await expect(page.getByRole('heading',{name:'M83',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>/artist-name|artist-portrait|library-toolbar/.test(item.animation.id)).length)).toBe(0);
@@ -53,7 +54,7 @@ for(const mode of ['light','dark'])test(`${mode} Settings navigation surfaces fo
  await page.addInitScript(mode=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}})),mode);
  // This deliberately mismatched provider palette models the reported screenshot.
  await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('case "artwork_palette":','case "artwork_palette": return {background:"#c5d7c9",blob:"#91ad98",accent:"#0055ff",text:"#12202a"};')});});
- await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
+ await page.goto('/?fixture=1');await openAlbums(page);await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
  await page.getByRole('button',{name:'Open Junk',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Appearance',exact:true})).toBeVisible();

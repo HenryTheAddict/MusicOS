@@ -48,9 +48,7 @@ export async function setPlayerView(player:Locator,view:'playing'|'queue'|'lyric
 }
 
 export async function settleAnimations(page:Page){
- await page.evaluate(async()=>{
-  await document.fonts.ready;
-  await Promise.allSettled(document.getAnimations().filter(animation=>animation.playState==='running'&&animation.effect?.getComputedTiming().iterations!==Infinity).map(animation=>animation.finished));
-  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
- });
+ await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
+ await expect.poll(()=>page.evaluate(()=>document.getAnimations().filter(animation=>animation.playState==='running'&&animation.effect?.getComputedTiming().iterations!==Infinity).length)).toBe(0);
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
 }
