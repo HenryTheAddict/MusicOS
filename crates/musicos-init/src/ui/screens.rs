@@ -3,10 +3,7 @@ use crate::renderer::{Canvas, Color};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{
-    button, button_with_radius, draw_globe, focus_halo, inner_shadow, liquid_glass, rr, shadow_rr,
-    FontWeight,
-};
+use crate::ui::{button, button_with_radius, draw_globe, liquid_glass, rr, FontWeight};
 
 pub fn draw_first(
     canvas: &mut Canvas<'_>,
@@ -16,113 +13,151 @@ pub fn draw_first(
     theme: ThemeName,
     transition_t: f32,
 ) {
-    let t = ease_out_back(transition_t);
+    let t = ease_out_cubic(transition_t);
     crate::ui::draw_figma_background(canvas);
-    let accent = theme.primary_color();
-
-    canvas.text(
-        "MusicOS",
-        72.0,
-        122.0 + (1.0 - ease_out_cubic(transition_t)) * 24.0,
+    rr(
+        canvas,
+        56.0,
         110.0,
-        Color::BLACK,
+        1168.0,
+        774.0,
+        56.0,
+        crate::ui::surface(canvas),
+    );
+    canvas.text_centered(
+        "musicOS",
+        640.0,
+        224.0 + (1.0 - t) * 24.0,
+        128.0,
+        crate::ui::INK,
         FontWeight::Bold,
     );
-    canvas.text(
-        "Your music, ready when you are.",
-        76.0,
-        234.0,
-        34.0,
-        Color::rgba(0, 0, 0, 165),
+    crate::ui::text_fit_centered(
+        canvas,
+        lang.translate("first_tagline"),
+        640.0,
+        386.0,
+        1000.0,
+        38.0,
+        crate::ui::INK_SECONDARY,
         FontWeight::Regular,
     );
 
-    let button_y = 286.0 + (1.0 - t) * 48.0;
     button(
         canvas,
+        420.0,
+        504.0,
         440.0,
-        button_y,
-        400.0,
-        170.0,
+        110.0,
         lang.translate("get_started"),
-        accent,
+        theme.primary_color(),
         Color::WHITE,
         seconds,
         focus == Focus::GetStarted,
     );
-
-    let lang_y = 504.0 + (1.0 - t) * 64.0;
-    if focus == Focus::Language {
-        focus_halo(canvas, 440.0, lang_y, 400.0, 170.0, 20.0, seconds, 0.55);
-    }
-    liquid_glass(canvas, 440.0, lang_y, 400.0, 170.0, 20.0, 220);
-    inner_shadow(canvas, 440.0, lang_y, 400.0, 170.0, 20.0, 4.0);
-    draw_globe(canvas, 640.0, lang_y + 84.5, 64.0, 10.0, Color::BLACK);
-    if focus == Focus::Language {
-        canvas.register_selected(440.0, lang_y, 400.0, 170.0, 20.0, 8.0);
-    }
-
-    canvas.text_centered(
-        "A  select     B  back",
-        640.0,
-        850.0,
-        32.0,
-        Color::rgba(0, 0, 0, 150),
-        FontWeight::Regular,
-    );
-
-    canvas.text(
-        "MusicOS 0.1",
-        72.0,
-        902.0 + (1.0 - ease_out_cubic(transition_t)) * 20.0,
-        30.0,
-        Color::rgba(255, 255, 255, 176),
-        FontWeight::Regular,
+    button(
+        canvas,
+        420.0,
+        642.0,
+        440.0,
+        100.0,
+        lang.translate("language_label"),
+        theme.primary_color(),
+        Color::WHITE,
+        seconds,
+        focus == Focus::Language,
     );
 }
 
 pub fn draw_welcome(
     canvas: &mut Canvas<'_>,
-    _seconds: f32,
+    seconds: f32,
     lang: Language,
     theme: ThemeName,
     transition_t: f32,
 ) {
-    let t = ease_out_cubic(transition_t);
-    let alpha = (255.0 * t).round() as u8;
-    let _ = theme;
+    let offset = (1.0 - ease_out_cubic(transition_t)) * 22.0;
     crate::ui::draw_figma_background(canvas);
-    canvas.text_centered(
-        lang.translate("hello"),
-        640.0,
-        210.0 + (1.0 - t) * 38.0,
-        190.0,
-        Color::rgba(0, 0, 0, alpha),
+    rr(
+        canvas,
+        74.0,
+        102.0,
+        1132.0,
+        800.0,
+        48.0,
+        crate::ui::surface(canvas),
+    );
+    crate::ui::text_fit(
+        canvas,
+        lang.translate("controls_title"),
+        138.0,
+        144.0 + offset,
+        1004.0,
+        70.0,
+        crate::ui::INK,
         FontWeight::Bold,
     );
-    canvas.text_centered(
-        lang.translate("welcome"),
-        640.0,
-        478.0 + (1.0 - t) * 42.0,
-        56.0,
-        Color::rgba(46, 50, 56, alpha),
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
-        lang.translate("grab_device"),
-        640.0,
-        570.0 + (1.0 - t) * 46.0,
-        40.0,
-        Color::rgba(92, 98, 106, alpha),
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
-        "A  Continue",
-        640.0,
-        900.0,
-        30.0,
-        Color::rgba(0, 0, 0, alpha.saturating_sub(70)),
+    crate::ui::text_fit(
+        canvas,
+        lang.translate("controls_hint"),
+        138.0,
+        235.0 + offset,
+        1004.0,
+        34.0,
+        crate::ui::INK_SECONDARY,
         FontWeight::Regular,
+    );
+    for (index, (key, label)) in [
+        ("D-pad", "controls_move"),
+        ("A", "controls_select"),
+        ("B", "controls_back"),
+        ("X / R1", "controls_more"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let y = 308.0 + index as f32 * 106.0;
+        rr(
+            canvas,
+            138.0,
+            y,
+            1004.0,
+            88.0,
+            26.0,
+            crate::ui::control(canvas),
+        );
+        rr(
+            canvas,
+            154.0,
+            y + 12.0,
+            180.0,
+            64.0,
+            32.0,
+            crate::ui::surface(canvas),
+        );
+        canvas.text_centered(key, 244.0, y + 25.0, 33.0, crate::ui::INK, FontWeight::Bold);
+        crate::ui::text_fit(
+            canvas,
+            lang.translate(label),
+            366.0,
+            y + 24.0,
+            744.0,
+            36.0,
+            crate::ui::INK,
+            FontWeight::Regular,
+        );
+    }
+    button(
+        canvas,
+        746.0,
+        756.0,
+        396.0,
+        100.0,
+        lang.translate("controls_continue"),
+        theme.primary_color(),
+        Color::WHITE,
+        seconds,
+        true,
     );
 }
 
@@ -137,17 +172,26 @@ pub fn draw_theme_selection(
     let t = ease_out_cubic(transition_t);
     crate::ui::draw_figma_background(canvas);
 
-    canvas.text(
+    crate::ui::text_fit_centered(
+        canvas,
         lang.translate("choose_theme"),
-        258.0,
-        116.0 + (1.0 - t) * 38.0,
-        82.0,
+        640.0,
+        142.0 + (1.0 - t) * 38.0,
+        1120.0,
+        64.0,
         Color::BLACK,
         FontWeight::Bold,
     );
     let panel_y = 309.0 + (1.0 - ease_out_back(transition_t)) * 52.0;
-    shadow_rr(canvas, 70.0, panel_y, 1139.0, 300.0, 8.0, 3.0, 8.0);
-    liquid_glass(canvas, 70.0, panel_y, 1139.0, 300.0, 8.0, 238);
+    rr(
+        canvas,
+        70.0,
+        panel_y,
+        1139.0,
+        300.0,
+        48.0,
+        crate::ui::surface(canvas),
+    );
 
     let theme_colors = [
         (ThemeName::Blue, 232.0, ThemeName::Blue.primary_color()),
@@ -159,23 +203,13 @@ pub fn draw_theme_selection(
     for (index, (theme_name, cx, color)) in theme_colors.into_iter().enumerate() {
         let circle_t = ease_out_back(stagger(t, index, 0.05, 0.8));
         let cy = 459.0 + (1.0 - circle_t) * 28.0;
-        circle_gradient(canvas, cx, cy, 128.0, Color::WHITE, color);
+        rr(canvas, cx - 100.0, cy - 100.0, 200.0, 200.0, 100.0, color);
 
         if theme_name == active_theme {
             if matches!(focus, Focus::ThemeSelect) {
-                focus_halo(
-                    canvas,
-                    cx - 128.0,
-                    cy - 128.0,
-                    256.0,
-                    256.0,
-                    128.0,
-                    seconds,
-                    0.0,
-                );
-                canvas.register_selected(cx - 128.0, cy - 128.0, 256.0, 256.0, 128.0, 16.0);
+                crate::ui::register_focus(canvas, cx - 108.0, cy - 108.0, 216.0, 216.0, 108.0);
             } else {
-                ellipse(canvas, cx, cy, 128.0, Color::BLACK, 6.0);
+                ellipse(canvas, cx, cy, 108.0, crate::ui::INK, 6.0);
             }
         }
     }
@@ -230,7 +264,7 @@ pub fn draw_language_selection(
     selected_idx: usize,
     scroll_offset: f32,
     seconds: f32,
-    lang: Language,
+    _lang: Language,
     theme: ThemeName,
     transition_t: f32,
 ) {
@@ -274,21 +308,12 @@ pub fn draw_language_selection(
             w,
             label,
             selected,
-            110.0,
+            57.0,
             false,
             seconds,
             index as f32 * 0.35,
         );
     }
-
-    canvas.text(
-        lang.translate("lang_help"),
-        10.0,
-        878.0,
-        56.0,
-        Color::rgba(0, 0, 0, 140),
-        FontWeight::Bold,
-    );
 }
 
 pub fn draw_test_complete(
@@ -298,34 +323,38 @@ pub fn draw_test_complete(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    canvas.clear(Color::WHITE);
-    canvas.text(
+    crate::ui::draw_figma_background(canvas);
+    rr(
+        canvas,
+        74.0,
+        152.0,
+        1132.0,
+        640.0,
+        48.0,
+        crate::ui::surface(canvas),
+    );
+    crate::ui::text_fit_centered(
+        canvas,
         lang.translate("test_complete"),
-        73.0,
-        239.0 + (1.0 - t) * 42.0,
-        256.0,
-        Color::rgba(0, 0, 0, (255.0 * t).round() as u8),
+        640.0,
+        294.0 + (1.0 - t) * 28.0,
+        1010.0,
+        72.0,
+        crate::ui::INK,
         FontWeight::Bold,
     );
-    canvas.text(
-        lang.translate("test_desc"),
-        162.0,
-        593.0 + (1.0 - t) * 40.0,
-        64.0,
-        Color::rgba(0, 0, 0, (255.0 * t).round() as u8),
-        FontWeight::Bold,
-    );
-}
-
-fn circle_gradient(canvas: &mut Canvas<'_>, cx: f32, cy: f32, r: f32, top: Color, bottom: Color) {
-    let res = canvas.resolution();
-    canvas.circle_vertical_gradient(
-        res.scale_x(cx),
-        res.scale_y(cy),
-        r * res.scale(),
-        top,
-        bottom,
-    );
+    for (index, line) in lang.translate("test_desc").lines().enumerate() {
+        crate::ui::text_fit_centered(
+            canvas,
+            line,
+            640.0,
+            442.0 + index as f32 * 61.0,
+            1010.0,
+            38.0,
+            crate::ui::INK_SECONDARY,
+            FontWeight::Regular,
+        );
+    }
 }
 
 fn ellipse(canvas: &mut Canvas<'_>, cx: f32, cy: f32, r: f32, color: Color, thickness: f32) {
@@ -352,55 +381,20 @@ fn lang_row(
     phase: f32,
 ) {
     let row_h = 124.0;
-    let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-    if selected {
-        focus_halo(canvas, x, y, w, row_h, 25.0, seconds, phase);
-        rr(
-            canvas,
-            x,
-            y,
-            w,
-            row_h,
-            25.0,
-            accent.mix(
-                Color::WHITE,
-                0.08 + crate::ui::transitions::pulse01(seconds, 3.2, phase) * 0.08,
-            ),
-        );
-        canvas.register_selected(x, y, w, row_h, 25.0, 8.0);
-    } else {
-        liquid_glass(canvas, x, y, w, row_h, 25.0, 92);
-    }
-
+    let _ = (blurred, phase);
+    crate::ui::figma_list_row(canvas, x, y, w, row_h, selected, seconds);
     let text_color = if selected {
         Color::WHITE
-    } else if blurred {
-        Color::rgba(0, 0, 0, 90)
     } else {
-        Color::BLACK
+        crate::ui::INK
     };
 
     canvas.text_centered(
         label,
         x + w / 2.0,
-        y + if size > 100.0 { 10.0 } else { 28.0 },
+        y + 30.0,
         size,
         text_color,
         FontWeight::Bold,
     );
-
-    if blurred {
-        for i in 0..6 {
-            let grow = i as f32 * 7.0;
-            rr(
-                canvas,
-                x - grow,
-                y + 18.0 - grow * 0.25,
-                w + grow * 2.0,
-                120.0 + grow * 0.5,
-                25.0 + grow,
-                Color::rgba(255, 255, 255, 18),
-            );
-        }
-    }
 }

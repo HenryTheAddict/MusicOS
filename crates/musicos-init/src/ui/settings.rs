@@ -3,11 +3,8 @@ use crate::audio::EqPreset;
 use crate::renderer::{Canvas, Color};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
-use crate::ui::transitions::{ease_out_back, ease_out_cubic, pulse01, stagger};
-use crate::ui::{
-    figma_list_row, focus_halo, liquid_glass, panel_gradient, rr, rr_stroke, text_fit_centered,
-    FontWeight,
-};
+use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
+use crate::ui::{figma_list_row, panel_gradient, rr, text_fit_centered, FontWeight};
 
 pub fn draw_settings(
     canvas: &mut Canvas<'_>,
@@ -81,44 +78,22 @@ pub fn draw_settings_detail(
     crate::ui::draw_figma_background(canvas);
     rr(
         canvas,
-        29.0,
-        76.0,
-        1222.0,
-        102.0,
-        8.0,
-        Color::rgb(232, 234, 237),
-    );
-    rr_stroke(
-        canvas,
-        29.0,
-        76.0,
-        1222.0,
-        102.0,
-        8.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
+        32.0,
+        84.0,
+        1216.0,
+        824.0,
+        48.0,
+        crate::ui::surface(canvas),
     );
     text_fit_centered(
         canvas,
-        "Settings",
+        "Device preferences",
         640.0,
-        89.0,
-        1120.0,
-        64.0,
-        Color::BLACK,
+        105.0,
+        1100.0,
+        46.0,
+        crate::ui::INK,
         FontWeight::Bold,
-    );
-
-    rr(canvas, 29.0, 192.0, 1222.0, 736.0, 8.0, Color::WHITE);
-    rr_stroke(
-        canvas,
-        29.0,
-        192.0,
-        1222.0,
-        736.0,
-        8.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
     );
 
     detail_row(
@@ -196,7 +171,6 @@ pub fn draw_date_time_setup(
     let (top, bottom) = theme.gradient_colors();
     crate::ui::draw_figma_background(canvas);
     panel_gradient(canvas, 64.0, 52.0, 1152.0, 856.0, 96.0, top, bottom);
-    liquid_glass(canvas, 64.0, 52.0, 1152.0, 856.0, 96.0, 32);
 
     canvas.text_centered(
         "Set Date & Time",
@@ -267,36 +241,14 @@ pub fn draw_date_time_setup(
     );
 
     let selected = focus == Focus::DateDone;
-    if selected {
-        focus_halo(canvas, 690.0, 602.0, 400.0, 148.0, 32.0, seconds, 1.75);
-    }
-    rr(
-        canvas,
-        690.0,
-        602.0,
-        400.0,
-        148.0,
-        32.0,
-        if selected {
-            canvas
-                .theme_top_color
-                .unwrap_or(Color::rgb(63, 143, 229))
-                .mix(Color::WHITE, pulse01(seconds, 3.2, 1.75) * 0.14)
-        } else {
-            Color::WHITE
-        },
-    );
-    liquid_glass(canvas, 690.0, 602.0, 400.0, 148.0, 32.0, 26);
-    if selected {
-        canvas.register_selected(690.0, 602.0, 400.0, 148.0, 32.0, 7.0);
-    }
+    figma_list_row(canvas, 690.0, 602.0, 400.0, 148.0, selected, seconds);
     text_fit_centered(
         canvas,
         "Done",
         890.0,
         629.0,
         330.0,
-        88.0,
+        63.0,
         if selected { Color::WHITE } else { Color::BLACK },
         FontWeight::Bold,
     );
@@ -331,9 +283,9 @@ fn detail_row(
         canvas,
         label,
         178.0,
-        y + 16.0,
+        y + 24.0,
         820.0,
-        76.0,
+        48.0,
         if selected { Color::WHITE } else { Color::BLACK },
         FontWeight::Bold,
     );
@@ -393,38 +345,20 @@ fn date_card_sized(
     seconds: f32,
     phase: f32,
 ) {
-    let radius = if h > 180.0 { 32.0 } else { 24.0 };
-    if selected {
-        focus_halo(canvas, x, y, w, h, radius, seconds, phase);
-    }
-    rr(
-        canvas,
-        x,
-        y,
-        w,
-        h,
-        radius,
-        if selected {
-            canvas
-                .theme_top_color
-                .unwrap_or(Color::rgb(63, 143, 229))
-                .mix(Color::WHITE, pulse01(seconds, 3.2, phase) * 0.14)
-        } else {
-            Color::WHITE
-        },
-    );
-    liquid_glass(canvas, x, y, w, h, radius, if selected { 20 } else { 34 });
-    if selected {
-        canvas.register_selected(x, y, w, h, radius, 7.0);
-    }
+    let _ = phase;
+    figma_list_row(canvas, x, y, w, h, selected, seconds);
     text_fit_centered(
         canvas,
         label,
         x + w * 0.5,
         y + h * 0.12,
         w - 30.0,
-        h * 0.26,
-        Color::BLACK,
+        h * 0.20,
+        if selected {
+            Color::WHITE
+        } else {
+            crate::ui::INK_SECONDARY
+        },
         FontWeight::Bold,
     );
     text_fit_centered(
