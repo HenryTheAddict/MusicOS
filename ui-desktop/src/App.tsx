@@ -607,7 +607,7 @@ export default function App() {
       if(shortcut){e.preventDefault();e.stopPropagation();shortcutDispatch.current(shortcut);return;}
 
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){
-        e.preventDefault();if(!document.querySelector('dialog[open]'))openSearch();return;
+        e.preventDefault();if(!document.querySelector('dialog[open]:not(.supercommand)'))openSearch();return;
       }
       if((e.metaKey||e.ctrlKey)&&!e.altKey&&e.key.toLowerCase()==='f'&&section==='Library'&&miniMode==='normal'&&(findSupported||collectionFind)&&!commandOpen&&!document.querySelector('dialog[open],[role=menu]')){
         e.preventDefault();openFind();return;

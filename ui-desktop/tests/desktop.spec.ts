@@ -16,10 +16,14 @@ test("SuperCommand searches, creates playlists and supports Escape",async({page}
   await dialog.getByRole('combobox',{name:'Playlist name'}).fill('Command mix');
   await page.keyboard.press('Enter');
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator('.personal-library')).toContainText('Command mix');
+  await expect(page.locator('.sidebar-playlists')).toContainText('Command mix');
   await page.keyboard.press('ControlOrMeta+k');
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
+  await openPlaylistCreator(page);
+  await page.keyboard.press('ControlOrMeta+k');
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole('dialog',{name:'Create playlist',exact:true})).toBeVisible();
 });
 test('player audio tooltip escapes header clipping and stays inside compact windows',async({page})=>{
   await start(page);
