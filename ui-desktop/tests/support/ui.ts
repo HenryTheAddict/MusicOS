@@ -8,9 +8,15 @@ export async function openAlbums(page:Page){
 }
 
 export async function openPlaylistCreator(page:Page){
+ await settleAnimations(page);
  await page.getByRole('button',{name:'Create collection',exact:true}).click();
  await page.getByRole('menuitem',{name:'New playlist',exact:true}).click();
  await expect(page.getByRole('dialog',{name:'Create playlist',exact:true})).toBeVisible();
+}
+
+export async function setThemeColors(page:Page,source:'artwork'|'blue'|'custom'){
+ await page.getByRole('button',{name:'Theme colors',exact:true}).click();
+ await page.getByRole('menuitemradio',{name:source==='artwork'?'From artwork':source==='blue'?'Original blue':'Custom',exact:true}).click();
 }
 
 export async function openCollections(page:Page){
