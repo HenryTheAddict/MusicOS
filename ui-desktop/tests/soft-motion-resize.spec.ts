@@ -1,8 +1,9 @@
 import {test,expect} from '@playwright/test';
+import {openAlbums,settleAnimations} from './support/ui';
 
 test('filter option menus show selection, support keyboard and stay inside the viewport',async({page})=>{
  for(const size of [{width:720,height:480},{width:1280,height:800}]){
-  await page.setViewportSize(size);await page.goto('/?fixture=1&consistency=1');
+  await page.setViewportSize(size);await page.goto('/?fixture=1&consistency=1');await openAlbums(page);
   await page.getByRole('button',{name:'Filter',exact:true}).click();
   const panel=page.getByRole('region',{name:'Library filters'}),sort=panel.getByRole('button',{name:'Sort',exact:true});
   await panel.getByRole('button',{name:'Reset filters',exact:true}).click();
@@ -11,7 +12,7 @@ test('filter option menus show selection, support keyboard and stay inside the v
   await sort.focus();await page.keyboard.press('ArrowDown');await expect(page.getByRole('menu',{name:'Sort',exact:true})).toBeVisible();
   await page.keyboard.press('Escape');await expect(panel).toBeVisible();await expect(sort).toBeFocused();
   await panel.getByRole('button',{name:'Availability',exact:true}).click();
-  const menu=page.getByRole('menu',{name:'Availability',exact:true});await expect(menu).toBeVisible();const bounds=(await menu.boundingBox())!;
+  const menu=page.getByRole('menu',{name:'Availability',exact:true});await expect(menu).toBeVisible();await settleAnimations(page);const bounds=(await menu.boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(7);expect(bounds.y).toBeGreaterThanOrEqual(7);expect(bounds.x+bounds.width).toBeLessThanOrEqual(size.width-7);expect(bounds.y+bounds.height).toBeLessThanOrEqual(size.height-7);
   expect(await menu.evaluate(el=>{const box=el.getBoundingClientRect();return [0.25,0.5,0.75].every(y=>el.contains(document.elementFromPoint(box.right-12,box.top+box.height*y)));})).toBe(true);
   await page.screenshot({path:`out/rebuild-qa/filter-options-${size.width}.png`,animations:'disabled'});
@@ -20,7 +21,7 @@ test('filter option menus show selection, support keyboard and stay inside the v
 });
 
 test('resizing a virtualized grid preserves cards until columns settle and ends without overlaps',async({page})=>{
- await page.goto('/?fixture=1&largeAlbums=1');await expect(page.locator('.virtual-grid').first()).toBeVisible();
+ await page.goto('/?fixture=1&largeAlbums=1');await openAlbums(page);await expect(page.locator('.virtual-grid').first()).toBeVisible();
  await page.waitForTimeout(400);
  await page.locator('.collection-card').first().evaluate(el=>el.setAttribute('data-resize-retained','true'));
  // A continuous drag changes artwork size, not virtual row identity, every pixel.
@@ -35,16 +36,16 @@ test('resizing a virtualized grid preserves cards until columns settle and ends 
 });
 
 test('transport uses rounded finite contours and settles after rapid reversals',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
- const glyph=page.locator('.transport [data-icon=pause]');await expect(glyph).not.toHaveAttribute('data-morphing','true');
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ const glyph=page.locator('.transport [data-icon=pause]');await expect(glyph).not.toHaveAttribute('data-morphing','true');const endpoint=await glyph.locator('svg').innerHTML();
  await page.getByRole('button',{name:'Pause',exact:true}).click();
- await expect(page.locator('.transport [data-morphing=true] path').first()).toHaveAttribute('d',/Q/);
+ await expect(page.locator('.transport [data-transport-morph] > path').first()).toHaveAttribute('d',/C/);
  await page.waitForTimeout(120);await page.getByRole('button',{name:'Play',exact:true}).click();
- await expect(glyph).not.toHaveAttribute('data-morphing','true');expect(await glyph.locator('path').last().getAttribute('d')).toContain('M21.2,4');
+ await expect(glyph).not.toHaveAttribute('data-morphing','true');await expect(glyph.locator('svg')).toHaveJSProperty('innerHTML',endpoint);
  await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Pause',exact:true}).click();await expect(page.locator('.transport [data-morphing=true]')).toHaveCount(0);
 });
 
 test('native resize fallback updates grid columns when its ResizeObserver does not deliver',async({page})=>{
  await page.addInitScript(()=>{const Original=ResizeObserver;window.ResizeObserver=class extends Original{observe(target:Element,options?:ResizeObserverOptions){if(!target.matches('.collection-grid-container'))super.observe(target,options);}};});
- await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');const grid=page.locator('.collection-grid');const columns=()=>grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);const small=await columns();await page.setViewportSize({width:1800,height:1000});await expect.poll(columns).toBeGreaterThan(small);await page.setViewportSize({width:720,height:480});await expect.poll(columns).toBe(small);
+ await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await openAlbums(page);const grid=page.locator('.collection-grid');const columns=()=>grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);const small=await columns();await page.setViewportSize({width:1800,height:1000});await expect.poll(columns).toBeGreaterThan(small);await page.setViewportSize({width:720,height:480});await expect.poll(columns).toBe(small);
 });

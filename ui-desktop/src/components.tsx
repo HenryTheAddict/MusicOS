@@ -600,7 +600,7 @@ export function CollectionGrid({
     gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
     columnGap: gap,
   };
-  const rowKey = useCallback((index: number) => `${columns}:${index}`, [columns]);
+  const rowKey = useCallback((index: number) => index, []);
   const virtual = useVirtualizer({
     useAnimationFrameWithResizeObserver:true,
     enabled: items.length > 120,
