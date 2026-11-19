@@ -1219,6 +1219,23 @@ impl Db {
         Ok(false)
     }
 
+    pub(crate) fn has_tracks_in_collection(
+        &self,
+        album: Option<&str>,
+        artist: Option<&str>,
+    ) -> Result<bool> {
+        Ok(self.conn
+            .prepare_cached(
+                "SELECT EXISTS (
+                SELECT 1 FROM tracks t
+                LEFT JOIN track_metadata_overrides o ON o.track_id = t.id
+                WHERE (?1 IS NULL OR COALESCE(o.album, t.album) = ?1)
+                  AND (?2 IS NULL OR COALESCE(o.artist, t.artist) = ?2)
+            )",
+            )?
+            .query_row(params![album, artist], |row| row.get(0))?)
+    }
+
     pub fn get_tracks(&self) -> Result<Vec<Track>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT t.id, t.path, COALESCE(o.title, t.title), COALESCE(o.artist, t.artist),
