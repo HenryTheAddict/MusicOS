@@ -5414,7 +5414,6 @@ version = "0.1.1"
 dependencies = [
  "alsa",
  "anyhow",
- "bitflags 2.13.0",
  "clap",
  "ctrlc",
  "evdev",
