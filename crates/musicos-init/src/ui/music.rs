@@ -27,7 +27,7 @@ pub fn draw_music_menu(
         208.0,
         82.0,
         50.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 
@@ -41,7 +41,7 @@ pub fn draw_music_menu(
             252.0,
             36.0,
             36.0,
-            Color::BLACK,
+            crate::ui::ink(canvas),
             FontWeight::Regular,
         );
     } else {
@@ -58,7 +58,7 @@ pub fn draw_music_menu(
                 y + 16.0,
                 292.0,
                 36.0,
-                Color::BLACK,
+                crate::ui::ink(canvas),
                 FontWeight::Bold,
             );
             crate::ui::text_fit(
@@ -68,7 +68,7 @@ pub fn draw_music_menu(
                 y + 60.0,
                 292.0,
                 28.0,
-                Color::rgb(80, 80, 80),
+                crate::ui::ink_secondary(canvas),
                 FontWeight::Regular,
             );
         }
@@ -135,7 +135,7 @@ pub fn draw_music_menu(
             y + 16.0,
             620.0,
             42.0,
-            if selected { Color::WHITE } else { Color::BLACK },
+            crate::ui::ink(canvas),
             FontWeight::Bold,
         );
         if badge > 0 {
@@ -146,22 +146,14 @@ pub fn draw_music_menu(
                 74.0,
                 42.0,
                 6.0,
-                if selected {
-                    Color::WHITE
-                } else {
-                    Color::rgb(95, 101, 108)
-                },
+                crate::ui::surface(canvas),
             );
             canvas.text_centered(
                 &badge.to_string(),
                 x + 627.0,
                 y + 30.0,
                 28.0,
-                if selected {
-                    theme.primary_color()
-                } else {
-                    Color::WHITE
-                },
+                crate::ui::ink_secondary(canvas),
                 FontWeight::Bold,
             );
         }
@@ -286,7 +278,14 @@ pub fn draw_tracks_list(
 
 fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
     liquid_glass(canvas, 238.0, 330.0, 824.0, 300.0, 32.0, 190);
-    canvas.text_centered(title, 650.0, 392.0, 68.0, Color::BLACK, FontWeight::Bold);
+    canvas.text_centered(
+        title,
+        650.0,
+        392.0,
+        68.0,
+        crate::ui::ink(canvas),
+        FontWeight::Bold,
+    );
     text_fit_centered(
         canvas,
         help,
@@ -294,7 +293,7 @@ fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
         500.0,
         680.0,
         34.0,
-        Color::rgb(70, 70, 70),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
     canvas.text_centered(
@@ -302,7 +301,7 @@ fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
         650.0,
         570.0,
         28.0,
-        Color::rgba(0, 0, 0, 140),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 }
@@ -364,7 +363,7 @@ pub fn draw_search(
         270.0,
         850.0,
         48.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_centered(
@@ -372,7 +371,7 @@ pub fn draw_search(
         650.0,
         360.0,
         28.0,
-        Color::rgb(70, 70, 70),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 
@@ -409,7 +408,11 @@ pub fn draw_search(
             x + w / 2.0,
             y + 17.0,
             if label.len() > 3 { 24.0 } else { 30.0 },
-            if selected { Color::WHITE } else { Color::BLACK },
+            if selected {
+                crate::ui::on_accent(canvas)
+            } else {
+                crate::ui::ink(canvas)
+            },
             FontWeight::Bold,
         );
     }
@@ -430,7 +433,7 @@ pub fn draw_rating_picker(
         300.0,
         900.0,
         48.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     for index in 0..5 {
@@ -455,9 +458,9 @@ pub fn draw_rating_picker(
             469.0,
             57.0,
             if active {
-                Color::WHITE
+                crate::ui::on_accent(canvas)
             } else {
-                Color::rgb(100, 100, 100)
+                crate::ui::ink_secondary(canvas)
             },
             FontWeight::Bold,
         );
@@ -472,7 +475,7 @@ pub fn draw_rating_picker(
         650.0,
         620.0,
         36.0,
-        Color::rgb(70, 70, 70),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 }
@@ -503,7 +506,7 @@ fn draw_alpha_index(canvas: &mut Canvas<'_>, labels: &[&str]) {
             1152.0,
             y,
             22.0,
-            Color::rgba(0, 0, 0, 160),
+            crate::ui::ink_secondary(canvas),
             FontWeight::Bold,
         );
         y += step;
@@ -530,7 +533,7 @@ fn draw_collection_shell(canvas: &mut Canvas<'_>, title: &str, theme: ThemeName)
         91.0,
         960.0,
         58.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 }
@@ -552,7 +555,7 @@ fn collection_row(
     let y = y + (1.0 - row_t) * 46.0;
     figma_list_row(canvas, x, y, w, h, selected, seconds);
 
-    let text_color = if selected { Color::WHITE } else { Color::BLACK };
+    let text_color = crate::ui::ink(canvas);
 
     crate::ui::text_fit(
         canvas,

@@ -1,6 +1,6 @@
 use crate::app::Focus;
 use crate::audio::EqPreset;
-use crate::renderer::{Canvas, Color};
+use crate::renderer::Canvas;
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
@@ -45,7 +45,7 @@ pub fn draw_settings(
             y + 18.0,
             1040.0,
             64.0,
-            if selected { Color::WHITE } else { Color::BLACK },
+            crate::ui::ink(canvas),
             FontWeight::Bold,
         );
         canvas.text_right(
@@ -53,11 +53,7 @@ pub fn draw_settings(
             x + 1180.0,
             y + 21.0,
             58.0,
-            if selected {
-                Color::WHITE
-            } else {
-                Color::rgb(100, 104, 110)
-            },
+            crate::ui::ink_secondary(canvas),
             FontWeight::Bold,
         );
     }
@@ -92,7 +88,7 @@ pub fn draw_settings_detail(
         105.0,
         1100.0,
         46.0,
-        crate::ui::INK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 
@@ -150,7 +146,7 @@ pub fn draw_settings_detail(
         640.0,
         918.0,
         26.0,
-        Color::rgba(0, 0, 0, 180),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 }
@@ -177,7 +173,7 @@ pub fn draw_date_time_setup(
         640.0,
         82.0,
         94.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_centered(
@@ -185,7 +181,7 @@ pub fn draw_date_time_setup(
         640.0,
         184.0,
         40.0,
-        Color::rgba(0, 0, 0, 180),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 
@@ -249,7 +245,7 @@ pub fn draw_date_time_setup(
         629.0,
         330.0,
         63.0,
-        if selected { Color::WHITE } else { Color::BLACK },
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 }
@@ -261,6 +257,8 @@ fn detail_offset(transition_t: f32, index: usize) -> f32 {
 
 fn theme_label(theme: ThemeName) -> &'static str {
     match theme {
+        ThemeName::Seaglass => "Seaglass",
+        ThemeName::Dark => "Dark",
         ThemeName::Blue => "Blue",
         ThemeName::Red => "Red",
         ThemeName::Green => "Green",
@@ -286,7 +284,7 @@ fn detail_row(
         y + 24.0,
         820.0,
         48.0,
-        if selected { Color::WHITE } else { Color::BLACK },
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_right(
@@ -294,11 +292,7 @@ fn detail_row(
         1094.0,
         y + 20.0,
         58.0,
-        if selected {
-            Color::WHITE
-        } else {
-            Color::rgb(100, 104, 110)
-        },
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 }
@@ -354,11 +348,7 @@ fn date_card_sized(
         y + h * 0.12,
         w - 30.0,
         h * 0.20,
-        if selected {
-            Color::WHITE
-        } else {
-            crate::ui::INK_SECONDARY
-        },
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
     text_fit_centered(
@@ -368,7 +358,7 @@ fn date_card_sized(
         y + h * 0.42,
         w - 26.0,
         h * 0.42,
-        if selected { Color::WHITE } else { Color::BLACK },
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 }

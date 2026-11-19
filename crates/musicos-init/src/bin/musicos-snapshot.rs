@@ -1,10 +1,13 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use anyhow::Result;
 use musicos_init::app::{Focus, MusicOs, Screen};
 use musicos_init::database::Track;
+use musicos_init::input::{Button, InputEvent};
 use musicos_init::renderer::{Canvas, Resolution};
+use musicos_init::ui::theme::ThemeName;
 
 fn main() -> Result<()> {
     let resolution = Resolution::from_env_or_default();
@@ -12,8 +15,19 @@ fn main() -> Result<()> {
         .nth(1)
         .unwrap_or_else(|| "out/musicos-snapshot.bmp".to_string());
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
-    let mut app = MusicOs::new(resolution);
-    match std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() {
+    let snapshot_screen = std::env::var("MUSICOS_SNAPSHOT_SCREEN");
+    let mut app = if matches!(
+        snapshot_screen.as_deref(),
+        Ok("home-albums" | "home-nowplaying")
+    ) {
+        MusicOs::with_db_path(resolution, ":memory:")
+    } else {
+        MusicOs::new(resolution)
+    };
+    if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
+        app.active_theme = ThemeName::from_str(&theme);
+    }
+    match snapshot_screen.as_deref() {
         Ok("first") => app.force_screen_for_snapshot(Screen::First),
         Ok("welcome") | Ok("hello") => app.force_screen_for_snapshot(Screen::Welcome),
         Ok("theme") => app.force_screen_for_snapshot(Screen::Theme),
@@ -21,6 +35,13 @@ fn main() -> Result<()> {
             app.force_screen_for_snapshot(Screen::DateTimeSetup)
         }
         Ok("home") => app.force_screen_for_snapshot(Screen::Home),
+        Ok("home-albums" | "home-nowplaying") => {
+            seed_home_library(&mut app)?;
+            app.force_screen_for_snapshot(Screen::Home);
+            if snapshot_screen.as_deref() == Ok("home-nowplaying") {
+                app.handle_input(InputEvent::Button(Button::Down));
+            }
+        }
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
         Ok("songs") => {
             seed_demo_queue(&mut app);
@@ -126,6 +147,54 @@ fn main() -> Result<()> {
     app.draw(&mut canvas, seconds);
     write_bmp(&output, resolution, &bgra)?;
     println!("{output}");
+    Ok(())
+}
+
+fn seed_home_library(app: &mut MusicOs) -> Result<()> {
+    let assets = musicos_init::ui::assets_dir();
+    for (title, artist, album, artwork) in [
+        (
+            "One More Year",
+            "Tame Impala",
+            "The Slow Rush",
+            "SlowRush.png",
+        ),
+        ("Let It Happen", "Tame Impala", "Currents", "Currents.png"),
+        ("Feel Good Inc.", "Gorillaz", "Demon Days", "DemonDays.png"),
+        (
+            "Radioactive",
+            "Imagine Dragons",
+            "Night Visions",
+            "NightVisions.png",
+        ),
+        ("Pink", "Luna", "Flamingo", "Flamingo.png"),
+        ("Drift", "Harbor", "Sea", "Sea.png"),
+    ] {
+        let id = app.db.insert_track(
+            &format!("/music/{artwork}.ogg"),
+            title,
+            artist,
+            album,
+            327,
+            1,
+            1,
+        )?;
+        let path = Path::new(&assets).join("covers").join(artwork);
+        app.db.set_track_cover_art(id, path.to_str(), 1)?;
+    }
+    app.refresh_library();
+    let tracks = app.db.get_tracks()?;
+    if let Some((index, track)) = tracks
+        .iter()
+        .enumerate()
+        .find(|(_, track)| track.title == "One More Year")
+    {
+        app.current_cover_art = track
+            .cover_art_path
+            .as_deref()
+            .and_then(|path| musicos_init::media::load_cover_art_file(Path::new(path)));
+        app.player.restore_queue_paused(tracks, index, 118.0);
+    }
     Ok(())
 }
 

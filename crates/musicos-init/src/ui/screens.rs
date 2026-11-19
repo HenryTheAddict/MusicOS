@@ -29,7 +29,7 @@ pub fn draw_first(
         640.0,
         224.0 + (1.0 - t) * 24.0,
         128.0,
-        crate::ui::INK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::text_fit_centered(
@@ -39,7 +39,7 @@ pub fn draw_first(
         386.0,
         1000.0,
         38.0,
-        crate::ui::INK_SECONDARY,
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 
@@ -94,7 +94,7 @@ pub fn draw_welcome(
         144.0 + offset,
         1004.0,
         70.0,
-        crate::ui::INK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::text_fit(
@@ -104,7 +104,7 @@ pub fn draw_welcome(
         235.0 + offset,
         1004.0,
         34.0,
-        crate::ui::INK_SECONDARY,
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
     for (index, (key, label)) in [
@@ -135,7 +135,14 @@ pub fn draw_welcome(
             32.0,
             crate::ui::surface(canvas),
         );
-        canvas.text_centered(key, 244.0, y + 25.0, 33.0, crate::ui::INK, FontWeight::Bold);
+        canvas.text_centered(
+            key,
+            244.0,
+            y + 25.0,
+            33.0,
+            crate::ui::ink(canvas),
+            FontWeight::Bold,
+        );
         crate::ui::text_fit(
             canvas,
             lang.translate(label),
@@ -143,7 +150,7 @@ pub fn draw_welcome(
             y + 24.0,
             744.0,
             36.0,
-            crate::ui::INK,
+            crate::ui::ink(canvas),
             FontWeight::Regular,
         );
     }
@@ -179,7 +186,7 @@ pub fn draw_theme_selection(
         142.0 + (1.0 - t) * 38.0,
         1120.0,
         64.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     let panel_y = 309.0 + (1.0 - ease_out_back(transition_t)) * 52.0;
@@ -193,23 +200,18 @@ pub fn draw_theme_selection(
         crate::ui::surface(canvas),
     );
 
-    let theme_colors = [
-        (ThemeName::Blue, 232.0, ThemeName::Blue.primary_color()),
-        (ThemeName::Red, 504.0, ThemeName::Red.primary_color()),
-        (ThemeName::Green, 776.0, ThemeName::Green.primary_color()),
-        (ThemeName::Purple, 1048.0, ThemeName::Purple.primary_color()),
-    ];
-
-    for (index, (theme_name, cx, color)) in theme_colors.into_iter().enumerate() {
+    for (index, theme_name) in ThemeName::OPTIONS.into_iter().enumerate() {
+        let cx = 190.0 + index as f32 * 180.0;
+        let color = theme_name.primary_color();
         let circle_t = ease_out_back(stagger(t, index, 0.05, 0.8));
         let cy = 459.0 + (1.0 - circle_t) * 28.0;
-        rr(canvas, cx - 100.0, cy - 100.0, 200.0, 200.0, 100.0, color);
+        rr(canvas, cx - 60.0, cy - 60.0, 120.0, 120.0, 60.0, color);
 
         if theme_name == active_theme {
             if matches!(focus, Focus::ThemeSelect) {
-                crate::ui::register_focus(canvas, cx - 108.0, cy - 108.0, 216.0, 216.0, 108.0);
+                crate::ui::register_focus(canvas, cx - 66.0, cy - 66.0, 132.0, 132.0, 66.0);
             } else {
-                ellipse(canvas, cx, cy, 108.0, crate::ui::INK, 6.0);
+                ellipse(canvas, cx, cy, 66.0, crate::ui::ink(canvas), 6.0);
             }
         }
     }
@@ -230,7 +232,7 @@ pub fn draw_theme_selection(
         } else {
             Color::WHITE
         },
-        Color::BLACK,
+        crate::ui::ink(canvas),
         seconds,
         custom_selected,
     );
@@ -251,7 +253,7 @@ pub fn draw_theme_selection(
         if yeah_selected {
             Color::WHITE
         } else {
-            Color::BLACK
+            crate::ui::ink(canvas)
         },
         seconds,
         yeah_selected,
@@ -273,7 +275,14 @@ pub fn draw_language_selection(
     crate::ui::draw_figma_background(canvas);
     let globe_x = 74.0 - (1.0 - t) * 42.0;
     liquid_glass(canvas, globe_x, 395.0, 400.0, 170.0, 20.0, 220);
-    draw_globe(canvas, globe_x + 200.0, 480.0, 64.0, 6.0, Color::BLACK);
+    draw_globe(
+        canvas,
+        globe_x + 200.0,
+        480.0,
+        64.0,
+        6.0,
+        crate::ui::ink(canvas),
+    );
     liquid_glass(
         canvas,
         509.0 + (1.0 - t) * 56.0,
@@ -340,7 +349,7 @@ pub fn draw_test_complete(
         294.0 + (1.0 - t) * 28.0,
         1010.0,
         72.0,
-        crate::ui::INK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     for (index, line) in lang.translate("test_desc").lines().enumerate() {
@@ -351,7 +360,7 @@ pub fn draw_test_complete(
             442.0 + index as f32 * 61.0,
             1010.0,
             38.0,
-            crate::ui::INK_SECONDARY,
+            crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
     }
@@ -383,11 +392,7 @@ fn lang_row(
     let row_h = 124.0;
     let _ = (blurred, phase);
     crate::ui::figma_list_row(canvas, x, y, w, row_h, selected, seconds);
-    let text_color = if selected {
-        Color::WHITE
-    } else {
-        crate::ui::INK
-    };
+    let text_color = crate::ui::ink(canvas);
 
     canvas.text_centered(
         label,
