@@ -14,7 +14,7 @@ test('record comparable browser frame pacing and animation scripting',async({pag
 });
 test('measure old and restored meter morph scripting in the same browser',async({page})=>{
  await page.goto('/?fixture=1');const report=await page.evaluate(async()=>{
-  const load=new Function('url','return import(url)') as (url:string)=>Promise<any>;const old=await load('http://127.0.0.1:1421/src/playLevelsMorph.ts'),updated=await load('/src/playLevelsMorph.ts');
+  const load=new Function('url','return import(url)') as (url:string)=>Promise<any>;const old=await load('/tests/support/baseline/playLevelsMorph.ts'),updated=await load('/src/playLevelsMorph.ts');
   const originalRaf=window.requestAnimationFrame,originalCancel=window.cancelAnimationFrame,originalStyle=window.getComputedStyle;let next=0,reads=0;const queued=new Map<number,FrameRequestCallback>();window.requestAnimationFrame=cb=>{queued.set(++next,cb);return next;};window.cancelAnimationFrame=id=>{queued.delete(id);};window.getComputedStyle=(...args)=>{reads++;return originalStyle(...args);};
   const host=document.createElement('i');host.style.setProperty('--level-1','.2');host.style.setProperty('--level-2','.5');host.style.setProperty('--level-3','.8');document.body.append(host);
   const measure=(fn:any)=>{reads=0;const samples=[];for(let run=0;run<5;run++){const began=performance.now();for(let repeat=0;repeat<50;repeat++){const time=performance.now();host.dataset.morphProgress='0';const cancel=fn(host,true,'<svg/>');for(let i=1;i<=12;i++){const callbacks=[...queued.values()];queued.clear();callbacks.forEach(cb=>cb(time+i*17));}cancel();}samples.push(performance.now()-began);}return {millisecondsPer50Morphs:samples,computedStyleReads:reads};};
