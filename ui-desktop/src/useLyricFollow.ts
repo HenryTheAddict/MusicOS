@@ -16,11 +16,11 @@ export function useLyricFollow(host:RefObject<HTMLDivElement|null>,{
   const firstLayout=!previous.current.initialized||previous.current.doc!==doc||previous.current.trackId!==trackId||previous.current.variant!==variant;
   previous.current={doc,trackId,variant,initialized:true};
   if(firstLayout||media.matches||Math.abs(to-from)<.5){node.scrollTop=to;sync.current?.();return;}
-  let frame=0;const began=performance.now();
+  let frame=0;const began=performance.now(),duration=variant==='full'?180:240;
   const stop=()=>{cancelAnimationFrame(frame);frame=0;};
   const reduced=()=>{if(media.matches){stop();node.scrollTop=to;sync.current?.();}};
   const visibility=()=>{if(document.hidden)stop();};
-  const draw=(at:number)=>{frame=0;if(document.hidden)return;const t=Math.min(1,Math.max(0,(at-began)/240));node.scrollTop=from+(to-from)*(1-Math.pow(1-t,3));sync.current?.();if(t<1)frame=requestAnimationFrame(draw);};
+  const draw=(at:number)=>{frame=0;if(document.hidden)return;const t=Math.min(1,Math.max(0,(at-began)/duration));node.scrollTop=from+(to-from)*(1-Math.pow(1-t,3));sync.current?.();if(t<1)frame=requestAnimationFrame(draw);};
   frame=requestAnimationFrame(draw);media.addEventListener('change',reduced);document.addEventListener('visibilitychange',visibility);
   return()=>{stop();media.removeEventListener('change',reduced);document.removeEventListener('visibilitychange',visibility);};
  },[active,following,doc,trackId,variant,focus,last,layoutEpoch,host]);
