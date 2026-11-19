@@ -345,6 +345,10 @@ The QEMU target intentionally uses generic `virt` hardware with virtio GPU,
 keyboard, tablet, and block devices. It does not pretend to emulate the RG35XX
 H700 display pipeline exactly.
 
+See the [embedded QEMU boot and playback baseline](docs/embedded-qemu-baseline.md)
+for a headless smoke test with serial logs, framebuffer captures, and recorded
+audio.
+
 ## RG35XX Build
 
 ```sh
