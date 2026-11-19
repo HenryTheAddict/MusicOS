@@ -38,6 +38,7 @@ pub struct Preferences {
     pub show_song_durations: bool,
     pub show_now_playing_time: bool,
     pub sparklist_beta: bool,
+    pub copy_only_non_library_drops: bool,
     pub library_filters: LibraryFilters,
     pub listening:musicos_desktop::local::listening::Listening,
     pub dj_config: crate::dj_plan::Config,
@@ -65,6 +66,7 @@ impl Default for Preferences {
             show_song_durations: true,
             show_now_playing_time: true,
             sparklist_beta: false,
+            copy_only_non_library_drops: false,
             library_filters: Default::default(),
             dj_config: Default::default(),
             listening:Default::default(),
@@ -146,6 +148,9 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
             if let Some(value)=v["artwork_depth"].as_bool(){p.artwork_depth=value;}
             if let Some(value) = v["show_song_durations"].as_bool() { p.show_song_durations=value; }
             if let Some(value) = v["show_now_playing_time"].as_bool() { p.show_now_playing_time=value; }
+            if let Some(value) = v["copy_only_non_library_drops"].as_bool() {
+                p.copy_only_non_library_drops = value;
+            }
             if let Some(value)=v.get("library_filters"){if let Ok(filters)=serde_json::from_value(value.clone()){p.library_filters=filters;}}
             if let Some(value) = v["sparklist_beta"].as_bool() { p.sparklist_beta=value; }
             if let Some(value) = v["audio_presentation"].as_str() {
@@ -226,6 +231,17 @@ mod tests {
         let mut p=Preferences::default();p.library_filters.sort="title".into();p.library_filters.separate_singles=true;p.library_filters.genre="Electronic".into();p.library_filters.favorites=true;
         atomic_write_json(&path,&p).unwrap();assert_eq!(load_from(&path,None),p);
         p.library_filters.quality="invalid".into();assert_eq!(p.normalize().library_filters.quality,"all");
+    }
+    #[test]
+    fn drop_copy_preference_defaults_off_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        std::fs::write(&path, "{}").unwrap();
+        let mut prefs = load_from(&path, None);
+        assert!(!prefs.copy_only_non_library_drops);
+        prefs.copy_only_non_library_drops = true;
+        atomic_write_json(&path, &prefs).unwrap();
+        assert!(load_from(&path, None).copy_only_non_library_drops);
     }
     #[test]
     fn round_trip_and_independent_fallback() {

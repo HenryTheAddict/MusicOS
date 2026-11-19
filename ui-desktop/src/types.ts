@@ -80,6 +80,7 @@ export interface Preferences {
   artists_album_only?:boolean;
   listening?:Listening;
   library_filters?:LibraryFilters;
+  copy_only_non_library_drops?:boolean;
   version: number;
   display_name: string;
   onboarding_version?:number;

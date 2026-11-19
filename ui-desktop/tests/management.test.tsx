@@ -46,7 +46,19 @@ test('album browser reads a summary and loads only the selected comparison',asyn
 
 test('configured managed storage has no Forget action while empty legacy storage can be cleaned up',async()=>{
  const {default:LibraryTools}=await import('../src/LibraryTools');const library={tracks:[],albums:[],artists:[],genres:[],protected_source_ids:[1],sources:[{id:1,path:'/managed',display_name:'Current MusicOS',kind:'managed',song_count:0,enabled:true,available:true,last_error:null},{id:2,path:'/legacy',display_name:'Legacy MusicOS',kind:'managed',song_count:0,enabled:true,available:false,last_error:null}]} as Library;
- render(<LibraryTools view="sources" onError={()=>{}} library={library} busy={false} onAdd={()=>{}} onTask={()=>{}} onRefresh={async()=>{}}/>);expect(screen.getAllByRole('button',{name:'Forget…'})).toHaveLength(1);expect(screen.getByRole('heading',{name:'Current MusicOS'}).closest('article')?.querySelector('button')).toBeNull();
+ render(<LibraryTools view="sources" onError={()=>{}} library={library} busy={false} onAdd={()=>{}} onTask={()=>{}} onRefresh={async()=>{}} copyOnlyNonLibraryDrops={false} onCopyOnlyNonLibraryDropsChange={()=>{}}/>);expect(screen.getAllByRole('button',{name:'Forget…'})).toHaveLength(1);expect(screen.getByRole('heading',{name:'Current MusicOS'}).closest('article')?.querySelector('button')).toBeNull();
+});
+
+test('dropped music exposes a controlled switch for skipping library files',async()=>{
+ const {default:LibraryTools}=await import('../src/LibraryTools');
+ const props={view:'sources' as const,library:{tracks:[],albums:[],artists:[],genres:[],sources:[]},busy:false,onError:()=>{},onAdd:()=>{},onTask:()=>{},onRefresh:async()=>{},onCopyOnlyNonLibraryDropsChange:vi.fn()};
+ const {rerender}=render(<LibraryTools {...props} copyOnlyNonLibraryDrops={false}/>);
+ const toggle=screen.getByRole('switch',{name:'Only copy songs outside library folders'});
+ expect(toggle).not.toBeChecked();
+ fireEvent.click(toggle);
+ expect(props.onCopyOnlyNonLibraryDropsChange).toHaveBeenCalledWith(true);
+ rerender(<LibraryTools {...props} copyOnlyNonLibraryDrops/>);
+ expect(toggle).toBeChecked();
 });
 
 test('cancel stops the explicit suggestion task and keeps cached suggestions available',async()=>{

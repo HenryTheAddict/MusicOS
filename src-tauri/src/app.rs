@@ -1130,6 +1130,8 @@ struct TaskRequest {
     paths: Vec<PathBuf>,
     root: Option<PathBuf>,
     album_id: Option<String>,
+    #[serde(default)]
+    dropped: bool,
 }
 fn begin_task(state: &AppState, kind: &str) -> Result<()> {
     anyhow::ensure!(!crate::file_organization::pending(&state.config().db_path)?,"Finish interrupted file organization before rescanning or importing. Open Smartly organize my files and retry recovery.");
@@ -1274,14 +1276,43 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 }
             }
             if kind == "copy" {
-                let target=if let Some(root)=request.root.as_deref(){
-                    let target=root.canonicalize().context("The drop destination is unavailable. Check Music folders.")?;
-                    let known=repo.snapshot(&LibraryQuery::default())?.sources.into_iter().any(|source|source.enabled&&source.available&&source.path.canonicalize().is_ok_and(|p|p==target));
-                    anyhow::ensure!(known,"Choose an available Music folder before copying dropped music.");target
-                }else{config.media_dir.clone()};
-                let p = musicos_desktop::library_import::import_managed_library(
+                let skip_library_files = request.dropped
+                    && state
+                        .preferences
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .copy_only_non_library_drops;
+                let sources = if request.root.is_some() || skip_library_files {
+                    repo.snapshot(&LibraryQuery::default())?.sources
+                } else {
+                    Vec::new()
+                };
+                let target = if let Some(root) = request.root.as_deref() {
+                    let target = root
+                        .canonicalize()
+                        .context("The drop destination is unavailable. Check Music folders.")?;
+                    let known = sources.iter().any(|source| {
+                        source.enabled
+                            && source.available
+                            && source.path.canonicalize().is_ok_and(|p| p == target)
+                    });
+                    anyhow::ensure!(
+                        known,
+                        "Choose an available Music folder before copying dropped music."
+                    );
+                    target
+                } else {
+                    config.media_dir.clone()
+                };
+                let excluded_roots = if skip_library_files {
+                    sources.into_iter().map(|source| source.path).collect()
+                } else {
+                    Vec::new()
+                };
+                let p = musicos_desktop::library_import::import_managed_library_excluding(
                     &request.paths,
                     &target,
+                    &excluded_roots,
                     &state.cancel,
                     |p| {
                         emit_task(
