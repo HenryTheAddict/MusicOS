@@ -28,8 +28,8 @@ test('standard brightness is inherited by ordinary artwork and floating panels',
 
 test('collection hover feedback never raises brightness or enlarges its bounds',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'audio/1',name:'Soft mix',kind:'audio',track_ids:[1,2],artwork_choice:'auto/1'}])));
- await page.goto('/?fixture=1&sparkReady=1');const button=page.getByRole('button',{name:'Play Soft mix',exact:true}).first();await button.scrollIntoViewIfNeeded();const bounds=await button.boundingBox();
- await button.hover();await page.waitForTimeout(180);await expect(button).toHaveCSS('filter','none');expect(await button.boundingBox()).toEqual(bounds);expect(await button.locator('svg linearGradient').count()).toBeGreaterThan(0);
+ await page.goto('/?fixture=1&sparkReady=1');const button=page.getByRole('button',{name:'Play Soft mix',exact:true}).first();await button.scrollIntoViewIfNeeded();await page.evaluate(()=>document.fonts.ready);const bounds=(await button.boundingBox())!;
+ await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.waitForTimeout(180);await expect(button).toHaveCSS('filter','none');expect(await button.boundingBox()).toEqual(bounds);expect(await button.locator('svg linearGradient').count()).toBeGreaterThan(0);
  await page.locator('.home-collection-open').click();
  const shuffle=page.getByRole('button',{name:'Shuffle collection',exact:true});await shuffle.hover();await expect(shuffle).toHaveCSS('filter','none');
 });
