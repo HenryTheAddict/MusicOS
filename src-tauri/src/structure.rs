@@ -5,7 +5,8 @@ use anyhow::{ensure,Result};
 use rustfft::{FftPlanner,num_complex::Complex};
 use serde::{Deserialize,Serialize};
 use std::path::Path;
-pub const VERSION:&str="structure-4-measured-phrases-11025-2048-256";
+use rodio::Source;
+pub const VERSION:&str="structure-5-exact-duration-11025-2048-256";
 const RATE:usize=11025;
 const HOP:usize=256;
 #[derive(Clone,Debug,Default,Serialize,Deserialize)]
@@ -26,7 +27,7 @@ pub fn scan(path:&Path,bpm:Option<f32>,confidence:f32,checkpoint:impl FnMut()->b
 pub fn scan_multiband(path:&Path,bpm:Option<f32>,confidence:f32,checkpoint:impl FnMut()->bool)->Result<Structure>{scan_mode(path,bpm,confidence,checkpoint,true)}
 fn scan_mode(path:&Path,bpm:Option<f32>,tempo_confidence:f32,mut checkpoint:impl FnMut()->bool,multiband:bool)->Result<Structure>{
  let decoder=musicos_desktop::local::decoded_audio::open(path)?;
- let mut source=rodio::source::UniformSourceIterator::<_,f32>::new(decoder,1,RATE as u32);
+ let mut source=MonoResampler::new(decoder,RATE as u32);
  let fft=FftPlanner::<f32>::new().plan_fft_forward(2048);
  let window=(0..2048).map(|i|0.5-0.5*(std::f32::consts::TAU*i as f32/2048.).cos()).collect::<Vec<_>>();
  let mut ring=[0_f32;2048];let mut pos=0;let mut samples=0;let mut buffer=vec![Complex::new(0.,0.);2048];
@@ -45,6 +46,41 @@ fn scan_mode(path:&Path,bpm:Option<f32>,tempo_confidence:f32,mut checkpoint:impl
  }
  ensure!(checkpoint(),"Analysis cancelled");
  let mut result=summarize(samples as f32/RATE as f32,&energy,&flux,&timbres,bpm,tempo_confidence);if multiband{result.version="structure-candidate-multiband-v1".into();}Ok(result)
+}
+pub(crate) struct MonoResampler<S> {
+ input:S, channels:u16, input_rate:u64, output_rate:u64,
+ buffer:std::collections::VecDeque<f32>, input_frames:u64, position:u64, output_frames:u64, ended:bool,
+}
+impl<S:Source<Item=f32>> MonoResampler<S> {
+ pub(crate) fn new(input:S,output_rate:u32)->Self {
+  let channels=input.channels();let input_rate=input.sample_rate() as u64;
+  assert!(channels>0&&input_rate>0&&output_rate>0);
+  Self{input,channels,input_rate,output_rate:output_rate as u64,buffer:std::collections::VecDeque::new(),input_frames:0,position:0,output_frames:0,ended:false}
+ }
+ fn read_frame(&mut self)->Option<f32> {
+  let sample=self.input.next()?;
+  for _ in 1..self.channels {self.input.next()?;}
+  self.input_frames+=1;Some(sample)
+ }
+}
+impl<S:Source<Item=f32>> Iterator for MonoResampler<S> {
+ type Item=f32;
+ fn next(&mut self)->Option<f32> {
+  let numerator=self.output_frames*self.input_rate;
+  let target=numerator/self.output_rate;
+  let minimum=((2*self.output_frames+1)*self.input_rate).div_ceil(2*self.output_rate);
+  // Keep one continuous interpolation phase across decoder packets; restarting
+  // rodio's converter per packet rounds each packet up and accumulates drift.
+  while self.input_frames<(target+2).max(minimum)&&!self.ended {
+   if let Some(sample)=self.read_frame(){self.buffer.push_back(sample);}else{self.ended=true;}
+   while self.position<target&&self.buffer.len()>1 {self.buffer.pop_front();self.position+=1;}
+  }
+  if self.ended&&self.output_frames>=(self.input_frames*self.output_rate+self.input_rate/2)/self.input_rate {return None;}
+  let current=*self.buffer.front()?;
+  let fraction=(numerator%self.output_rate) as f32/self.output_rate as f32;
+  let sample=current+(self.buffer.get(1).copied().unwrap_or(current)-current)*fraction;
+  self.output_frames+=1;Some(sample)
+ }
 }
 fn summarize(duration:f32,energy:&[f32],flux:&[f32],timbres:&[[f32;8]],bpm:Option<f32>,_tempo_confidence:f32)->Structure {
  let step=HOP as f32/RATE as f32;let peak=energy.iter().copied().fold(0_f32,f32::max);
@@ -95,6 +131,38 @@ pub fn phrase_candidates(beats:&[f32],changes:&[Boundary],confidence:f32)->Vec<B
  beats.iter().enumerate().filter(|(i,_)|i%meter==phase).map(|(_,beat)|Boundary{seconds:*beat,confidence:confidence.min(support)}).collect()
 }
 #[cfg(test)]mod tests {use super::*;
+ #[test]
+ fn resampling_is_packet_independent_and_rounds_once() {
+  for rate in [8000_u32,11025,22050,44100,48000,96000] {
+   for frames in [0_usize,1,2,3,7,1023,1024,1025,48001] {
+    let input=(0..frames).map(|i|i as f32).collect::<Vec<_>>();
+    let source=rodio::buffer::SamplesBuffer::new(1,rate,input);
+    let output=MonoResampler::new(source,RATE as u32).collect::<Vec<_>>();
+    assert_eq!(output.len(),(frames as f64*RATE as f64/rate as f64).round() as usize,"rate={rate} frames={frames}");
+    for (i,sample) in output.iter().enumerate() {
+     let expected=(i as f64*rate as f64/RATE as f64).min(frames.saturating_sub(1) as f64) as f32;
+     assert!((sample-expected).abs()<0.01,"rate={rate} frame={i}: {sample} != {expected}");
+    }
+   }
+  }
+ }
+ #[test]
+ fn scan_preserves_decoded_duration() {
+  use std::io::Write;
+  let dir=tempfile::tempdir().unwrap();
+  for (rate,channels,frames) in [(48000_u32,2_u16,144001_u32),(44100,1,88201),(11025,2,11025),(8000,1,8001),(48000,2,1),(48000,2,0)] {
+   let path=dir.path().join("duration.wav");let mut file=std::fs::File::create(&path).unwrap();
+   let bytes=frames*channels as u32*2;
+   file.write_all(b"RIFF").unwrap();file.write_all(&(bytes+36).to_le_bytes()).unwrap();file.write_all(b"WAVEfmt ").unwrap();file.write_all(&16_u32.to_le_bytes()).unwrap();file.write_all(&1_u16.to_le_bytes()).unwrap();file.write_all(&channels.to_le_bytes()).unwrap();file.write_all(&rate.to_le_bytes()).unwrap();file.write_all(&(rate*channels as u32*2).to_le_bytes()).unwrap();file.write_all(&(channels*2).to_le_bytes()).unwrap();file.write_all(&16_u16.to_le_bytes()).unwrap();file.write_all(b"data").unwrap();file.write_all(&bytes.to_le_bytes()).unwrap();
+   file.write_all(&vec![0;bytes as usize]).unwrap();drop(file);
+   let scan=scan(&path,None,0.,||true).unwrap();
+   let expected=(frames as f64*RATE as f64/rate as f64).round() as usize;
+   let actual=(scan.duration*RATE as f32).round() as usize;
+   println!("rate={rate} channels={channels} input_frames={frames} expected_frames={expected} actual_frames={actual}");
+   assert_eq!(actual,expected,"rate={rate}, channels={channels}, frames={frames}");
+  }
+  assert!(scan(&dir.path().join("missing.wav"),None,0.,||true).is_err());
+ }
  #[test]fn phrase_phase_requires_structural_evidence(){let beats=(0..128).map(|i|i as f32*0.5).collect::<Vec<_>>();assert!(phrase_candidates(&beats,&[],1.).is_empty());let changes=[16,32,48,64,80].map(|i|Boundary{seconds:beats[i],confidence:0.6});let phrases=phrase_candidates(&beats,&changes,0.8);assert!(phrases.len()>=8);assert!(phrases.iter().all(|p|(p.seconds/8.).fract()==0.&&p.confidence>=0.5));}
  #[test]fn silence_never_invents_beats_or_repetition(){let s=summarize(30.,&vec![0.;646],&vec![0.;646],&vec![[0.;8];646],Some(120.),1.);assert!(s.beats.is_empty()&&s.phrases.is_empty());assert_eq!(s.silence.len(),1);assert!(s.regions.iter().all(|r|!r.repeated));}
  #[test]fn irregular_low_confidence_never_forces_beats(){let s=summarize(30.,&vec![0.1;646],&vec![1.;646],&vec![[0.2;8];646],Some(120.),0.1);assert_eq!(s.beat_confidence,0.);assert!(s.beats.is_empty());}
