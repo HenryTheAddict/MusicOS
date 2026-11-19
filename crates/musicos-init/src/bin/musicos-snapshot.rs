@@ -18,7 +18,14 @@ fn main() -> Result<()> {
     let snapshot_screen = std::env::var("MUSICOS_SNAPSHOT_SCREEN");
     let mut app = if matches!(
         snapshot_screen.as_deref(),
-        Ok("home-albums" | "home-nowplaying")
+        Ok("home-albums"
+            | "home-nowplaying"
+            | "albums"
+            | "album"
+            | "artists"
+            | "artist-albums"
+            | "album-tracks"
+            | "songs")
     ) {
         MusicOs::with_db_path(resolution, ":memory:")
     } else {
@@ -43,31 +50,41 @@ fn main() -> Result<()> {
             }
         }
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
-        Ok("songs") => {
-            seed_demo_queue(&mut app);
-            app.force_screen_for_snapshot(Screen::SongsList);
-        }
-        Ok("albums") | Ok("album") => {
-            seed_demo_albums(&mut app);
-            app.force_screen_for_snapshot(Screen::AlbumsList);
+        Ok("songs" | "albums" | "album" | "artists" | "artist-albums" | "album-tracks") => {
+            seed_home_library(&mut app)?;
+            match snapshot_screen.as_deref() {
+                Ok("songs") => {
+                    app.tracks_queue = app.db.get_tracks()?;
+                    app.force_screen_for_snapshot(Screen::SongsList);
+                }
+                Ok("artists" | "artist-albums") => {
+                    app.force_screen_for_snapshot(Screen::ArtistsList);
+                    if snapshot_screen.as_deref() == Ok("artist-albums") {
+                        app.selected_index = app
+                            .artists_list
+                            .iter()
+                            .position(|name| name == "Tame Impala")
+                            .unwrap_or(0);
+                        app.handle_input(InputEvent::Button(Button::Confirm));
+                    }
+                }
+                _ => {
+                    app.force_screen_for_snapshot(Screen::AlbumsList);
+                    if snapshot_screen.as_deref() == Ok("album-tracks") {
+                        app.selected_index = app
+                            .albums_list
+                            .iter()
+                            .position(|title| title == "The Slow Rush")
+                            .unwrap_or(0);
+                        app.handle_input(InputEvent::Button(Button::Confirm));
+                    }
+                }
+            }
+            app.screen_transition = 1.0;
         }
         Ok("queue") => {
             seed_demo_queue(&mut app);
             app.force_screen_for_snapshot(Screen::Queue);
-        }
-        Ok("artists") => {
-            app.artists_list = vec!["Tanger".into(), "Nujabes".into()];
-            app.force_screen_for_snapshot(Screen::ArtistsList);
-        }
-        Ok("artist-albums") => {
-            app.active_artist = Some("Tanger".into());
-            app.artist_albums_list = vec!["Glow".into(), "Night Rain".into()];
-            app.force_screen_for_snapshot(Screen::ArtistAlbumsList);
-        }
-        Ok("album-tracks") => {
-            seed_demo_queue(&mut app);
-            app.active_album = Some("Glow".into());
-            app.force_screen_for_snapshot(Screen::AlbumTracksList);
         }
         Ok("playlists") => app.force_screen_for_snapshot(Screen::PlaylistsList),
         Ok("playlist-tracks") => {
@@ -170,17 +187,40 @@ fn seed_home_library(app: &mut MusicOs) -> Result<()> {
         ("Pink", "Luna", "Flamingo", "Flamingo.png"),
         ("Drift", "Harbor", "Sea", "Sea.png"),
     ] {
-        let id = app.db.insert_track(
+        let id = app.db.insert_track_with_number(
             &format!("/music/{artwork}.ogg"),
             title,
             artist,
             album,
+            1,
             327,
             1,
             1,
         )?;
         let path = Path::new(&assets).join("covers").join(artwork);
         app.db.set_track_cover_art(id, path.to_str(), 1)?;
+    }
+    for (number, title, duration) in [
+        (2, "Instant Destiny", 193),
+        (3, "Borderline", 238),
+        (4, "Posthumous Forgiveness", 367),
+        (5, "Breathe Deeper", 372),
+    ] {
+        let id = app.db.insert_track_with_number(
+            &format!("/music/slow-rush-{number}.ogg"),
+            title,
+            "Tame Impala",
+            "The Slow Rush",
+            number,
+            duration,
+            1,
+            1,
+        )?;
+        app.db.set_track_cover_art(
+            id,
+            Path::new(&assets).join("covers/SlowRush.png").to_str(),
+            1,
+        )?;
     }
     app.refresh_library();
     let tracks = app.db.get_tracks()?;

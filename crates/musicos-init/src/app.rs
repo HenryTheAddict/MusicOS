@@ -5,6 +5,7 @@ use crate::preferences::{LibraryGroup, LibrarySort, MotionMode, Preferences};
 use crate::renderer::{Canvas, Color, Resolution};
 use crate::server::{RuntimeSnapshot, ScanInfo, ServerEvent, SettingsUpdate};
 use crate::ui;
+use crate::ui::library::{Grid, LibraryView, COLUMNS};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::usb::UsbStatus;
@@ -205,6 +206,7 @@ pub struct MusicOs {
     pub tracks_queue: Vec<Track>,
     library_tracks: Vec<Track>,
     album_previews: Vec<ui::home::AlbumPreview>,
+    library_view: LibraryView,
     cached_library_counts: LibraryCounts,
     pub albums_list: Vec<String>,
     pub artists_list: Vec<String>,
@@ -504,6 +506,7 @@ impl MusicOs {
             tracks_queue: Vec::new(),
             library_tracks: Vec::new(),
             album_previews: Vec::new(),
+            library_view: LibraryView::default(),
             cached_library_counts: LibraryCounts::default(),
             albums_list: Vec::new(),
             artists_list: Vec::new(),
@@ -1424,7 +1427,15 @@ impl MusicOs {
 
         ui::status_bar(
             canvas,
-            if self.screen == Screen::Home {
+            if matches!(
+                self.screen,
+                Screen::Home
+                    | Screen::AlbumsList
+                    | Screen::ArtistsList
+                    | Screen::SongsList
+                    | Screen::ArtistAlbumsList
+                    | Screen::AlbumTracksList
+            ) {
                 ""
             } else {
                 self.screen_title()
@@ -1780,55 +1791,40 @@ impl MusicOs {
                 self.player.queue_tracks().len(),
                 transition_t,
             ),
-            Screen::SongsList => ui::music::draw_tracks_list(
+            Screen::SongsList => self.library_view.tracks(
                 canvas,
                 self.active_language.translate("songs"),
                 &self.tracks_queue,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                false,
             ),
-            Screen::AlbumsList => ui::music::draw_items_list(
+            Screen::AlbumsList => self.library_view.grid(
                 canvas,
                 self.active_language.translate("albums"),
                 &self.albums_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::Albums,
             ),
-            Screen::ArtistsList => ui::music::draw_items_list(
+            Screen::ArtistsList => self.library_view.grid(
                 canvas,
                 self.active_language.translate("artists"),
                 &self.artists_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::Artists,
             ),
-            Screen::ArtistAlbumsList => ui::music::draw_items_list(
+            Screen::ArtistAlbumsList => self.library_view.grid(
                 canvas,
-                self.active_artist.as_deref().unwrap_or("Artist Albums"),
+                self.active_artist.as_deref().unwrap_or("Artist"),
                 &self.artist_albums_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::ArtistAlbums,
             ),
-            Screen::AlbumTracksList => ui::music::draw_tracks_list(
+            Screen::AlbumTracksList => self.library_view.tracks(
                 canvas,
                 self.active_album.as_deref().unwrap_or("Album"),
                 &self.tracks_queue,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                true,
             ),
             Screen::PlaylistsList => {
                 let names: Vec<String> =
@@ -2117,30 +2113,6 @@ impl MusicOs {
                     .tracks_queue
                     .iter()
                     .map(|track| track.title.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
-            Screen::AlbumsList => {
-                let labels = self
-                    .albums_list
-                    .iter()
-                    .map(|item| item.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
-            Screen::ArtistsList => {
-                let labels = self
-                    .artists_list
-                    .iter()
-                    .map(|item| item.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
-            Screen::ArtistAlbumsList => {
-                let labels = self
-                    .artist_albums_list
-                    .iter()
-                    .map(|item| item.as_str())
                     .collect::<Vec<_>>();
                 self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
             }
@@ -2897,6 +2869,7 @@ impl MusicOs {
     pub fn refresh_library(&mut self) {
         if let Ok(tracks) = self.db.get_tracks() {
             self.album_previews = ui::home::album_previews(&tracks);
+            self.library_view.update(&tracks);
             self.library_tracks = tracks;
         }
         if let Ok(albums) = self.db.get_albums() {
@@ -2973,11 +2946,17 @@ impl MusicOs {
             (Screen::Home | Screen::Language | Screen::Apps | Screen::Settings, _) => {
                 "D-pad  Move     A  Select     B  Back"
             }
-            (Screen::MusicApp | Screen::ArtistAlbumsList, _) => "A  Select     B  Back",
+            (Screen::MusicApp, _) => "A  Select     B  Back",
+            (Screen::ArtistAlbumsList, _) => "D-pad  Move     A  Open     B  Back",
+            (Screen::AlbumsList | Screen::ArtistsList, _) => {
+                if self.can_open_context_menu() {
+                    "D-pad  Move     A  Open     B  Back     X  More"
+                } else {
+                    "D-pad  Move     A  Open     B  Back"
+                }
+            }
             (
-                Screen::AlbumsList
-                | Screen::ArtistsList
-                | Screen::AlbumTracksList
+                Screen::AlbumTracksList
                 | Screen::SongsList
                 | Screen::PlaylistsList
                 | Screen::PlaylistTracksList
@@ -3861,6 +3840,22 @@ impl MusicOs {
         }
     }
 
+    fn move_library_grid(&mut self, row: isize, col: isize) {
+        let len = self.current_list_len();
+        if len == 0 {
+            return;
+        }
+        let selected = self.selected_index.min(len - 1);
+        let current_row = selected / COLUMNS;
+        let current_col = selected % COLUMNS;
+        let next_row = current_row
+            .saturating_add_signed(row)
+            .min((len - 1) / COLUMNS);
+        let first = next_row * COLUMNS;
+        let last_col = (len - 1 - first).min(COLUMNS - 1);
+        self.selected_index = first + current_col.saturating_add_signed(col).min(last_col);
+    }
+
     fn move_down(&mut self) {
         match self.screen {
             Screen::Theme => {
@@ -3919,20 +3914,8 @@ impl MusicOs {
                     self.selected_index = (self.selected_index + 1) % self.tracks_queue.len();
                 }
             }
-            Screen::AlbumsList => {
-                if !self.albums_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.albums_list.len();
-                }
-            }
-            Screen::ArtistsList => {
-                if !self.artists_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.artists_list.len();
-                }
-            }
-            Screen::ArtistAlbumsList => {
-                if !self.artist_albums_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.artist_albums_list.len();
-                }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(1, 0);
             }
             Screen::PlaylistsList => {
                 if !self.playlists_list.is_empty() {
@@ -4060,32 +4043,8 @@ impl MusicOs {
                     };
                 }
             }
-            Screen::AlbumsList => {
-                if !self.albums_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.albums_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
-            }
-            Screen::ArtistsList => {
-                if !self.artists_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.artists_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
-            }
-            Screen::ArtistAlbumsList => {
-                if !self.artist_albums_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.artist_albums_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(-1, 0);
             }
             Screen::PlaylistsList => {
                 if !self.playlists_list.is_empty() {
@@ -4192,10 +4151,10 @@ impl MusicOs {
                     _ => self.focus,
                 };
             }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(0, 1);
+            }
             Screen::SongsList
-            | Screen::AlbumsList
-            | Screen::ArtistsList
-            | Screen::ArtistAlbumsList
             | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
@@ -4252,10 +4211,10 @@ impl MusicOs {
                     _ => self.focus,
                 };
             }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(0, -1);
+            }
             Screen::SongsList
-            | Screen::AlbumsList
-            | Screen::ArtistsList
-            | Screen::ArtistAlbumsList
             | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
@@ -4451,6 +4410,34 @@ impl MusicOs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn library_grids_keep_dpad_focus_on_real_cells() {
+        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+        let items: Vec<String> = (0..5).map(|i| format!("Item {i}")).collect();
+        app.albums_list = items.clone();
+        app.artists_list = items.clone();
+        app.artist_albums_list = items;
+        for screen in [
+            Screen::AlbumsList,
+            Screen::ArtistsList,
+            Screen::ArtistAlbumsList,
+        ] {
+            app.force_screen_for_snapshot(screen);
+            app.selected_index = 0;
+            for (button, expected) in [
+                (Button::Right, 1),
+                (Button::Right, 2),
+                (Button::Down, 4),
+                (Button::Right, 4),
+                (Button::Left, 3),
+                (Button::Up, 0),
+            ] {
+                app.handle_input(InputEvent::Button(button));
+                assert_eq!(app.selected_index, expected);
+            }
+        }
+    }
 
     #[test]
     fn context_legend_matches_the_available_x_action() {
