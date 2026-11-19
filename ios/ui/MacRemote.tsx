@@ -16,7 +16,7 @@ export default function MacRemote({onClose}:{onClose:()=>void}){
  const [tab,setTab]=useState<'library'|'queue'>('library'),[query,setQuery]=useState(''),[album,setAlbum]=useState<Release>();
  const [page,setPage]=useState<Page>(),[searching,setSearching]=useState(false),[image,setImage]=useState('');
  const [seek,setSeek]=useState<number>();
- const generation=useRef(0),working=useRef(false),server=useRef<string>();
+ const generation=useRef(0),working=useRef(false),server=useRef<string|undefined>(undefined);
 
  function receive(next:RemoteState){
   if(next.version!==1||!next.server_id)throw new Error('Mac Remote needs an updated copy of musicOS on your Mac.');

@@ -201,7 +201,8 @@ Motion explains where an object went. It must follow the displayed state, remain
 ## 10. Home, library, and detail pages
 
 - Home order: **Continue listening → collections → frequently played albums → mix suggestions → recent songs**.
-- Saved track/position is visible while paused. Resume starts only when clicked. Startup remains paused; existing running playback is untouched.
+- Saved track/position is visible while paused. Home shows Continue listening only at launch before playback starts, not during playback or subsequent pauses; the persistent player keeps the saved position available. Resume starts only when clicked. Startup remains paused; existing running playback is untouched.
+- Home Play controls reveal on hover or keyboard focus without shifting content. Keep them available on non-hover devices.
 - Collections retain type filters, saved sequences, creation actions, and their existing editors. Do not add destinations simply to surface a creation action.
 - Song rows preserve height/columns during hover, selection, click, double-click, context menus, and drag. Action buttons remain isolated from row playback.
 - Album heroes keep artwork bounded, contributor chips compact, and metadata readable. With no description, align quality/play/shuffle/more near the bottom of the artwork instead of reserving a large empty description region.
@@ -299,6 +300,7 @@ These are different surfaces: **creation** chooses a mix; **setup** manages the 
 - Start/progress feedback must be immediate even when verifying/transcoding takes time. Do not label sharing Off while a task is actively preparing without explaining that state.
 - Existing Wi-Fi copying supports offline listening. Keep original and supported Vorbis quality choices clear; avoid technical setup language in the main flow.
 - Do not add Google Drive placeholders; that integration was explicitly dropped.
+- The handheld OS (`crates/musicos-init`) follows **`SeaglassUI.md`**, which translates these rules for its 640×480 D-pad screen.
 - Native audio/notification/platform acceptance is separate from visual similarity. Do not claim it works solely because a browser preview looks correct.
 
 ## 15. Visualizers and haptics

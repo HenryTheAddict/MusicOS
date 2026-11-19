@@ -317,7 +317,7 @@ mod policy_tests {
     fn known_file_rating_wins_default_and_override_does_not_touch_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let audio = dir.path().join("clean.flac");
-        let result = std::process::Command::new("/opt/homebrew/bin/ffmpeg")
+        let result = std::process::Command::new("ffmpeg")
             .args([
                 "-v",
                 "error",

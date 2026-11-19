@@ -74,9 +74,9 @@ impl Model {
   for start in starts.iter().copied() {
    ensure!(checkpoint(),"Analysis cancelled");let mut decoder=musicos_desktop::local::decoded_audio::open(path)?;
    if start>0. {decoder.try_seek(std::time::Duration::from_secs_f32(start)).map_err(|e|anyhow::anyhow!("Cannot seek to representative audio: {e}"))?;}
-   let source=rodio::source::UniformSourceIterator::<_,f32>::new(decoder,1,spark_audio::SAMPLE_RATE);
+   let source=musicos_desktop::local::resample::ResampledFrames::<_,1>::new(decoder,spark_audio::SAMPLE_RATE);
    let mut audio=Vec::with_capacity(spark_audio::SAMPLES);
-   for (i,sample) in source.take(spark_audio::SAMPLES).enumerate(){if i%spark_audio::SAMPLE_RATE as usize==0 {ensure!(checkpoint(),"Analysis cancelled");}audio.push(sample);}
+   for (i,[sample]) in source.take(spark_audio::SAMPLES).enumerate(){if i%spark_audio::SAMPLE_RATE as usize==0 {ensure!(checkpoint(),"Analysis cancelled");}audio.push(sample);}
    ensure!(!audio.is_empty(),"No decoded audio in representative excerpt");
    let embedding=self.embed(&audio)?;for (sum,value) in mean.iter_mut().zip(embedding){*sum+=value/starts.len() as f32;}
   }
