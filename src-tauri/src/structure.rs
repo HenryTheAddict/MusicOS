@@ -6,7 +6,7 @@ use rustfft::{FftPlanner,num_complex::Complex};
 use serde::{Deserialize,Serialize};
 use std::path::Path;
 use rodio::Source;
-pub const VERSION:&str="structure-5-exact-duration-11025-2048-256";
+pub const VERSION:&str="structure-6-exact-duration-beat-octave-11025-2048-256";
 const RATE:usize=11025;
 const HOP:usize=256;
 #[derive(Clone,Debug,Default,Serialize,Deserialize)]

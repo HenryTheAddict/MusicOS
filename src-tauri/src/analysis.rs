@@ -11,7 +11,7 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-const VERSION: &str = "dsp-6-exact-duration-11025-4096-512";
+const VERSION: &str = "dsp-7-exact-duration-beat-octave-11025-4096-512";
 const RATE: usize = 11025;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Features {
