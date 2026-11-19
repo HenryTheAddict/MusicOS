@@ -11,6 +11,34 @@ for(const kind of ['album','artist'] as const)test(`${kind} transfer follows the
  const scroll=await page.locator('.page-scroll').evaluate(n=>n.scrollTop);await page.evaluate(()=>window.dispatchEvent(new Event('musicos-artwork-invalidated')));await expect.poll(()=>page.locator('.page-scroll').evaluate(n=>n.scrollTop)).toBe(scroll);
  await page.locator('.sidebar-back').click();await expect(layer).toHaveCount(1);await end(page);const returned=(await opener.locator('img.cover').first().boundingBox())!;expect(Math.abs(returned.y-source.y)).toBeLessThan(1);expect(await page.locator('[data-album-entering]').count()).toBe(0);
 });
+for(const mode of ['light','dark'])test(`${mode}: Back to Home hands the cover to the card without fading it in again`,async({page})=>{
+ await hold(page);
+ await page.addInitScript(mode=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode,source:'artwork',accent:'#0064df',saturation:100,tint:15}})),mode);
+ await page.goto('/?fixture=1');
+ const opener=page.getByRole('button',{name:'Open Plastic Beach',exact:true});
+ const artwork=opener.locator('.card-artwork');
+ await expect.poll(()=>artwork.locator('img.cover').evaluate((im:HTMLImageElement)=>im.complete&&im.naturalWidth>0)).toBe(true);
+ await opener.click();await end(page);
+ const root=page.locator('html');
+ await expect(root).toHaveAttribute('data-theme-mode',mode);
+ const color=await root.evaluate(el=>el.style.getPropertyValue('--surface-color'));
+ await page.locator('.sidebar-back').click();
+ const layer=page.locator('.album-cover-transfer');
+ await expect(layer).toHaveCount(1);
+ await expect(artwork).toHaveAttribute('data-album-entering','true');
+ await expect.poll(()=>layer.evaluate(el=>el.getAnimations().length)).toBe(1);
+ const handoff=await artwork.evaluate(el=>new Promise<{opacity:number;visibility:string;ready:boolean;color:string}>(resolve=>{
+  const observer=new MutationObserver(()=>{
+   if(document.querySelector('.album-cover-transfer'))return;
+   observer.disconnect();
+   const style=getComputedStyle(el),image=el.querySelector('img');
+   resolve({opacity:Number(style.opacity),visibility:style.visibility,ready:!!(image?.complete&&image.naturalWidth),color:document.documentElement.style.getPropertyValue('--surface-color')});
+  });
+  observer.observe(document.body,{childList:true});
+  for(const animation of document.querySelector('.album-cover-transfer')!.getAnimations())animation.finish();
+ }));
+ expect(handoff).toEqual({opacity:1,visibility:'visible',ready:true,color});
+});
 test('a late album description cannot stretch the cover or scroll the page',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:1500});const stage=page.locator('.album-artwork-stage'),before=(await stage.boundingBox())!;
  await page.locator('.album-footer').evaluate(n=>{const about=document.createElement('section');about.className='album-description';about.style.height='220px';about.textContent='Late album details';n.prepend(about);});const after=(await stage.boundingBox())!;expect(after).toEqual(before);expect(await page.locator('.page-scroll').evaluate(n=>n.scrollTop)).toBe(0);

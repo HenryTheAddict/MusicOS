@@ -103,8 +103,9 @@ export function useAlbumReveal(root:RefObject<HTMLElement|null>,location:string,
    // Keep the source pixels visible across the route commit, not a blank frame.
    document.body.append(image);
    let target:HTMLElement|null=null,previous='',movement:Animation|undefined,resize:ResizeObserver|undefined,timeout:ReturnType<typeof setTimeout>|undefined,finished=false,attempts=0,deadline=0,lastEnd:DOMRect|undefined,initialScroll=0;
-   const hide=(node:HTMLElement)=>{target=node;previous=node.style.opacity;node.style.opacity='0';node.dataset.albumEntering='true';};
-   const restore=()=>{if(target){target.style.opacity=previous;delete target.dataset.albumEntering;}};
+   const hideProperty=captured.returning?'visibility':'opacity';
+   const hide=(node:HTMLElement)=>{target=node;previous=node.style[hideProperty];node.style[hideProperty]=captured.returning?'hidden':'0';node.dataset.albumEntering='true';};
+   const restore=()=>{if(target){target.style[hideProperty]=previous;delete target.dataset.albumEntering;}};
    const release=()=>{if(finished)return;finished=true;cancelAnimationFrame(frame);clearTimeout(timeout);resize?.disconnect();movement?.cancel();restore();image.remove();target?.removeEventListener('load',loaded,true);root.current?.removeEventListener('scroll',scrolled);window.removeEventListener('resize',release);};
    const photo=()=>target?.matches('img.cover:not(.placeholder)')?target as HTMLImageElement:target?.querySelector<HTMLImageElement>('img.cover:not(.placeholder)');
    const loaded=()=>{const p=photo();if(p?.complete&&p.naturalWidth)release();};
