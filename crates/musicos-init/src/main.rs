@@ -53,6 +53,9 @@ fn run() -> Result<()> {
     init::install_logger();
     init::prepare_pid1_environment()?;
 
+    if let Err(err) = musicos_init::usb::cleanup_interrupted_updates() {
+        log::warn!("interrupted update cleanup skipped: {err:#}");
+    }
     match musicos_init::usb::install_pending_update() {
         Ok(Some(path)) => info!("installed pending MusicOS update to {}", path.display()),
         Ok(None) => {}

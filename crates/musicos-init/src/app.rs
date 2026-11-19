@@ -424,7 +424,11 @@ impl MusicOs {
         let db_path = options.db_path.display().to_string();
         let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
-            Db::open(":memory:").unwrap()
+            log::warn!("library persistence unavailable; using a temporary in-memory database");
+            Db::open(":memory:").unwrap_or_else(|error| {
+                log::error!("cannot initialize temporary library: {error:#}");
+                std::process::exit(1)
+            })
         });
 
         let preferences = crate::preferences::load();
