@@ -70,6 +70,9 @@ Windows entry point: `scripts/run-desktop.ps1`. Development requires Node 22.12+
 (or Node 24), Rust, and the platform's Tauri prerequisites. A browser-only
 `npm run dev` preview has no filesystem or playback access.
 
+See [Desktop releases and in-app updates](docs/desktop-releases.md) for signed
+packages and GitHub Releases setup.
+
 Library includes Songs, Albums, Artists, Genres, album/artist details, native
 folder import, managed copies, reference folders, rescan, and metadata review.
 Discover has been removed from the desktop interface. Settings has Appearance,

@@ -705,6 +705,13 @@ impl DesktopPlayer {
         self.paused = true;
         self.command(Command::Pause(true));
     }
+    pub(super) fn pause_for_update(&mut self) -> Result<()> {
+        self.end_audition(false);
+        self.settle_audible()?;
+        self.pause();
+        self.output.suspend();
+        Ok(())
+    }
     pub fn play_pause(&mut self) {
         if self.current.is_none() {
             return;
