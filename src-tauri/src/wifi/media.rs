@@ -53,6 +53,7 @@ impl Cache {
         self.entries.insert(key,Entry{stamp:before,file:file.clone()});Ok(file)
     }
     pub fn audio(&mut self,path:&FsPath,mime:&str,format:CopyFormat,current:&dyn Fn()->bool)->Result<File> {
+        ensure!(current(),"Sharing preparation was cancelled");
         let stamp=fingerprint(path)?;
         if format==CopyFormat::Original { return self.register(format!("original/{stamp}"),path,mime,current); }
         let encoder=encoder().context("Vorbis copies need FFmpeg with libvorbis, or FFmpeg plus Xiph oggenc. Choose Original or install these encoders.")?;
@@ -108,7 +109,8 @@ mod tests {
         let root=tempfile::tempdir().unwrap();let source=root.path().join("song.wav");fs::write(&source,b"first audio").unwrap();
         let folder=root.path().join("cache");let mut cache=Cache::at(folder.clone());let original=cache.audio(&source,"audio/wav",CopyFormat::Original,&||true).unwrap();cache.persist().unwrap();
         let mut warm=Cache::at(folder);assert_eq!(warm.audio(&source,"audio/wav",CopyFormat::Original,&||true).unwrap().sha256,original.sha256);
-        fs::write(&source,b"other audio").unwrap();let changed=warm.audio(&source,"audio/wav",CopyFormat::Original,&||true).unwrap();assert_ne!(changed.sha256,original.sha256);
+        assert!(warm.audio(&source,"audio/wav",CopyFormat::Original,&||false).is_err());
+        fs::write(&source,b"other audio contents").unwrap();let changed=warm.audio(&source,"audio/wav",CopyFormat::Original,&||true).unwrap();assert_ne!(changed.sha256,original.sha256);
         fs::write(&source,b"third audio").unwrap();assert!(warm.audio(&source,"audio/wav",CopyFormat::Original,&||false).is_err());
         assert!(serde_json::from_str::<CopyFormat>("\"vorbis128\"").is_err());
     }
@@ -121,6 +123,7 @@ mod tests {
             let copy=cache.audio(&source,"audio/wav",format,&||true).unwrap();assert_eq!(copy.mime,"audio/ogg");let bytes=fs::read(&copy.path).unwrap();assert_eq!(&bytes[..4],b"OggS");let marker=bytes.windows(6).position(|p|p==b"vorbis").unwrap();let nominal=i32::from_le_bytes(bytes[marker+19..marker+23].try_into().unwrap());assert_eq!(nominal,rate);
             assert!(Command::new(&encoder.path).args(["-v","error","-i"]).arg(&copy.path).args(["-f","null","-"]).status().unwrap().success());
             let modified=fs::metadata(&copy.path).unwrap().modified().unwrap();let again=cache.audio(&source,"audio/wav",format,&||true).unwrap();assert_eq!(again.sha256,copy.sha256);assert_eq!(fs::metadata(again.path).unwrap().modified().unwrap(),modified);hashes.push(copy.sha256);
+            assert!(cache.audio(&source,"audio/wav",format,&||false).is_err());
         }
         assert_ne!(hashes[0],hashes[1]);assert_eq!(fs::read(source).unwrap(),original);assert!(fs::read_dir(root.path().join("cache/audio")).unwrap().all(|p|!p.unwrap().path().to_string_lossy().contains("partial")));
     }
