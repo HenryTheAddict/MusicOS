@@ -160,12 +160,12 @@ impl LibraryView {
             let y = start_y + (cell / COLUMNS) as f32 * row_height;
             let width = 384.0;
             let fill = if cell + start == selected {
-                register_focus(canvas, x, y, width, row_height - 13.0, 40.0);
+                register_focus(canvas, x, y, width, row_height - 13.0, 20.0);
                 selected_surface(canvas)
             } else {
                 surface(canvas)
             };
-            rr(canvas, x, y, width, row_height - 13.0, 40.0, fill);
+            rr(canvas, x, y, width, row_height - 13.0, 20.0, fill);
             let (subtitle, cover) = match mode {
                 Grid::Artists => self
                     .artists
@@ -278,27 +278,11 @@ impl LibraryView {
             ink_secondary(canvas),
             FontWeight::Bold,
         );
-        let visible = if album { 5 } else { 6 };
+        let visible = if album { 6 } else { 7 };
         let start = selected.min(tracks.len() - 1) / visible * visible;
         for (index, track) in tracks.iter().enumerate().skip(start).take(visible) {
-            let y = start_y + 43.0 + (index - start) as f32 * 102.0;
-            let active = selected == index;
-            if active {
-                register_focus(canvas, 43.0, y, 1194.0, 88.0, 33.0);
-            }
-            rr(
-                canvas,
-                43.0,
-                y,
-                1194.0,
-                88.0,
-                33.0,
-                if active {
-                    selected_surface(canvas)
-                } else {
-                    surface(canvas)
-                },
-            );
+            let y = start_y + 43.0 + (index - start) as f32 * 83.0;
+            crate::ui::compact_row(canvas, 43.0, y, 1194.0, 76.0, selected == index);
             let number = if album && track.track_number > 0 {
                 track.track_number as usize
             } else {
@@ -319,7 +303,7 @@ impl LibraryView {
                     track.cover_art_path.as_deref(),
                     title_x,
                     y + 10.0,
-                    68.0,
+                    56.0,
                     false,
                 );
                 text_fit(
@@ -357,7 +341,7 @@ impl LibraryView {
                 canvas,
                 &artist,
                 title_x + cover_width,
-                y + 52.0,
+                y + 45.0,
                 title_width,
                 27.0,
                 ink_secondary(canvas),

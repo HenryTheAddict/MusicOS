@@ -4,7 +4,7 @@ use crate::renderer::{Canvas, Resolution};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{figma_list_row, text_fit, FontWeight};
+use crate::ui::{text_fit, FontWeight};
 use crate::usb::UsbStatus;
 
 pub fn draw_apps(
@@ -18,75 +18,14 @@ pub fn draw_apps(
     transition_t: f32,
 ) {
     let transition_t = ease_out_cubic(transition_t);
-    crate::ui::rows_preview(canvas);
-    canvas.text_centered(
-        "Library",
-        954.0,
-        119.0,
-        49.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-
-    let stat_y = 240.0;
-    canvas.text_centered(
-        &format!("Tracks: {}", counts.tracks),
-        954.0,
-        stat_y,
-        32.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
-        &format!("Albums: {}", counts.albums),
-        954.0,
-        stat_y + 60.0,
-        32.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
-        &format!("Playlists: {}", counts.playlists),
-        954.0,
-        stat_y + 120.0,
-        32.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
-        &format!("Pins: {}", counts.pins),
-        954.0,
-        stat_y + 180.0,
-        32.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-
-    canvas.text_centered(
-        "USB Sync",
-        954.0,
-        stat_y + 300.0,
-        48.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    crate::ui::text_fit_centered(
+    crate::ui::draw_figma_background(canvas);
+    crate::ui::page_heading(
         canvas,
-        &usb_status.message,
-        954.0,
-        stat_y + 360.0,
-        530.0,
-        26.0,
-        crate::ui::ink(canvas),
-        FontWeight::Regular,
-    );
-    canvas.text_centered(
-        &format!("{} mounted", usb_status.roots_checked.len()),
-        954.0,
-        stat_y + 400.0,
-        24.0,
-        crate::ui::ink(canvas),
-        FontWeight::Regular,
+        "Library",
+        &format!(
+            "{} tracks · {} albums · {} playlists · {} pins",
+            counts.tracks, counts.albums, counts.playlists, counts.pins
+        ),
     );
 
     let _ = theme;
@@ -112,7 +51,7 @@ pub fn draw_apps(
     for (index, (item_focus, label, subtitle, icon, y)) in items.into_iter().enumerate() {
         let row_t = ease_out_back(stagger(transition_t, index, 0.06, 0.78));
         let selected = focus == item_focus;
-        let x = 24.0 - (1.0 - row_t) * 42.0;
+        let x = 44.0 - (1.0 - row_t) * 26.0;
         let subtitle = if item_focus == Focus::AppsUsbSync {
             usb_status.message.as_str()
         } else {
@@ -121,7 +60,7 @@ pub fn draw_apps(
         app_row(
             canvas,
             x,
-            y,
+            y + 120.0,
             label,
             subtitle,
             icon,
@@ -143,31 +82,31 @@ fn app_row(
     seconds: f32,
     phase: f32,
 ) {
-    let w = 600.0;
-    let h = 138.0;
-    let _ = phase;
-    figma_list_row(canvas, x, y, w, h, selected, seconds);
+    let w = 1192.0;
+    let h = 116.0;
+    let _ = (seconds, phase);
+    crate::ui::compact_row(canvas, x, y, w, h, selected);
 
     let base_path = crate::ui::assets_dir();
     let path = format!("{}/icons/appicons/{}", base_path, icon_filename);
-    canvas.draw_svg(&path, x + 28.0, y + 16.0, 106.0, 106.0);
+    canvas.draw_svg(&path, x + 28.0, y + 20.0, 76.0, 76.0);
 
     text_fit(
         canvas,
         label,
-        x + 160.0,
-        y + 22.0,
-        367.0,
-        54.0,
+        x + 130.0,
+        y + 11.0,
+        980.0,
+        42.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
         canvas,
         subtitle,
-        x + 160.0,
-        y + 80.0,
-        367.0,
+        x + 130.0,
+        y + 64.0,
+        980.0,
         30.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
@@ -176,7 +115,7 @@ fn app_row(
         "›",
         x + w - 24.0,
         y + 36.0,
-        54.0,
+        42.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
@@ -202,47 +141,7 @@ pub fn draw_about(
     transition_t: f32,
 ) {
     let transition_t = ease_out_cubic(transition_t);
-    crate::ui::rows_preview(canvas);
-    crate::ui::preview_heading(canvas, "About", "Device information");
-    canvas.text_centered(
-        "MusicOS",
-        954.0,
-        240.0,
-        48.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    crate::ui::centered_lines(
-        canvas,
-        &[device_name, user_name, audio_test_status],
-        954.0,
-        430.0,
-        30.0,
-        48.0,
-        crate::ui::ink(canvas),
-        FontWeight::Regular,
-    );
-    text_fit(
-        canvas,
-        db_path,
-        688.0,
-        670.0,
-        532.0,
-        26.0,
-        crate::ui::ink_secondary(canvas),
-        FontWeight::Regular,
-    );
-    text_fit(
-        canvas,
-        settings_path,
-        688.0,
-        724.0,
-        532.0,
-        26.0,
-        crate::ui::ink_secondary(canvas),
-        FontWeight::Regular,
-    );
-
+    crate::ui::draw_figma_background(canvas);
     let display = format!("{}x{}", resolution.width, resolution.height);
     let queue = format!("{queue_len} queued");
     let library = format!("{} songs / {} albums", counts.tracks, counts.albums);
@@ -252,6 +151,8 @@ pub fn draw_about(
     );
     let usb = format!("{} indexed", usb_status.media_files_indexed);
     let rows = [
+        ("Device", device_name),
+        ("User", user_name),
         ("Display", display.as_str()),
         ("Library", library.as_str()),
         ("Playlists", playlists.as_str()),
@@ -260,13 +161,16 @@ pub fn draw_about(
         ("Scan", scan_status),
         ("Battery", battery_status),
         ("USB Media", usb.as_str()),
+        ("Audio test", audio_test_status),
+        ("Library data", db_path),
+        ("Settings data", settings_path),
     ];
 
     for (index, (label, value)) in rows.into_iter().enumerate() {
         status_row(
             canvas,
-            24.0,
-            75.0 + index as f32 * 98.0,
+            44.0,
+            82.0 + index as f32 * 59.0,
             label,
             value,
             index,
@@ -289,11 +193,11 @@ fn status_row(
     let row_t = ease_out_back(stagger(transition_t, index, 0.05, 0.76));
     let x = x - (1.0 - row_t) * 38.0;
     let _ = seconds;
-    crate::ui::rr(canvas, x, y, 600.0, 88.0, 28.0, crate::ui::control(canvas));
+    crate::ui::compact_row(canvas, x, y, 1192.0, 56.0, false);
     canvas.text(
         label,
         x + 32.0,
-        y + 26.0,
+        y + 10.0,
         32.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
@@ -301,9 +205,9 @@ fn status_row(
     text_fit(
         canvas,
         value,
-        x + 237.0,
-        y + 28.0,
-        333.0,
+        x + 303.0,
+        y + 12.0,
+        856.0,
         32.0,
         crate::ui::ink(canvas),
         FontWeight::Regular,

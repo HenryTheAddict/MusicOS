@@ -660,6 +660,16 @@ impl MusicOs {
         if self.current_list_len() > 0 {
             let (item_h, row_h, content_top, content_bottom, list_origin) = match self.screen {
                 Screen::Language => (144.0, 124.0, 92.0, 700.0, 112.0),
+                Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue
+                | Screen::Search => (
+                    ui::music::COLLECTION_ROW_STEP,
+                    ui::music::COLLECTION_ROW_HEIGHT,
+                    204.0,
+                    864.0,
+                    220.0,
+                ),
                 _ => (144.0, 128.0, 252.0, 862.0, 260.0),
             };
             let sel = self.selected_index as f32;
