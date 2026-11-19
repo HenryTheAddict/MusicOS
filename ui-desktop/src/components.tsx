@@ -237,6 +237,7 @@ export function Menu({
 }) {
   const [inherited,setInherited]=useState<CSSProperties>({});
   const [point,setPoint]=useState<{x:number;y:number}|null>(null);
+  const [buttonSide,setButtonSide]=useState<'top'|'bottom'>('bottom');
   const trigger=useRef<HTMLButtonElement>(null),origin=useRef<HTMLElement|null>(null),contextOpened=useRef(false),didSelect=useRef(false);
   const [portalContainer,setPortalContainer]=useState<HTMLElement|undefined>();
   useLayoutEffect(()=>setPortalContainer(trigger.current?.closest('dialog')??undefined),[]);
@@ -252,7 +253,10 @@ export function Menu({
   const ordered=present&&!open?retainedItems.current:currentItems;
 
   useEffect(()=>()=>{trigger.current?.removeAttribute('data-connected-side');},[]);
-  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point)return;const y=point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?point.y-menu.offsetHeight:y,innerHeight-menu.offsetHeight-8))}px`;menu.style.setProperty('--menu-origin',`${Math.max(0,Math.min(menu.offsetWidth,point.x-parseFloat(menu.style.left)))}px ${Math.max(0,Math.min(menu.offsetHeight,point.y-parseFloat(menu.style.top)))}px`);};
+  const position=(menu:HTMLDivElement)=>{if(selectedLabel&&trigger.current){const rect=trigger.current.getBoundingClientRect();menu.style.left=`${rect.left}px`;menu.style.top=`${rect.bottom-1}px`;menu.style.width=`${rect.width}px`;menu.style.maxHeight=`${innerHeight-rect.bottom-12}px`;return;}if(!point){for(const key of ['left','top','--menu-origin'])menu.style.removeProperty(key);const rect=trigger.current?.getBoundingClientRect(),list=menu.querySelector<HTMLElement>('.menu-panel-items');if(!rect||!list)return;
+    // Radix only flips a panel that fits on the other side. Pick the side with
+    // room for every item, else the roomier one, and scroll within that space.
+    const below=innerHeight-rect.bottom-14,above=rect.top-14,natural=list.scrollHeight+menu.offsetHeight-menu.clientHeight,next=natural<=below||natural>above&&below>=above?'bottom':'top';menu.style.maxHeight=`min(24rem,${Math.max(0,Math.floor(next==='bottom'?below:above))}px)`;setButtonSide(next);return;}menu.style.removeProperty('max-height');const y=point.y;const above=y+menu.offsetHeight>innerHeight-8;const side=above?'top':'bottom';if(menu.dataset.side!==side)menu.dataset.side=side;menu.style.left=`${Math.max(8,Math.min(point.x,innerWidth-menu.offsetWidth-8))}px`;menu.style.top=`${Math.max(8,Math.min(above?point.y-menu.offsetHeight:y,innerHeight-menu.offsetHeight-8))}px`;menu.style.setProperty('--menu-origin',`${Math.max(0,Math.min(menu.offsetWidth,point.x-parseFloat(menu.style.left)))}px ${Math.max(0,Math.min(menu.offsetHeight,point.y-parseFloat(menu.style.top)))}px`);};
   useLayoutEffect(()=>{if(!open||!content.current)return;const menu=content.current;position(menu);const observer=new MutationObserver(()=>{position(menu);});observer.observe(menu,{attributes:true,attributeFilter:['data-side']});const frame=requestAnimationFrame(()=>{position(menu);});return()=>{cancelAnimationFrame(frame);observer.disconnect();};},[open,point,panel.element]);
   useEffect(()=>{if(!open)return;const update=()=>{if(content.current){position(content.current);}};window.addEventListener('resize',update);window.addEventListener('scroll',update,true);return()=>{window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);};},[open,point]);
   useEffect(()=>{const button=trigger.current;const show=(event:Event)=>{const at=(event as CustomEvent<{x:number;y:number}>).detail??null;didSelect.current=false;contextOpened.current=true;ownerTheme();setPoint(at);setOpen(true);};button?.addEventListener('musicos-open-menu',show);return()=>button?.removeEventListener('musicos-open-menu',show);},[setOpen]);
@@ -276,6 +280,7 @@ export function Menu({
           data-pointer-menu={point?true:undefined}
           className={`dropdown menu-panel ${selectedLabel?"section-dropdown":""}`}
           align={selectedLabel?"end":"start"}
+          side={selectedLabel||point?"bottom":buttonSide}
           sideOffset={selectedLabel?0:6}
           collisionPadding={selectedLabel?0:8}
           onEscapeKeyDown={panel.onEscapeKeyDown}
