@@ -204,6 +204,8 @@ export default function App() {
   const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
   useNativeChrome(miniMode==='normal');
   const [rawPlayer, setPlayer] = usePlaybackFeed(emptyPlayback);
+  const [homePlaybackStarted,setHomePlaybackStarted]=useState(false);
+  useEffect(()=>{if(rawPlayer.is_playing)setHomePlaybackStarted(true);},[rawPlayer.is_playing]);
   const activitySong=useRef(rawPlayer.track?.id);
   useEffect(()=>{if(activitySong.current!==rawPlayer.track?.id){activitySong.current=rawPlayer.track?.id;invalidateDisplay('home_activity');}},[rawPlayer.track?.id]);
   const presentedQueue=useMemo(()=>rawPlayer.queue.map(t=>tracksById.get(t.id)??t),[rawPlayer.queue,tracksById]);
@@ -926,7 +928,7 @@ export default function App() {
       </div>
     );
   else if(route.view==='search')content=null;
-  else if(route.view==='home')content=<PersonalHome name={preferences.display_name} library={library} collections={collections} recommendations={sparkRecommendations} player={player} active={section==='Library'&&miniMode==='normal'} onAlbum={openAlbum} betaEnabled={!!preferences.sparklist_beta} onMixIdea={seed=>{setSparkSeed(seed);setCreatingCollection('spark');}} trackActions={actionsForTrack} albumActions={actionsForAlbum} collectionActions={actionsForCollection} onCollection={openCollection} onPlay={ids=>playIds(ids)} onToggle={()=>void run({type:'toggle'})} onScope={goScope} onCreate={createCollection} onAdd={()=>void chooseFolder(false)}/>;
+  else if(route.view==='home')content=<PersonalHome name={preferences.display_name} library={library} collections={collections} recommendations={sparkRecommendations} player={player} canResume={!homePlaybackStarted&&!player.is_playing} active={section==='Library'&&miniMode==='normal'} onAlbum={openAlbum} betaEnabled={!!preferences.sparklist_beta} onMixIdea={seed=>{setSparkSeed(seed);setCreatingCollection('spark');}} trackActions={actionsForTrack} albumActions={actionsForAlbum} collectionActions={actionsForCollection} onCollection={openCollection} onPlay={ids=>playIds(ids)} onToggle={()=>void run({type:'toggle'})} onScope={goScope} onCreate={createCollection} onAdd={()=>void chooseFolder(false)}/>;
   else if (route.view === "album" && album)
     content = (
       <article className="album-detail" data-album-id={album.id}>
