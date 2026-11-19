@@ -5382,7 +5382,7 @@ dependencies = [
 
 [[package]]
 name = "musicos-desktop"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
@@ -5410,7 +5410,7 @@ dependencies = [
 
 [[package]]
 name = "musicos-init"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "alsa",
  "anyhow",
@@ -5442,7 +5442,7 @@ dependencies = [
 
 [[package]]
 name = "musicos-ios"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "hound",
  "image 0.24.9",
@@ -5455,7 +5455,7 @@ dependencies = [
 
 [[package]]
 name = "musicos-tauri"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5507,7 +5507,7 @@ dependencies = [
 
 [[package]]
 name = "musicos-visualizer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -9386,7 +9386,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-companion"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",

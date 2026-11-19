@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "musicOS",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "repositoryUrl": "https://github.com/HenryTheAddict/MusicOS",
   "defaults": {
     "libraryLabel": "Your library",
