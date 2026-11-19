@@ -154,13 +154,12 @@
 /* Square desktop windows keep desktop navigation; the shell tightens before
    it adopts the phone composition. The player node never moves by animation. */
 @media (max-width:1120px){
- .adaptive-shell[data-layout=wide]{grid-template-columns:132px clamp(160px,10rem,216px) minmax(0,1fr);column-gap:.375rem;}
+ .adaptive-shell[data-layout=wide]{grid-template-columns:132px clamp(160px,10rem,200px) minmax(0,1fr);column-gap:.375rem;}
  .adaptive-shell[data-layout=wide] .workspace:not(.full-width){grid-template-columns:10rem minmax(0,1fr);}
  .adaptive-shell[data-layout=wide] .header-brand{font-size:1rem;gap:.375rem;}
  .adaptive-shell[data-layout=wide] .section-name{font-size:1.125rem;}
  .adaptive-shell[data-layout=wide] .header-brand>span{display:none;}
  .adaptive-shell[data-layout=wide] .now-playing{margin-right:.5rem;gap:3px;padding-inline:8px;}
- .adaptive-shell[data-layout=wide] .now-playing-cover{width:34px;height:34px;flex:0 0 34px;}
  .adaptive-shell[data-layout=wide] .now-playing .mini-controls{display:grid;flex:none;}
  .adaptive-shell[data-layout=wide] .transport{gap:0;}
  .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button{width:32px;height:44px;padding:0;}

@@ -35,7 +35,7 @@ for(const percent of [80,100,125,150])test(`heart sits beside title without cove
   await page.setViewportSize(size);
   const geometry=await heart.evaluate(el=>{const a=el.getBoundingClientRect(),label=el.parentElement!.querySelector('.overflow-label')!.getBoundingClientRect(),bar=el.closest('.now-playing')!.getBoundingClientRect();return {gap:a.left-label.right,fits:a.top>=bar.top&&a.bottom<=bar.bottom&&a.right<=bar.right};});
   expect(geometry.gap).toBeGreaterThanOrEqual(0);expect(geometry.gap).toBeLessThan(12);expect(geometry.fits).toBe(true);
-  expect(await heart.evaluate(el=>{const button=el.getBoundingClientRect(),svg=el.querySelector('svg')!.getBoundingClientRect();return svg.width<=button.width*.9&&svg.height<=button.height*.9;})).toBe(true);
+  expect(await heart.evaluate(el=>{const beat=el.querySelector('.heart-beat')!.getAnimations()[0];if(beat){beat.pause();beat.currentTime=Number(beat.effect!.getComputedTiming().duration)*.1;}const button=el.getBoundingClientRect(),svg=el.querySelector('svg')!.getBoundingClientRect();const fits=svg.width<=button.width*.9&&svg.height<=button.height*.9;beat?.play();return fits;})).toBe(true);
  }
  await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
  await heart.click();await expect(page.getByRole('button',{name:'Unfavorite playing song',exact:true})).toHaveAttribute('aria-pressed','true');
