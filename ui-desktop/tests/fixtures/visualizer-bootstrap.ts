@@ -16,6 +16,10 @@ if(!(window as any).isTauri){
    }
    return status;
   }
+  if(!command.startsWith('plugin:')){
+   const {fixtureCall}=await import('../../src/fixtures');
+   return fixtureCall(command,args);
+  }
  },{shouldMockEvents:true});
 }
 await import('./visualizer-player');
