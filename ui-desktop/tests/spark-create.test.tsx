@@ -17,6 +17,23 @@ test('unapproved model stays unavailable and never sends a generation request',a
  expect(screen.getByRole('button',{name:'Preview Sparklist'})).toBeDisabled();expect(screen.getByRole('button',{name:'Choose for me'})).toBeDisabled();
  expect(bridge.call).toHaveBeenCalledTimes(1);
 });
+test('motion timing follows the audible song BPM, then the seed, and never invents missing tempo',async()=>{
+ bridge.call.mockResolvedValue({...base,ready:false});
+ const shared=props(),tempos=new Map([[1,120],[2,90]]);
+ const view=render(<SparkCreate {...shared} initialSeed={1} tempos={tempos} playingId={2} isPlaying/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeDisabled());
+ const root=view.container.querySelector<HTMLElement>('.spark-create-content')!;
+ expect(root).toHaveAttribute('data-bpm','90');expect(root.style.getPropertyValue('--spark-beat')).toBe(`${60/90}s`);
+ view.rerender(<SparkCreate {...shared} initialSeed={1} tempos={tempos} playingId={2} isPlaying={false}/>);
+ expect(root).toHaveAttribute('data-bpm','120');expect(root.style.getPropertyValue('--spark-beat')).toBe('0.5s');
+ for(const missing of [undefined,NaN,Infinity,0,-30,401]){
+  view.rerender(<SparkCreate {...shared} initialSeed={1} tempos={missing===undefined?new Map():new Map([[1,missing]])}/>);
+  expect(root).toHaveAttribute('data-tempo-source','ambient');expect(root).not.toHaveAttribute('data-bpm');expect(root.style.getPropertyValue('--spark-beat')).toBe('0.6s');
+ }
+ view.rerender(<SparkCreate {...shared} initialSeed={1} tempos={tempos} playingId={3} isPlaying/>);
+ expect(root).toHaveAttribute('data-tempo-source','ambient');
+ expect(shared.onPlay).not.toHaveBeenCalled();
+});
 test('sparkles stay in the background and primary actions carry the shine, never the artwork',async()=>{
  bridge.call.mockImplementation(async(_command,{request})=>request.action==='status'?base:request.action==='choose'?{...base,chosen_id:1}:{...base,preview:{track_ids:[1,2],analyzed:2,available:3,generation_version:'test',configuration:request.generation}});
  const view=render(<SparkCreate {...props()}/>);

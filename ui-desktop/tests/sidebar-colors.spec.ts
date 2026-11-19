@@ -23,7 +23,7 @@ test('sidebar keeps artwork, text and cover-colored controls separate across siz
  }
 });
 test('Sparklist creation has one header icon and a reachable close action',async({page})=>{
- await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await page.getByRole('button',{name:'Create Sparklist',exact:true}).click();
+ await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await page.getByRole('button',{name:'Create collection',exact:true}).click();await page.getByRole('menuitem',{name:'New Sparklist',exact:true}).click();
  const modal=page.getByRole('dialog',{name:'Create Sparklist',exact:true});await expect(modal.locator('.spark-composer-mark > [data-icon=Sparklist]')).toHaveCount(1);
  await expect(modal.getByRole('button',{name:'Close Sparklist creator'})).toBeVisible();await modal.getByRole('button',{name:'Close Sparklist creator'}).click();await expect(modal).not.toBeVisible();
 });
