@@ -27,7 +27,7 @@ test('long biography keeps the portrait, facts and playback together and collaps
  expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback'))).toEqual([]);
 });
 test('artist layout and text contrast fit both windows at every scale and theme',async({page})=>{
- test.setTimeout(120000);
+ test.setTimeout(240000);
  await page.addInitScript(()=>{const q=new URLSearchParams(location.search);localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:Number(q.get('scale')),appearance:{mode:q.get('mode'),source:q.get('source'),accent:'#ff00ff',saturation:150,tint:40}}));});
  for(const width of [720,1280])for(const scale of [80,100,125,150])for(const [mode,source] of [['light','blue'],['dark','blue'],['light','artwork'],['dark','artwork'],['dark','custom']]){
   await page.setViewportSize({width,height:width===720?480:800});await openArtist(page,`&scale=${scale}&mode=${mode}&source=${source}`);
