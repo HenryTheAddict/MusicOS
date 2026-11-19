@@ -23,6 +23,13 @@ export async function openPlaylistCreator(page:Page){
  await expect(page.getByRole('dialog',{name:'Create playlist',exact:true})).toBeVisible();
 }
 
+export async function openSparklistCreator(page:Page){
+ await settleAnimations(page);
+ await page.getByRole('button',{name:'Create collection',exact:true}).click();
+ await page.getByRole('menuitem',{name:'New Sparklist',exact:true}).click();
+ await expect(page.getByRole('dialog',{name:'Create Sparklist',exact:true})).toBeVisible();
+}
+
 export async function setThemeColors(page:Page,source:'artwork'|'blue'|'custom'){
  await page.getByRole('button',{name:'Theme colors',exact:true}).click();
  await page.getByRole('menuitemradio',{name:source==='artwork'?'From artwork':source==='blue'?'Original blue':'Custom',exact:true}).click();
