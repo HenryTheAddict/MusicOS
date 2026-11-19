@@ -116,11 +116,24 @@ async function main() {
   if (process.env.MUSICOS_PERF_SKIP_BUILD !== "1") {
     const build = spawnSync(
       "cargo",
-      ["build", "--bin", "musicos-mac", "--features", "desktop-app,desktop-audio"],
+      ["build", "--bin", "musicos-mac", "--bin", "musicos", "--features", "desktop-app,desktop-audio"],
       { cwd: root, stdio: "inherit" },
     );
     if (build.status !== 0) throw new Error("Performance runtime build failed");
   }
+
+  const scan = spawnSync(
+    path.join(path.dirname(executable), process.platform === "win32" ? "musicos.exe" : "musicos"),
+    ["--db", dbPath, "scan", musicDir, "--all"],
+    {
+      cwd: root,
+      stdio: "inherit",
+      timeout: timeoutMs,
+      env: { ...process.env, MUSICOS_UPLOAD_DIR: musicDir },
+    },
+  );
+  if (scan.error) throw scan.error;
+  if (scan.status !== 0) throw new Error("Performance library scan failed");
 
   const child = spawn(executable, [], {
     cwd: root,
