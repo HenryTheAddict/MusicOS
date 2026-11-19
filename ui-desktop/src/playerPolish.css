@@ -123,3 +123,15 @@
 @media(hover:none){.expanded-player .expanded-side-view .queue-remove{opacity:.8;}}
 @container(max-width:48rem){.expanded-player[data-composition=split] .expanded-player-copy>strong{-webkit-line-clamp:2;}}
 @media(prefers-reduced-motion:reduce){.expanded-player .expanded-side-view .queue-remove{transition:none;}}
+
+.expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-playing-view{gap:.75rem;}
+.expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-song-column{max-width:min(21rem,36dvh);}
+@container(width > 48rem){
+ .expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-player-content{max-width:68rem;gap:clamp(1.5rem,4vw,3rem);}
+ .expanded-player:not([data-visualizer=true]) .expanded-lyrics-view{max-height:30rem;}
+}
+@container(max-width:48rem){
+ .expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-player-content{row-gap:.75rem;}
+ .expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-player-art{width:4rem;min-width:4rem;}
+ .expanded-player[data-view=lyrics]:not([data-visualizer=true]) .expanded-player-art .cover{border-radius:.75rem;}
+}
