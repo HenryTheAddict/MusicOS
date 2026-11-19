@@ -104,6 +104,45 @@ mod linux {
             }
         }
 
+        pub fn wait(&mut self, timeout: Duration) -> std::io::Result<()> {
+            let mut fds: Vec<libc::pollfd> = self
+                .devices
+                .iter()
+                .map(|device| libc::pollfd {
+                    fd: device.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                })
+                .collect();
+            let timeout = libc::timespec {
+                tv_sec: timeout.as_secs() as libc::time_t,
+                tv_nsec: timeout.subsec_nanos() as libc::c_long,
+            };
+            // SAFETY: fds and timeout remain valid for the duration of ppoll.
+            let result = unsafe {
+                libc::ppoll(
+                    fds.as_mut_ptr(),
+                    fds.len() as libc::nfds_t,
+                    &timeout,
+                    std::ptr::null(),
+                )
+            };
+            if result < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() != std::io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            let mut index = 0;
+            self.devices.retain(|_| {
+                let connected =
+                    fds[index].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) == 0;
+                index += 1;
+                connected
+            });
+            Ok(())
+        }
+
         pub fn poll(&mut self) -> Vec<InputEvent> {
             let mut out = Vec::new();
             for device in &mut self.devices {
@@ -397,6 +436,11 @@ mod linux {
 
         pub fn poll(&mut self) -> Vec<super::InputEvent> {
             Vec::new()
+        }
+
+        pub fn wait(&mut self, timeout: std::time::Duration) -> std::io::Result<()> {
+            std::thread::sleep(timeout);
+            Ok(())
         }
     }
 }
