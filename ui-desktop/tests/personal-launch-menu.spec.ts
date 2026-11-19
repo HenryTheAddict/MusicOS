@@ -1,12 +1,13 @@
 import {contrast} from '../src/appearance';
 import {test,expect} from '@playwright/test';
+import {openPlaylistCreator,settleAnimations} from './support/ui';
 const look={mode:'dark',source:'blue',accent:'#0064df',saturation:100,tint:15};
 test('saved name is used verbatim in Home, sidebar, collections and name preview',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({display_name:'Henry',interface_percent:100})));
  await page.goto('/?fixture=1');
  await expect(page.locator('.sidebar-home')).toHaveText('Henry');
  await expect(page.locator('.home-heading h1')).toHaveText('Henry');
- await expect(page.locator('.home-collections h2')).toHaveText('Henry');
+ await expect(page.locator('.home-collections h2')).toHaveText('Your collections');
  await expect(page.locator('.sidebar-playlists h2')).toHaveText('Henry');
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'General',exact:true}).click();
  await page.getByLabel('Name',{exact:true}).fill('Zoë');await expect(page.locator('.name-preview')).toHaveText('Zoë');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Library',exact:true}).click();await expect(page.locator('.sidebar-home')).toHaveText('Zoë');await expect(page.locator('.home-heading h1')).toHaveText('Zoë');
@@ -37,12 +38,12 @@ test('context exit stays at its pointer without flashing or stealing a replaceme
 test('existing playlists have no M3U toolbar action; file import stays at creation',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'playlist/1',name:'Test list',kind:'manual',track_ids:[1,2],artwork_choice:'collage'}])));
  await page.goto('/?fixture=1&sparkReady=1');await page.locator('.home-collection-open').click();await expect(page.locator('.playlist-tools')).not.toContainText('M3U');await expect(page.getByRole('button',{name:'Edit details',exact:true}).locator('svg')).toBeVisible();await page.getByRole('button',{name:'Add Music',exact:true}).click();await expect(page.getByRole('dialog',{name:'Add Music',exact:true})).not.toContainText('M3U');await page.getByRole('button',{name:'Close song selector'}).click();
- await page.locator('.sidebar-home').click();await page.getByRole('button',{name:'New playlist',exact:true}).click();await expect(page.getByRole('button',{name:'Import M3U',exact:true})).toBeVisible();
+ await page.locator('.sidebar-home').click();await openPlaylistCreator(page);await expect(page.getByRole('button',{name:'Import M3U',exact:true})).toBeVisible();
 });
 test('Sketch collection controls keep fixed geometry and artwork-owned shading',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'audio/1',name:'Test mix',kind:'audio',track_ids:[1,2],artwork_choice:'auto/1'}])));
- await page.goto('/?fixture=1&sparkReady=1');const button=page.getByRole('button',{name:'Play Test mix',exact:true}).first();await button.scrollIntoViewIfNeeded();await expect(button.locator('[data-icon=play]')).toBeVisible();
- const before=await button.boundingBox();await button.hover();await page.waitForTimeout(170);const after=await button.boundingBox();expect(after).toEqual(before);
+ await page.goto('/?fixture=1&sparkReady=1');await page.getByRole('button',{name:'Show Sparklists',exact:true}).click();const button=page.locator('.home-collection-grid').getByRole('button',{name:'Play Test mix',exact:true});await button.scrollIntoViewIfNeeded();await expect(button.locator('[data-icon=play]')).toBeVisible();
+ await settleAnimations(page);const before=(await button.boundingBox())!;await page.mouse.move(before.x+before.width/2,before.y+before.height/2);await settleAnimations(page);const after=await button.boundingBox();expect(after).toEqual(before);
  const style=await button.evaluate(el=>({surface:getComputedStyle(el).backgroundColor,fill:getComputedStyle(el).getPropertyValue('--collection-transport-top').trim(),stroke:getComputedStyle(el).getPropertyValue('--collection-transport-stroke').trim(),border:getComputedStyle(el).borderRadius,gradient:el.querySelector('linearGradient')?.innerHTML}));expect(style.surface).not.toBe('rgba(0, 0, 0, 0)');expect(style.gradient).toContain('--transport-top');
  const surface='#'+(style.surface.match(/[\d.]+/g)??[]).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join('');expect(contrast(style.fill,surface)).toBeGreaterThanOrEqual(4.49);expect(contrast(style.stroke,surface)).toBeGreaterThanOrEqual(2.99);
  await page.screenshot({path:'out/rebuild-qa/name-menu-home.png',animations:'disabled'});

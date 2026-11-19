@@ -30,6 +30,18 @@ export async function openSparklistCreator(page:Page){
  await expect(page.getByRole('dialog',{name:'Create Sparklist',exact:true})).toBeVisible();
 }
 
+export async function addPlaylistSongs(page:Page,trackIds:number[]){
+ await page.getByRole('button',{name:'Add Music',exact:true}).click();
+ const selector=page.getByRole('dialog',{name:'Add Music',exact:true});
+ for(const id of trackIds){
+  const song=selector.locator(`button[data-track-id="${id}"]`);
+  await song.click();
+  await expect(song).toBeDisabled();
+ }
+ await selector.getByRole('button',{name:'Done',exact:true}).click();
+ await expect(selector).toHaveCount(0);
+}
+
 export async function setThemeColors(page:Page,source:'artwork'|'blue'|'custom'){
  await page.getByRole('button',{name:'Theme colors',exact:true}).click();
  await page.getByRole('menuitemradio',{name:source==='artwork'?'From artwork':source==='blue'?'Original blue':'Custom',exact:true}).click();

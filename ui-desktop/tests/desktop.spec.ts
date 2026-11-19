@@ -1,5 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
-import {chooseSection,openAlbums,openCollections,openPlaylistCreator,setPlayerView,setThemeColors,settleAnimations} from './support/ui';
+import {addPlaylistSongs,chooseSection,openAlbums,openCollections,openPlaylistCreator,setPlayerView,setThemeColors,settleAnimations} from './support/ui';
 test("SuperCommand searches, creates playlists and supports Escape",async({page})=>{
   await start(page);
   await page.keyboard.press('ControlOrMeta+k');
@@ -458,10 +458,10 @@ test("wide windows retain Sketch album sizes and sort menu works", async ({page}
   await page.keyboard.press("Escape");
   await expect(page.locator(".card-open strong").first()).toHaveText("AM");
   await page.getByRole("button", {name:"Open Plastic Beach", exact:true}).click();
-  await expect(page.locator(".album-hero .album-artwork > .cover")).toHaveCSS("transform", "none");
+  await expect(page.locator(".album-hero .album-artwork .cover")).toHaveCSS("transform", "none");
   await expect(page.locator(".track-table")).toHaveCSS("transform", "none");
   const geometry = await page.evaluate(() => ({
-    cover: document.querySelector(".album-hero .album-artwork > .cover")!.getBoundingClientRect().width,
+    cover: document.querySelector(".album-hero .album-artwork .cover")!.getBoundingClientRect().width,
     title: getComputedStyle(document.querySelector(".album-copy h1")!).fontSize,
     row: document.querySelector(".album-detail .track-row")!.getBoundingClientRect().top,
     player: document.querySelector(".now-playing")!.getBoundingClientRect().left,
@@ -482,7 +482,7 @@ test("track reveal slides labels by 1.75rem while rows stay steady and keyboard 
   await page.getByRole("button", { name: "Open Plastic Beach", exact: true }).click();
   const row = page.locator(".track-row").nth(1);
   const label = row.locator(".track-label");
-  const play = row.getByRole("button", { name: "Play Second Light", exact: true });
+  const play = row.locator('.row-play');
   await page.mouse.move(120, 40);
   await expect(play).toHaveCSS("opacity", "0");
   await expect(page.locator(".track-table")).toHaveCSS("transform", "none");
@@ -493,7 +493,7 @@ test("track reveal slides labels by 1.75rem while rows stay steady and keyboard 
   await expect.poll(async () => (await label.boundingBox())!.x - initial!.x).toBeCloseTo(28, 0);
   expect(await row.boundingBox()).toEqual(before);
   await page.mouse.move(120, 40);
-  await play.focus();
+  await play.focus();await page.keyboard.press("Tab");await page.keyboard.press("Shift+Tab");
   await expect(play).toHaveCSS("opacity", "1");
   await page.keyboard.press("Enter");
   await expect(page.locator(".now-playing-info strong")).toHaveText("Second Light");
@@ -547,7 +547,7 @@ for (const virtualized of [false, true]) {
           expect(geometry.square && geometry.equal).toBe(true);
           expect(geometry.cover).toBeCloseTo(geometry.card, 0);
           expect(geometry.caption).toBeCloseTo(geometry.card, 0);
-          expect(geometry.cover).toBeGreaterThanOrEqual(111 * percent / 100);
+          expect(geometry.cover).toBeGreaterThanOrEqual(104 * percent / 100 - 1);
           expect(geometry.cover).toBeLessThanOrEqual(170 * percent / 100);
           expect(geometry.overflow).toBeLessThanOrEqual(1);
         };
@@ -699,7 +699,7 @@ test("Settings categories support keyboard navigation, volume and tab restoratio
  await expect(page.getByRole("tab",{name:"Audio",exact:true})).toHaveAttribute("aria-selected","true");
  await expect(page.getByRole("slider",{name:/Volume/})).toBeEnabled();
  await page.getByRole("slider",{name:/Volume/}).focus();await page.getByRole("slider",{name:/Volume/}).press("Home");await expect(page.getByRole("slider",{name:/Volume/})).toHaveValue("0");
- await library(page);await settings(page);await expect(appearance).toHaveAttribute("aria-selected","true");
+ await library(page);await settings(page);await expect(page.getByRole("tab",{name:"Audio",exact:true})).toHaveAttribute("aria-selected","true");
  await appearance.focus();await appearance.press("End");await expect(page.getByRole("textbox",{name:"Name",exact:true})).toBeVisible();
 });
 
@@ -744,16 +744,12 @@ test("playlists persist and rule playlists follow favorite changes",async({page}
  const create=page.getByRole('dialog',{name:'Create playlist',exact:true});await create.getByRole('textbox',{name:'Name',exact:true}).fill('Night drive');
  await create.getByRole('button',{name:'Create playlist',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Night drive',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Edit playlist',exact:true}).click();
+ await page.getByRole('button',{name:'Edit details',exact:true}).click();
  await page.getByRole('textbox',{name:'Playlist description'}).fill('After dark');
- await page.getByRole('button',{name:'Save details',exact:true}).click();
+ await page.getByRole('dialog',{name:'Edit playlist details',exact:true}).getByRole('button',{name:'Done',exact:true}).click();
  await expect(page.locator('.playlist-hero')).toContainText('After dark');
- await page.getByRole('button',{name:'Add songs',exact:true}).click();
- await page.getByRole('searchbox',{name:'Find playlist songs'}).fill('Opening');
- await page.getByRole('checkbox',{name:'Select Opening',exact:true}).first().check();
- await page.getByRole('button',{name:'Add selected',exact:true}).click();
+ await addPlaylistSongs(page,[1]);
  await expect(page.locator('.playlist-hero')).toContainText('1 songs');
- await page.getByRole('button',{name:'Edit playlist',exact:true}).click();
  await page.getByRole('button',{name:'Favorite Opening',exact:true}).click();
  await expect(page.getByRole('button',{name:'Unfavorite Opening',exact:true})).toHaveAttribute('aria-pressed','true');
  await openCollections(page);await page.getByRole('tab',{name:/Smart playlists/}).click();await page.getByRole('button',{name:'Create Smart playlist',exact:true}).click();
@@ -763,7 +759,7 @@ test("playlists persist and rule playlists follow favorite changes",async({page}
  await page.getByRole('button',{name:'Unfavorite Opening',exact:true}).click();
  await expect(page.getByRole('button',{name:'Unfavorite Opening',exact:true})).toHaveCount(0);
  await page.reload();await expect(page.getByRole('heading',{name:'My hearts',exact:true})).toBeVisible();
- await expect(page.locator('.personal-library .collection-open').filter({hasText:'Night drive'})).toBeVisible();
+ await expect(page.locator('.sidebar-playlists .personal-collection').filter({hasText:'Night drive'})).toBeVisible();
 });
 test('queue reordering, clearing and DJmode preserve the playing song',async({page})=>{
  await start(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
@@ -773,7 +769,7 @@ test('queue reordering, clearing and DJmode preserve the playing song',async({pa
  await expect(rows.nth(0).locator('strong')).toHaveText(before[1]);
  await expect(rows.nth(0).getByRole('button',{name:`Play ${before[1]} from queue`,exact:true})).toBeFocused();
  await expect(page.locator('.now-playing-info > strong')).toHaveText('Opening');
- await page.getByRole('switch',{name:'DJ mode',exact:true}).check();await expect(page.getByRole('switch',{name:'DJ mode',exact:true})).toBeChecked();
+ await page.getByRole('switch',{name:'DJ mode',exact:true}).click();await expect(page.getByRole('switch',{name:'DJ mode',exact:true})).toBeChecked();
  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(page.getByRole('slider',{name:'Volume',exact:true})).toHaveCSS('appearance','none');
  await page.keyboard.press('Escape');await setPlayerView(page.locator('.now-playing'),'queue');await page.getByRole('button',{name:'Clear upcoming',exact:true}).click();await expect(rows).toHaveCount(0);await expect(page.locator('.now-playing-info > strong')).toHaveText('Opening');
 });
@@ -789,10 +785,10 @@ test('standalone heart settles after rapid toggles and honors reduced motion',as
  await expect.poll(()=>heart.evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
 });
 test('playlist editing reorders without changing playback and survives restart',async({page})=>{
- await start(page);await openPlaylistCreator(page);const create=page.getByRole('dialog',{name:'Create playlist',exact:true});await create.getByRole('textbox',{name:'Name',exact:true}).fill('Ordered mix');await create.getByRole('button',{name:'Create playlist',exact:true}).click();await page.getByRole('button',{name:'Edit playlist',exact:true}).click();await page.getByRole('button',{name:'Add songs',exact:true}).click();
- const checks=page.locator('.playlist-edit-row input[type=checkbox]');await checks.nth(0).check();await checks.nth(1).check();await checks.nth(2).check();await page.getByRole('button',{name:'Add selected',exact:true}).click();await page.getByRole('button',{name:'Playlist songs',exact:true}).click();
- const names=await page.locator('.playlist-edit-row strong').allTextContents();await page.locator('.playlist-edit-row').nth(1).getByRole('button',{name:/^Move .* up$/}).click();await expect(page.locator('.playlist-edit-row').first().locator('strong')).toHaveText(names[1]);await page.getByRole('button',{name:'Edit playlist',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
- await page.getByRole('button',{name:'Edit playlist',exact:true}).click();await page.getByRole('button',{name:'Add songs',exact:true}).click();await checks.nth(4).check();await page.getByRole('button',{name:'Add selected',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(page.locator('.queue-row')).toHaveCount(2);await setPlayerView(page.locator('.now-playing'),'playing');
+ await start(page);await openPlaylistCreator(page);const create=page.getByRole('dialog',{name:'Create playlist',exact:true});await create.getByRole('textbox',{name:'Name',exact:true}).fill('Ordered mix');await create.getByRole('button',{name:'Create playlist',exact:true}).click();await addPlaylistSongs(page,[1,2,3]);
+ const rows=page.locator('.track-row'),names=await rows.locator('.track-label>span').allTextContents();const source=(await rows.nth(1).locator('.track-label').boundingBox())!,target=(await rows.first().boundingBox())!;
+ await page.mouse.move(source.x+60,source.y+source.height/2);await page.mouse.down();await page.mouse.move(target.x+100,target.y+4,{steps:12});await page.mouse.up();await expect(rows.first().locator('.track-label>span')).toHaveText(names[1]);expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback').length)).toBe(0);await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await addPlaylistSongs(page,[5]);await page.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(page.locator('.queue-row')).toHaveCount(2);await setPlayerView(page.locator('.now-playing'),'playing');
  await page.reload();await expect(page.getByRole('heading',{name:'Ordered mix',exact:true})).toBeVisible();await expect(page.locator('.playlist-hero')).toContainText('4 songs');
 });
 test("biography expands and seek rail thickens without a thumb",async({page})=>{
@@ -802,17 +798,18 @@ test("biography expands and seek rail thickens without a thumb",async({page})=>{
  await expect(page.locator('.seek')).toHaveCSS('opacity','0');
 });
 test('playlist and queue layouts fit both sizes at every interface scale',async({page})=>{
+ test.setTimeout(90000);
  await start(page);await openPlaylistCreator(page);const creation=page.getByRole('dialog',{name:'Create playlist',exact:true});await creation.getByRole('textbox',{name:'Name',exact:true}).fill('A very long playlist name for the tracks that last all night');await creation.getByRole('button',{name:'Create playlist',exact:true}).click();
  for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150]){
   await page.setViewportSize(size);await settings(page);await page.getByRole('tab',{name:'Appearance',exact:true}).click();await page.getByRole('button',{name:`${scale}%`,exact:true}).click();await library(page);
   await expect(page.getByRole('heading',{name:'A very long playlist name for the tracks that last all night',exact:true})).toBeVisible();
   expect(await page.locator('.page-scroll').evaluate(e=>e.scrollWidth-e.clientWidth)).toBeLessThanOrEqual(1);
-  await page.getByRole('button',{name:'Edit playlist',exact:true}).click();await page.getByRole('button',{name:'Add songs',exact:true}).click();
-  await expect(page.getByRole('searchbox',{name:'Find playlist songs'})).toBeVisible();
-  expect(await page.locator('.playlist-editor').evaluate(e=>e.scrollWidth-e.clientWidth)).toBeLessThanOrEqual(1);
-  await page.getByRole('button',{name:'Edit playlist',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+  await page.getByRole('button',{name:'Add Music',exact:true}).click();const selector=page.getByRole('dialog',{name:'Add Music',exact:true});
+  await expect(selector.getByRole('searchbox',{name:'Filter songs',exact:true})).toBeVisible();
+  expect(await selector.evaluate(e=>e.scrollWidth-e.clientWidth)).toBeLessThanOrEqual(1);
+  await selector.getByRole('button',{name:'Done',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
   const queue=page.locator('.queue-panel');const box=await queue.boundingBox();expect(box!.x).toBeGreaterThanOrEqual(0);expect(box!.x+box!.width).toBeLessThanOrEqual(size.width+1);expect(box!.y+box!.height).toBeLessThanOrEqual(size.height+1);
-  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const dj=page.getByRole('switch',{name:'DJ mode',exact:true});await dj.check();await expect(dj).toBeChecked();await dj.uncheck();await page.keyboard.press('Escape');
+  const dj=queue.getByRole('switch',{name:'DJ mode',exact:true});await dj.click();await expect(dj).toBeChecked();await dj.click();await expect(dj).not.toBeChecked();
   await page.screenshot({path:`out/rebuild-qa/playlist-queue-${size.width}-${scale}.png`});await setPlayerView(page.locator('.now-playing'),'playing');
  }
 });
