@@ -192,7 +192,7 @@
 .quick-eq legend { position:absolute;top:.75rem;left:.75rem;font-size:.8125rem;font-weight:650; }
 .quick-eq legend small { display:none; }
 .eq-bands { position:relative;display:flex;justify-content:space-around;gap:0; }
-.quick-eq label { position:relative;z-index:1;flex:1 1 0;width:0;display:flex;flex-direction:column;align-items:center;gap:.375rem;font-size:.6875rem;min-width:0; }
+.eq-bands > label { position:relative;z-index:1;flex:1 1 0;width:0;display:flex;flex-direction:column;align-items:center;gap:.375rem;font-size:.6875rem;min-width:0; }
 .quick-eq output { width:6ch;font-size:.6875rem;white-space:nowrap;text-align:center; }
 .quick-audio input[type=range] { appearance:none; width:100%;min-width:0;height:1.5rem;margin:0;background:transparent;cursor:pointer; }
 .quick-audio input[type=range]::-webkit-slider-runnable-track { height:.25rem;border-radius:1rem;background:linear-gradient(to right,color-mix(in srgb,var(--ink) 65%,var(--surface-color)) var(--range-fill,50%),color-mix(in srgb,var(--ink) 12%,transparent) var(--range-fill,50%)); }
@@ -307,7 +307,7 @@
 .spark-create .spark-generated-cover img { flex:none;aspect-ratio:1;object-fit:cover; }
 .spark-create .spark-name-suggestions { margin:.5rem 0; }
 .spark-create .spark-name-suggestions:empty { display:none; }
-.quick-eq label > span { line-height:1rem; }
+.eq-bands > label > span { line-height:1rem; }
 .eq-connections { top:1.375rem; }
 .quick-eq output { width:8ch; }
 .spark-seed-toggle { display:block;margin:0 auto .75rem;padding:.5rem .75rem;border:0;border-radius:.75rem;background:color-mix(in srgb,var(--ink) 7%,var(--surface-color));color:var(--ink);font-size:.8125rem; }
