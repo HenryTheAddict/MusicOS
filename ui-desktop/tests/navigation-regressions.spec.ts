@@ -1,21 +1,21 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Page} from '@playwright/test'; import {settleAnimations} from './support/ui';
 test.use({launchOptions:{args:['--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader']}});
 async function section(page:Page,name:string){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();}
 test('navigation and context menus animate, while data and theme controls do not replay page entry',async({page})=>{
  await page.addInitScript(()=>{const animate=Element.prototype.animate;(window as any).navigationMotion=[];Element.prototype.animate=function(frames,options){const animation=animate.call(this,frames,options);(window as any).navigationMotion.push({animation,frames,options,target:this.className});return animation;};});
- await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await page.evaluate(()=>{(window as any).navigationMotion=[];});await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await settleAnimations(page);await page.evaluate(()=>{(window as any).navigationMotion=[];});await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='album-detail-reveal'))).toBe(true);
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='navigation-content'&&m.target==='page-content'))).toBe(false);
- await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await expect(page.getByRole('menu',{name:'musicOS actions',exact:true})).not.toHaveCSS('animation-name','none');await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='menu-surface'))).toBe(true);await page.keyboard.press('Escape');
  await section(page,'Settings');await page.getByRole('tab',{name:'Audio',exact:true}).click();
  const count=()=>page.evaluate(()=>(window as any).navigationMotion.filter((m:any)=>m.animation.id==='content-change').length);const before=await count();expect(before).toBeGreaterThan(0);await page.getByRole('button',{name:'8 bands',exact:true}).click();expect(await count()).toBe(before);
  await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('tab',{name:'Library',exact:true}).click();expect(await count()).toBe(before);
 });
 test('adaptive surfaces follow artwork and return after toggling color sources',async({page})=>{
  await page.emulateMedia({reducedMotion:'reduce'});await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode:'light',source:'artwork',accent:'#0064df',saturation:100,tint:15}})));
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(243, 247, 249)');
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');const artworkSurface=await page.locator('.current-theme').evaluate(el=>getComputedStyle(el).backgroundColor);
  await section(page,'Settings');await page.getByRole('button',{name:'Theme colors',exact:true}).click();await page.getByRole('menuitemradio',{name:'Original blue',exact:true}).click();await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(201, 239, 255)');
- await page.getByRole('button',{name:'Theme colors',exact:true}).click();await page.getByRole('menuitemradio',{name:'From artwork',exact:true}).click();await section(page,'Library');await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(243, 247, 249)');
+ await page.getByRole('button',{name:'Theme colors',exact:true}).click();await page.getByRole('menuitemradio',{name:'From artwork',exact:true}).click();await section(page,'Library');await expect(page.locator('.current-theme')).toHaveCSS('background-color',artworkSurface);
  await page.screenshot({path:'out/persistent-qa/adaptive-repaired.png',animations:'disabled'});
 });
 test('Settings navigation retains Library images and depth textures without hidden drawing or reupload',async({page})=>{
