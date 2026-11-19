@@ -22,7 +22,7 @@ test('sparkles stay in the background and primary actions carry the shine, never
  const view=render(<SparkCreate {...props()}/>);
  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());
  expect(view.container.querySelectorAll('.spark-glitter')).toHaveLength(1);
- expect(view.container.querySelectorAll('.spark-glitter>span')).toHaveLength(24);
+ expect(view.container.querySelectorAll('.spark-glitter>span')).toHaveLength(48);
  expect(view.container.querySelector('.spark-glitter')?.parentElement).toHaveClass('spark-composer-atmosphere');
  expect(view.container.querySelector('.spark-composer-atmosphere')).toHaveAttribute('aria-hidden','true');
  expect(view.container.querySelectorAll('.spark-artwork-sleeve .spark-glitter,.spark-composer-mark .spark-glitter')).toHaveLength(0);
