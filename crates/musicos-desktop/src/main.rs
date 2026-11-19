@@ -300,7 +300,7 @@ impl ControlCenter {
     }
 
     #[cfg(test)]
-    fn test_fixture(_cx: &mut Context<Self>, track_count: usize) -> Self {
+    fn test_fixture(cx: &mut Context<Self>, track_count: usize) -> Self {
         let config = ControlCenterConfig::default();
         let tracks: Vec<Track> = (0..track_count)
             .map(|index| Track {
@@ -1635,7 +1635,7 @@ impl ControlCenter {
         &mut self,
         id: i64,
         mode: musicos_init::media::ScanMode,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         let repository = self.repository.clone();
         let cancel = self.operation_cancel.clone();
@@ -2723,7 +2723,7 @@ impl ControlCenter {
     fn confirm_indexed_leftovers_cleanup(
         &mut self,
         expected_revision: u64,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         self.pending_confirmation = None;
         let repository = self.repository.clone();
@@ -2828,7 +2828,7 @@ impl ControlCenter {
         &mut self,
         track_id: i64,
         position: gpui::Point<gpui::Pixels>,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         self.selected_track_id = Some(track_id);
         self.context_menu = Some(ContextMenuState {
@@ -3366,7 +3366,7 @@ impl ControlCenter {
 
     fn sortable_column(
         &self,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
         label: &'static str,
         width: f32,
         field: SortField,
@@ -6109,7 +6109,7 @@ impl ControlCenter {
     }
 
     fn render_collection_browser(&self, _viewport_width: f32, cx: &mut Context<Self>) -> Div {
-        let albums: Vec<(String, String, Option<std::path::PathBuf>, Option<musicos_desktop::AlbumId>)> = if self.library_index.albums.is_empty() {
+        let albums: Vec<(String, String, Option<std::path::PathBuf>, Option<AlbumId>)> = if self.library_index.albums.is_empty() {
             (0..6)
                 .map(|_| {
                     (
@@ -6126,7 +6126,7 @@ impl ControlCenter {
                 .iter()
                 .take(6)
                 .map(|album| {
-                    let artwork = self.artwork_for_track(album.representative_track);
+                    let artwork = self.library_index.track_by_id.get(&album.representative_track).and_then(|index| self.library_index.tracks[*index].cover_art_path.clone());
                     (
                         album.title.clone(),
                         album.artist.clone(),
@@ -7955,7 +7955,7 @@ impl ControlCenter {
     fn render_context_menu(
         &self,
         viewport: gpui::Size<gpui::Pixels>,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) -> Div {
         let Some(menu) = self.context_menu.clone() else {
             return div();

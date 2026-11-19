@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock, OnceLock};
+use std::sync::{mpsc, Arc, Condvar, Mutex, RwLock, OnceLock, Weak};
 use std::thread;
 use std::time::Duration;
 
@@ -42,6 +42,7 @@ pub enum LocalPlaybackCommand {
     ClearQueue,
     RefreshPaths,
     Remote { action: RemotePlayback, reply: mpsc::SyncSender<Result<()>> },
+    HoldAudioForUpdate { pause: bool, hold: Weak<()>, reply: mpsc::SyncSender<Result<()>> },
     Shutdown,
 }
 
@@ -242,6 +243,14 @@ impl LocalPlaybackClient {
         receive.recv_timeout(Duration::from_secs(8)).context("Mac playback did not respond")??;
         Ok(self.snapshot())
     }
+
+    pub fn hold_audio_for_update(&self, pause: bool) -> Result<Arc<()>> {
+        let hold = Arc::new(());
+        let (reply, receive) = mpsc::sync_channel(1);
+        self.send(LocalPlaybackCommand::HoldAudioForUpdate { pause, hold: Arc::downgrade(&hold), reply })?;
+        receive.recv_timeout(Duration::from_secs(8)).context("Playback did not respond. Try again.")??;
+        Ok(hold)
+    }
 }
 
 impl LocalPlaybackService {
@@ -377,8 +386,10 @@ fn playback_loop(
         None,
     );
 
+    let mut audio_hold = Weak::new();
     loop {
         let mut remote_reply=None;
+        let mut update_reply = None;
         let timeout = if player.is_playing() || player.audition_status().is_some() {
             Duration::from_millis(100)
         } else {
@@ -386,6 +397,30 @@ fn playback_loop(
         };
         match receiver.recv_timeout(timeout) {
             Ok(LocalPlaybackCommand::Shutdown) => break,
+            Ok(LocalPlaybackCommand::HoldAudioForUpdate { pause, hold, reply }) => {
+                let result = (|| {
+                    anyhow::ensure!(hold.strong_count() > 0, "The update request expired.");
+                    anyhow::ensure!(audio_hold.strong_count() == 0, "musicOS is updating.");
+                    if pause {
+                        player.pause_for_update()?;
+                    } else {
+                        anyhow::ensure!(!player.is_playing() && player.audition_status().is_none()
+                            && !player.transition_status().is_some_and(|transition| transition.active),
+                            "Music is playing. Choose Pause and restart to update.");
+                    }
+                    Ok(())
+                })();
+                if result.is_ok() {
+                    audio_hold = hold;
+                }
+                update_reply = Some((reply, result));
+            }
+            Ok(command) if audio_hold.strong_count() > 0 => {
+                if let LocalPlaybackCommand::Remote { reply, .. } = command {
+                    let _ = reply.send(Err(anyhow::anyhow!("musicOS is updating.")));
+                }
+                continue;
+            }
             Ok(LocalPlaybackCommand::Remote{action,reply})=>{
                 let result=action.command(&player,queue_revision).and_then(|command|{
                     let mutates_queue=command.mutates_queue();
@@ -423,7 +458,12 @@ fn playback_loop(
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
-        player.tick();
+        if update_reply.is_none() && audio_hold.strong_count() > 0 {
+            continue;
+        }
+        if audio_hold.strong_count() == 0 {
+            player.tick();
+        }
         if !player.has_entry_order(
             &snapshot.read().unwrap_or_else(|e| e.into_inner()).queue_entry_ids,
         ) {
@@ -443,6 +483,7 @@ fn playback_loop(
         );
         updates.publish(revision);
         if let Some((reply,result))=remote_reply{let _=reply.send(result);}
+        if let Some((reply, result)) = update_reply { let _ = reply.send(result); }
     }
 }
 
@@ -555,7 +596,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
         LocalPlaybackCommand::ClearUpcoming => player.queue_clear_upcoming(),
         LocalPlaybackCommand::ClearQueue => player.queue_clear(),
         LocalPlaybackCommand::RefreshPaths => {let tracks=player.queue_tracks().into_iter().filter_map(|t|db.get_track_by_id(t.id).ok().flatten()).collect::<Vec<_>>();player.refresh_paths(&tracks);}
-        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::Shutdown => {}
+        LocalPlaybackCommand::Remote{..}|LocalPlaybackCommand::HoldAudioForUpdate{..}|LocalPlaybackCommand::Shutdown => {}
     }
     Ok(())
 }
@@ -951,6 +992,33 @@ mod tests {
  use super::*;
  fn wave(path:&PathBuf,seconds:u32){let rate=8000u32;let length=rate*seconds*2;let mut w=Vec::new();w.extend(b"RIFF");w.extend((36+length).to_le_bytes());w.extend(b"WAVEfmt ");w.extend(16u32.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(rate.to_le_bytes());w.extend((rate*2).to_le_bytes());w.extend(2u16.to_le_bytes());w.extend(16u16.to_le_bytes());w.extend(b"data");w.extend(length.to_le_bytes());w.resize(44+length as usize,0);std::fs::write(path,w).unwrap();}
  fn wait_for(service:&LocalPlaybackService,condition:impl Fn(&LocalPlaybackSnapshot)->bool)->LocalPlaybackSnapshot{let end=std::time::Instant::now()+Duration::from_secs(6);loop{let s=service.snapshot();if condition(&s){return s;}assert!(std::time::Instant::now()<end,"Timed out: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
+ #[test]
+ fn audio_hold_blocks_playback_until_released() {
+     let temp = tempfile::tempdir().unwrap();
+     let path = temp.path().join("update.sqlite");
+     let song = temp.path().join("song.wav");
+     wave(&song, 12);
+     let db = Db::open(path.to_str().unwrap()).unwrap();
+     let id = db.insert_track(song.to_str().unwrap(), "Song", "Artist", "Album", 12, 100, 0).unwrap();
+     drop(db);
+     let service = LocalPlaybackService::start_with_preferences(path, PlaybackPreferences { volume: 0., ..Default::default() }).unwrap();
+     let client = service.client();
+     let play = || RemotePlayback::Play { ids: vec![id], start: 0 };
+     let hold = client.hold_audio_for_update(false).unwrap();
+     assert!(client.remote(play()).is_err());
+     drop(hold);
+     client.remote(play()).unwrap();
+     wait_for(&service, |snapshot| snapshot.is_playing);
+     assert!(client.hold_audio_for_update(false).is_err());
+     client.send(LocalPlaybackCommand::Audition(id)).unwrap();
+     wait_for(&service, |snapshot| snapshot.audition.is_some());
+     assert!(client.hold_audio_for_update(false).is_err());
+     let hold = client.hold_audio_for_update(true).unwrap();
+     let saved = service.snapshot();
+     assert!(!saved.is_playing && saved.audition.is_none());
+     assert!(client.remote(play()).is_err());
+     drop(hold);
+ }
  #[test]fn auditions_restore_duplicate_queue_identity_position_and_pause_state(){
   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("audition.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let main=temp.path().join("main.wav");let excerpt=temp.path().join("excerpt.wav");wave(&main,12);wave(&excerpt,2);
   let id=db.insert_track(main.to_str().unwrap(),"Main","Artist","Album",12,100,0).unwrap();let preview=db.insert_track(excerpt.to_str().unwrap(),"Preview","Artist","Other",2,100,1).unwrap();drop(db);
