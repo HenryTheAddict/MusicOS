@@ -124,21 +124,32 @@ pub enum HomePane {
     Detail,
 }
 
+const HOME_ROWS: [Focus; 8] = [
+    Focus::HomeNowPlaying,
+    Focus::HomeMusic,
+    Focus::Artists,
+    Focus::Songs,
+    Focus::Playlists,
+    Focus::Search,
+    Focus::HomeSettings,
+    Focus::HomeApps,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HomeNavigation {
     pub pane: HomePane,
     pub main_index: usize,
     pub detail_index: usize,
-    pub remembered_detail_index: [usize; 4],
+    pub remembered_detail_index: [usize; HOME_ROWS.len()],
 }
 
 impl Default for HomeNavigation {
     fn default() -> Self {
         Self {
             pane: HomePane::Main,
-            main_index: 0,
+            main_index: 1,
             detail_index: 0,
-            remembered_detail_index: [0; 4],
+            remembered_detail_index: [0; HOME_ROWS.len()],
         }
     }
 }
@@ -206,6 +217,9 @@ pub struct MusicOs {
     pub tracks_queue: Vec<Track>,
     library_tracks: Vec<Track>,
     album_previews: Vec<ui::home::AlbumPreview>,
+    recent_albums: usize,
+    home_album_mosaic: Option<crate::renderer::CoverArt>,
+    home_artist_portrait: Option<crate::renderer::CoverArt>,
     library_view: LibraryView,
     cached_library_counts: LibraryCounts,
     pub albums_list: Vec<String>,
@@ -506,6 +520,9 @@ impl MusicOs {
             tracks_queue: Vec::new(),
             library_tracks: Vec::new(),
             album_previews: Vec::new(),
+            recent_albums: 0,
+            home_album_mosaic: None,
+            home_artist_portrait: None,
             library_view: LibraryView::default(),
             cached_library_counts: LibraryCounts::default(),
             albums_list: Vec::new(),
@@ -1447,7 +1464,27 @@ impl MusicOs {
         );
 
         let legend = self.button_legend();
-        if self.screen == Screen::Home {
+        if matches!(
+            self.screen,
+            Screen::Home
+                | Screen::MusicApp
+                | Screen::Settings
+                | Screen::SettingsDetail
+                | Screen::NowPlaying
+                | Screen::First
+                | Screen::Welcome
+                | Screen::TestComplete
+                | Screen::Theme
+                | Screen::DateTimeSetup
+                | Screen::Language
+                | Screen::Apps
+                | Screen::About
+                | Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue
+                | Screen::Search
+                | Screen::RatingPicker
+        ) {
             ui::home_legend_bar(canvas, legend);
         } else if !legend.is_empty() {
             ui::legend_bar(canvas, legend);
@@ -1774,8 +1811,10 @@ impl MusicOs {
                 self.home_navigation.main_index,
                 self.cached_library_counts,
                 &self.album_previews,
+                self.recent_albums,
+                self.home_album_mosaic.as_ref(),
+                self.home_artist_portrait.as_ref(),
                 &self.playlists_list,
-                &self.library_tracks,
                 &self.player.get_status(),
                 !self.tracks_queue.is_empty(),
                 self.current_cover_art.as_ref(),
@@ -2190,13 +2229,6 @@ impl MusicOs {
             (Screen::Home, focus) if Self::home_detail_focus_index(focus).is_some() => {
                 self.activate_home_detail()
             }
-            (Screen::Home, Focus::HomeMusic) => {
-                self.push_navigation();
-                self.previous_screen = Screen::Home;
-                self.previous_focus = self.focus;
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Albums;
-            }
             (Screen::Home, Focus::HomeNowPlaying) => {
                 self.push_navigation();
                 self.previous_screen = Screen::Home;
@@ -2216,7 +2248,6 @@ impl MusicOs {
                 self.screen = Screen::Apps;
                 self.focus = Focus::AppsMusic;
             }
-            (Screen::Home, _) => {}
             (Screen::Apps, Focus::AppsMusic) => {
                 self.push_navigation();
                 self.previous_screen = Screen::Apps;
@@ -2244,7 +2275,7 @@ impl MusicOs {
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
-            (Screen::MusicApp, Focus::Songs) => {
+            (Screen::MusicApp | Screen::Home, Focus::Songs) => {
                 if let Ok(mut tracks) = self.db.get_tracks() {
                     sort_tracks(&mut tracks, self.library_sort);
                     self.push_navigation();
@@ -2253,7 +2284,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Albums) => {
+            (Screen::MusicApp, Focus::Albums) | (Screen::Home, Focus::HomeMusic) => {
                 if let Ok(albums) = self.db.get_albums() {
                     self.push_navigation();
                     self.albums_list = albums;
@@ -2261,7 +2292,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Search) => {
+            (Screen::MusicApp | Screen::Home, Focus::Search) => {
                 self.push_navigation();
                 self.search_query.clear();
                 self.search_results.clear();
@@ -2339,7 +2370,7 @@ impl MusicOs {
                 self.screen = self.previous_screen;
                 self.focus = self.previous_focus;
             }
-            (Screen::MusicApp, Focus::Artists) => {
+            (Screen::MusicApp | Screen::Home, Focus::Artists) => {
                 if let Ok(artists) = self.db.get_artists() {
                     self.push_navigation();
                     self.artists_list = artists;
@@ -2347,7 +2378,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Playlists) => {
+            (Screen::MusicApp | Screen::Home, Focus::Playlists) => {
                 if let Ok(playlists) = self.db.get_playlists() {
                     self.push_navigation();
                     self.playlists_list = playlists;
@@ -2868,7 +2899,9 @@ impl MusicOs {
 
     pub fn refresh_library(&mut self) {
         if let Ok(tracks) = self.db.get_tracks() {
-            self.album_previews = ui::home::album_previews(&tracks);
+            (self.album_previews, self.recent_albums) = ui::home::album_previews(&tracks);
+            self.home_album_mosaic = ui::home::album_mosaic(&self.album_previews);
+            self.home_artist_portrait = ui::home::artist_preview(&tracks);
             self.library_view.update(&tracks);
             self.library_tracks = tracks;
         }
@@ -2941,9 +2974,10 @@ impl MusicOs {
             }
             (Screen::Search, Focus::SearchResults) => "B  Keyboard",
             (Screen::Home, _) if self.can_open_home_preview_with_context() => {
-                "D-pad  Move     A  Select     B  Back     X  Preview"
+                "A  Select     B  Back     X  More"
             }
-            (Screen::Home | Screen::Language | Screen::Apps | Screen::Settings, _) => {
+            (Screen::Home, _) => "A  Select     B  Back",
+            (Screen::Language | Screen::Apps | Screen::Settings, _) => {
                 "D-pad  Move     A  Select     B  Back"
             }
             (Screen::MusicApp, _) => "A  Select     B  Back",
@@ -2976,7 +3010,10 @@ impl MusicOs {
     fn can_open_home_preview_with_context(&self) -> bool {
         self.screen == Screen::Home
             && self.home_navigation.pane == HomePane::Main
-            && matches!(self.home_navigation.main_index, 0 | 1)
+            && matches!(
+                HOME_ROWS[self.home_navigation.main_index],
+                Focus::HomeMusic | Focus::HomeNowPlaying | Focus::Artists | Focus::Playlists
+            )
             && self.home_detail_item_count() > 0
     }
 
@@ -3183,20 +3220,17 @@ impl MusicOs {
     }
 
     fn home_detail_item_count(&self) -> usize {
-        match self.home_navigation.main_index {
-            0 => self
-                .playlists_list
-                .len()
-                .max(self.library_tracks.len())
-                .min(4),
-            1 => {
+        match HOME_ROWS[self.home_navigation.main_index] {
+            Focus::HomeMusic | Focus::Artists => usize::from(!self.library_tracks.is_empty()),
+            Focus::Playlists => self.playlists_list.len().min(4),
+            Focus::HomeNowPlaying => {
                 usize::from(
                     self.player.get_current_track().is_some()
                         || !self.library_tracks.is_empty()
                         || !self.tracks_queue.is_empty(),
                 ) * 4
             }
-            2 | 3 => 4,
+            Focus::HomeApps | Focus::HomeSettings => 4,
             _ => 0,
         }
     }
@@ -3220,23 +3254,8 @@ impl MusicOs {
         }
     }
 
-    fn home_main_focus_for_index(index: usize) -> Focus {
-        match index.min(3) {
-            0 => Focus::HomeMusic,
-            1 => Focus::HomeNowPlaying,
-            2 => Focus::HomeApps,
-            _ => Focus::HomeSettings,
-        }
-    }
-
     fn sync_home_navigation_from_focus(&mut self) {
-        let main_index = match self.focus {
-            Focus::HomeMusic => Some(0),
-            Focus::HomeNowPlaying => Some(1),
-            Focus::HomeApps => Some(2),
-            Focus::HomeSettings => Some(3),
-            _ => None,
-        };
+        let main_index = HOME_ROWS.iter().position(|&focus| focus == self.focus);
         if let Some(main_index) = main_index {
             self.home_navigation.pane = HomePane::Main;
             self.home_navigation.main_index = main_index;
@@ -3248,9 +3267,10 @@ impl MusicOs {
 
     fn move_home_main(&mut self, delta: isize) {
         self.home_navigation.pane = HomePane::Main;
-        self.home_navigation.main_index =
-            (self.home_navigation.main_index as isize + delta).rem_euclid(4) as usize;
-        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+        self.home_navigation.main_index = (self.home_navigation.main_index as isize + delta)
+            .rem_euclid(HOME_ROWS.len() as isize)
+            as usize;
+        self.focus = HOME_ROWS[self.home_navigation.main_index];
     }
 
     fn move_home_detail(&mut self, delta: isize) {
@@ -3288,14 +3308,22 @@ impl MusicOs {
         self.home_navigation.remembered_detail_index[self.home_navigation.main_index] =
             self.home_navigation.detail_index;
         self.home_navigation.pane = HomePane::Main;
-        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+        self.focus = HOME_ROWS[self.home_navigation.main_index];
     }
 
     fn activate_home_detail(&mut self) {
         let index = self.home_navigation.detail_index;
-        match self.home_navigation.main_index {
-            0 => self.play_home_playlist(index),
-            1 => match index {
+        match HOME_ROWS[self.home_navigation.main_index] {
+            Focus::HomeMusic | Focus::Artists => {
+                if let Some((tracks, start)) = self.all_tracks_queue() {
+                    self.push_navigation();
+                    self.player.set_queue(tracks, start);
+                    self.player.set_shuffle(true);
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+            }
+            Focus::HomeNowPlaying => match index {
                 0 => self.player.play_pause(),
                 1 => self.player.prev(),
                 2 => self.player.next(),
@@ -3308,7 +3336,8 @@ impl MusicOs {
                     self.selected_index = self.player.current_index().unwrap_or(0);
                 }
             },
-            2 => match index {
+            Focus::Playlists => self.play_home_playlist(index),
+            Focus::HomeApps => match index {
                 0 => {
                     self.push_navigation();
                     self.screen = Screen::MusicApp;
@@ -3327,7 +3356,7 @@ impl MusicOs {
                     self.focus = Focus::AppsUsbSync;
                 }
             },
-            3 => {
+            Focus::HomeSettings => {
                 self.previous_screen = Screen::Home;
                 self.screen = if index == 3 {
                     Screen::Settings
@@ -4469,7 +4498,7 @@ mod tests {
         }
 
         app.force_screen_for_snapshot(Screen::Home);
-        assert!(app.button_legend().contains("X  Preview"));
+        assert!(app.button_legend().contains("X  More"));
         app.handle_input(InputEvent::Button(Button::Context));
         assert_eq!(app.home_navigation.pane, HomePane::Detail);
         assert!(!app.button_legend().contains("X  "));

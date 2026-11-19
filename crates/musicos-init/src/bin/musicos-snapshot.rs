@@ -19,6 +19,7 @@ fn main() -> Result<()> {
     let mut app = if matches!(
         snapshot_screen.as_deref(),
         Ok("home-albums"
+            | "home-artists"
             | "home-nowplaying"
             | "albums"
             | "album"
@@ -42,11 +43,17 @@ fn main() -> Result<()> {
             app.force_screen_for_snapshot(Screen::DateTimeSetup)
         }
         Ok("home") => app.force_screen_for_snapshot(Screen::Home),
-        Ok("home-albums" | "home-nowplaying") => {
+        Ok("home-albums" | "home-nowplaying" | "home-artists") => {
             seed_home_library(&mut app)?;
             app.force_screen_for_snapshot(Screen::Home);
-            if snapshot_screen.as_deref() == Ok("home-nowplaying") {
-                app.handle_input(InputEvent::Button(Button::Down));
+            match snapshot_screen.as_deref() {
+                Ok("home-nowplaying") => {
+                    app.handle_input(InputEvent::Button(Button::Up));
+                }
+                Ok("home-artists") => {
+                    app.handle_input(InputEvent::Button(Button::Down));
+                }
+                _ => {}
             }
         }
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
@@ -185,7 +192,12 @@ fn seed_home_library(app: &mut MusicOs) -> Result<()> {
             "NightVisions.png",
         ),
         ("Pink", "Luna", "Flamingo", "Flamingo.png"),
-        ("Drift", "Harbor", "Sea", "Sea.png"),
+        (
+            "Midnight City",
+            "M83",
+            "Hurry Up, We're Dreaming",
+            "Sea.png",
+        ),
     ] {
         let id = app.db.insert_track_with_number(
             &format!("/music/{artwork}.ogg"),

@@ -27,50 +27,17 @@ pub fn draw_now_playing(
     transition_t: f32,
 ) {
     let _ = (transition_t, seconds);
-    crate::ui::draw_figma_background(canvas);
+    crate::ui::rows_preview(canvas);
     let _ = theme;
     let accent = crate::ui::accent(canvas);
     let Some(ref track) = status.track else {
-        crate::ui::rr(
-            canvas,
-            180.0,
-            260.0,
-            920.0,
-            300.0,
-            48.0,
-            crate::ui::surface(canvas),
-        );
-        canvas.text_centered(
-            "No song selected",
-            640.0,
-            342.0,
-            72.0,
-            crate::ui::ink(canvas),
-            FontWeight::Bold,
-        );
-        canvas.text_centered(
-            "Choose a song from Music",
-            640.0,
-            438.0,
-            36.0,
-            crate::ui::ink_secondary(canvas),
-            FontWeight::Regular,
-        );
+        crate::ui::preview_heading(canvas, "Now Playing", "Choose a song from Music");
         return;
     };
 
-    crate::ui::rr(
-        canvas,
-        52.0,
-        86.0,
-        1176.0,
-        510.0,
-        56.0,
-        crate::ui::surface(canvas),
-    );
-    let art_x = 92.0;
-    let art_y = 132.0;
-    let art_size = 430.0;
+    let art_x = 684.0;
+    let art_y = 100.0;
+    let art_size = 540.0;
     crate::ui::shadow_rr(canvas, art_x, art_y, art_size, art_size, 44.0, 3.0, 8.0);
     draw_cover_art(
         canvas,
@@ -84,39 +51,29 @@ pub fn draw_now_playing(
     text_fit(
         canvas,
         &track.title,
-        574.0,
-        148.0,
-        610.0,
-        68.0,
+        684.0,
+        650.0,
+        540.0,
+        50.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
         canvas,
-        &track.artist,
-        574.0,
-        240.0,
-        610.0,
-        48.0,
-        crate::ui::ink_secondary(canvas),
-        FontWeight::Bold,
-    );
-    text_fit(
-        canvas,
-        &track.album,
-        574.0,
-        304.0,
-        610.0,
-        40.0,
+        &format!("{} · {}", track.artist, track.album),
+        684.0,
+        714.0,
+        540.0,
+        32.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
     if let Some(error) = status.last_error.as_deref() {
         crate::ui::rr(
             canvas,
-            574.0,
+            42.0,
             382.0,
-            610.0,
+            566.0,
             64.0,
             5.0,
             Color::rgb(168, 51, 59),
@@ -124,9 +81,9 @@ pub fn draw_now_playing(
         text_fit(
             canvas,
             error,
-            590.0,
+            58.0,
             398.0,
-            578.0,
+            534.0,
             30.0,
             Color::WHITE,
             FontWeight::Bold,
@@ -135,18 +92,18 @@ pub fn draw_now_playing(
         text_fit(
             canvas,
             &format!("Up next: {}", next_track.title),
-            574.0,
+            42.0,
             402.0,
-            610.0,
+            566.0,
             30.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
     }
 
-    let slider_x = 104.0;
-    let slider_y = 638.0;
-    let slider_w = 1072.0;
+    let slider_x = 684.0;
+    let slider_y = 777.0;
+    let slider_w = 540.0;
     let ratio = if track.duration > 0 {
         (status.position / track.duration as f32).clamp(0.0, 1.0)
     } else {
@@ -173,22 +130,35 @@ pub fn draw_now_playing(
     canvas.text(
         &format_time(status.position),
         slider_x,
-        666.0,
+        805.0,
         30.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
     canvas.text_right(
-        &format_time(track.duration as f32),
+        &format!(
+            "-{}",
+            format_time((track.duration as f32 - status.position).max(0.0))
+        ),
         slider_x + slider_w,
-        666.0,
+        805.0,
         30.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 
-    let center_x = 640.0;
-    let controls_y = 760.0;
+    crate::ui::text_fit(
+        canvas,
+        "Playback",
+        44.0,
+        145.0,
+        550.0,
+        66.0,
+        crate::ui::ink(canvas),
+        FontWeight::Bold,
+    );
+    let center_x = 324.0;
+    let controls_y = 546.0;
     draw_player_icon(
         canvas,
         center_x - 170.0,
@@ -225,8 +195,8 @@ pub fn draw_now_playing(
 
     draw_player_icon(
         canvas,
-        388.0,
-        874.0,
+        154.0,
+        690.0,
         "loop",
         focus == Focus::Songs,
         status,
@@ -236,16 +206,16 @@ pub fn draw_now_playing(
     );
     draw_heart(
         canvas,
-        640.0,
-        868.0,
+        324.0,
+        684.0,
         track.favorited,
         focus == Focus::Favorites,
         seconds,
     );
     draw_player_icon(
         canvas,
-        892.0,
-        874.0,
+        494.0,
+        690.0,
         "shuffle",
         focus == Focus::History,
         status,
