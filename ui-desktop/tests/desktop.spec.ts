@@ -761,6 +761,7 @@ test('queue reordering, clearing and DJmode preserve the playing song',async({pa
  const rows=page.locator('.queue-row');const before=await rows.locator('strong').allTextContents();
  await rows.nth(1).getByRole('button',{name:`Play ${before[1]} from queue`,exact:true}).focus();await page.keyboard.press('Alt+ArrowUp');
  await expect(rows.nth(0).locator('strong')).toHaveText(before[1]);
+ await expect(rows.nth(0).getByRole('button',{name:`Play ${before[1]} from queue`,exact:true})).toBeFocused();
  await expect(page.locator('.now-playing-info > strong')).toHaveText('Opening');
  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await page.getByRole('switch',{name:'DJmode',exact:true}).check();await expect(page.getByRole('switch',{name:'DJmode',exact:true})).toBeChecked();
  await expect(page.getByRole('slider',{name:'Volume',exact:true})).toHaveCSS('appearance','none');

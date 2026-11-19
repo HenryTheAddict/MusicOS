@@ -1,3 +1,4 @@
+import {useState} from 'react';
 import {fireEvent, render, screen, waitFor, within} from '@testing-library/react';
 import {expect, test, vi} from 'vitest';
 import {QueueRows} from '../src/components';
@@ -46,4 +47,22 @@ test('the DJ switch sends one action and the orbit follows active playback', asy
  await waitFor(() => expect(switchControl).toBeEnabled());
  rerender(<AudioPanel {...props} player={{...player, is_playing: false}}/>);
  expect(container.querySelector('.queue-dj')).not.toHaveAttribute('data-mixing');
+});
+
+test('keyboard reordering keeps focus on the moved track after the queue updates', async () => {
+ const tracks = [1, 2, 3].map(id => ({id, title: `Song ${id}`, artist: 'Artist', duration: 180}) as Track);
+ function Queue() {
+  const [order, setOrder] = useState([10, 20, 30]);
+  const move = (from: number, to: number) => setTimeout(() => setOrder(current => {const next = [...current];const [entry] = next.splice(from, 1);next.splice(to, 0, entry);return next;}), 20);
+  return <QueueRows tracks={order.map(entry => tracks[entry / 10 - 1])} entryIds={order} scale={1} current={null} onSelect={() => {}} onRemove={() => {}} onMove={move}/>;
+ }
+ const view = within(render(<Queue/>).container);
+ const song = (title: string) => view.getByRole('button', {name: `Play ${title} from queue`});
+ song('Song 2').focus();
+ fireEvent.keyDown(song('Song 2'), {key: 'ArrowUp', altKey: true});
+ await waitFor(() => expect(view.getAllByRole('button', {name: /^Play .+ from queue$/})[0]).toBe(song('Song 2')));
+ expect(song('Song 2')).toHaveFocus();
+ fireEvent.keyDown(song('Song 2'), {key: 'ArrowDown', altKey: true});
+ await waitFor(() => expect(view.getAllByRole('button', {name: /^Play .+ from queue$/})[1]).toBe(song('Song 2')));
+ expect(song('Song 2')).toHaveFocus();
 });
