@@ -8,7 +8,9 @@ async function recordMotion(page:Page){
   Element.prototype.animate=function(frames,options){
    const animation=animate.call(this,frames,options);
    (window as any).navigationMotion.push({animation,target:this,frames,options});
-   if(this.classList.contains('library-toolbar-exit')){animation.pause();animation.currentTime=50;}
+   if(this.classList.contains('library-toolbar-exit')){
+    (window as any).departingToolbar={connected:this.isConnected,inert:this.hasAttribute('inert'),hidden:this.getAttribute('aria-hidden'),pointerEvents:getComputedStyle(this).pointerEvents,frame:document.querySelector('.page-frame')!.getBoundingClientRect().top,column:document.querySelector('.content-column')!.getBoundingClientRect().top};
+   }
    return animation;
   };
  });
@@ -18,8 +20,10 @@ test('Filter leaves without reserving space or retaining its open panel, and Bac
  await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);
  await page.getByRole('button',{name:'Filter',exact:true}).click();await expect(page.getByRole('region',{name:'Library filters'})).toBeVisible();
  await page.getByRole('button',{name:'Open Junk',exact:true}).click();
- const ghost=page.locator('.library-toolbar-exit');await expect(ghost).toHaveCount(1);
- await expect(ghost).toHaveAttribute('inert','');await expect(ghost).toHaveAttribute('aria-hidden','true');await expect(ghost).toHaveCSS('pointer-events','none');
+ const ghost=page.locator('.library-toolbar-exit');
+ const departing=await page.evaluate(()=>(window as any).departingToolbar);
+ expect(departing).toMatchObject({connected:true,inert:true,hidden:'true',pointerEvents:'none'});
+ expect(Math.abs(departing.frame-departing.column)).toBeLessThan(1);
  await expect(page.getByRole('region',{name:'Library filters'})).toHaveCount(0);await expect(page.getByRole('button',{name:'Filter',exact:true})).toHaveCount(0);
  const bars=await page.evaluate(()=>({frame:document.querySelector('.page-frame')!.getBoundingClientRect().top,column:document.querySelector('.content-column')!.getBoundingClientRect().top}));expect(Math.abs(bars.frame-bars.column)).toBeLessThan(1);
  await page.getByRole('button',{name:'Back to Albums',exact:true}).click();await expect(ghost).toHaveCount(0);await expect(page.getByRole('button',{name:'Filter',exact:true})).toBeVisible();
