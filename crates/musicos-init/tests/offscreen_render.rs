@@ -42,6 +42,43 @@ fn home_uses_warm_light_and_dark_shells_with_a_separate_preview_surface() {
 }
 
 #[test]
+fn non_home_screens_do_not_draw_a_fixed_preview_panel() {
+    let resolution = Resolution::VGA_4_3;
+    let mut app = MusicOs::with_db_path(resolution, ":memory:");
+    for (theme, shell) in [
+        (ThemeName::Seaglass, [216, 226, 240]),
+        (ThemeName::Dark, [21, 22, 26]),
+    ] {
+        app.active_theme = theme;
+        for screen in [
+            Screen::MusicApp,
+            Screen::First,
+            Screen::Welcome,
+            Screen::Theme,
+            Screen::Language,
+            Screen::DateTimeSetup,
+            Screen::Settings,
+            Screen::SettingsDetail,
+            Screen::Apps,
+            Screen::About,
+            Screen::NowPlaying,
+            Screen::PlaylistsList,
+            Screen::PlaylistTracksList,
+            Screen::Queue,
+            Screen::Search,
+            Screen::RatingPicker,
+        ] {
+            app.force_screen_for_snapshot(screen);
+            let mut buffer = vec![0; resolution.width as usize * resolution.height as usize * 4];
+            let mut canvas = Canvas::new(resolution, &mut buffer).unwrap();
+            app.draw(&mut canvas, 0.75);
+            let pixel = (410 * resolution.width as usize + 620) * 4;
+            assert_eq!(buffer[pixel..pixel + 3], shell, "{screen:?} in {theme:?}");
+        }
+    }
+}
+
+#[test]
 fn renders_setup_screen_at_both_supported_resolutions() {
     let root = tempfile::tempdir().unwrap();
     for resolution in [Resolution::HD_4_3, Resolution::VGA_4_3] {

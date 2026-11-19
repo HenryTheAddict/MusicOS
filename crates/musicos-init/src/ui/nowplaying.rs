@@ -10,7 +10,7 @@ use crate::renderer::{Canvas, Color, CoverArt};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::pulse01;
-use crate::ui::{focus_halo, text_fit, FontWeight};
+use crate::ui::{register_focus, text_fit, FontWeight};
 
 static PLACEHOLDER_ART: OnceLock<Option<CoverArt>> = OnceLock::new();
 
@@ -26,34 +26,33 @@ pub fn draw_now_playing(
     cover_art_opacity: f32,
     transition_t: f32,
 ) {
-    let _ = (transition_t, seconds);
-    crate::ui::rows_preview(canvas);
+    let _ = transition_t;
+    crate::ui::draw_figma_background(canvas);
     let _ = theme;
     let accent = crate::ui::accent(canvas);
     let Some(ref track) = status.track else {
-        crate::ui::preview_heading(canvas, "Now Playing", "Choose a song from Music");
+        crate::ui::page_heading(canvas, "Now Playing", "Choose a song from Music");
         return;
     };
 
-    let art_x = 684.0;
-    let art_y = 100.0;
-    let art_size = 540.0;
-    crate::ui::shadow_rr(canvas, art_x, art_y, art_size, art_size, 44.0, 3.0, 8.0);
+    let art_x = 48.0;
+    let art_y = 132.0;
+    let art_size = 416.0;
     draw_cover_art(
         canvas,
         cover_art,
         art_x,
         art_y,
         art_size,
-        44.0,
+        20.0,
         cover_art_opacity,
     );
     text_fit(
         canvas,
         &track.title,
-        684.0,
-        650.0,
-        540.0,
+        518.0,
+        156.0,
+        694.0,
         50.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
@@ -61,9 +60,9 @@ pub fn draw_now_playing(
     text_fit(
         canvas,
         &format!("{} · {}", track.artist, track.album),
-        684.0,
-        714.0,
-        540.0,
+        518.0,
+        229.0,
+        694.0,
         32.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
@@ -71,9 +70,9 @@ pub fn draw_now_playing(
     if let Some(error) = status.last_error.as_deref() {
         crate::ui::rr(
             canvas,
-            42.0,
-            382.0,
-            566.0,
+            518.0,
+            326.0,
+            694.0,
             64.0,
             5.0,
             Color::rgb(168, 51, 59),
@@ -81,9 +80,9 @@ pub fn draw_now_playing(
         text_fit(
             canvas,
             error,
-            58.0,
-            398.0,
             534.0,
+            342.0,
+            662.0,
             30.0,
             Color::WHITE,
             FontWeight::Bold,
@@ -92,18 +91,18 @@ pub fn draw_now_playing(
         text_fit(
             canvas,
             &format!("Up next: {}", next_track.title),
-            42.0,
-            402.0,
-            566.0,
+            518.0,
+            344.0,
+            694.0,
             30.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
     }
 
-    let slider_x = 684.0;
-    let slider_y = 777.0;
-    let slider_w = 540.0;
+    let slider_x = 48.0;
+    let slider_y = 586.0;
+    let slider_w = 1184.0;
     let ratio = if track.duration > 0 {
         (status.position / track.duration as f32).clamp(0.0, 1.0)
     } else {
@@ -130,7 +129,7 @@ pub fn draw_now_playing(
     canvas.text(
         &format_time(status.position),
         slider_x,
-        805.0,
+        611.0,
         30.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
@@ -141,24 +140,14 @@ pub fn draw_now_playing(
             format_time((track.duration as f32 - status.position).max(0.0))
         ),
         slider_x + slider_w,
-        805.0,
+        611.0,
         30.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 
-    crate::ui::text_fit(
-        canvas,
-        "Playback",
-        44.0,
-        145.0,
-        550.0,
-        66.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
-    let center_x = 324.0;
-    let controls_y = 546.0;
+    let center_x = 640.0;
+    let controls_y = 716.0;
     draw_player_icon(
         canvas,
         center_x - 170.0,
@@ -166,8 +155,6 @@ pub fn draw_now_playing(
         "prev",
         focus == Focus::Artists,
         status,
-        seconds,
-        0.0,
         78.0,
     );
     draw_player_icon(
@@ -177,8 +164,6 @@ pub fn draw_now_playing(
         "play",
         focus == Focus::Albums,
         status,
-        seconds,
-        0.35,
         102.0,
     );
     draw_player_icon(
@@ -188,39 +173,33 @@ pub fn draw_now_playing(
         "next",
         focus == Focus::Playlists,
         status,
-        seconds,
-        0.7,
         78.0,
     );
 
     draw_player_icon(
         canvas,
-        154.0,
-        690.0,
+        192.0,
+        726.0,
         "loop",
         focus == Focus::Songs,
         status,
-        seconds,
-        1.05,
         58.0,
     );
     draw_heart(
         canvas,
-        324.0,
-        684.0,
+        1072.0,
+        722.0,
         track.favorited,
         focus == Focus::Favorites,
         seconds,
     );
     draw_player_icon(
         canvas,
-        494.0,
-        690.0,
+        960.0,
+        726.0,
         "shuffle",
         focus == Focus::History,
         status,
-        seconds,
-        1.4,
         58.0,
     );
 }
@@ -281,29 +260,17 @@ fn draw_player_icon(
     kind: &str,
     selected: bool,
     status: &PlaybackStatus,
-    seconds: f32,
-    phase: f32,
     size: f32,
 ) {
     if selected {
         let ring = size + 28.0;
-        focus_halo(
+        register_focus(
             canvas,
             cx - ring / 2.0,
             cy - ring / 2.0,
             ring,
             ring,
             ring / 2.0,
-            seconds,
-            phase,
-        );
-        canvas.register_selected(
-            cx - ring / 2.0,
-            cy - ring / 2.0,
-            ring,
-            ring,
-            ring / 2.0,
-            8.0,
         );
     }
 
@@ -356,23 +323,13 @@ fn draw_heart(
     let size = 96.0 + pulse01(seconds, 3.8, 0.4) * 4.0;
     if selected {
         let ring = size + 24.0;
-        focus_halo(
+        register_focus(
             canvas,
             cx - ring / 2.0,
             cy - ring / 2.0,
             ring,
             ring,
             ring / 2.0,
-            seconds,
-            1.2,
-        );
-        canvas.register_selected(
-            cx - ring / 2.0,
-            cy - ring / 2.0,
-            ring,
-            ring,
-            ring / 2.0,
-            8.0,
         );
     }
     let base_path = crate::ui::assets_dir();

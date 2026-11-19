@@ -26,6 +26,7 @@ fn main() -> Result<()> {
             | "artists"
             | "artist-albums"
             | "album-tracks"
+            | "nowplaying-track"
             | "songs")
     ) {
         MusicOs::with_db_path(resolution, ":memory:")
@@ -134,9 +135,8 @@ fn main() -> Result<()> {
         Ok("about") | Ok("status") => app.force_screen_for_snapshot(Screen::About),
         Ok("now") | Ok("nowplaying") => app.force_screen_for_snapshot(Screen::NowPlaying),
         Ok("nowplaying-track") => {
-            seed_demo_queue(&mut app);
-            app.player
-                .restore_queue_paused(app.tracks_queue.clone(), 0, 33.0);
+            seed_home_library(&mut app)?;
+            app.motion_mode = musicos_init::preferences::MotionMode::Reduced;
             app.force_screen_for_snapshot(Screen::NowPlaying);
         }
         Ok("wifi-sync") => {

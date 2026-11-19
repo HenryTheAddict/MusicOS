@@ -223,7 +223,24 @@ pub fn figma_list_row(
 }
 
 pub fn register_focus(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, radius: f32) {
-    canvas.register_selected(x - 4.0, y - 4.0, w + 8.0, h + 8.0, radius + 4.0, 6.0);
+    canvas.register_selected(x - 2.0, y - 2.0, w + 4.0, h + 4.0, radius + 2.0, 4.0);
+}
+
+pub(crate) fn compact_row(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, selected: bool) {
+    if selected {
+        rr(canvas, x, y, w, h, 12.0, selected_surface(canvas));
+        register_focus(canvas, x, y, w, h, 12.0);
+    } else {
+        rr(
+            canvas,
+            x + 12.0,
+            y + h - 2.0,
+            w - 24.0,
+            2.0,
+            0.0,
+            control(canvas),
+        );
+    }
 }
 
 pub fn status_bar(
@@ -292,27 +309,27 @@ pub(crate) fn home_legend_bar(canvas: &mut Canvas<'_>, legend: &str) {
 
 pub(crate) fn rows_preview(canvas: &mut Canvas<'_>) {
     draw_figma_background(canvas);
-    rr(canvas, 652.0, 68.0, 604.0, 797.0, 60.0, surface(canvas));
+    rr(canvas, 652.0, 68.0, 604.0, 797.0, 32.0, surface(canvas));
 }
 
-pub(crate) fn preview_heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
+pub(crate) fn page_heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
     text_fit(
         canvas,
         title,
-        688.0,
-        104.0,
-        532.0,
-        50.0,
+        48.0,
+        100.0,
+        1184.0,
+        45.0,
         ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
         canvas,
         subtitle,
-        688.0,
-        172.0,
-        532.0,
-        31.0,
+        48.0,
+        160.0,
+        1184.0,
+        30.0,
         ink_secondary(canvas),
         FontWeight::Regular,
     );
@@ -349,18 +366,14 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
             chip,
             height,
             height / 2.0,
-            if inset > 0.0 {
-                selected_surface(canvas)
-            } else {
-                control(canvas)
-            },
+            control(canvas),
         );
         canvas.text_centered(
             button,
             x + chip * 0.5,
             y + height / 4.0,
             font_size,
-            ink(canvas),
+            ink_secondary(canvas),
             FontWeight::Bold,
         );
         canvas.text(
