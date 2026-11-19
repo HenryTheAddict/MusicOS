@@ -196,6 +196,15 @@ fn absolute_normalized(path: &Path) -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("."))
             .join(path)
     };
+    #[cfg(windows)]
+    let absolute = absolute
+        .ancestors()
+        .find_map(|ancestor| {
+            ancestor.canonicalize().ok().map(|canonical| {
+                canonical.join(absolute.strip_prefix(ancestor).unwrap())
+            })
+        })
+        .unwrap_or(absolute);
     let normalized = normalize_components(&absolute);
     #[cfg(target_os = "macos")]
     {
@@ -213,6 +222,20 @@ fn normalize_components(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
+            #[cfg(windows)]
+            Component::Prefix(prefix) => match prefix.kind() {
+                std::path::Prefix::VerbatimDisk(drive) => {
+                    normalized.push(format!("{}:", drive as char));
+                }
+                std::path::Prefix::VerbatimUNC(server, share) => {
+                    let mut root = std::ffi::OsString::from(r"\\");
+                    root.push(server);
+                    root.push(r"\");
+                    root.push(share);
+                    normalized.push(root);
+                }
+                _ => normalized.push(prefix.as_os_str()),
+            },
             Component::CurDir => {}
             Component::ParentDir => {
                 normalized.pop();
@@ -297,6 +320,19 @@ pub fn cleanup_hidden_records(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn canonical_windows_prefixes_match_missing_descendants() {
+        for (canonical, ordinary) in [
+            (r"\\?\C:\Music", r"C:\Music"),
+            (r"\\?\UNC\server\share\Music", r"\\server\share\Music"),
+        ] {
+            let root = absolute_normalized(Path::new(canonical));
+            let track = absolute_normalized(&Path::new(ordinary).join("missing.mp3"));
+            assert!(track.starts_with(&root));
+        }
+    }
 
     #[test]
     fn hides_outside_tracks_and_repairs_inside_tracks() {

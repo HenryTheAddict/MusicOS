@@ -33,6 +33,8 @@ jobs:
         run: cargo check -p musicos-desktop
 
       - name: Test native desktop services
+        env:
+          MUSICOS_TEST_AUDIO_BACKEND: ${{ runner.os == 'macOS' && 'system' || 'none' }}
         run: cargo test -p musicos-desktop --lib --no-default-features
 
       - name: Build native Control Center
