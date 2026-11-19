@@ -381,7 +381,14 @@ fn completed_setup_saves_theme_and_skips_setup_next_boot() {
     assert_eq!(app.screen, Screen::First);
 
     app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::Welcome);
+    assert!(!musicos_init::preferences::load().controls_seen);
     app.handle_input(InputEvent::Button(Button::Confirm));
+    let mut interrupted = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    assert_eq!(interrupted.screen, Screen::First);
+    assert!(musicos_init::preferences::load().controls_seen);
+    interrupted.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(interrupted.screen, Screen::Theme);
     app.handle_input(InputEvent::Button(Button::Right));
     assert_eq!(app.active_theme, musicos_init::ui::theme::ThemeName::Red);
     app.handle_input(InputEvent::Button(Button::Confirm));

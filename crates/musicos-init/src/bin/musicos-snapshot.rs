@@ -14,6 +14,7 @@ fn main() -> Result<()> {
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
     let mut app = MusicOs::new(resolution);
     match std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() {
+        Ok("first") => app.force_screen_for_snapshot(Screen::First),
         Ok("welcome") | Ok("hello") => app.force_screen_for_snapshot(Screen::Welcome),
         Ok("theme") => app.force_screen_for_snapshot(Screen::Theme),
         Ok("datetime") | Ok("date-time") | Ok("time") => {
@@ -21,6 +22,10 @@ fn main() -> Result<()> {
         }
         Ok("home") => app.force_screen_for_snapshot(Screen::Home),
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
+        Ok("songs") => {
+            seed_demo_queue(&mut app);
+            app.force_screen_for_snapshot(Screen::SongsList);
+        }
         Ok("albums") | Ok("album") => {
             seed_demo_albums(&mut app);
             app.force_screen_for_snapshot(Screen::AlbumsList);
@@ -28,6 +33,44 @@ fn main() -> Result<()> {
         Ok("queue") => {
             seed_demo_queue(&mut app);
             app.force_screen_for_snapshot(Screen::Queue);
+        }
+        Ok("artists") => {
+            app.artists_list = vec!["Tanger".into(), "Nujabes".into()];
+            app.force_screen_for_snapshot(Screen::ArtistsList);
+        }
+        Ok("artist-albums") => {
+            app.active_artist = Some("Tanger".into());
+            app.artist_albums_list = vec!["Glow".into(), "Night Rain".into()];
+            app.force_screen_for_snapshot(Screen::ArtistAlbumsList);
+        }
+        Ok("album-tracks") => {
+            seed_demo_queue(&mut app);
+            app.active_album = Some("Glow".into());
+            app.force_screen_for_snapshot(Screen::AlbumTracksList);
+        }
+        Ok("playlists") => app.force_screen_for_snapshot(Screen::PlaylistsList),
+        Ok("playlist-tracks") => {
+            seed_demo_queue(&mut app);
+            app.force_screen_for_snapshot(Screen::PlaylistTracksList);
+        }
+        Ok("search") => {
+            seed_demo_queue(&mut app);
+            app.search_query = "Tanger".into();
+            app.search_results = app.tracks_queue.clone();
+            app.force_screen_for_snapshot(Screen::Search);
+        }
+        Ok("search-results") | Ok("search-empty") => {
+            seed_demo_queue(&mut app);
+            app.search_query = "Tanger".into();
+            if std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() == Ok("search-results") {
+                app.search_results = app.tracks_queue.clone();
+            }
+            app.force_screen_for_snapshot(Screen::Search);
+            app.focus = Focus::SearchResults;
+        }
+        Ok("rating") => {
+            app.pending_rating = 3;
+            app.force_screen_for_snapshot(Screen::RatingPicker);
         }
         Ok("context") => {
             seed_demo_albums(&mut app);
@@ -45,6 +88,17 @@ fn main() -> Result<()> {
         Ok("apps") => app.force_screen_for_snapshot(Screen::Apps),
         Ok("about") | Ok("status") => app.force_screen_for_snapshot(Screen::About),
         Ok("now") | Ok("nowplaying") => app.force_screen_for_snapshot(Screen::NowPlaying),
+        Ok("nowplaying-track") => {
+            seed_demo_queue(&mut app);
+            app.player
+                .restore_queue_paused(app.tracks_queue.clone(), 0, 33.0);
+            app.force_screen_for_snapshot(Screen::NowPlaying);
+        }
+        Ok("wifi-sync") => {
+            app.force_screen_for_snapshot(Screen::Home);
+            app.wifi_sync_overlay = true;
+            app.wifi_sync_ip = "192.0.2.1".into();
+        }
         Ok("volume-hud") | Ok("volume_hud") => {
             app.force_screen_for_snapshot(Screen::Home);
             app.hud_type = musicos_init::app::HudType::Volume;

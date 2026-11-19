@@ -163,6 +163,7 @@ struct NavigationState {
 }
 
 pub struct MusicOs {
+    controls_seen: bool,
     pub screen: Screen,
     pub focus: Focus,
     pub previous_screen: Screen,
@@ -448,6 +449,7 @@ impl MusicOs {
         crate::system::apply_brightness(preferences.brightness);
 
         let mut app = Self {
+            controls_seen: preferences.controls_seen,
             screen: if !preferences.setup_complete {
                 Screen::First
             } else if !preferences.time_configured {
@@ -1429,7 +1431,7 @@ impl MusicOs {
             );
         }
 
-        ui::ipod_status_bar(
+        ui::status_bar(
             canvas,
             self.screen_title(),
             &self.format_clock(),
@@ -1437,6 +1439,40 @@ impl MusicOs {
             self.active_theme,
             self.player.is_playing(),
         );
+
+        let legend = match (self.screen, self.focus) {
+            (Screen::First, _) => "D-pad  Move     A  Select",
+            (Screen::Theme, _) => "D-pad  Change theme     A  Select     B  Back",
+            (Screen::DateTimeSetup, _) => "D-pad  Adjust     A  Next     B  Back",
+            (Screen::RatingPicker, _) => "Left / Right  Rate     A  Save     B  Back",
+            (Screen::Search, Focus::SearchKeyboard) => {
+                "D-pad  Move     A  Type     B  Back     X  Results"
+            }
+            (Screen::Search, Focus::SearchResults) if self.search_results.is_empty() => {
+                "B  Keyboard"
+            }
+            (Screen::Search, Focus::SearchResults) => "A  Play     B  Keyboard     X  More",
+            (Screen::Home, _) => "D-pad  Move     A  Select     B  Back     X  More",
+            (
+                Screen::MusicApp
+                | Screen::AlbumsList
+                | Screen::ArtistsList
+                | Screen::ArtistAlbumsList
+                | Screen::AlbumTracksList
+                | Screen::SongsList
+                | Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue,
+                _,
+            ) => "A  Select     B  Back     X  More",
+            (Screen::Language | Screen::Apps | Screen::Settings, _) => {
+                "D-pad  Move     A  Select     B  Back"
+            }
+            _ => "",
+        };
+        if !legend.is_empty() {
+            ui::legend_bar(canvas, legend);
+        }
 
         let screen_changed = Some(self.screen) != self.last_drawn_screen;
         self.last_drawn_screen = Some(self.screen);
@@ -1469,11 +1505,7 @@ impl MusicOs {
             } else {
                 crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
             };
-            let outline_color = canvas
-                .theme_top_color
-                .unwrap_or(Color::rgb(35, 108, 220))
-                .mix(Color::BLACK, 0.42)
-                .with_alpha((174.0 + outline_pulse * 30.0).round() as u8);
+            let outline_color = ui::accent(canvas).mix(Color::BLACK, 0.18);
             crate::ui::rr_stroke(
                 canvas,
                 self.outline_x,
@@ -1548,12 +1580,9 @@ impl MusicOs {
             card_w,
             card_h,
             card_r,
-            Color::rgba(255, 255, 255, 240),
+            ui::surface(canvas),
         );
-        crate::ui::liquid_glass(canvas, card_x, card_y, card_w, card_h, card_r, 48);
-
-        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-        crate::ui::rr_stroke(canvas, card_x, card_y, card_w, card_h, card_r, 3.0, accent);
+        let accent = ui::accent(canvas);
 
         canvas.text_centered(
             "Wi-Fi Sync Diagnostics",
@@ -1615,21 +1644,9 @@ impl MusicOs {
             hud_w,
             hud_h,
             hud_r,
-            Color::rgba(255, 255, 255, 225),
+            ui::surface(canvas),
         );
-        crate::ui::liquid_glass(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 36);
-
-        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-        crate::ui::rr_stroke(
-            canvas,
-            hud_x,
-            hud_y,
-            hud_w,
-            hud_h,
-            hud_r,
-            3.0,
-            accent.with_alpha(128),
-        );
+        let accent = ui::accent(canvas);
 
         let (label, val_str, ratio) = match self.hud_type {
             HudType::Volume => {
@@ -1664,7 +1681,7 @@ impl MusicOs {
             track_w,
             track_h,
             track_r,
-            Color::rgb(220, 220, 220),
+            ui::control(canvas),
         );
 
         let fill_w = track_w * ratio;
@@ -2191,8 +2208,14 @@ impl MusicOs {
                 self.screen = Screen::Language;
                 self.init_language_screen();
             }
+            (Screen::First, _) if self.controls_seen => {
+                self.screen = Screen::Theme;
+                self.focus = Focus::ThemeSelect;
+            }
             (Screen::First, _) => self.screen = Screen::Welcome,
             (Screen::Welcome, _) => {
+                self.controls_seen = true;
+                self.save_preferences(false);
                 self.screen = Screen::Theme;
                 self.focus = Focus::ThemeSelect;
             }
@@ -2709,6 +2732,7 @@ impl MusicOs {
         preferences.theme = self.active_theme;
         preferences.language = self.active_language;
         preferences.setup_complete |= setup_complete;
+        preferences.controls_seen |= self.controls_seen;
         preferences.time_configured = self.time_configured;
         preferences.clock_hour = self.clock_hour;
         preferences.clock_minute = self.clock_minute;
@@ -3665,7 +3689,8 @@ impl MusicOs {
                     self.screen = Screen::Settings;
                     self.focus = Focus::SettingsLooks;
                 } else {
-                    self.screen = Screen::Welcome;
+                    self.screen = Screen::First;
+                    self.focus = Focus::GetStarted;
                 }
             }
             Screen::DateTimeSetup => {
@@ -4360,11 +4385,11 @@ impl MusicOs {
 
     fn screen_title(&self) -> &'static str {
         match self.screen {
-            Screen::First => "MusicOS",
-            Screen::Welcome => "Welcome",
+            Screen::First => "musicOS",
+            Screen::Welcome => "First boot",
             Screen::Theme => "Appearance",
             Screen::DateTimeSetup => "Date & Time",
-            Screen::Home => "MusicOS",
+            Screen::Home => "musicOS",
             Screen::MusicApp => "Music",
             Screen::Language => "Language",
             Screen::TestComplete => "Ready",
@@ -4376,13 +4401,13 @@ impl MusicOs {
             Screen::AlbumTracksList => "Album",
             Screen::PlaylistsList => "Playlists",
             Screen::PlaylistTracksList => "Playlist",
-            Screen::Queue => "On-The-Go",
+            Screen::Queue => "Queue",
             Screen::Search => "Search",
             Screen::RatingPicker => "Rating",
             Screen::ContextMenu => "Options",
             Screen::Settings => "Settings",
             Screen::SettingsDetail => "Settings",
-            Screen::Apps => "Extras",
+            Screen::Apps => "Apps",
             Screen::About => "About",
         }
     }

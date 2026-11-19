@@ -18,7 +18,7 @@ pub fn draw_home(
     main_index: usize,
     seconds: f32,
     lang: Language,
-    theme: ThemeName,
+    _theme: ThemeName,
     playlists: &[Playlist],
     tracks: &[Track],
     status: &PlaybackStatus,
@@ -31,25 +31,15 @@ pub fn draw_home(
     crate::ui::draw_figma_background(canvas);
     rr(
         canvas,
-        0.0,
-        64.0,
-        510.0,
-        896.0,
-        0.0,
-        Color::rgb(238, 240, 242),
+        514.0,
+        82.0,
+        742.0,
+        828.0,
+        48.0,
+        crate::ui::surface(canvas),
     );
-    crate::ui::line(
-        canvas,
-        509.0,
-        64.0,
-        509.0,
-        960.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
-    );
-    rr(canvas, 510.0, 64.0, 770.0, 896.0, 0.0, Color::WHITE);
 
-    let menu = ["Music", "Now Playing", "Extras", "Settings"];
+    let menu = ["Music", "Now Playing", "Apps", "Settings"];
     let menu_icons = [
         ("Music.svg", "MusicSelected.svg"),
         ("NowPlaying.svg", "NowPlayingSelected.svg"),
@@ -79,7 +69,7 @@ pub fn draw_home(
             118.0,
             y + 18.0,
             290.0,
-            58.0,
+            46.0,
             if selected { Color::WHITE } else { Color::BLACK },
             FontWeight::Bold,
         );
@@ -114,8 +104,8 @@ pub fn draw_home(
     canvas.text(
         description,
         556.0,
-        140.0,
-        25.0,
+        144.0,
+        28.0,
         Color::rgb(103, 108, 114),
         FontWeight::Regular,
     );
@@ -166,7 +156,12 @@ pub fn draw_home(
             FontWeight::Bold,
         );
     }
-    for index in 0..4 {
+    let detail_count = if main_index == 0 {
+        tracks.len().max(playlists.len()).min(4)
+    } else {
+        4
+    };
+    for index in 0..detail_count {
         let y = detail_base_y + index as f32 * 84.0;
         let selected = matches!(
             (index, focus),
@@ -210,12 +205,27 @@ pub fn draw_home(
         );
     }
 
-    if home_pane == HomePane::Main {
-        let accent = theme.primary_color();
-        rr(canvas, 0.0, 64.0, 7.0, 896.0, 0.0, accent);
-    } else {
-        let accent = theme.primary_color();
-        rr(canvas, 510.0, 64.0, 7.0, 896.0, 0.0, accent);
+    if main_index == 0 && tracks.is_empty() && playlists.is_empty() {
+        crate::ui::text_fit_centered(
+            canvas,
+            "No music yet",
+            885.0,
+            444.0,
+            640.0,
+            42.0,
+            crate::ui::INK,
+            FontWeight::Bold,
+        );
+        crate::ui::text_fit_centered(
+            canvas,
+            "Import songs from Settings to get started.",
+            885.0,
+            508.0,
+            640.0,
+            29.0,
+            crate::ui::INK_SECONDARY,
+            FontWeight::Regular,
+        );
     }
 }
 

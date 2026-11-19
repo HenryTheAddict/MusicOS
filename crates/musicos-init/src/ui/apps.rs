@@ -4,7 +4,7 @@ use crate::renderer::{Canvas, Color, Resolution};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{figma_list_row, panel_gradient, rr_stroke, text_fit, FontWeight};
+use crate::ui::{figma_list_row, panel_gradient, text_fit, FontWeight};
 use crate::usb::UsbStatus;
 
 pub fn draw_apps(
@@ -26,21 +26,17 @@ pub fn draw_apps(
         76.0,
         370.0,
         852.0,
-        8.0,
-        Color::rgb(235, 237, 240),
+        48.0,
+        crate::ui::surface(canvas),
     );
-    rr_stroke(
-        canvas,
-        20.0,
-        76.0,
-        370.0,
-        852.0,
-        8.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
+    canvas.text_centered(
+        "Library",
+        205.0,
+        119.0,
+        49.0,
+        crate::ui::INK,
+        FontWeight::Bold,
     );
-
-    canvas.text_centered("Extras", 205.0, 100.0, 62.0, Color::BLACK, FontWeight::Bold);
 
     let stat_y = 240.0;
     canvas.text_centered(
@@ -84,11 +80,13 @@ pub fn draw_apps(
         Color::BLACK,
         FontWeight::Bold,
     );
-    canvas.text_centered(
+    crate::ui::text_fit_centered(
+        canvas,
         &usb_status.message,
-        216.0,
+        205.0,
         stat_y + 360.0,
-        24.0,
+        310.0,
+        26.0,
         Color::BLACK,
         FontWeight::Regular,
     );
@@ -112,7 +110,6 @@ pub fn draw_apps(
         Color::WHITE,
         Color::WHITE,
     );
-    crate::ui::liquid_glass(canvas, 427.0, 37.0, 822.0, 886.0, 100.0, 28);
 
     let items = [
         (Focus::AppsMusic, "Music", "Library", "Music.svg", 92.0),
@@ -347,18 +344,8 @@ fn status_row(
 ) {
     let row_t = ease_out_back(stagger(transition_t, index, 0.05, 0.76));
     let x = x + (1.0 - row_t) * 64.0;
-    let shimmer = crate::ui::transitions::pulse01(seconds, 3.2, index as f32 * 0.28);
-    crate::ui::liquid_glass(canvas, x, y, 660.0, 96.0, 48.0, 64);
-    rr_stroke(
-        canvas,
-        x,
-        y,
-        660.0,
-        96.0,
-        48.0,
-        2.0 + shimmer,
-        Color::rgba(255, 255, 255, (100.0 + shimmer * 50.0).round() as u8),
-    );
+    let _ = seconds;
+    crate::ui::rr(canvas, x, y, 660.0, 88.0, 28.0, crate::ui::control(canvas));
     canvas.text(
         label,
         x + 32.0,

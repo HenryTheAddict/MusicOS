@@ -2,10 +2,8 @@ use anyhow::{Context, Result};
 use rusttype::Font;
 use std::sync::OnceLock;
 
-pub static RASTER_GOTHIC_28_COND: &[u8] =
-    include_bytes!("../../../assets/fonts/RasterGothic28Cond.ttf");
-pub static RASTER_GOTHIC_28_COND_BOLD: &[u8] =
-    include_bytes!("../../../assets/fonts/RasterGothic28CondBold.ttf");
+static FIGTREE: &[u8] = include_bytes!("../../../assets/fonts/Figtree-Variable.ttf");
+static FIGTREE_BOLD: &[u8] = include_bytes!("../../../assets/fonts/Figtree-Bold.ttf");
 
 pub static NOTO_SANS_JP_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/NotoSansJP-Regular.ttf");
@@ -20,8 +18,8 @@ static REGULAR_FONT_ZH: OnceLock<Font<'static>> = OnceLock::new();
 pub fn regular_font() -> Result<Font<'static>> {
     Ok(REGULAR_FONT
         .get_or_init(|| {
-            Font::try_from_bytes(RASTER_GOTHIC_28_COND)
-                .context("failed to load RasterGothic28Cond.ttf")
+            Font::try_from_bytes(FIGTREE)
+                .context("failed to load Figtree-Variable.ttf")
                 .expect("embedded regular font must be valid")
         })
         .clone())
@@ -30,8 +28,8 @@ pub fn regular_font() -> Result<Font<'static>> {
 pub fn bold_font() -> Result<Font<'static>> {
     Ok(BOLD_FONT
         .get_or_init(|| {
-            Font::try_from_bytes(RASTER_GOTHIC_28_COND_BOLD)
-                .context("failed to load RasterGothic28CondBold.ttf")
+            Font::try_from_bytes(FIGTREE_BOLD)
+                .context("failed to load Figtree-Bold.ttf")
                 .expect("embedded bold font must be valid")
         })
         .clone())

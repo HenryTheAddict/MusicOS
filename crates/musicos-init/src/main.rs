@@ -145,7 +145,7 @@ fn run() -> Result<()> {
     }
 
     info!("MusicOS stopping gracefully...");
-    app.save_preferences(true);
+    app.save_preferences(false);
     Ok(())
 }
 

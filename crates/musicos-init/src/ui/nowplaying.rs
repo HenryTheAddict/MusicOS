@@ -28,18 +28,17 @@ pub fn draw_now_playing(
 ) {
     let _ = (transition_t, seconds);
     crate::ui::draw_figma_background(canvas);
-    let accent = theme.primary_color();
+    let _ = theme;
+    let accent = crate::ui::accent(canvas);
     let Some(ref track) = status.track else {
-        crate::ui::rr(canvas, 180.0, 260.0, 920.0, 300.0, 8.0, Color::WHITE);
-        crate::ui::rr_stroke(
+        crate::ui::rr(
             canvas,
             180.0,
             260.0,
             920.0,
             300.0,
-            8.0,
-            2.0,
-            crate::ui::IPOD_BORDER,
+            48.0,
+            crate::ui::surface(canvas),
         );
         canvas.text_centered(
             "No song selected",
@@ -63,27 +62,16 @@ pub fn draw_now_playing(
     let art_x = 92.0;
     let art_y = 132.0;
     let art_size = 430.0;
-    crate::ui::shadow_rr(canvas, art_x, art_y, art_size, art_size, 8.0, 3.0, 8.0);
+    crate::ui::shadow_rr(canvas, art_x, art_y, art_size, art_size, 44.0, 3.0, 8.0);
     draw_cover_art(
         canvas,
         cover_art,
         art_x,
         art_y,
         art_size,
-        8.0,
+        44.0,
         cover_art_opacity,
     );
-    crate::ui::rr_stroke(
-        canvas,
-        art_x,
-        art_y,
-        art_size,
-        art_size,
-        8.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
-    );
-
     text_fit(
         canvas,
         &track.title,
@@ -162,7 +150,7 @@ pub fn draw_now_playing(
         slider_w,
         12.0,
         6.0,
-        Color::rgb(187, 191, 196),
+        crate::ui::control(canvas),
     );
     crate::ui::rr(
         canvas,
@@ -340,6 +328,18 @@ fn draw_player_icon(
         );
     }
 
+    if kind == "play" {
+        let diameter = size + 24.0;
+        crate::ui::rr(
+            canvas,
+            cx - diameter / 2.0,
+            cy - diameter / 2.0,
+            diameter,
+            diameter,
+            diameter / 2.0,
+            crate::ui::control(canvas),
+        );
+    }
     let filename = match kind {
         "play" if status.is_playing => "pause.svg",
         "play" => "Play.svg",

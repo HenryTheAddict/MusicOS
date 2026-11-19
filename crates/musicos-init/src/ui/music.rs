@@ -5,8 +5,8 @@ use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
 use crate::ui::{
-    animated_focus_blue, figma_list_row, figma_split_panels, liquid_glass, panel_gradient, rr,
-    text_fit_centered, FontWeight,
+    figma_list_row, figma_split_panels, liquid_glass, panel_gradient, rr, text_fit_centered,
+    FontWeight,
 };
 
 pub fn draw_music_menu(
@@ -51,18 +51,22 @@ pub fn draw_music_menu(
 
             crate::ui::liquid_glass(canvas, 40.0, y, 335.0, 110.0, 30.0, 160);
 
-            canvas.text(
+            crate::ui::text_fit(
+                canvas,
                 &pins[i].name,
                 60.0,
                 y + 16.0,
-                40.0,
+                292.0,
+                36.0,
                 Color::BLACK,
                 FontWeight::Bold,
             );
-            canvas.text(
+            crate::ui::text_fit(
+                canvas,
                 &pins[i].subtitle,
                 60.0,
                 y + 60.0,
+                292.0,
                 28.0,
                 Color::rgb(80, 80, 80),
                 FontWeight::Regular,
@@ -294,7 +298,7 @@ fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
         FontWeight::Regular,
     );
     canvas.text_centered(
-        "A  open     B  back",
+        "B  Back",
         650.0,
         570.0,
         28.0,
@@ -321,6 +325,11 @@ pub fn draw_search(
         } else {
             format!("Search: {query}")
         };
+        if results.is_empty() {
+            draw_collection_shell(canvas, &title, theme);
+            draw_empty_collection(canvas, "No matching songs", "Try another title or artist.");
+            return;
+        }
         draw_tracks_list(
             canvas,
             &title,
@@ -331,16 +340,6 @@ pub fn draw_search(
             transition_t,
             seconds,
         );
-        if results.is_empty() {
-            canvas.text_centered(
-                "No matching songs",
-                653.0,
-                490.0,
-                48.0,
-                Color::rgb(80, 80, 80),
-                FontWeight::Bold,
-            );
-        }
         return;
     }
 
@@ -352,7 +351,7 @@ pub fn draw_search(
         940.0,
         96.0,
         36.0,
-        Color::rgba(0, 0, 0, 48),
+        crate::ui::control(canvas),
     );
     text_fit_centered(
         canvas,
@@ -397,13 +396,13 @@ pub fn draw_search(
             h,
             22.0,
             if selected {
-                animated_focus_blue(seconds, index as f32 * 0.2)
+                crate::ui::accent(canvas)
             } else {
-                Color::rgba(255, 255, 255, 170)
+                crate::ui::control(canvas)
             },
         );
         if selected {
-            canvas.register_selected(x, y, w, h, 22.0, 5.0);
+            crate::ui::register_focus(canvas, x, y, w, h, 22.0);
         }
         canvas.text_centered(
             label,
@@ -421,7 +420,7 @@ pub fn draw_rating_picker(
     title: &str,
     rating: u8,
     theme: ThemeName,
-    seconds: f32,
+    _seconds: f32,
 ) {
     draw_collection_shell(canvas, "Rate Track", theme);
     text_fit_centered(
@@ -445,16 +444,16 @@ pub fn draw_rating_picker(
             104.0,
             52.0,
             if active {
-                animated_focus_blue(seconds, index as f32 * 0.25)
+                crate::ui::accent(canvas)
             } else {
-                Color::rgba(0, 0, 0, 42)
+                crate::ui::control(canvas)
             },
         );
         canvas.text_centered(
-            "*",
+            "★",
             x + 52.0,
-            465.0,
-            70.0,
+            469.0,
+            57.0,
             if active {
                 Color::WHITE
             } else {
@@ -533,15 +532,6 @@ fn draw_collection_shell(canvas: &mut Canvas<'_>, title: &str, theme: ThemeName)
         58.0,
         Color::BLACK,
         FontWeight::Bold,
-    );
-    crate::ui::line(
-        canvas,
-        32.0,
-        164.0,
-        1248.0,
-        164.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
     );
 }
 
