@@ -204,6 +204,7 @@ pub struct MusicOs {
     pub home_navigation: HomeNavigation,
     pub tracks_queue: Vec<Track>,
     library_tracks: Vec<Track>,
+    album_previews: Vec<ui::home::AlbumPreview>,
     cached_library_counts: LibraryCounts,
     pub albums_list: Vec<String>,
     pub artists_list: Vec<String>,
@@ -502,6 +503,7 @@ impl MusicOs {
             home_navigation: HomeNavigation::default(),
             tracks_queue: Vec::new(),
             library_tracks: Vec::new(),
+            album_previews: Vec::new(),
             cached_library_counts: LibraryCounts::default(),
             albums_list: Vec::new(),
             artists_list: Vec::new(),
@@ -1383,6 +1385,7 @@ impl MusicOs {
         );
         canvas.theme_top_color = Some(animated_top);
         canvas.theme_bottom_color = Some(animated_bottom);
+        canvas.dark_theme = self.active_theme == ThemeName::Dark;
 
         let transition_t = if self.motion_mode == MotionMode::Reduced {
             1.0
@@ -1421,7 +1424,11 @@ impl MusicOs {
 
         ui::status_bar(
             canvas,
-            self.screen_title(),
+            if self.screen == Screen::Home {
+                ""
+            } else {
+                self.screen_title()
+            },
             &self.format_clock(),
             &crate::system::battery_summary(),
             self.active_theme,
@@ -1429,7 +1436,9 @@ impl MusicOs {
         );
 
         let legend = self.button_legend();
-        if !legend.is_empty() {
+        if self.screen == Screen::Home {
+            ui::home_legend_bar(canvas, legend);
+        } else if !legend.is_empty() {
             ui::legend_bar(canvas, legend);
         }
 
@@ -1464,7 +1473,7 @@ impl MusicOs {
             } else {
                 crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
             };
-            let outline_color = ui::accent(canvas).mix(Color::BLACK, 0.18);
+            let outline_color = ui::accent(canvas);
             crate::ui::rr_stroke(
                 canvas,
                 self.outline_x,
@@ -1472,7 +1481,7 @@ impl MusicOs {
                 self.outline_w,
                 self.outline_h,
                 self.outline_r,
-                (self.outline_thick * 0.62).max(2.5) + outline_pulse * 0.6,
+                self.outline_thick + outline_pulse * 0.6,
                 outline_color,
             );
 
@@ -1548,7 +1557,7 @@ impl MusicOs {
             card_x + card_w / 2.0,
             card_y + 40.0,
             38.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
 
@@ -1557,7 +1566,7 @@ impl MusicOs {
             card_x + card_w / 2.0,
             card_y + 110.0,
             28.0,
-            Color::rgb(80, 80, 80),
+            ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
 
@@ -1567,7 +1576,7 @@ impl MusicOs {
             card_x + card_w / 2.0,
             card_y + 170.0,
             42.0,
-            accent.mix(Color::BLACK, 0.2),
+            accent,
             crate::ui::FontWeight::Bold,
         );
 
@@ -1576,7 +1585,7 @@ impl MusicOs {
             card_x + card_w / 2.0,
             card_y + 250.0,
             24.0,
-            Color::rgb(120, 120, 120),
+            ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
     }
@@ -1623,7 +1632,7 @@ impl MusicOs {
             hud_x + 48.0,
             hud_y + 30.0,
             36.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
 
@@ -1670,7 +1679,7 @@ impl MusicOs {
             hud_x + hud_w - 48.0,
             hud_y + 30.0,
             36.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
     }
@@ -1696,7 +1705,6 @@ impl MusicOs {
         transition_t: f32,
     ) {
         log::debug!("draw_screen: screen={:?}, focus={:?}", screen, focus);
-        let time_str = self.format_clock();
 
         match screen {
             Screen::First => ui::screens::draw_first(
@@ -1753,16 +1761,13 @@ impl MusicOs {
                 focus,
                 self.home_navigation.pane,
                 self.home_navigation.main_index,
-                seconds,
-                self.active_language,
-                self.active_theme,
+                self.cached_library_counts,
+                &self.album_previews,
                 &self.playlists_list,
                 &self.library_tracks,
                 &self.player.get_status(),
+                !self.tracks_queue.is_empty(),
                 self.current_cover_art.as_ref(),
-                &crate::system::battery_summary(),
-                &time_str,
-                transition_t,
             ),
             Screen::MusicApp => ui::music::draw_music_menu(
                 canvas,
@@ -2586,12 +2591,7 @@ impl MusicOs {
                 Focus::SettingsVolume => self.adjust_volume(0.10),
                 Focus::SettingsEq => self.cycle_eq(1),
                 Focus::SettingsSwitchObject => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(1);
                     self.save_preferences(false);
                 }
                 _ => {}
@@ -2896,7 +2896,8 @@ impl MusicOs {
 
     pub fn refresh_library(&mut self) {
         if let Ok(tracks) = self.db.get_tracks() {
-            self.library_tracks = tracks.clone();
+            self.album_previews = ui::home::album_previews(&tracks);
+            self.library_tracks = tracks;
         }
         if let Ok(albums) = self.db.get_albums() {
             self.albums_list = albums;
@@ -2949,6 +2950,13 @@ impl MusicOs {
             (Screen::Theme, _) => "D-pad  Change theme     A  Select     B  Back",
             (Screen::DateTimeSetup, _) => "D-pad  Adjust     A  Next     B  Back",
             (Screen::RatingPicker, _) => "Left / Right  Rate     A  Save     B  Back",
+            (Screen::Welcome | Screen::TestComplete, _) => "A  Continue     B  Back",
+            (Screen::About, _) => "B  Back",
+            (Screen::ContextMenu | Screen::SettingsDetail, _) => "A  Select     B  Back",
+            (Screen::NowPlaying, _) if self.can_open_context_menu() => {
+                "A  Select     B  Back     X  More"
+            }
+            (Screen::NowPlaying, _) => "B  Back",
             (Screen::Search, Focus::SearchKeyboard)
                 if self.can_open_search_results_with_context() =>
             {
@@ -4164,12 +4172,7 @@ impl MusicOs {
         match self.screen {
             Screen::Theme => match self.focus {
                 Focus::ThemeSelect => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(1);
                     self.save_preferences(false);
                 }
                 Focus::Custom => {
@@ -4229,12 +4232,7 @@ impl MusicOs {
         match self.screen {
             Screen::Theme => match self.focus {
                 Focus::ThemeSelect => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(-1);
                     self.save_preferences(false);
                 }
                 Focus::Yeah => {

@@ -34,7 +34,7 @@ pub fn draw_apps(
         205.0,
         119.0,
         49.0,
-        crate::ui::INK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 
@@ -44,7 +44,7 @@ pub fn draw_apps(
         216.0,
         stat_y,
         32.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_centered(
@@ -52,7 +52,7 @@ pub fn draw_apps(
         216.0,
         stat_y + 60.0,
         32.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_centered(
@@ -60,7 +60,7 @@ pub fn draw_apps(
         216.0,
         stat_y + 120.0,
         32.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     canvas.text_centered(
@@ -68,7 +68,7 @@ pub fn draw_apps(
         216.0,
         stat_y + 180.0,
         32.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
 
@@ -77,7 +77,7 @@ pub fn draw_apps(
         216.0,
         stat_y + 300.0,
         48.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::text_fit_centered(
@@ -87,7 +87,7 @@ pub fn draw_apps(
         stat_y + 360.0,
         310.0,
         26.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Regular,
     );
     canvas.text_centered(
@@ -95,7 +95,7 @@ pub fn draw_apps(
         216.0,
         stat_y + 400.0,
         24.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Regular,
     );
 
@@ -180,7 +180,7 @@ fn app_row(
         y + 22.0,
         480.0,
         54.0,
-        if selected { Color::WHITE } else { Color::BLACK },
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
@@ -190,11 +190,7 @@ fn app_row(
         y + 80.0,
         480.0,
         30.0,
-        if selected {
-            Color::WHITE
-        } else {
-            Color::rgba(0, 0, 0, 178)
-        },
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
     canvas.text_right(
@@ -202,11 +198,7 @@ fn app_row(
         x + w - 24.0,
         y + 36.0,
         54.0,
-        if selected {
-            Color::WHITE
-        } else {
-            Color::rgb(100, 104, 110)
-        },
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 }
@@ -242,13 +234,20 @@ pub fn draw_about(
         Color::rgb(178, 246, 228),
         Color::WHITE,
     );
-    canvas.text_centered("About", 208.0, 60.0, 96.0, Color::BLACK, FontWeight::Bold);
+    canvas.text_centered(
+        "About",
+        208.0,
+        60.0,
+        96.0,
+        crate::ui::ink(canvas),
+        FontWeight::Bold,
+    );
     canvas.text_centered(
         "MusicOS\nDaily Driver",
         208.0,
         240.0,
         48.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::centered_lines(
@@ -258,7 +257,7 @@ pub fn draw_about(
         430.0,
         30.0,
         48.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Regular,
     );
     text_fit(
@@ -268,7 +267,7 @@ pub fn draw_about(
         670.0,
         292.0,
         26.0,
-        Color::rgba(0, 0, 0, 190),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
     text_fit(
@@ -278,7 +277,7 @@ pub fn draw_about(
         724.0,
         292.0,
         26.0,
-        Color::rgba(0, 0, 0, 190),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 
@@ -351,7 +350,7 @@ fn status_row(
         x + 32.0,
         y + 26.0,
         36.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
@@ -361,7 +360,7 @@ fn status_row(
         y + 28.0,
         322.0,
         36.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Regular,
     );
 }

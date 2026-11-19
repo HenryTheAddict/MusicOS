@@ -209,7 +209,7 @@ impl Default for Preferences {
             schema_version: CURRENT_SCHEMA_VERSION,
             user_name: "MusicOS User".to_string(),
             device_name: "MusicOS".to_string(),
-            theme: ThemeName::Blue,
+            theme: ThemeName::Seaglass,
             language: Language::En,
             setup_complete: false,
             controls_seen: false,

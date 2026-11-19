@@ -45,7 +45,7 @@ pub fn draw_now_playing(
             640.0,
             342.0,
             72.0,
-            Color::BLACK,
+            crate::ui::ink(canvas),
             FontWeight::Bold,
         );
         canvas.text_centered(
@@ -53,12 +53,21 @@ pub fn draw_now_playing(
             640.0,
             438.0,
             36.0,
-            Color::rgb(96, 101, 108),
+            crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
         return;
     };
 
+    crate::ui::rr(
+        canvas,
+        52.0,
+        86.0,
+        1176.0,
+        510.0,
+        56.0,
+        crate::ui::surface(canvas),
+    );
     let art_x = 92.0;
     let art_y = 132.0;
     let art_size = 430.0;
@@ -79,7 +88,7 @@ pub fn draw_now_playing(
         148.0,
         610.0,
         68.0,
-        Color::BLACK,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     text_fit(
@@ -89,7 +98,7 @@ pub fn draw_now_playing(
         240.0,
         610.0,
         48.0,
-        Color::rgb(70, 75, 82),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
     text_fit(
@@ -99,7 +108,7 @@ pub fn draw_now_playing(
         304.0,
         610.0,
         40.0,
-        Color::rgb(104, 109, 116),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
     if let Some(error) = status.last_error.as_deref() {
@@ -130,7 +139,7 @@ pub fn draw_now_playing(
             402.0,
             610.0,
             30.0,
-            Color::rgb(94, 99, 106),
+            crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
     }
@@ -166,7 +175,7 @@ pub fn draw_now_playing(
         slider_x,
         666.0,
         30.0,
-        Color::rgb(70, 75, 82),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
     canvas.text_right(
@@ -174,7 +183,7 @@ pub fn draw_now_playing(
         slider_x + slider_w,
         666.0,
         30.0,
-        Color::rgb(70, 75, 82),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
 
@@ -356,7 +365,14 @@ fn draw_player_icon(
     };
     let base_path = crate::ui::assets_dir();
     let path = format!("{}/icons/nowplaying/{}", base_path, filename);
-    canvas.draw_svg(&path, cx - size / 2.0, cy - size / 2.0, size, size);
+    canvas.draw_svg_tinted(
+        &path,
+        cx - size / 2.0,
+        cy - size / 2.0,
+        size,
+        size,
+        crate::ui::ink(canvas),
+    );
 }
 
 fn draw_heart(
@@ -396,7 +412,14 @@ fn draw_heart(
         "Heart.svg"
     };
     let path = format!("{}/icons/nowplaying/{}", base_path, filename);
-    canvas.draw_svg(&path, cx - size / 2.0, cy - size / 2.0, size, size);
+    canvas.draw_svg_tinted(
+        &path,
+        cx - size / 2.0,
+        cy - size / 2.0,
+        size,
+        size,
+        crate::ui::ink(canvas),
+    );
 }
 
 fn wrap_lines(

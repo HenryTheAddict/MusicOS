@@ -22,6 +22,26 @@ fn scales_chrome_to_the_framebuffer_without_covering_content() {
 }
 
 #[test]
+fn home_uses_warm_light_and_dark_shells_with_a_separate_preview_surface() {
+    let resolution = Resolution::VGA_4_3;
+    let mut app = MusicOs::with_db_path(resolution, ":memory:");
+    app.force_screen_for_snapshot(Screen::Home);
+    for (theme, shell, preview) in [
+        (ThemeName::Seaglass, [216, 226, 240], [234, 240, 249]),
+        (ThemeName::Dark, [21, 22, 26], [31, 33, 38]),
+    ] {
+        app.active_theme = theme;
+        let size = resolution.width as usize * resolution.height as usize * 4;
+        let mut buffer = vec![0; size];
+        let mut canvas = Canvas::new(resolution, &mut buffer).unwrap();
+        app.draw(&mut canvas, 0.75);
+        let pixel = |x: usize, y: usize| &buffer[(y * resolution.width as usize + x) * 4..][..3];
+        assert_eq!(pixel(12, 425), shell);
+        assert_eq!(pixel(500, 400), preview);
+    }
+}
+
+#[test]
 fn renders_setup_screen_at_both_supported_resolutions() {
     let root = tempfile::tempdir().unwrap();
     for resolution in [Resolution::HD_4_3, Resolution::VGA_4_3] {
