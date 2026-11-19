@@ -27,19 +27,19 @@ test('Filter leaves without reserving space or retaining its open panel, and Bac
  await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'Filter',exact:true})).toBeFocused();
 });
 
-test('artist credits arrive independently and artist names reveal only on navigation',async({page})=>{
+test('album details arrive independently and artist names reveal only on navigation',async({page})=>{
  await recordMotion(page);await page.goto('/?fixture=1&contributors=1');await openAlbums(page);await page.getByRole('button',{name:'Open Junk',exact:true}).click();
- const credits=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.id==='artist-credit-reveal'));
+ const credits=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.id==='album-detail-reveal'));
  expect(credits.length).toBeGreaterThan(0);expect(credits.length).toBeLessThanOrEqual(8);
  await page.getByRole('button',{name:'View artist M83',exact:true}).click();await expect(page.getByRole('heading',{name:'M83',exact:true})).toBeVisible();
  await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>/artist-(name|portrait|detail)-reveal/.test(item.animation.id)&&item.animation.playState==='running').forEach((item:any)=>{item.animation.pause();item.animation.currentTime=120;}));
  await page.screenshot({path:'out/persistent-qa/navigation-artist-mid-reveal.png'});
  await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.playState==='paused').forEach((item:any)=>item.animation.finish()));
  await expect.poll(()=>page.locator('.artist-name-part').evaluateAll(nodes=>nodes.every(node=>getComputedStyle(node).opacity==='1'))).toBe(true);
- const records=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>['artist-name-reveal','artist-portrait-reveal'].includes(item.animation.id)).map((item:any)=>({id:item.animation.id,duration:item.options.duration})));
- expect(records.some((item:any)=>item.id==='artist-name-reveal')).toBe(true);expect(records.some((item:any)=>item.id==='artist-portrait-reveal')).toBe(true);expect(records.every((item:any)=>item.duration<=300)).toBe(true);
+ const records=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>['artist-name-reveal','artist-detail-reveal'].includes(item.animation.id)).map((item:any)=>({id:item.animation.id,duration:item.options.duration})));
+ expect(records.some((item:any)=>item.id==='artist-name-reveal')).toBe(true);expect(records.some((item:any)=>item.id==='artist-detail-reveal')).toBe(true);expect(records.every((item:any)=>item.duration<=300)).toBe(true);
  const before=records.length;await page.evaluate(()=>window.dispatchEvent(new Event('musicos-artwork-invalidated')));
- expect(await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>['artist-name-reveal','artist-portrait-reveal'].includes(item.animation.id)).length)).toBe(before);
+ expect(await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>['artist-name-reveal','artist-detail-reveal'].includes(item.animation.id)).length)).toBe(before);
  await page.screenshot({path:'out/persistent-qa/navigation-artist-light.png'});
 });
 
