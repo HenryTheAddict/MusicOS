@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod globe;
 pub mod home;
+pub mod library;
 pub mod localization;
 pub mod music;
 pub mod nowplaying;
