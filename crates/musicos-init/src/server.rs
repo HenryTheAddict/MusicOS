@@ -724,7 +724,7 @@ impl CompanionServer {
                         StatusCode(500),
                     ),
                 };
-                let _ = request.respond(response);
+                let _ = respond_buffered(request, response);
                 continue;
             }
 
@@ -905,7 +905,7 @@ impl CompanionServer {
                     })
                 };
                 let response = json_response(&body);
-                let _ = request.respond(response);
+                let _ = respond_buffered(request, response);
                 continue;
             }
 
@@ -955,7 +955,7 @@ impl CompanionServer {
                     })
                 };
                 let response = json_response(&body);
-                let _ = request.respond(response);
+                let _ = respond_buffered(request, response);
                 continue;
             }
 
@@ -2041,6 +2041,24 @@ impl CompanionServer {
     }
 }
 
+fn respond_buffered(
+    request: tiny_http::Request,
+    response: Response<std::io::Cursor<Vec<u8>>>,
+) -> std::io::Result<()> {
+    // Keep headers and the complete JSON body in one write to avoid delayed ACKs.
+    let mut bytes = Vec::new();
+    response.with_chunked_threshold(usize::MAX).raw_print(
+        &mut bytes,
+        request.http_version().clone(),
+        request.headers(),
+        request.method() == &tiny_http::Method::Head,
+        None,
+    )?;
+    let mut writer = request.into_writer();
+    writer.write_all(&bytes)?;
+    writer.flush()
+}
+
 fn json_response<T: Serialize>(value: &T) -> Response<std::io::Cursor<Vec<u8>>> {
     json_response_status(value, StatusCode(200))
 }
@@ -2299,6 +2317,57 @@ mod tests {
         sanitize_relative_path, PlaylistSyncSnapshot,
     };
     use crate::database::Db;
+
+    #[test]
+    fn buffered_json_preserves_bodies_status_headers_and_keep_alive() {
+        use std::io::{BufRead, Read, Write};
+        use std::net::TcpStream;
+
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let address = server.server_addr().to_ip().unwrap();
+        let cases = vec![
+            (200, serde_json::json!([])),
+            (200, serde_json::json!({"title": "Musique ♫"})),
+            (500, serde_json::json!({"status": "error", "message": "unavailable"})),
+            (200, serde_json::json!({"items": "x".repeat(40_000)})),
+        ];
+        let responses = cases.clone();
+        let worker = std::thread::spawn(move || {
+            for (status, value) in responses {
+                let request = server.recv().unwrap();
+                super::respond_buffered(
+                    request,
+                    super::json_response_status(&value, tiny_http::StatusCode(status)),
+                ).unwrap();
+            }
+        });
+        let mut stream = std::io::BufReader::new(TcpStream::connect(address).unwrap());
+        stream.get_ref().set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+        for (status, value) in cases {
+            stream.get_mut().write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").unwrap();
+            let mut line = String::new();
+            stream.read_line(&mut line).unwrap();
+            assert!(line.starts_with(&format!("HTTP/1.1 {status} ")));
+            let mut headers = String::new();
+            loop {
+                line.clear();
+                stream.read_line(&mut line).unwrap();
+                if line == "\r\n" { break; }
+                assert!(!line.is_empty());
+                headers.push_str(&line.to_ascii_lowercase());
+            }
+            assert!(headers.contains("content-type: application/json\r\n"));
+            assert!(headers.contains("access-control-allow-origin: *\r\n"));
+            assert!(!headers.contains("transfer-encoding:"));
+            let length: usize = headers.lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .unwrap().trim().parse().unwrap();
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).unwrap();
+            assert_eq!(serde_json::from_slice::<serde_json::Value>(&body).unwrap(), value);
+        }
+        worker.join().unwrap();
+    }
 
     #[test]
     fn upload_filenames_are_sanitized() {

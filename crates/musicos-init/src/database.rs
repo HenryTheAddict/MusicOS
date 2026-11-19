@@ -378,6 +378,8 @@ impl Db {
              CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash) WHERE content_hash IS NOT NULL;
              CREATE INDEX IF NOT EXISTS idx_tracks_genre_title ON tracks(genre COLLATE NOCASE, title COLLATE NOCASE);
              CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source_id, deleted_at);
+             CREATE INDEX IF NOT EXISTS idx_tracks_live_title ON tracks(title COLLATE NOCASE) WHERE deleted_at IS NULL;
+             CREATE INDEX IF NOT EXISTS idx_tracks_live_revision ON tracks(revision DESC) WHERE deleted_at IS NULL;
              CREATE INDEX IF NOT EXISTS idx_library_sources_enabled ON library_sources(enabled, kind);
              CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_stable_id ON playlists(stable_id) WHERE stable_id IS NOT NULL;
              CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist ON playlist_tracks(playlist_id, position, track_id);
@@ -1252,19 +1254,24 @@ impl Db {
         let query_pattern = format!("%{}%", query.trim().to_ascii_lowercase());
         let favorites_only = i32::from(filter.eq_ignore_ascii_case("favorites"));
         let direction = if descending { "DESC" } else { "ASC" };
+        let title = "COALESCE(o.title, t.title) COLLATE NOCASE";
+        let artist_order = "COALESCE(o.artist, t.artist) COLLATE NOCASE";
+        let album_order = "COALESCE(o.album, t.album) COLLATE NOCASE";
+        let track_number = "COALESCE(o.track_number, t.track_number)";
+        let disc_number = "COALESCE(o.disc_number, t.disc_number)";
         let order = match sort {
             "artist" => format!(
-                "artist COLLATE NOCASE {direction}, album COLLATE NOCASE {direction}, track_number {direction}, title COLLATE NOCASE {direction}"
+                "{artist_order} {direction}, {album_order} {direction}, {track_number} {direction}, {title} {direction}"
             ),
             "album" => format!(
-                "album COLLATE NOCASE {direction}, disc_number {direction}, track_number {direction}, title COLLATE NOCASE {direction}"
+                "{album_order} {direction}, {disc_number} {direction}, {track_number} {direction}, {title} {direction}"
             ),
-            "duration" => format!("duration {direction}, title COLLATE NOCASE ASC"),
-            "added" | "recent" => format!("indexed_at {direction}, title COLLATE NOCASE ASC"),
+            "duration" => format!("t.duration {direction}, {title} ASC"),
+            "added" | "recent" => format!("t.indexed_at {direction}, {title} ASC"),
             "plays" | "play_count" => {
-                format!("play_count {direction}, title COLLATE NOCASE ASC")
+                format!("t.play_count {direction}, {title} ASC")
             }
-            _ => format!("title COLLATE NOCASE {direction}"),
+            _ => format!("{title} {direction}"),
         };
         let where_sql = "
             t.deleted_at IS NULL
@@ -1276,17 +1283,58 @@ impl Db {
                 OR lower(COALESCE(o.artist, t.artist)) LIKE ?4
                 OR lower(COALESCE(o.album, t.album)) LIKE ?4
                 OR lower(COALESCE(o.genre, t.genre)) LIKE ?4)";
-        let total: i64 = self.conn.query_row(
-            &format!(
-                "SELECT COUNT(*) FROM tracks t
+        let unfiltered = query.trim().is_empty()
+            && favorites_only == 0
+            && artist.is_empty()
+            && album.is_empty();
+        let total: i64 = if unfiltered {
+            self.conn.query_row(
+                "SELECT COUNT(*) FROM tracks WHERE deleted_at IS NULL",
+                [],
+                |row| row.get(0),
+            )?
+        } else {
+            self.conn.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM tracks t
+                     LEFT JOIN track_metadata_overrides o ON o.track_id = t.id
+                     WHERE {where_sql}"
+                ),
+                params![favorites_only, artist, album, query_pattern],
+                |row| row.get(0),
+            )?
+        };
+        let page = if unfiltered && !matches!(sort, "artist" | "album" | "duration" | "added" | "recent" | "plays" | "play_count") {
+            format!(
+                "SELECT t.id, t.title COLLATE NOCASE AS sort_title
+                 FROM tracks t
+                 WHERE t.deleted_at IS NULL AND NOT EXISTS (
+                     SELECT 1 FROM track_metadata_overrides o
+                     WHERE o.track_id = t.id AND o.title IS NOT NULL
+                 )
+                 UNION ALL
+                 SELECT t.id, o.title COLLATE NOCASE AS sort_title
+                 FROM track_metadata_overrides o
+                 CROSS JOIN tracks t ON t.id = o.track_id
+                 WHERE t.deleted_at IS NULL AND o.title IS NOT NULL
+                 ORDER BY sort_title {direction}
+                 LIMIT ?5 OFFSET ?6"
+            )
+        } else {
+            format!(
+                "SELECT t.id
+                 FROM tracks t
                  LEFT JOIN track_metadata_overrides o ON o.track_id = t.id
-                 WHERE {where_sql}"
-            ),
-            params![favorites_only, artist, album, query_pattern],
-            |row| row.get(0),
-        )?;
+                 WHERE {where_sql}
+                 ORDER BY {order}
+                 LIMIT ?5 OFFSET ?6"
+            )
+        };
         let sql = format!(
-            "SELECT t.id, t.path,
+            "WITH page AS MATERIALIZED (
+                 {page}
+             )
+             SELECT t.id, t.path,
                     COALESCE(o.title, t.title) AS title,
                     COALESCE(o.artist, t.artist) AS artist,
                     COALESCE(o.album, t.album) AS album,
@@ -1301,12 +1349,11 @@ impl Db {
                     t.revision,
                     t.source_id, s.display_name, s.kind, COALESCE(s.available, 1),
                     CASE WHEN o.track_id IS NULL THEN 0 ELSE 1 END
-             FROM tracks t
+             FROM page
+             JOIN tracks t ON t.id = page.id
              LEFT JOIN track_metadata_overrides o ON o.track_id = t.id
              LEFT JOIN library_sources s ON s.id = t.source_id
-             WHERE {where_sql}
-             ORDER BY {order}
-             LIMIT ?5 OFFSET ?6"
+             ORDER BY {order}"
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
@@ -2655,6 +2702,69 @@ mod tests {
             vec![first]
         );
         assert!(!scoped.iter().any(|track| track.id == second));
+    }
+
+    #[test]
+    fn track_pages_preserve_effective_metadata_order_and_pagination() {
+        let db = temp_db("page-order");
+        for i in 0..9 {
+            let id = db.insert_track_with_number(
+                &format!("/music/{i}.wav"), &format!("Title {i}"),
+                &format!("Artist {}", i % 3), &format!("Album {}", i % 2),
+                i + 1, 100 + i, 10, i64::from(20 + i),
+            ).unwrap();
+            if i % 2 == 0 {
+                db.toggle_favorite(id).unwrap();
+                db.update_track_metadata_override(&[id], &MetadataUpdate {
+                    title: (i != 4).then(|| if i == 0 { String::new() } else { format!("override {}", 9 - i) }),
+                    artist: Some(format!("Artist {}", 2 - i % 3)),
+                    album: Some(format!("Album {}", 1 - i % 2)),
+                    track_number: Some(9 - i),
+                    disc_number: Some(2),
+                    ..Default::default()
+                }).unwrap();
+            }
+        }
+        db.conn.execute("UPDATE tracks SET play_count = id, indexed_at = id", []).unwrap();
+        db.conn.execute("UPDATE tracks SET deleted_at = 1 WHERE id = 9", []).unwrap();
+        for (sort, ascending) in [
+            ("title", "title COLLATE NOCASE {d}"),
+            ("artist", "artist COLLATE NOCASE {d}, album COLLATE NOCASE {d}, track_number {d}, title COLLATE NOCASE {d}"),
+            ("album", "album COLLATE NOCASE {d}, disc_number {d}, track_number {d}, title COLLATE NOCASE {d}"),
+            ("duration", "duration {d}, title COLLATE NOCASE ASC"),
+            ("added", "indexed_at {d}, title COLLATE NOCASE ASC"),
+            ("plays", "play_count {d}, title COLLATE NOCASE ASC"),
+        ] {
+            for descending in [false, true] {
+                for filter in ["", "favorites"] {
+                    let order = ascending.replace("{d}", if descending { "DESC" } else { "ASC" });
+                    let mut statement = db.conn.prepare(&format!(
+                        "SELECT t.id, COALESCE(o.title,t.title) AS title,
+                         COALESCE(o.artist,t.artist) AS artist, COALESCE(o.album,t.album) AS album,
+                         COALESCE(o.track_number,t.track_number) AS track_number,
+                         COALESCE(o.disc_number,t.disc_number) AS disc_number,
+                         t.duration, t.indexed_at, t.play_count
+                         FROM tracks t LEFT JOIN track_metadata_overrides o ON o.track_id=t.id
+                         WHERE t.deleted_at IS NULL AND (?1 = '' OR t.favorited=1)
+                         ORDER BY {order}"
+                    )).unwrap();
+                    let expected: Vec<i64> = statement.query_map([filter], |row| row.get(0))
+                        .unwrap().collect::<rusqlite::Result<_>>().unwrap();
+                    for offset in [0, 2, 50] {
+                        let page = db.query_tracks_page("", filter, "", "", sort, descending, 3, offset).unwrap();
+                        assert_eq!(page.total, expected.len() as i64);
+                        assert_eq!(
+                            page.items.iter().map(|item| item.track.id).collect::<Vec<_>>(),
+                            expected.iter().skip(offset).take(3).copied().collect::<Vec<_>>(),
+                            "{sort} descending={descending} filter={filter} offset={offset}"
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(db.query_tracks_page("no match", "", "", "", "title", false, 50, 0).unwrap().total, 0);
+        db.conn.execute("DROP TABLE track_metadata_overrides", []).unwrap();
+        assert!(db.query_tracks_page("", "", "", "", "title", false, 50, 0).is_err());
     }
 
     #[test]
