@@ -55,6 +55,10 @@ test('featured covers update only the draft and the gallery keeps the selected c
  expect(screen.getByTestId('draft-artwork')).toHaveTextContent('collage:');
  expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('Blue hour');
  expect(screen.getByRole('button',{name:'Change artwork'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'Change artwork'}));
+ expect(screen.getByRole('button',{name:/Use album-cover collage/})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:'Close artwork picker'}));
+ expect(screen.getByRole('button',{name:'Change artwork'})).toHaveFocus();
  expect(bridge.call).not.toHaveBeenCalled();
 });
 
