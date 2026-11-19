@@ -1,5 +1,14 @@
 import {expect,type Locator,type Page} from '@playwright/test';
 
+export async function chooseSection(page:Page,name:'Library'|'Settings'|'Devices'){
+ await settleAnimations(page);
+ if(await page.locator('.section-name').textContent()===name)return;
+ await page.getByRole('button',{name:'Choose section',exact:true}).click();
+ await page.getByRole('menuitem',{name,exact:true}).click();
+ await expect(page.locator('.section-name')).toHaveText(name);
+ await settleAnimations(page);
+}
+
 export async function openAlbums(page:Page){
  const library=page.getByRole('navigation',{name:'Main navigation',exact:true}).getByRole('button',{name:'Library',exact:true});
  if(await library.isVisible())await library.click();
