@@ -434,9 +434,9 @@ test("compact desktop preserves Sketch header and artist composition", async ({ 
   await start(page);
   const selector = await page.getByRole("button", {name:"Choose section", exact:true}).boundingBox();
   const player = await page.locator(".now-playing").boundingBox();
-  expect(selector!.x).toBeCloseTo(94, 0);
+  expect(selector!.x).toBeCloseTo(138, 0);
   expect(selector!.width).toBeCloseTo(160, 0);
-  expect(player!.x).toBeCloseTo(260, 0);
+  expect(player!.x).toBeCloseTo(304, 0);
   await page.getByRole("button", {name:"Artists", exact:true}).click();
   await page.getByRole("button", {name:"Open M83", exact:true}).click();
   await expect(page.locator(".artist-portrait-button > .cover")).toHaveCSS("transform", "none");

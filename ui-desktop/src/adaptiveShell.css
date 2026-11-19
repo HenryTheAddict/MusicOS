@@ -159,7 +159,8 @@
  .adaptive-shell[data-layout=wide] .header-brand{font-size:1rem;gap:.375rem;}
  .adaptive-shell[data-layout=wide] .section-name{font-size:1.125rem;}
  .adaptive-shell[data-layout=wide] .header-brand>span{display:none;}
- .adaptive-shell[data-layout=wide] .now-playing{margin-right:.5rem;gap:.375rem;}
+ .adaptive-shell[data-layout=wide] .now-playing{margin-right:.5rem;gap:3px;padding-inline:8px;}
+ .adaptive-shell[data-layout=wide] .now-playing-cover{width:34px;height:34px;flex:0 0 34px;}
  .adaptive-shell[data-layout=wide] .now-playing .mini-controls{display:grid;flex:none;}
  .adaptive-shell[data-layout=wide] .transport{gap:0;}
  .adaptive-shell[data-layout=wide] .now-playing .transport>.icon-button{width:32px;height:44px;padding:0;}
