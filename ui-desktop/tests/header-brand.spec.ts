@@ -1,9 +1,10 @@
 import {test,expect,type Page} from '@playwright/test';
+import {settleAnimations} from './support/ui';
 
 async function seedPlayer(page:Page){await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch();const body=(await response.text()).replace('let player = { ...emptyPlayback };','let player = {...emptyPlayback,track:tracks[0],queue:[tracks[0],tracks[1]],queue_index:0,queue_entry_ids:[71,72],position:30};');await route.fulfill({response,body});});}
 
 test('Sketch category becomes supplied dots without moving the label; actions and sections stay independent',async({page})=>{
- await seedPlayer(page);await page.goto('/?fixture=1');
+ await seedPlayer(page);await page.goto('/?fixture=1');await settleAnimations(page);
  await expect(page.locator('.header-brand>span')).toHaveText('musicOS');
  await expect(page).toHaveTitle(/musicOS/);
  const actions=page.getByRole('button',{name:'musicOS actions',exact:true});

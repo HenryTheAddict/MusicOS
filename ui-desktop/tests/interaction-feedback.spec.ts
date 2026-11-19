@@ -32,7 +32,7 @@ test('only the playing album has a playback indicator, and browsing leaves no se
  await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
  await expect(page.locator('.collection-card.currently-playing')).toHaveCount(1);await expect(page.locator('.collection-card.currently-playing')).toContainText('Discovery');await expect(page.locator('.card-playing')).toHaveAttribute('aria-label','Now playing');
  await expect(page.getByRole('button',{name:'Search music and commands'})).toContainText('⌘ K');
- await expect(page.locator('.now-playing [data-player-cycle="playing"] [data-icon="queue"]')).toHaveCount(1);
+ await expect(page.locator('.now-playing [data-player-cycle="playing"] [data-icon="playerQueue"]')).toHaveCount(1);
  await page.screenshot({animations:'disabled',path:'out/rebuild-qa/playing-card-indicator.png'});
 });
 test('grid titles cap at two lines, with full text retained for album view and tooltip',async({page})=>{

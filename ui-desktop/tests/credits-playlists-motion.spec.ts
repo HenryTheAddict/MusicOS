@@ -1,7 +1,8 @@
 import {test,expect} from '@playwright/test';
+import {settleAnimations} from './support/ui';
 test('saved playlists live below More, preserve collections, and keep their own artwork colors',async({page})=>{
  const collections=[{id:'playlist/1',name:'A long playlist name for the road',track_ids:[1,2],kind:'manual',spark:null,artwork_choice:'collage'},{id:'playlist/2',name:'Quiet mornings',track_ids:[4],kind:'manual',spark:null,artwork_choice:'collage'},{id:'audio/1',name:'Saved sparkle',track_ids:[1,3],kind:'audio',spark:null}];
- await page.addInitScript(items=>localStorage.setItem('musicos-fixture-collections',JSON.stringify(items)),collections);await page.goto('/?fixture=1');
+ await page.addInitScript(items=>localStorage.setItem('musicos-fixture-collections',JSON.stringify(items)),collections);await page.goto('/?fixture=1');await settleAnimations(page);
  const box=page.getByRole('region',{name:'Your playlists'}),more=page.getByRole('button',{name:'More library views'});
  await expect(box.getByRole('button',{name:'Open playlist Quiet mornings'})).toBeVisible();await expect(box.getByRole('button',{name:/Saved sparkle/})).toHaveCount(0);
  expect((await box.boundingBox())!.y).toBeGreaterThan((await more.boundingBox())!.y+(await more.boundingBox())!.height);
@@ -27,13 +28,13 @@ for(const percent of [80,100,125,150])for(const theme of ['light','dark'])test(`
  }
 });
 test('creation and transport morphs reverse without changing targets and respect Reduced Motion',async({page})=>{
- await page.goto('/?fixture=1');const create=page.locator('.sidebar-personal>.menu-trigger'),before=await create.boundingBox();await create.click();await expect(create.locator('[data-icon=menuClose]')).toBeVisible();await page.keyboard.press('Escape');await expect(create).toBeFocused();expect(await create.boundingBox()).toEqual(before);
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();const bar=page.getByRole('region',{name:'Now playing'});const pause=bar.getByRole('button',{name:'Pause',exact:true});await expect(pause).toBeVisible();const bounds=await pause.boundingBox();
+ await page.goto('/?fixture=1');await settleAnimations(page);const create=page.locator('.sidebar-personal>.menu-trigger'),before=await create.boundingBox();await create.click();await expect(create.locator('[data-icon=menuClose]')).toBeVisible();await page.keyboard.press('Escape');await expect(create).toBeFocused();await settleAnimations(page);expect(await create.boundingBox()).toEqual(before);
+ await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();const bar=page.getByRole('region',{name:'Now playing'});const pause=bar.getByRole('button',{name:'Pause',exact:true});await expect(pause).toBeVisible();await settleAnimations(page);const bounds=await pause.boundingBox();
  await pause.click();await page.waitForTimeout(70);await bar.getByRole('button',{name:'Play',exact:true}).click();await page.waitForTimeout(400);expect(await pause.boundingBox()).toEqual(bounds);await expect(pause.locator('[data-morphing]')).toHaveCount(0);
  await page.emulateMedia({reducedMotion:'reduce'});await pause.click();await expect(bar.locator('[data-transport-morph]')).toHaveCount(0);await create.click();await expect(create.locator('[data-cross-morph]')).toHaveCount(0);await page.keyboard.press('Escape');
 });
 test('transport motion keeps a single split silhouette through its intermediate frames',async({page})=>{
- await page.goto('/?fixture=1');
+ await page.goto('/?fixture=1');await settleAnimations(page);
  await page.evaluate(async()=>{
   const source='/src/playPauseMorph.ts',module=await import(source),host=document.createElement('div');host.id='transport-frames';host.style.cssText='position:fixed;inset:100px auto auto 20px;z-index:99999;background:#252a30;color:#e7c4bf;display:flex;gap:20px;padding:24px;border-radius:16px';
   for(const progress of [0,.25,.5,.75,1]){
