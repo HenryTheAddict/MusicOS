@@ -3,7 +3,7 @@ use crate::renderer::{Canvas, Color};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{button, button_with_radius, draw_globe, liquid_glass, rr, FontWeight};
+use crate::ui::{button, button_with_radius, draw_globe, rr, FontWeight};
 
 pub fn draw_first(
     canvas: &mut Canvas<'_>,
@@ -14,30 +14,21 @@ pub fn draw_first(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    crate::ui::draw_figma_background(canvas);
-    rr(
-        canvas,
-        56.0,
-        110.0,
-        1168.0,
-        774.0,
-        56.0,
-        crate::ui::surface(canvas),
-    );
+    crate::ui::rows_preview(canvas);
     canvas.text_centered(
         "musicOS",
-        640.0,
+        954.0,
         224.0 + (1.0 - t) * 24.0,
-        128.0,
+        110.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::text_fit_centered(
         canvas,
         lang.translate("first_tagline"),
-        640.0,
+        954.0,
         386.0,
-        1000.0,
+        532.0,
         38.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
@@ -45,9 +36,9 @@ pub fn draw_first(
 
     button(
         canvas,
-        420.0,
-        504.0,
-        440.0,
+        24.0,
+        240.0,
+        600.0,
         110.0,
         lang.translate("get_started"),
         theme.primary_color(),
@@ -57,9 +48,9 @@ pub fn draw_first(
     );
     button(
         canvas,
-        420.0,
-        642.0,
-        440.0,
+        24.0,
+        368.0,
+        600.0,
         100.0,
         lang.translate("language_label"),
         theme.primary_color(),
@@ -77,32 +68,23 @@ pub fn draw_welcome(
     transition_t: f32,
 ) {
     let offset = (1.0 - ease_out_cubic(transition_t)) * 22.0;
-    crate::ui::draw_figma_background(canvas);
-    rr(
-        canvas,
-        74.0,
-        102.0,
-        1132.0,
-        800.0,
-        48.0,
-        crate::ui::surface(canvas),
-    );
+    crate::ui::rows_preview(canvas);
     crate::ui::text_fit(
         canvas,
         lang.translate("controls_title"),
-        138.0,
-        144.0 + offset,
-        1004.0,
-        70.0,
+        686.0,
+        142.0 + offset,
+        540.0,
+        53.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     crate::ui::text_fit(
         canvas,
         lang.translate("controls_hint"),
-        138.0,
-        235.0 + offset,
-        1004.0,
+        686.0,
+        226.0 + offset,
+        540.0,
         34.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
@@ -116,28 +98,28 @@ pub fn draw_welcome(
     .into_iter()
     .enumerate()
     {
-        let y = 308.0 + index as f32 * 106.0;
+        let y = 130.0 + index as f32 * 106.0;
         rr(
             canvas,
-            138.0,
+            24.0,
             y,
-            1004.0,
+            600.0,
             88.0,
             26.0,
             crate::ui::control(canvas),
         );
         rr(
             canvas,
-            154.0,
+            38.0,
             y + 12.0,
-            180.0,
+            133.0,
             64.0,
             32.0,
             crate::ui::surface(canvas),
         );
         canvas.text_centered(
             key,
-            244.0,
+            104.5,
             y + 25.0,
             33.0,
             crate::ui::ink(canvas),
@@ -146,9 +128,9 @@ pub fn draw_welcome(
         crate::ui::text_fit(
             canvas,
             lang.translate(label),
-            366.0,
+            188.0,
             y + 24.0,
-            744.0,
+            414.0,
             36.0,
             crate::ui::ink(canvas),
             FontWeight::Regular,
@@ -156,9 +138,9 @@ pub fn draw_welcome(
     }
     button(
         canvas,
-        746.0,
-        756.0,
-        396.0,
+        24.0,
+        592.0,
+        600.0,
         100.0,
         lang.translate("controls_continue"),
         theme.primary_color(),
@@ -177,34 +159,45 @@ pub fn draw_theme_selection(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    crate::ui::draw_figma_background(canvas);
-
-    crate::ui::text_fit_centered(
+    crate::ui::rows_preview(canvas);
+    crate::ui::preview_heading(
         canvas,
         lang.translate("choose_theme"),
-        640.0,
-        142.0 + (1.0 - t) * 38.0,
-        1120.0,
-        64.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
+        theme_name(active_theme),
     );
-    let panel_y = 309.0 + (1.0 - ease_out_back(transition_t)) * 52.0;
     rr(
         canvas,
-        70.0,
-        panel_y,
-        1139.0,
+        685.0,
+        250.0,
+        538.0,
+        538.0,
+        46.0,
+        crate::ui::control(canvas),
+    );
+    rr(
+        canvas,
+        735.0,
         300.0,
-        48.0,
-        crate::ui::surface(canvas),
+        438.0,
+        94.0,
+        47.0,
+        crate::ui::selected_surface(canvas),
+    );
+    rr(
+        canvas,
+        751.0,
+        316.0,
+        62.0,
+        62.0,
+        31.0,
+        crate::ui::accent(canvas),
     );
 
     for (index, theme_name) in ThemeName::OPTIONS.into_iter().enumerate() {
-        let cx = 190.0 + index as f32 * 180.0;
+        let cx = 126.0 + (index % 3) as f32 * 188.0;
         let color = theme_name.primary_color();
         let circle_t = ease_out_back(stagger(t, index, 0.05, 0.8));
-        let cy = 459.0 + (1.0 - circle_t) * 28.0;
+        let cy = 255.0 + (index / 3) as f32 * 172.0 + (1.0 - circle_t) * 28.0;
         rr(canvas, cx - 60.0, cy - 60.0, 120.0, 120.0, 60.0, color);
 
         if theme_name == active_theme {
@@ -221,10 +214,10 @@ pub fn draw_theme_selection(
 
     button_with_radius(
         canvas,
-        237.0,
-        645.0 + (1.0 - t) * 34.0,
-        400.0,
-        170.0,
+        24.0,
+        582.0 + (1.0 - t) * 25.0,
+        288.0,
+        105.0,
         32.0,
         lang.translate("custom"),
         if custom_selected {
@@ -239,10 +232,10 @@ pub fn draw_theme_selection(
 
     button_with_radius(
         canvas,
-        659.0,
-        645.0 + (1.0 - t) * 34.0,
-        400.0,
-        170.0,
+        336.0,
+        582.0 + (1.0 - t) * 25.0,
+        288.0,
+        105.0,
         32.0,
         lang.translate("yeah"),
         if yeah_selected {
@@ -260,6 +253,17 @@ pub fn draw_theme_selection(
     );
 }
 
+fn theme_name(theme: ThemeName) -> &'static str {
+    match theme {
+        ThemeName::Blue => "Blue",
+        ThemeName::Seaglass => "Seaglass",
+        ThemeName::Red => "Red",
+        ThemeName::Green => "Green",
+        ThemeName::Purple => "Purple",
+        ThemeName::Dark => "Dark",
+    }
+}
+
 pub fn draw_language_selection(
     canvas: &mut Canvas<'_>,
     _active_lang: Language,
@@ -272,26 +276,8 @@ pub fn draw_language_selection(
 ) {
     let t = ease_out_cubic(transition_t);
     let _ = theme;
-    crate::ui::draw_figma_background(canvas);
-    let globe_x = 74.0 - (1.0 - t) * 42.0;
-    liquid_glass(canvas, globe_x, 395.0, 400.0, 170.0, 20.0, 220);
-    draw_globe(
-        canvas,
-        globe_x + 200.0,
-        480.0,
-        64.0,
-        6.0,
-        crate::ui::ink(canvas),
-    );
-    liquid_glass(
-        canvas,
-        509.0 + (1.0 - t) * 56.0,
-        92.0,
-        697.0,
-        775.0,
-        32.0,
-        220,
-    );
+    crate::ui::rows_preview(canvas);
+    draw_globe(canvas, 954.0, 330.0, 108.0, 8.0, crate::ui::accent(canvas));
 
     let items = [
         (Language::En, "English"),
@@ -301,6 +287,9 @@ pub fn draw_language_selection(
         (Language::Zh, "中文"),
     ];
 
+    if let Some((_, label)) = items.get(selected_idx) {
+        crate::ui::preview_heading(canvas, label, "Language");
+    }
     for (index, (_item_lang, label)) in items.into_iter().enumerate() {
         let selected = index == selected_idx;
         let y = 112.0 + index as f32 * 144.0 - scroll_offset;
@@ -308,8 +297,8 @@ pub fn draw_language_selection(
             continue;
         }
         let row_t = ease_out_back(stagger(t, index, 0.05, 0.75));
-        let x = 529.0 + (1.0 - row_t) * 70.0;
-        let w = 657.0;
+        let x = 24.0 - (1.0 - row_t) * 35.0;
+        let w = 600.0;
         lang_row(
             canvas,
             x,
@@ -332,33 +321,15 @@ pub fn draw_test_complete(
     transition_t: f32,
 ) {
     let t = ease_out_cubic(transition_t);
-    crate::ui::draw_figma_background(canvas);
-    rr(
-        canvas,
-        74.0,
-        152.0,
-        1132.0,
-        640.0,
-        48.0,
-        crate::ui::surface(canvas),
-    );
-    crate::ui::text_fit_centered(
-        canvas,
-        lang.translate("test_complete"),
-        640.0,
-        294.0 + (1.0 - t) * 28.0,
-        1010.0,
-        72.0,
-        crate::ui::ink(canvas),
-        FontWeight::Bold,
-    );
+    crate::ui::rows_preview(canvas);
+    crate::ui::preview_heading(canvas, lang.translate("test_complete"), "");
     for (index, line) in lang.translate("test_desc").lines().enumerate() {
         crate::ui::text_fit_centered(
             canvas,
             line,
-            640.0,
-            442.0 + index as f32 * 61.0,
-            1010.0,
+            324.0,
+            260.0 + index as f32 * 94.0 + (1.0 - t) * 28.0,
+            578.0,
             38.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Regular,

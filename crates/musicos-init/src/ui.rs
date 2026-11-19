@@ -203,39 +203,6 @@ pub fn panel_gradient(
     rr(canvas, x, y, w, h, r.clamp(32.0, 48.0), surface(canvas));
 }
 
-pub fn figma_split_panels(
-    canvas: &mut Canvas<'_>,
-    theme: theme::ThemeName,
-    left_w: f32,
-    right_x: f32,
-    right_w: f32,
-) {
-    let accent = canvas
-        .theme_top_color
-        .unwrap_or_else(|| theme.primary_color());
-    draw_figma_background(canvas);
-    panel_gradient(
-        canvas,
-        12.0,
-        64.0,
-        left_w,
-        852.0,
-        RADIUS_LG,
-        IPOD_ROW_ALT,
-        IPOD_ROW,
-    );
-    panel_gradient(
-        canvas,
-        right_x,
-        64.0,
-        right_w,
-        852.0,
-        RADIUS_LG,
-        Color::WHITE,
-        accent.mix(Color::WHITE, 0.94),
-    );
-}
-
 pub fn figma_list_row(
     canvas: &mut Canvas<'_>,
     x: f32,
@@ -268,7 +235,14 @@ pub fn status_bar(
     _playing: bool,
 ) {
     let secondary = ink_secondary(canvas);
-    rr(canvas, 0.0, 0.0, 1280.0, 64.0, 0.0, shell(canvas));
+    let resolution = canvas.resolution();
+    canvas.rect(
+        resolution.scale_x(0.0),
+        resolution.scale_y(0.0),
+        1280.0 * resolution.scale(),
+        64.0 * resolution.scale(),
+        shell(canvas),
+    );
     canvas.text(clock, 40.0, 11.0, 32.0, secondary, FontWeight::Regular);
     text_fit_centered(
         canvas,
@@ -313,31 +287,86 @@ pub fn legend_bar(canvas: &mut Canvas<'_>, legend: &str) {
 }
 
 pub(crate) fn home_legend_bar(canvas: &mut Canvas<'_>, legend: &str) {
-    legend_bar_at(canvas, legend, 878.0, 13.0);
+    legend_bar_at(canvas, legend, 878.0, 10.0);
+}
+
+pub(crate) fn rows_preview(canvas: &mut Canvas<'_>) {
+    draw_figma_background(canvas);
+    rr(canvas, 652.0, 68.0, 604.0, 797.0, 60.0, surface(canvas));
+}
+
+pub(crate) fn preview_heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
+    text_fit(
+        canvas,
+        title,
+        688.0,
+        104.0,
+        532.0,
+        50.0,
+        ink(canvas),
+        FontWeight::Bold,
+    );
+    text_fit(
+        canvas,
+        subtitle,
+        688.0,
+        172.0,
+        532.0,
+        31.0,
+        ink_secondary(canvas),
+        FontWeight::Regular,
+    );
 }
 
 fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
-    rr(canvas, 0.0, top, 1280.0, 960.0 - top, 0.0, shell(canvas));
+    let resolution = canvas.resolution();
+    canvas.rect(
+        resolution.scale_x(0.0),
+        resolution.scale_y(top),
+        1280.0 * resolution.scale(),
+        (960.0 - top) * resolution.scale(),
+        shell(canvas),
+    );
     let y = top + inset;
+    let height = if inset > 0.0 { 48.0 } else { 38.0 };
     let mut x = 40.0;
     for action in legend.split("     ") {
         let Some((button, label)) = action.split_once("  ") else {
             continue;
         };
-        let chip = (canvas.text_width(button, 24.0, FontWeight::Bold) + 20.0).max(38.0);
-        rr(canvas, x, y + 2.0, chip, 38.0, 19.0, control(canvas));
+        let button = match button {
+            "A" => "CLICK",
+            "B" => "BACK",
+            "X" => "CONTEXT",
+            _ => button,
+        };
+        let font_size = if inset > 0.0 { 27.0 } else { 24.0 };
+        let chip = (canvas.text_width(button, font_size, FontWeight::Bold) + 30.0).max(38.0);
+        rr(
+            canvas,
+            x,
+            y + 2.0,
+            chip,
+            height,
+            height / 2.0,
+            if inset > 0.0 {
+                selected_surface(canvas)
+            } else {
+                control(canvas)
+            },
+        );
         canvas.text_centered(
             button,
             x + chip * 0.5,
-            y + 9.0,
-            24.0,
+            y + height / 4.0,
+            font_size,
             ink(canvas),
             FontWeight::Bold,
         );
         canvas.text(
             label,
             x + chip + 12.0,
-            y + 6.0,
+            y + 9.0,
             29.0,
             ink_secondary(canvas),
             FontWeight::Regular,
