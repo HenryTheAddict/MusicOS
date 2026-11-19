@@ -1,6 +1,7 @@
 mod artwork_colors;
 mod launch_palette;
 mod product;
+mod desktop_updates;
 mod desktop_metadata;
 pub mod app;
 pub mod library;

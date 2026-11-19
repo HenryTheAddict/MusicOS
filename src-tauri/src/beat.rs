@@ -73,6 +73,21 @@ pub fn track(flux: &[f32], step: f32, hint: Option<f32>) -> Evidence {
     if best.1 < 0.12 {
         return Evidence::default();
     }
+    // Alternating accents and hop rounding can make two beats correlate better
+    // than one. Prefer the denser pulse only with substantial independent support;
+    // a slow pulse without intervening attacks must not be doubled by the prior.
+    let half = best.0 / 2.;
+    let bpm = 60. / (best.0 * step);
+    // Preserve an explicit matching slow tempo even when subdivisions are strong.
+    let hinted_slow = hint.is_some_and(|v| {
+        v.is_finite() && (60. ..=200.).contains(&v) && (bpm / v - 1.).abs() <= 0.03
+    });
+    if !hinted_slow && 60. / (half * step) <= 200. {
+        let corr = correlation(half);
+        if corr >= 0.5 && corr >= best.1 * 0.65 {
+            best = (half, corr, best.2);
+        }
+    }
     let period = best.0;
     let min_gap = (period * 0.65).floor().max(1.) as usize;
     let max_gap = (period * 1.4).ceil() as usize;
@@ -124,11 +139,19 @@ pub fn track(flux: &[f32], step: f32, hint: Option<f32>) -> Evidence {
     // Confidence requires independent periodicity, observed attacks, and stable
     // intervals. It is an estimate, not a calibrated probability of correctness.
     let confidence = (best.1.sqrt() * support * consistent).clamp(0., 1.);
-    let mut sorted = intervals;
-    sorted.sort_by(f32::total_cmp);
-    let median = sorted[sorted.len() / 2];
+    // Average stable gaps so alternating rounded hop counts retain fractional tempo.
+    let stable = intervals
+        .iter()
+        .filter(|v| (**v / period - 1.).abs() < 0.15)
+        .copied()
+        .collect::<Vec<_>>();
+    let spacing = if stable.is_empty() {
+        period
+    } else {
+        stable.iter().sum::<f32>() / stable.len() as f32
+    };
     Evidence {
-        bpm: Some(60. / (median * step)),
+        bpm: Some(60. / (spacing * step)),
         confidence,
         beats: indices.into_iter().map(|i| i as f32 * step).collect(),
     }
@@ -136,6 +159,112 @@ pub fn track(flux: &[f32], step: f32, hint: Option<f32>) -> Evidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn fixture_flux(bpm: f32, seconds: f32, melodic: bool) -> Vec<f32> {
+        use rustfft::{num_complex::Complex, FftPlanner};
+        let mut seed = 0x5eed_u32;
+        let pcm = (0..(seconds * 11025.) as usize)
+            .map(|i| {
+                let t = i as f32 / 11025.;
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = (seed as f64 / u32::MAX as f64 * 2. - 1.) as f32;
+                let beat = (t * bpm / 60.).fract() * 60. / bpm;
+                let phase = |hz: f32| (std::f32::consts::TAU * hz * t).sin();
+                let kick = 0.28
+                    * (-beat * 32.).exp()
+                    * (std::f32::consts::TAU * (52. * beat + 2. * (1. - (-beat * 45.).exp())))
+                        .sin();
+                let pad = 0.09 * (phase(220.) + phase(261.6256) + phase(329.6276));
+                let note = [440., 523.251, 659.255, 587.33][((t * 2.) as usize / 2) % 4];
+                let voice =
+                    0.10 * (phase(note) + 0.32 * phase(note * 2.) + 0.15 * phase(note * 3.));
+                kick + noise * 0.035 * (-beat * 65.).exp() + if melodic { pad + voice } else { 0. }
+            })
+            .collect::<Vec<_>>();
+        let fft = FftPlanner::<f32>::new().plan_fft_forward(2048);
+        let mut previous = vec![0.; 1024];
+        let mut buffer = vec![Complex::default(); 2048];
+        pcm.windows(2048)
+            .step_by(256)
+            .map(|frame| {
+                for (i, &v) in frame.iter().enumerate() {
+                    buffer[i] = Complex::new(
+                        v * (0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / 2048.).cos()),
+                        0.,
+                    );
+                }
+                fft.process(&mut buffer);
+                let mut flux = 0.;
+                for k in 1..1024 {
+                    let log = (1. + buffer[k].norm()).ln();
+                    flux += (log - previous[k]).max(0.);
+                    previous[k] = log;
+                }
+                flux
+            })
+            .collect()
+    }
+    #[test]
+    fn synthetic_tempos_keep_the_beat_octave() {
+        let mut failures = Vec::new();
+        for (bpm, melodic) in [
+            (120., true),
+            (122., true),
+            (72., false),
+            (60., false),
+            (174., false),
+        ] {
+            let flux = fixture_flux(bpm, 45., melodic);
+            for hint in [None, Some(bpm)] {
+                let e = track(&flux, 256. / 11025., hint);
+                println!(
+                    "expected {bpm}, hint {hint:?}, detected {:?}, confidence {}",
+                    e.bpm, e.confidence
+                );
+                if !e.bpm.is_some_and(|v| (v - bpm).abs() <= 1.) {
+                    failures.push(bpm);
+                }
+            }
+        }
+        assert!(failures.is_empty(), "wrong tempo for {failures:?}");
+    }
+    #[test]
+    fn matching_slow_hint_preserves_accented_beats() {
+        let step = 256. / 11025.;
+        let mut flux = vec![0.; (90. / step) as usize];
+        for i in 0..215 {
+            let t = 0.2 + i as f32 * 60. / 144.;
+            flux[(t / step).round() as usize] = if i % 2 == 0 { 1. } else { 0.7 };
+        }
+        for (hint, expected) in [
+            (Some(72.), 72.),
+            (Some(73.5), 72.),
+            (Some(144.), 144.),
+            (None, 144.),
+        ] {
+            let e = track(&flux, step, hint);
+            println!("accented fixture hint {hint:?}, detected {:?}", e.bpm);
+            assert!(
+                e.bpm.is_some_and(|bpm| (bpm - expected).abs() < 1.),
+                "{e:?}"
+            );
+        }
+    }
+    #[test]
+    #[ignore = "manual analysis timing"]
+    fn analysis_cost() {
+        let flux = fixture_flux(122., 180., true);
+        let mut times = Vec::new();
+        for _ in 0..7 {
+            let start = std::time::Instant::now();
+            std::hint::black_box(track(std::hint::black_box(&flux), 256. / 11025., None));
+            times.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        times.sort_by(f64::total_cmp);
+        println!(
+            "beat analysis 180s median ms: {:.3}; runs: {times:?}",
+            times[3]
+        );
+    }
     #[test]
     fn tracks_fractional_clicks_through_missing_attacks() {
         let step = 256_f32 / 11025.;

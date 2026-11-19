@@ -30,7 +30,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Mutex,
+        Arc, Mutex,
     },
     time::Duration,
 };
@@ -1130,6 +1130,8 @@ struct TaskRequest {
     paths: Vec<PathBuf>,
     root: Option<PathBuf>,
     album_id: Option<String>,
+    #[serde(default)]
+    dropped: bool,
 }
 fn begin_task(state: &AppState, kind: &str) -> Result<()> {
     anyhow::ensure!(!crate::file_organization::pending(&state.config().db_path)?,"Finish interrupted file organization before rescanning or importing. Open Smartly organize my files and retry recovery.");
@@ -1274,14 +1276,43 @@ fn library_task(app: tauri::AppHandle, request: TaskRequest) -> ApiResult<()> {
                 }
             }
             if kind == "copy" {
-                let target=if let Some(root)=request.root.as_deref(){
-                    let target=root.canonicalize().context("The drop destination is unavailable. Check Music folders.")?;
-                    let known=repo.snapshot(&LibraryQuery::default())?.sources.into_iter().any(|source|source.enabled&&source.available&&source.path.canonicalize().is_ok_and(|p|p==target));
-                    anyhow::ensure!(known,"Choose an available Music folder before copying dropped music.");target
-                }else{config.media_dir.clone()};
-                let p = musicos_desktop::library_import::import_managed_library(
+                let skip_library_files = request.dropped
+                    && state
+                        .preferences
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .copy_only_non_library_drops;
+                let sources = if request.root.is_some() || skip_library_files {
+                    repo.snapshot(&LibraryQuery::default())?.sources
+                } else {
+                    Vec::new()
+                };
+                let target = if let Some(root) = request.root.as_deref() {
+                    let target = root
+                        .canonicalize()
+                        .context("The drop destination is unavailable. Check Music folders.")?;
+                    let known = sources.iter().any(|source| {
+                        source.enabled
+                            && source.available
+                            && source.path.canonicalize().is_ok_and(|p| p == target)
+                    });
+                    anyhow::ensure!(
+                        known,
+                        "Choose an available Music folder before copying dropped music."
+                    );
+                    target
+                } else {
+                    config.media_dir.clone()
+                };
+                let excluded_roots = if skip_library_files {
+                    sources.into_iter().map(|source| source.path).collect()
+                } else {
+                    Vec::new()
+                };
+                let p = musicos_desktop::library_import::import_managed_library_excluding(
                     &request.paths,
                     &target,
+                    &excluded_roots,
                     &state.cancel,
                     |p| {
                         emit_task(
@@ -1988,6 +2019,7 @@ fn open_provider(url: String) -> ApiResult<()> {
             || (host == "huggingface.co" && u.path().starts_with("/apple/coreml-depth-anything-v2-small"))
             || host == "www.last.fm"
             || host == "last.fm"
+            || (host == "github.com" && u.path().starts_with("/HenryTheAddict/MusicOS/releases/tag/v"))
             || (host == "discord.com" && u.path().starts_with("/developers/applications")))
     {
         return Err(AppError {
@@ -2013,21 +2045,34 @@ fn open_provider(url: String) -> ApiResult<()> {
     Ok(())
 }
 pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let context = tauri::generate_context!();
+    let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    let builder = if context.config().plugins.0.contains_key("updater") {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
+    let app = builder
+        .manage(crate::desktop_updates::PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![audition,controller,lyric_edition,trackpad_feedback,
+            crate::desktop_updates::desktop_update_status, crate::desktop_updates::desktop_update_check,
+            crate::desktop_updates::desktop_update_download, crate::desktop_updates::desktop_update_restart,
             audio_analysis, audio_tempos, playlist_file, sparklist,
             present_shell, save_launch_palette, bootstrap, bootstrap_state, library_ready, refresh_library, save_preferences, playback, library_task, activity_jobs, track_waveform,
             cancel_task, inspect_import, metadata_review, metadata_workspace, metadata_edit, metadata_files, lyrics, apple_enrichment, album_metadata, collections, home_activity, spark_recommendations, playlist_suggestions, toggle_favorite, album_info, artist_info, metadata_status, library_source, relocate_source, forget_source, organize_files, audio_specs, discover, cancel_search,
             visualizer, artwork_palette, cache_artwork, artwork_rendition, portrait_artwork, depth_setup, depth_artwork, dj_diagnostics, artwork_performance, library_artwork, device, wifi_sync, open_provider, integration_status, integration_action, sync_window_chrome, mini_player, mini_resize, window_pin, reveal_track
         ])
         .setup(|app| {
+            if let Err(error) = crate::desktop_updates::initialize(app.handle()) {
+                eprintln!("Could not initialize desktop updates: {error:#}");
+            }
             let state = AppState::new()?;
             let launch_appearance=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).appearance.clone();
             let client = state.playback.lock().unwrap_or_else(|e|e.into_inner()).client();
             client.send(LocalPlaybackCommand::SetListening(state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening.clone()))?;
             crate::activity::recover(&state.config().db_path);
             app.manage(state);
+            crate::desktop_updates::apply_on_launch(app.handle());
             app.manage(crate::controller::Service::new(app.handle().clone()));
             crate::apple_enrichment::background::resume(app.handle().clone(),app.state::<AppState>().config().db_path.clone());
             #[cfg(target_os="macos")]crate::apple_enrichment::install_power_events(app.handle());
@@ -2171,7 +2216,7 @@ pub fn run() {
             });
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("Could not start musicOS");
     app.run(|handle, event| {
         #[cfg(target_os="macos")]
@@ -2181,14 +2226,9 @@ pub fn run() {
         }
         if matches!(event, tauri::RunEvent::Exit) {
             handle.state::<crate::controller::Service>().shutdown();
-            let state=handle.state::<AppState>();
-            let snapshot=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
-            let mut config=state.config.lock().unwrap_or_else(|e|e.into_inner());
-            config.playback=saved_playback(&snapshot);
-            if let Err(error)=storage::save_config(&config) {eprintln!("Could not save playback session: {error:#}");}
-            drop(config);
+            save_playback_session(handle);
             #[cfg(target_os="macos")]
-            {drop(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();crate::player_shortcuts::shutdown();}
+            {let state=handle.state::<AppState>();drop(state.visualizer.lock().unwrap_or_else(|e|e.into_inner()).take());crate::system_media::shutdown();crate::trackpad_phase::shutdown();crate::apple_enrichment::shutdown_power_events();crate::player_shortcuts::shutdown();}
             crate::spark_install::cancel();
             handle.state::<AppState>().integrations.shutdown();
             let _ = handle.state::<AppState>().analysis.control("cancel");
@@ -2200,14 +2240,27 @@ pub fn run() {
                 .state::<AppState>()
                 .cancel
                 .store(true, Ordering::Relaxed);
-            let _ = handle
-                .state::<AppState>()
-                .runtime
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .stop();
+            let _ = stop_preview_runtime(handle);
+            crate::desktop_updates::release_instance(handle);
         }
     });
+}
+pub(crate) fn hold_audio_for_update(handle: &tauri::AppHandle, pause: bool) -> Result<Arc<()>> {
+    let state = handle.state::<AppState>();
+    let client = state.playback.lock().unwrap_or_else(|e| e.into_inner()).client();
+    client.hold_audio_for_update(pause)
+}
+pub(crate) fn stop_preview_runtime(handle: &tauri::AppHandle) -> Result<()> {
+    handle.state::<AppState>().runtime.lock().unwrap_or_else(|e| e.into_inner()).stop().map(|_| ())
+}
+pub(crate) fn save_playback_session(handle: &tauri::AppHandle) {
+    let state = handle.state::<AppState>();
+    let snapshot = state.playback.lock().unwrap_or_else(|e| e.into_inner()).snapshot();
+    let mut config = state.config.lock().unwrap_or_else(|e| e.into_inner());
+    config.playback = saved_playback(&snapshot);
+    if let Err(error) = storage::save_config(&config) {
+        eprintln!("Could not save playback session: {error:#}");
+    }
 }
 #[cfg(test)]
 mod tests {

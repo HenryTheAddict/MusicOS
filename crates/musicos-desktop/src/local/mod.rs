@@ -11,6 +11,7 @@ pub mod events;
 pub mod library;
 pub mod playback;
 pub mod playlists;
+pub mod resample;
 pub mod smart_playlists;
 pub mod source_audit;
 

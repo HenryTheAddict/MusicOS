@@ -1,3 +1,56 @@
+#[derive(Clone)]
+pub struct WakeSignal {
+    #[cfg(target_os = "linux")]
+    fd: std::sync::Arc<std::os::fd::OwnedFd>,
+    #[cfg(not(target_os = "linux"))]
+    state: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
+}
+
+impl WakeSignal {
+    pub fn new() -> std::io::Result<Self> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::FromRawFd;
+            // SAFETY: eventfd returns a new descriptor owned by this instance.
+            let fd = unsafe { libc::eventfd(0, libc::EFD_NONBLOCK | libc::EFD_CLOEXEC) };
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(Self {
+                fd: std::sync::Arc::new(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) }),
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        Ok(Self {
+            state: Default::default(),
+        })
+    }
+
+    pub fn signal(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::AsRawFd;
+            let value = 1u64;
+            loop {
+                // SAFETY: value is a live eight-byte eventfd counter.
+                let rc =
+                    unsafe { libc::write(self.fd.as_raw_fd(), (&value as *const u64).cast(), 8) };
+                if rc >= 0
+                    || std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted
+                {
+                    break;
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let (lock, ready) = &*self.state;
+            *lock.lock().unwrap() = true;
+            ready.notify_one();
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Button {
     Confirm,
@@ -102,6 +155,62 @@ mod linux {
                 held_since: now,
                 last_repeat: now,
             }
+        }
+
+        pub fn wait(&mut self, timeout: Duration, wake: &WakeSignal) -> std::io::Result<()> {
+            let timeout = if self.held_direction.is_some() {
+                let repeat =
+                    (self.held_since + REPEAT_DELAY).max(self.last_repeat + REPEAT_INTERVAL);
+                timeout.min(repeat.saturating_duration_since(Instant::now()))
+            } else {
+                timeout
+            };
+            let mut fds: Vec<libc::pollfd> = self
+                .devices
+                .iter()
+                .map(|device| libc::pollfd {
+                    fd: device.as_raw_fd(),
+                    events: libc::POLLIN,
+                    revents: 0,
+                })
+                .collect();
+            fds.push(libc::pollfd {
+                fd: wake.fd.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            });
+            let timeout = libc::timespec {
+                tv_sec: timeout.as_secs() as libc::time_t,
+                tv_nsec: timeout.subsec_nanos() as libc::c_long,
+            };
+            // SAFETY: fds and timeout remain valid for the duration of ppoll.
+            let result = unsafe {
+                libc::ppoll(
+                    fds.as_mut_ptr(),
+                    fds.len() as libc::nfds_t,
+                    &timeout,
+                    std::ptr::null(),
+                )
+            };
+            if result < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.kind() != std::io::ErrorKind::Interrupted {
+                    return Err(error);
+                }
+            }
+            let mut index = 0;
+            self.devices.retain(|_| {
+                let connected =
+                    fds[index].revents & (libc::POLLHUP | libc::POLLERR | libc::POLLNVAL) == 0;
+                index += 1;
+                connected
+            });
+            if fds.last().is_some_and(|fd| fd.revents & libc::POLLIN != 0) {
+                let mut value = 0u64;
+                // SAFETY: value is a live eight-byte output for eventfd.
+                unsafe { libc::read(wake.fd.as_raw_fd(), (&mut value as *mut u64).cast(), 8) };
+            }
+            Ok(())
         }
 
         pub fn poll(&mut self) -> Vec<InputEvent> {
@@ -398,7 +507,48 @@ mod linux {
         pub fn poll(&mut self) -> Vec<super::InputEvent> {
             Vec::new()
         }
+
+        pub fn wait(
+            &mut self,
+            timeout: std::time::Duration,
+            wake: &super::WakeSignal,
+        ) -> std::io::Result<()> {
+            let (lock, ready) = &*wake.state;
+            let pending = lock.lock().unwrap();
+            let (mut pending, _) = ready
+                .wait_timeout_while(pending, timeout, |pending| !*pending)
+                .unwrap();
+            *pending = false;
+            Ok(())
+        }
     }
 }
 
 pub use linux::InputSystem;
+
+#[cfg(test)]
+mod wake_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn pending_and_concurrent_notifications_wake_wait() {
+        let wake = WakeSignal::new().unwrap();
+        let mut inputs = InputSystem::open();
+        wake.signal();
+        wake.signal();
+        let start = Instant::now();
+        inputs.wait(Duration::from_secs(2), &wake).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        let sender = wake.clone();
+        let thread = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            sender.signal();
+        });
+        let start = Instant::now();
+        inputs.wait(Duration::from_secs(2), &wake).unwrap();
+        assert!(start.elapsed() < Duration::from_secs(1));
+        thread.join().unwrap();
+        inputs.wait(Duration::ZERO, &wake).unwrap();
+    }
+}

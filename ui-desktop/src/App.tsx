@@ -204,6 +204,8 @@ export default function App() {
   const [miniPinned,setMiniPinned]=useState(true),[windowPinned,setWindowPinned]=useState(false);
   useNativeChrome(miniMode==='normal');
   const [rawPlayer, setPlayer] = usePlaybackFeed(emptyPlayback);
+  const [homePlaybackStarted,setHomePlaybackStarted]=useState(false);
+  useEffect(()=>{if(rawPlayer.is_playing)setHomePlaybackStarted(true);},[rawPlayer.is_playing]);
   const activitySong=useRef(rawPlayer.track?.id);
   useEffect(()=>{if(activitySong.current!==rawPlayer.track?.id){activitySong.current=rawPlayer.track?.id;invalidateDisplay('home_activity');}},[rawPlayer.track?.id]);
   const presentedQueue=useMemo(()=>rawPlayer.queue.map(t=>tracksById.get(t.id)??t),[rawPlayer.queue,tracksById]);
@@ -430,7 +432,10 @@ export default function App() {
                 return;
               }
               void call("inspect_import", { paths })
-                .then(() => call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path}}))
+                .then(async () => {
+                  if(savingPreferences.current)await savePromise.current;
+                  return call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path,dropped:true}});
+                })
                 .catch((e) => setError(errorText(e)));
             }
           },
@@ -926,7 +931,7 @@ export default function App() {
       </div>
     );
   else if(route.view==='search')content=null;
-  else if(route.view==='home')content=<PersonalHome name={preferences.display_name} library={library} collections={collections} recommendations={sparkRecommendations} player={player} active={section==='Library'&&miniMode==='normal'} onAlbum={openAlbum} betaEnabled={!!preferences.sparklist_beta} onMixIdea={seed=>{setSparkSeed(seed);setCreatingCollection('spark');}} trackActions={actionsForTrack} albumActions={actionsForAlbum} collectionActions={actionsForCollection} onCollection={openCollection} onPlay={ids=>playIds(ids)} onToggle={()=>void run({type:'toggle'})} onScope={goScope} onCreate={createCollection} onAdd={()=>void chooseFolder(false)}/>;
+  else if(route.view==='home')content=<PersonalHome name={preferences.display_name} library={library} collections={collections} recommendations={sparkRecommendations} player={player} canResume={!homePlaybackStarted&&!player.is_playing} active={section==='Library'&&miniMode==='normal'} onAlbum={openAlbum} betaEnabled={!!preferences.sparklist_beta} onMixIdea={seed=>{setSparkSeed(seed);setCreatingCollection('spark');}} trackActions={actionsForTrack} albumActions={actionsForAlbum} collectionActions={actionsForCollection} onCollection={openCollection} onPlay={ids=>playIds(ids)} onToggle={()=>void run({type:'toggle'})} onScope={goScope} onCreate={createCollection} onAdd={()=>void chooseFolder(false)}/>;
   else if (route.view === "album" && album)
     content = (
       <article className="album-detail" data-album-id={album.id}>
@@ -987,6 +992,8 @@ export default function App() {
       <LibraryTools
         view={route.view}
         library={library}
+        copyOnlyNonLibraryDrops={!!preferences.copy_only_non_library_drops}
+        onCopyOnlyNonLibraryDropsChange={copy_only_non_library_drops=>changePreferences({...preferences,copy_only_non_library_drops})}
         busy={task.running}
         task={task}
         playing={player.is_playing}
@@ -1372,7 +1379,7 @@ export default function App() {
                   libraryView={settingsLibraryView}
                   onLibraryView={setSettingsLibraryView}
                   onManageCollections={()=>{setSection("Library");goScope("playlists");}}
-                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={(kind,albumId)=>startTask(kind,undefined,albumId)} onRefresh={refresh} onError={setError}/>}
+                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} copyOnlyNonLibraryDrops={!!preferences.copy_only_non_library_drops} onCopyOnlyNonLibraryDropsChange={copy_only_non_library_drops=>changePreferences({...preferences,copy_only_non_library_drops})} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={(kind,albumId)=>startTask(kind,undefined,albumId)} onRefresh={refresh} onError={setError}/>}
 
                 />
               </Suspense></KeepView><KeepView className="search-page-view" active={section==='Library'&&route.view==='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading search"/>}><SuperCommand presentation="page" focusRequest={searchFocus} open recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>chooseDestination(previousDestination.current)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={value=>{if(value==='Settings'||value==='Devices')chooseSection(value);else goScope(value.toLowerCase() as Route['view']);}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense></KeepView><KeepView className="library-view" active={section==='Library'&&route.view!=='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
@@ -1435,7 +1442,7 @@ export default function App() {
       {playlistTrack&&<PlaylistPicker ids={(playlistTrack as Track&{selectionIds?:number[]}).selectionIds} track={playlistTrack} library={library} items={collections} onChange={setCollections} onClose={()=>setPlaylistTrack(null)}/>}
       {deletingCollection&&<CollectionDelete item={deletingCollection} onChange={setCollections} onClose={()=>setDeletingCollection(null)}/>}
       {creatingCollection==='rule'&&<SmartCreate onChange={setCollections} onClose={()=>setCreatingCollection(null)}/>}
-      {creatingCollection&&creatingCollection!=='rule'&&<CollectionCreate kind={creatingCollection} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)} sparkContent={<Suspense fallback={<div className="screen-placeholder" aria-label="Loading Sparklist" aria-busy="true"/>}><SparkCreate initialSeed={sparkSeed} preferences={preferences} onPreferences={changePreferences} playingId={player.track?.id} isPlaying={player.is_playing} onToggle={async()=>setPlayer(await call("playback",{action:{type:"toggle"}}))} onPlay={async ids=>{const playable=ids.filter(id=>availableIds.has(id));if(!playable.length)throw Error("No available preview songs.");setPlayer(await call("playback",{action:{type:"play",ids:playable,start_index:0,shuffle:false}}));}} onSetup={()=>{sessionStorage.setItem("musicos-audio-page","spark");window.dispatchEvent(new CustomEvent("musicos-audio-page",{detail:"spark"}));setCreatingCollection(null);captureScroll();sessionStorage.setItem("musicos-settings-tab","Audio");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Audio"}));setSection("Settings");}} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)}/></Suspense>}/>}
+      {creatingCollection&&creatingCollection!=='rule'&&<CollectionCreate kind={creatingCollection} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)} sparkContent={<Suspense fallback={<div className="screen-placeholder" aria-label="Loading Sparklist" aria-busy="true"/>}><SparkCreate initialSeed={sparkSeed} preferences={preferences} onPreferences={changePreferences} playingId={player.track?.id} isPlaying={player.is_playing} tempos={tempos} onToggle={async()=>setPlayer(await call("playback",{action:{type:"toggle"}}))} onPlay={async ids=>{const playable=ids.filter(id=>availableIds.has(id));if(!playable.length)throw Error("No available preview songs.");setPlayer(await call("playback",{action:{type:"play",ids:playable,start_index:0,shuffle:false}}));}} onSetup={()=>{sessionStorage.setItem("musicos-audio-page","spark");window.dispatchEvent(new CustomEvent("musicos-audio-page",{detail:"spark"}));setCreatingCollection(null);captureScroll();sessionStorage.setItem("musicos-settings-tab","Audio");window.dispatchEvent(new CustomEvent("musicos-settings-tab",{detail:"Audio"}));setSection("Settings");}} library={library} items={collections} onChange={setCollections} onOpen={openCollection} onClose={()=>setCreatingCollection(null)}/></Suspense>}/>}
       {pendingImport && (
         <dialog
           ref={importDialog}
