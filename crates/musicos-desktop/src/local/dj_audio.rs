@@ -467,6 +467,28 @@ pub fn stretch_stereo(input: &[f32], tempo: f32) -> anyhow::Result<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn zero_overlap_promotes_at_eof_and_retains_trimmed_incoming_position() {
+        let (mut c, mut mixer) = create(2048);
+        for (deck, start) in [(0, 0.), (1, 96000.)] {
+            c.commands.push(Command::Reset { deck, generation: 1, source_frame: start }).unwrap();
+            let count = if deck == 0 { 1200 } else { 16 };
+            for n in 0..count {
+                c.decks[deck].push(Frame { samples: [if deck == 0 { 0.25 } else { 0.5 }; 2], source_frame: start + n as f64, generation: 1, listening_revision: 0 }).unwrap();
+            }
+        }
+        c.clock.finished[0].store(1, Ordering::Release);
+        c.commands.push(Command::Plan(Schedule { cancel_revision: 0, id: 1, cue: 1300., frames: 0, incoming: 1, tail: Tail::Clean })).unwrap();
+        c.commands.push(Command::Pause(false)).unwrap();
+        for _ in 0..1200 { mixer.next(); mixer.next(); }
+        assert_eq!(c.clock.active.load(Ordering::Acquire), 0);
+        assert!(c.clock.ready[1].load(Ordering::Acquire));
+        assert!(!c.clock.mixing.load(Ordering::Acquire));
+        assert_eq!([mixer.next().unwrap(), mixer.next().unwrap()], [0.5; 2]);
+        assert_eq!(c.clock.active.load(Ordering::Acquire), 1);
+        assert_eq!(c.clock.source_frames[1].load(Ordering::Acquire), 96000);
+        assert_eq!(c.clock.underruns.load(Ordering::Acquire), 0);
+    }
     fn push(control: &mut Control, deck: usize, count: usize, start: usize, value: f32) {
         for i in 0..count {
             control.decks[deck]

@@ -41,10 +41,24 @@ pub fn import_managed_library(
     inputs: &[PathBuf],
     media_dir: &Path,
     cancel: &AtomicBool,
+    on_progress: impl FnMut(&ImportProgress),
+) -> Result<ImportProgress> {
+    import_managed_library_excluding(inputs, media_dir, &[], cancel, on_progress)
+}
+
+pub fn import_managed_library_excluding(
+    inputs: &[PathBuf],
+    media_dir: &Path,
+    excluded_roots: &[PathBuf],
+    cancel: &AtomicBool,
     mut on_progress: impl FnMut(&ImportProgress),
 ) -> Result<ImportProgress> {
     fs::create_dir_all(media_dir)?;
     let files = collect_audio_files(inputs)?;
+    let excluded_roots: Vec<_> = excluded_roots
+        .iter()
+        .filter_map(|root| root.canonicalize().ok())
+        .collect();
     let index_path = media_dir.join(INDEX_FILE);
     let mut index: BTreeMap<String, String> = if index_path.exists() {
         read_json(&index_path).unwrap_or_default()
@@ -64,7 +78,12 @@ pub fn import_managed_library(
             break;
         }
         state.current = source.display().to_string();
-        match import_one(&source, media_dir, &mut index) {
+        let result = if excluded_roots.iter().any(|root| source.starts_with(root)) {
+            Ok(ImportOutcome::Duplicate)
+        } else {
+            import_one(&source, media_dir, &mut index)
+        };
+        match result {
             Ok(ImportOutcome::Imported) => state.imported += 1,
             Ok(ImportOutcome::Duplicate) => state.duplicates += 1,
             Err(error) => {
@@ -280,6 +299,47 @@ mod tests {
         let temp=tempfile::tempdir().unwrap();let file=temp.path().join("Artist/Album/Song.flac");fs::create_dir_all(file.parent().unwrap()).unwrap();fs::write(&file,b"original audio").unwrap();
         let modified=fs::metadata(&file).unwrap().modified().unwrap();let before=fs::read(&file).unwrap();
         let result=import_managed_library(&[file.clone()],temp.path(),&AtomicBool::new(false),|_|{}).unwrap();assert_eq!(result.duplicates,1);assert_eq!(result.imported,0);assert_eq!(fs::read(&file).unwrap(),before);assert_eq!(fs::metadata(&file).unwrap().modified().unwrap(),modified);
+    }
+
+    #[test]
+    fn dropped_folder_skips_registered_roots_and_copies_only_outside_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let dropped = temp.path().join("Drop");
+        let registered = dropped.join("Music");
+        let outside = dropped.join("Music extras");
+        let managed = temp.path().join("managed");
+        for (folder, audio) in [
+            (&registered, b"library audio"),
+            (&outside, b"outside audio"),
+        ] {
+            fs::create_dir_all(folder).unwrap();
+            fs::write(folder.join("Song.mp3"), audio).unwrap();
+        }
+        let cancel = AtomicBool::new(false);
+        let filtered = import_managed_library_excluding(
+            std::slice::from_ref(&dropped),
+            &managed,
+            std::slice::from_ref(&registered),
+            &cancel,
+            |_| {},
+        )
+        .unwrap();
+        assert_eq!(
+            (filtered.imported, filtered.duplicates, filtered.failed),
+            (1, 1, 0)
+        );
+        let copied = collect_audio_files(std::slice::from_ref(&managed)).unwrap();
+        assert_eq!(copied.len(), 1);
+        assert_eq!(fs::read(&copied[0]).unwrap(), b"outside audio");
+        let unfiltered = import_managed_library(&[dropped], &managed, &cancel, |_| {}).unwrap();
+        assert_eq!(
+            (
+                unfiltered.imported,
+                unfiltered.duplicates,
+                unfiltered.failed
+            ),
+            (1, 1, 0)
+        );
     }
 
 }

@@ -4,7 +4,7 @@ use anyhow::Result;
 use log::{error, info};
 use musicos_init::app::MusicOs;
 use musicos_init::init;
-use musicos_init::input::InputSystem;
+use musicos_init::input::{InputSystem, WakeSignal};
 use musicos_init::renderer::{self, Renderer};
 use musicos_init::server::CompanionServer;
 
@@ -53,6 +53,9 @@ fn run() -> Result<()> {
     init::install_logger();
     init::prepare_pid1_environment()?;
 
+    if let Err(err) = musicos_init::usb::cleanup_interrupted_updates() {
+        log::warn!("interrupted update cleanup skipped: {err:#}");
+    }
     match musicos_init::usb::install_pending_update() {
         Ok(Some(path)) => info!("installed pending MusicOS update to {}", path.display()),
         Ok(None) => {}
@@ -82,9 +85,10 @@ fn run() -> Result<()> {
     );
 
     let (tx, rx) = std::sync::mpsc::channel();
+    let wake = WakeSignal::new()?;
     let db_path = std::env::var("MUSICOS_MEDIA_DB")
         .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string());
-    CompanionServer::start(8080, tx, db_path)?;
+    CompanionServer::start_with_wake(8080, tx, db_path, Some(wake.clone()))?;
     app.start_library_scan();
 
     let draw_start = Instant::now();
@@ -93,8 +97,10 @@ fn run() -> Result<()> {
 
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let r = running.clone();
+    let shutdown_wake = wake.clone();
     if let Err(err) = ctrlc::set_handler(move || {
         r.store(false, std::sync::atomic::Ordering::SeqCst);
+        shutdown_wake.signal();
     }) {
         error!("failed to set Ctrl-C handler: {err}");
     }
@@ -116,7 +122,8 @@ fn run() -> Result<()> {
             }
         }
 
-        let realtime_redraw = app.animation_in_progress() || app.player.is_playing();
+        let animating = app.animation_in_progress();
+        let realtime_redraw = animating || app.player.is_playing();
         let redraw_budget = if realtime_redraw {
             frame_budget
         } else {
@@ -130,14 +137,50 @@ fn run() -> Result<()> {
             next_frame = now + redraw_budget;
         }
 
-        std::thread::sleep(if realtime_redraw {
-            Duration::from_millis(2)
-        } else {
-            Duration::from_millis(20)
-        });
+        let now = Instant::now();
+        inputs.wait(
+            wait_timeout(now, next_frame, app.next_tick_deadline(now)),
+            &wake,
+        )?;
     }
 
     info!("MusicOS stopping gracefully...");
     app.save_preferences(true);
     Ok(())
+}
+
+fn wait_timeout(now: Instant, next_frame: Instant, next_tick: Instant) -> Duration {
+    next_frame.min(next_tick).saturating_duration_since(now)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wait_respects_frames_ticks_and_overdue_work() {
+        let now = Instant::now();
+        let tick = now + Duration::from_millis(250);
+        assert_eq!(wait_timeout(now, now, tick), Duration::ZERO);
+        assert_eq!(
+            wait_timeout(now, now - Duration::from_millis(1), tick),
+            Duration::ZERO
+        );
+        assert_eq!(
+            wait_timeout(now, now + Duration::from_secs(1), tick),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            wait_timeout(now, now + Duration::from_millis(5), tick),
+            Duration::from_millis(5)
+        );
+        assert_eq!(
+            wait_timeout(
+                now,
+                now + Duration::from_secs(1),
+                now + Duration::from_millis(2)
+            ),
+            Duration::from_millis(2)
+        );
+    }
 }
