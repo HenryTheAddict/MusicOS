@@ -193,6 +193,8 @@ impl Db {
             std::fs::create_dir_all(parent)?;
         }
         let conn = if background{Connection::open_background(&path_buf)?}else{Connection::open(&path_buf)?};
+        #[cfg(all(target_os = "linux", feature = "pid1"))]
+        conn.pragma_update(None, "synchronous", "FULL")?;
         Self::backup_before_v2_migration(&conn, &path_buf)?;
         let db = Self {
             conn,
@@ -238,7 +240,6 @@ impl Db {
         self.conn.busy_timeout(Duration::from_secs(5))?;
         self.conn.execute_batch(
             "PRAGMA journal_mode = WAL;
-             PRAGMA synchronous = NORMAL;
              PRAGMA temp_store = MEMORY;
              PRAGMA foreign_keys = ON;",
         )?;
@@ -2409,6 +2410,25 @@ fn stable_id(kind: &str, value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{Db, MetadataUpdate};
+
+    #[test]
+    fn sqlite_durability_applies_to_every_connection() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("library.sqlite3");
+        let path = file.to_str().unwrap();
+        let expected = if cfg!(all(target_os = "linux", feature = "pid1")) {
+            2 // FULL
+        } else {
+            1 // NORMAL
+        };
+        for db in [Db::open(path).unwrap(), Db::open_background(path).unwrap()] {
+            let synchronous: i64 = db
+                .conn
+                .query_row("PRAGMA synchronous", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(synchronous, expected);
+        }
+    }
 
     fn temp_db(name: &str) -> Db {
         let root =

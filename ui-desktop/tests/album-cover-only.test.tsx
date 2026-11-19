@@ -4,7 +4,7 @@ import {afterEach,expect,test,vi} from 'vitest';
 import type {Album,AlbumReview} from '../src/types';
 
 const mocks=vi.hoisted(()=>({call:vi.fn()}));
-vi.mock('../src/bridge',()=>({call:mocks.call,errorText:String,native:false}));
+vi.mock('../src/bridge',()=>({artwork:(path:string|null|undefined)=>path??'',call:mocks.call,errorText:String,native:false}));
 vi.mock('../src/components',()=>({Cover:({title}:{title:string})=><span aria-hidden="true">{title}</span>,Icon:()=>null}));
 import AlbumMetadata from '../src/AlbumMetadata';
 import {invalidateDisplay} from '../src/displayData';
@@ -31,7 +31,7 @@ test('cover review requires a proposal and submits artwork only even with checke
  await user.click(screen.getByRole('button',{name:'Update cover only'}));
  expect(screen.getByRole('heading',{name:'Review cover update'})).toBeVisible();
  expect(screen.queryByText('Different edition')).toBeNull();
- await user.click(screen.getByRole('button',{name:'Save in musicOS'}));
+ await user.click(screen.getByRole('button',{name:'Save cover only'}));
  await waitFor(()=>expect(mocks.call).toHaveBeenCalledWith('album_metadata',{request:{
   action:'apply',album_id:'record',token:'version-1',rows:[{track_id:2,fields:['artwork']}],write_files:false,
  }}));
@@ -89,9 +89,8 @@ test('lower-resolution cover remains a deliberate cover-only review',async()=>{
   onTab={()=>{}} onSong={()=>{}} onLyrics={()=>{}} onDirty={()=>{}} onSaving={()=>{}} onSaved={()=>{}} onRefresh={async()=>{}}/>);
  await user.click(await screen.findByRole('radio',{name:/Cover 1/}));
  expect(screen.getByText('Lower resolution')).toBeVisible();
- expect(screen.getByText('Keep the current cover for higher resolution.')).toBeVisible();
  await user.click(screen.getByRole('button',{name:'Review lower-resolution cover'}));
  expect(screen.getByRole('heading',{name:'Review cover update'})).toBeVisible();
- expect(screen.getByText(/This updates the artwork for 2 songs/)).toBeVisible();
+ expect(screen.getByText(/This replaces the cover for 2 songs on Record/)).toBeVisible();
  expect(mocks.call.mock.calls.every(([,args])=>args.request.action==='detail')).toBe(true);
 });

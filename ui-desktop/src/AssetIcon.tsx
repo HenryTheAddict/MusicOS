@@ -6,9 +6,11 @@ import {playLevelsMorph} from "./playLevelsMorph";
 import { morphSvg } from "./svgMorph";
 import {menuCrossMorph} from "./menuCrossMorph";
 import { playPauseMorph } from "./playPauseMorph";
+import check from '../../assets/icons/desktop/check.svg?raw';
 
 const exports = import.meta.glob("../../assets/icons/ui/*.svg", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const icons = Object.fromEntries(Object.entries(exports).map(([path, svg]) => [path.split("/").at(-1)!.replace(/\.svg$/, ""), svg.slice(svg.indexOf("<svg"))]));
+icons.check=check;
 icons.menuPlus = icons.Plus;
 icons.playerQueue=icons.queue;icons.playerLyrics=icons.Lyrics.replace('viewBox="0 0 32 32"','viewBox="8 7 16 16"');icons.playerPlaying=icons.Song;
 const cycleNames=['playerQueue','playerLyrics','playerPlaying'];

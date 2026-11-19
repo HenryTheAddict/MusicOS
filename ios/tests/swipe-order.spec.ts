@@ -33,7 +33,7 @@ test('song catalogue sorts titles while saved playlist duplicates retain their e
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Songs',exact:true}).click();
  const titles=await page.locator('.song-open strong').allTextContents();
  expect(titles[0]).toBe('Second light');expect(titles[1]).toBe('Second light 5');expect(titles[2]).toBe('Second light 9');
- await page.getByRole('button',{name:'Home',exact:true}).click();await page.getByRole('button',{name:'Weekend 4 songs',exact:true}).click();
+ await page.getByRole('button',{name:'Home',exact:true}).click();await page.getByRole('button',{name:'Weekend Playlist 4 songs',exact:true}).click();
  await expect(page.locator('.song-open strong')).toHaveText(['Second light','Transit','Second light','Transit 7']);
 });
 test('song swipe follows the finger, reveals Play next, and leaves vertical list gestures alone',async({page})=>{

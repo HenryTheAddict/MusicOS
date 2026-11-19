@@ -200,8 +200,6 @@ html[data-sketch-window=true] .adaptive-shell .page-frame:not(.back-page-preview
 .sidebar-playlists .sidebar-favorites{display:flex;align-items:center;gap:.5rem;width:100%;min-height:2.125rem;padding:.3125rem .5rem;margin:0 0 .25rem;border:0;border-radius:.625rem;background:transparent;color:var(--ink);font:inherit;text-align:left;}
 .sidebar-playlists .sidebar-favorites:is(:hover,:focus-visible,[aria-current=page]){background:var(--control-surface)}
 .sidebar-favorites>.icon{width:1.125rem;height:1.125rem;--icon-fill:var(--accent);--icon-stroke:var(--accent)}
-.home-collections>.home-favorites{justify-self:start;display:inline-flex;align-items:center;gap:.5rem;padding:.3rem .625rem;margin:.25rem 0 .5rem;min-height:2rem;}
-.home-collections>.home-favorites span{display:flex;align-items:baseline;gap:.5rem;}.home-collections>.home-favorites .icon{width:1rem;height:1rem;}
 .home-recent [data-action-surface]{padding:.375rem .5rem;gap:.5rem;}.home-recent [data-action-surface]>.menu-trigger:not(.context-only){opacity:1;}
 
 /* Keep the personal rows on the same scale and align action icons to one grid. */

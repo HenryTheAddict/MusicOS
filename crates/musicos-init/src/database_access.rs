@@ -35,6 +35,7 @@ impl Transaction<'_>{pub fn commit(self)->Result<()>{self.transaction.commit()}p
 /// Cache schema initialization by file identity, including replacement databases.
 pub fn initialize_schema(path:&Path,label:&'static str,initialize:impl FnOnce()->anyhow::Result<()>)->anyhow::Result<()>{
  static SCHEMAS:OnceLock<Mutex<HashMap<String,Arc<Mutex<std::collections::HashSet<&'static str>>>>>>=OnceLock::new();
+ if path == Path::new(":memory:") { return initialize(); }
  let metadata=std::fs::metadata(path)?;
  #[cfg(unix)]let identity={use std::os::unix::fs::MetadataExt;format!("{}:{}:{}",path.canonicalize()?.display(),metadata.dev(),metadata.ino())};
  #[cfg(not(unix))]let identity=format!("{}:{:?}",path.canonicalize()?.display(),metadata.created().ok());
