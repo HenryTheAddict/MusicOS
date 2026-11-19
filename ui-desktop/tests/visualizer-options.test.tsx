@@ -1,7 +1,8 @@
-import {cleanup,fireEvent,render,screen} from '@testing-library/react';
+import {cleanup,fireEvent,render,screen,within} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import VisualizerSettings from '../src/VisualizerSettings';
 import {defaultVisualizer} from '../src/visualizer';
+import VisualizerOptions from '../src/VisualizerOptions';
 beforeEach(()=>{HTMLDialogElement.prototype.showModal=function(){this.open=true;};HTMLDialogElement.prototype.close=function(){this.open=false;};});
 afterEach(cleanup);
 it('nested Escape closes options without cancelling the player and restores focus',()=>{
@@ -21,4 +22,17 @@ it('offers remembered album colors without changing preset or playback options',
  fireEvent.click(screen.getByRole('button',{name:'Visualizer options'}));
  const toggle=screen.getByRole('switch',{name:'Album colors'});expect(toggle).not.toBeChecked();
  fireEvent.click(toggle);expect(change).toHaveBeenLastCalledWith({...defaultVisualizer,album_colors:true});
+});
+it.each(['manual','each_song','timed','beats'] as const)('makes beat pulse manual only while preserving saved %s rotation',rotation=>{
+ const change=vi.fn(),value={...defaultVisualizer,preset:'beat-pulse',rotation};
+ const view=render(<VisualizerOptions value={value} onChange={change} fallback/>),scope=within(view.container);
+ expect(scope.getByRole('button',{name:'Preset changes'})).toBeDisabled();
+ if(rotation==='timed')expect(scope.getByRole('button',{name:'Timed interval'})).toBeDisabled();
+ if(rotation==='beats')expect(scope.getByRole('button',{name:'Beat interval'})).toBeDisabled();
+ expect(scope.getByText(/Rotation applies to the other styles/)).toBeVisible();expect(scope.queryByRole('status')).toBeNull();expect(change).not.toHaveBeenCalled();
+ fireEvent.click(scope.getByRole('switch',{name:'Beat Sync'}));expect(change).toHaveBeenCalledWith({...value,beat_sync:false});
+ view.rerender(<VisualizerOptions value={{...value,preset:'boxes'}} onChange={change}/>);
+ expect(scope.getByRole('button',{name:'Preset changes'})).toBeEnabled();
+ if(rotation==='timed')expect(scope.getByRole('button',{name:'Timed interval'})).toBeEnabled();
+ if(rotation==='beats')expect(scope.getByRole('button',{name:'Beat interval'})).toBeEnabled();
 });
