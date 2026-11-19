@@ -1,4 +1,5 @@
 import {expect,test} from '@playwright/test';
+import {openAlbums} from './support/ui';
 // Software WebGL cold starts are not a hardware frame-rate acceptance test.
 test.setTimeout(60000);
 test.use({launchOptions:{args:['--enable-webgl','--use-angle=swiftshader','--enable-unsafe-swiftshader']}});
@@ -20,7 +21,7 @@ test('depth quads stay aligned through scrolling without synthetic overscroll',a
 });
 test('artist detail stays still while grid depth remains available with reduced motion changes',async({page})=>{
  await start(page);await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
- const portrait=page.locator('.artist-portrait-button');await portrait.hover({position:{x:140,y:80}});await expect(page.locator('.depth-compositor')).toHaveCount(0);await expect(portrait.locator('.cover')).toHaveCSS('transform','none');await expect(portrait).toHaveCSS('transform','none');
+ const portrait=page.locator('.artist-portrait-button');await portrait.hover();await expect(page.locator('.depth-compositor')).toHaveCount(0);await expect(portrait.locator('.cover')).toHaveCSS('transform','none');await expect(portrait).toHaveCSS('transform','none');
  await page.getByRole('button',{name:'Back to Artists',exact:true}).click();await expect(page.locator('.depth-compositor')).toHaveCount(1);
  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.depth-compositor')).toHaveCount(0);await page.emulateMedia({reducedMotion:'no-preference'});await expect(page.locator('.depth-compositor')).toHaveCount(1);
 });
@@ -74,7 +75,7 @@ test('depth retains its compositor and reconciles quads after wide resize, reflo
 });
 
 test('large grids reuse prepared images across reversals and recover a lost context',async({page})=>{
- await page.goto('/?fixture=1&depthFixture=1&largeAlbums=1');await page.evaluate(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:100,artwork_depth:true})));await page.reload();const canvas=page.locator('.depth-compositor canvas');await page.locator('.card-artwork').first().hover();await expect(page.locator('.card-artwork[data-depth-ready=true]').first()).toBeVisible({timeout:15000});await canvas.evaluate(el=>el.setAttribute('data-persistent','true'));
+ await page.goto('/?fixture=1&depthFixture=1&largeAlbums=1');await page.evaluate(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:100,artwork_depth:true})));await page.reload();await openAlbums(page);const canvas=page.locator('.depth-compositor canvas');await page.locator('.card-artwork').first().hover();await expect(page.locator('.card-artwork[data-depth-ready=true]').first()).toBeVisible({timeout:15000});await canvas.evaluate(el=>el.setAttribute('data-persistent','true'));
  for(const offset of [650,1400,2500,1400,650,0]){await page.locator('.page-scroll').evaluate((el,y)=>{el.scrollTop=y;},offset);await page.waitForTimeout(100);}
  await expect(page.locator('canvas[data-persistent]')).toHaveCount(1);await expect.poll(()=>canvas.getAttribute('data-cache-hits')).not.toBe('0');expect(Number(await canvas.getAttribute('data-ram-bytes'))).toBeLessThanOrEqual(256*1024*1024);expect(Number(await canvas.getAttribute('data-texture-bytes'))).toBeLessThanOrEqual(128*1024*1024);
  await canvas.evaluate(el=>(el as HTMLCanvasElement).getContext('webgl2')!.getExtension('WEBGL_lose_context')!.loseContext());await expect(page.locator('.card-artwork > img').first()).toHaveCSS('opacity','1');await page.locator('.card-artwork').first().hover();await expect(page.locator('.card-artwork[data-depth-ready=true]').first()).toBeVisible({timeout:15000});await expect(page.locator('.depth-compositor')).toHaveCount(1);
