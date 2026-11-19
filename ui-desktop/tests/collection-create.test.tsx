@@ -6,7 +6,7 @@ vi.mock('../src/bridge',()=>({call:bridge.call,errorText:(error:unknown)=>String
 vi.mock('../src/components',()=>({Icon:()=>null,collectionDuration:(seconds:number)=>`${seconds}s`}));
 vi.mock('../src/PlaylistLibrary',()=>({playlistFile:bridge.playlistFile,PlaylistArtwork:({item}:{item:SavedCollection})=><span data-testid="draft-artwork">{item.artwork_choice}:{item.track_ids.join(',')}</span>}));
 vi.mock('../src/SongSelector',()=>({default:({onSelect,onConfirm}:{onSelect:(id:number)=>void;onConfirm:()=>void})=><div role="dialog" aria-label="Choose playlist songs"><button type="button" onClick={()=>onSelect(2)}>Second song</button><button type="button" onClick={()=>onSelect(1)}>First song</button><button type="button" onClick={onConfirm}>Use songs</button></div>}));
-import CollectionCreate from '../src/CollectionDesign';
+import CollectionCreate,{collectionCover,collectionCovers} from '../src/CollectionDesign';
 const library={tracks:[{id:1,title:'First song',duration:120},{id:2,title:'Second song',duration:180}]} as Library;
 const props=()=>({kind:'manual' as const,library,items:[],onChange:vi.fn(),onOpen:vi.fn(),onClose:vi.fn()});
 beforeEach(()=>{HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');this.querySelector('button')?.focus();};HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};});
@@ -39,4 +39,30 @@ test('canceling import preserves the name and artwork draft',async()=>{
  bridge.playlistFile.mockResolvedValue(null);const handlers=props();render(<CollectionCreate {...handlers}/>);
  fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Keep this'}});fireEvent.click(screen.getByRole('button',{name:'Import M3U'}));
  await waitFor(()=>expect(screen.getByRole('button',{name:'Import M3U'})).toBeEnabled());expect(bridge.playlistFile).toHaveBeenCalledWith('import');expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('Keep this');expect(handlers.onClose).not.toHaveBeenCalled();expect(bridge.call).not.toHaveBeenCalled();
+});
+
+test('featured covers update only the draft and the gallery keeps the selected cover focused',()=>{
+ render(<CollectionCreate {...props()}/>);
+ fireEvent.change(screen.getByRole('textbox',{name:'Name'}),{target:{value:'Blue hour'}});
+ fireEvent.click(screen.getByRole('button',{name:'Try sky cover'}));
+ expect(screen.getByTestId('draft-artwork')).toHaveTextContent('playlist/sky:');
+ expect(screen.getByRole('button',{name:'Try sky cover'})).toHaveAttribute('aria-pressed','true');
+ expect(screen.getByRole('button',{name:'Try Lake cover'})).toHaveAttribute('aria-pressed','false');
+ screen.getByRole('button',{name:'Change artwork'}).focus();
+ fireEvent.click(screen.getByRole('button',{name:'Change artwork'}));
+ expect(screen.getByRole('button',{name:'Choose sky cover'})).toHaveFocus();
+ fireEvent.click(screen.getByRole('button',{name:/Use album-cover collage/}));
+ expect(screen.getByTestId('draft-artwork')).toHaveTextContent('collage:');
+ expect(screen.getByRole('textbox',{name:'Name'})).toHaveValue('Blue hour');
+ expect(screen.getByRole('button',{name:'Change artwork'})).toHaveFocus();
+ expect(bridge.call).not.toHaveBeenCalled();
+});
+
+test('every supplied cover has a lightweight gallery thumbnail without replacing its full-size artwork',()=>{
+ expect(collectionCovers).toHaveLength(41);
+ for(const cover of collectionCovers){
+  expect(cover.thumbnail).toMatch(/\/thumbnails\/.+\.webp/);
+  expect(collectionCover(cover.id)).toBe(cover.url);
+  expect(cover.url).toMatch(/\.png/);
+ }
 });
