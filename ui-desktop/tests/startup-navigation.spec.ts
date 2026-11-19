@@ -13,7 +13,7 @@ test('deferred screens and dialogs open during playback without losing navigatio
  await expect(page.getByRole('button',{name:'All albums',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();
  await page.getByRole('menuitem',{name:'Devices',exact:true}).click();
- await expect(page.locator('.devices')).toBeVisible();
+ await expect(page.locator('.wifi-devices')).toBeVisible();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();
  await page.getByRole('menuitem',{name:'Library',exact:true}).click();
  await expect(page.locator('.section-name')).toHaveText('Library');await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Manage collections',exact:true}).click();

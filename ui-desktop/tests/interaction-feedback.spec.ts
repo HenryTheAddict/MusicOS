@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
+import {chooseSection,openAlbums,setPlayerView} from './support/ui';
 test('quality tooltip dismisses after pointer clicks, hover leave, outside click and Escape',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
  const quality=page.locator('.album-copy .audio-quality button'),popup=page.locator('[id^=audio-specs-album-]');
  await quality.hover();await expect(popup).toBeVisible();await quality.click();await page.locator('.album-copy h1').hover();await expect(popup).not.toBeVisible();
  await quality.hover();await expect(popup).toBeVisible();await page.locator('.album-copy h1').click();await expect(popup).not.toBeVisible();
@@ -8,8 +9,8 @@ test('quality tooltip dismisses after pointer clicks, hover leave, outside click
 });
 test('collaboration credits wrap separately at compact widths and large interface sizes',async({page})=>{
  for(const percent of [80,100,125,150]){
-  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');
-  await page.evaluate(value=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,display_name:'Henry',interface_percent:value,coverflow_colors:false})),percent);await page.evaluate(()=>sessionStorage.removeItem('musicos-navigation-v1'));await page.reload();
+  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await openAlbums(page);
+  await page.evaluate(value=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,display_name:'Henry',interface_percent:value,coverflow_colors:false})),percent);await page.evaluate(()=>sessionStorage.removeItem('musicos-navigation-v1'));await page.reload();await openAlbums(page);
   await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
   // Reproduce a collaboration in the existing header, exercising its responsive CSS.
   await page.locator('.album-artist-credits').evaluate(el=>{const first=el.querySelector('button')!;first.querySelector('.artist-credit-name')!.textContent='Travis Scott';const second=first.cloneNode(true) as HTMLElement;second.querySelector('.artist-credit-name')!.textContent='Kendrick Lamar';el.append(second);});
@@ -19,23 +20,23 @@ test('collaboration credits wrap separately at compact widths and large interfac
  }
 });
 test('normal Settings entry retains the last category',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Up next',exact:true}).click();await page.keyboard.press('Escape');await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await page.getByRole('tab',{name:'Audio',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await setPlayerView(page.locator('.now-playing'),'queue');await setPlayerView(page.locator('.now-playing'),'playing');await chooseSection(page,'Settings');await page.getByRole('tab',{name:'Audio',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Audio',exact:true})).toHaveAttribute('aria-selected','true');
- await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Library',exact:true}).click();
- await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+ await chooseSection(page,'Library');
+ await chooseSection(page,'Settings');
  await expect(page.getByRole('tab',{name:'Audio',exact:true})).toHaveAttribute('aria-selected','true');
 });
 test('only the playing album has a playback indicator, and browsing leaves no selected card panel',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
  await expect(page.locator('.collection-card.selected')).toHaveCount(0);await expect(page.locator('.card-playing')).toHaveCount(0);
  await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Albums',exact:true}).click();
  await expect(page.locator('.collection-card.currently-playing')).toHaveCount(1);await expect(page.locator('.collection-card.currently-playing')).toContainText('Discovery');await expect(page.locator('.card-playing')).toHaveAttribute('aria-label','Now playing');
  await expect(page.getByRole('button',{name:'Search music and commands'})).toContainText('⌘ K');
- await expect(page.locator('.now-playing [aria-label="Open Up next"] [data-icon="queue"]')).toHaveCount(1);
+ await expect(page.locator('.now-playing [data-player-cycle="playing"] [data-icon="playerQueue"]')).toHaveCount(1);
  await page.screenshot({animations:'disabled',path:'out/rebuild-qa/playing-card-indicator.png'});
 });
 test('grid titles cap at two lines, with full text retained for album view and tooltip',async({page})=>{
- await page.goto('/?fixture=1');
+ await page.goto('/?fixture=1');await openAlbums(page);
  const card=page.locator('.collection-card').first();
  await card.locator('strong').evaluate(el=>el.textContent='Random Access Memories (10th Anniversary Edition)');await card.locator('small').evaluate(el=>el.textContent='Kevin Abstract; Dominic Fike & Another Contributor');
  await expect(card.locator('strong')).toHaveCSS('white-space','normal');await expect(card.locator('strong')).toHaveCSS('overflow','hidden');await expect(card.locator('strong')).toHaveCSS('-webkit-line-clamp','2');await expect(card.locator('small')).toHaveCSS('white-space','nowrap');
@@ -46,14 +47,14 @@ test('grid titles cap at two lines, with full text retained for album view and t
 });
 test('a delayed known artist portrait keeps its ordinary artwork without a completion overlay',async({page})=>{
  const held: (()=>Promise<void>)[]=[];await page.route('**/*m83*.png',route=>{held.push(()=>route.continue());});
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Artists',exact:true}).click();
  const card=page.locator('.collection-card[data-artist-name="M83"]');await expect(card).toBeVisible();
  await expect(card.getByRole('status',{name:'Loading artist photo'})).toHaveCount(0);await expect(card.locator('.portrait-loading')).toHaveCount(0);
  await page.emulateMedia({reducedMotion:'reduce'});await expect.poll(()=>held.length).toBeGreaterThan(0);for(const release of held)await release();
  await expect(card.locator('img.cover')).toBeVisible();await expect(card.locator('.portrait-loading')).toHaveCount(0);
 });
 test('card artwork stays free of corner Play buttons and retains keyboard actions',async({page})=>{
- await page.goto('/?fixture=1');
+ await page.goto('/?fixture=1');await openAlbums(page);
  const card=page.locator('.collection-card').filter({has:page.getByRole('button',{name:'Open Discovery',exact:true})});
  await card.hover();
  await expect(card.getByRole('button',{name:'Play Discovery',exact:true})).toHaveCount(0);

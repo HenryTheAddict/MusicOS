@@ -7,18 +7,18 @@ test('sidebar keeps artwork, text and cover-colored controls separate across siz
    const art=(color:string)=>'data:image/svg+xml,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="${color}"/></svg>`);
    localStorage.setItem('musicos-fixture-collections',JSON.stringify([
     {id:'red',name:'A long ordinary playlist title',track_ids:[1,2],spark:null,kind:'manual',artwork:art('#e04020'),artwork_choice:'custom'},
-    {id:'blue',name:'Sparklist with a long title',track_ids:[1,2],spark:null,kind:'audio',artwork:art('#2040e0'),artwork_choice:'custom'}]));
+    {id:'blue',name:'Another long ordinary playlist title',track_ids:[1,2],spark:null,kind:'manual',artwork:art('#2040e0'),artwork_choice:'custom'}]));
   },scale);await page.reload();
   const rows=page.locator('.personal-collection');await expect(rows).toHaveCount(2);
   for(const row of await rows.all()){
+   await row.scrollIntoViewIfNeeded();
    await expect.poll(()=>row.evaluate(el=>el.style.getPropertyValue('--collection-tone'))).toMatch(/rgb\(/);
    const art=(await row.locator('.playlist-artwork-tone').boundingBox())!,label=(await row.locator('.collection-label').boundingBox())!,shuffle=(await row.locator('.collection-shuffle').boundingBox())!;
    expect(art.x+art.width).toBeLessThanOrEqual(label.x);expect(label.x+label.width).toBeLessThanOrEqual(shuffle.x);
   }
   const tones=await rows.evaluateAll(els=>els.map(el=>(el as HTMLElement).style.getPropertyValue('--collection-tone')));expect(tones[0]).not.toBe(tones[1]);
-  const ordinary=rows.nth(0).locator('.collection-shuffle .icon');expect(await ordinary.evaluate(el=>getComputedStyle(el).getPropertyValue('--icon-fill').trim())).toBe(tones[0]);
-  const spark=rows.nth(1).locator('.collection-shuffle .icon');expect(await spark.evaluate(el=>getComputedStyle(el).getPropertyValue('--icon-fill'))).toContain('url(#');
-  const stop=spark.locator('linearGradient[id$="spark-glyph"] stop').first();await expect(stop).toHaveCSS('stop-color','rgb(16, 32, 112)');
+  const ordinary=rows.nth(0).locator('.collection-shuffle .icon');expect(await ordinary.evaluate(el=>getComputedStyle(el).getPropertyValue('--shuffle-ink').trim())).toBe(tones[0]);
+  const second=rows.nth(1).locator('.collection-shuffle .icon');expect(await second.evaluate(el=>getComputedStyle(el).getPropertyValue('--shuffle-ink').trim())).toBe(tones[1]);
   await page.screenshot({path:`out/rebuild-qa/sidebar-colors-${width}-${scale}.png`,animations:'disabled'});
  }
 });

@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {setPlayerView} from './support/ui';
 
 test('square desktop retains navigation and stationary player across scales',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:Number(new URLSearchParams(location.search).get('scale'))||100})));
@@ -22,13 +23,13 @@ test('standard mini artwork fills available space without stretching; queue reta
   await page.setViewportSize(size);const mini=page.locator('.mini-shell>.mini-player');await expect(mini).toHaveCSS('height',`${size.height}px`);
   await mini.evaluate(el=>Promise.allSettled(el.getAnimations().map(a=>a.finished)));
   const art=await mini.locator('.mini-player-art').boundingBox();expect(art!.width).toBeGreaterThanOrEqual(size.width===244?155:300);expect(Math.abs(art!.width-art!.height)).toBeLessThan(1);
-  const footer=await mini.locator('.mini-player-transport').boundingBox();await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(mini).toHaveAttribute('data-layout','queue');expect(await mini.locator('.mini-player-transport').boundingBox()).toEqual(footer);
-  await mini.getByRole('button',{name:'Close Up next',exact:true}).click();await expect(mini.locator('.mini-tall-view')).toHaveCSS('opacity','1');await expect(mini.locator('.mini-queue-view')).toHaveCSS('visibility','hidden');await page.screenshot({path:`out/companion-2026-10-29/mini-${size.width}.png`});
+  const footer=await mini.locator('.mini-player-transport').boundingBox();await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(mini).toHaveAttribute('data-view','queue');expect(await mini.locator('.mini-player-transport').boundingBox()).toEqual(footer);
+  await setPlayerView(mini,'playing');await expect(mini.locator('.mini-tall-view')).toHaveCSS('opacity','1');await expect(mini.locator('.mini-queue-view')).toHaveCSS('visibility','hidden');await page.screenshot({path:`out/companion-2026-10-29/mini-${size.width}.png`});
  }
 });
-test('unknown tempo still has a gentle playing heart and cached artist visits do not recheck',async({page})=>{
+test('unknown tempo keeps its playing heart still and cached artist visits do not recheck',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const row=page.locator('[data-track-id="1"]');await row.hover();await row.locator('.row-play').click();
- const heart=row.locator('.track-favorite');await expect(heart).toHaveAttribute('data-tempo-source','gentle');await expect(heart).toHaveAttribute('data-pulsing','true');
+ const heart=row.locator('.track-favorite');await expect(heart).toHaveAttribute('data-tempo-source','unknown');await expect(heart).not.toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-name','none');
  await page.getByRole('button',{name:'Artists',exact:true}).click();await expect(page.locator('[data-artist-name]').first()).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='artist_info').length)).toBeGreaterThan(0);
  const before=await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='artist_info').length);
  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Artists',exact:true}).click();await page.waitForTimeout(300);

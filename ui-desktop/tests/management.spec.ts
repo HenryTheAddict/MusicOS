@@ -117,7 +117,7 @@ test('album and song menus open the matching editor',async({page})=>{
  await expect(page.getByRole('tab',{name:'Details',exact:true})).toHaveAttribute('aria-selected','true');
  await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Discovery');
  await page.getByRole('tab',{name:'Songs',exact:true}).click();
- await page.locator('.tag-songs button').nth(1).click();
+ await page.locator('.tag-order-song').nth(1).click();
  await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Second Light');
  await page.getByRole('button',{name:'Lyrics',exact:true}).click();
  await expect(page.getByRole('region',{name:'Edit lyrics',exact:true})).toBeVisible();

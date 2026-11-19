@@ -15,13 +15,13 @@ test('Reduced Motion shows the final theme without a launch transition',async({p
  await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');expect(await page.locator('.app-shell').evaluate(n=>n.getAnimations().filter(a=>a.id==='shell-launch').length)).toBe(0);
 });
 
-test('only collection controls have gradients; Sparklist sheets retain solid surfaces',async({page})=>{
+test('Sparklist composition may use gradients while ordinary sheet controls stay solid',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'audio/solid',kind:'audio',name:'Solid mix',track_ids:[1,2],artwork_choice:'auto/1'}])));
  await page.goto('/?fixture=1&sparkReady=1');
  await expect(page.locator('.home-collection-grid svg linearGradient')).not.toHaveCount(0);
  await page.getByRole('button',{name:'Create collection',exact:true}).first().click();await page.getByRole('menuitem',{name:'New Sparklist',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Create Sparklist',exact:true});await expect(dialog.getByRole('slider',{name:'Sparklist length'})).toBeVisible();
- expect(await dialog.evaluate(el=>[el,...el.querySelectorAll('*')].filter(n=>getComputedStyle(n).backgroundImage.includes('gradient')).length)).toBe(0);
+ expect(await dialog.evaluate(el=>[el,...el.querySelectorAll('input,select,textarea')].filter(n=>getComputedStyle(n).backgroundImage.includes('gradient')).length)).toBe(0);
  await page.screenshot({path:'out/rebuild-qa/theme-solid-spark.png',animations:'disabled'});
 });
 

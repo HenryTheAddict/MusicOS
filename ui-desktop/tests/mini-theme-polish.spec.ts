@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Page} from '@playwright/test'; import {setPlayerView,settleAnimations} from './support/ui';
 async function start(page:Page){
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-analysis',JSON.stringify([{track_id:1,bpm:120}])));
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
@@ -7,14 +7,14 @@ async function start(page:Page){
 test('mini heart follows playing BPM, and queue retains rows/scroll across animated show/hide',async({page})=>{
  await start(page);await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
  await page.setViewportSize({width:244,height:320});
- const mini=page.locator('.mini-player'),heart=mini.locator('.mini-favorite');
+ const mini=page.locator('.mini-shell>.mini-player'),heart=mini.locator('.mini-favorite');
  await expect(heart).toBeVisible();expect(await heart.evaluate(el=>el.querySelector('svg')!.getBoundingClientRect().width<=el.getBoundingClientRect().width*.6)).toBe(true);await expect(heart).toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-duration','0.5s');
  await mini.getByRole('button',{name:'Pause',exact:true}).click();await expect(heart.locator('.heart-beat')).toHaveCSS('animation-name','none');
  await mini.getByRole('button',{name:'Play',exact:true}).click();await expect(heart).toHaveAttribute('data-pulsing','true');
- await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(mini).toHaveAttribute('data-layout','queue');
+ await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(mini).toHaveAttribute('data-view','queue');
  const list=mini.locator('.mini-queue-list'),scroll=list.locator('.queue-scroll');
  await scroll.evaluate(el=>{el.scrollTop=80;(window as any).retainedQueue=el;});const top=await scroll.evaluate(el=>el.scrollTop);
- await mini.getByRole('button',{name:'Close Up next',exact:true}).click();await expect(list).toHaveAttribute('inert','');await expect(list).not.toBeVisible();
+ await setPlayerView(mini,'playing');await expect(list).toHaveAttribute('inert','');await expect(list).toBeHidden();
  await mini.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(list).toBeVisible();
  expect(await scroll.evaluate(el=>el===(window as any).retainedQueue)).toBe(true);expect(await scroll.evaluate(el=>el.scrollTop)).toBe(top);
  await page.emulateMedia({reducedMotion:'reduce'});await expect(heart.locator('.heart-beat')).toHaveCSS('animation-name','none');
@@ -33,7 +33,7 @@ test('main queue has a closing phase and survives a quick reopen',async({page})=
 function ratio(a:string,b:string){const lum=(s:string)=>{const c=s.match(/[\d.]+/g)!.slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});return c[0]*.2126+c[1]*.7152+c[2]*.0722;};const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);}
 test('section header stays rounded and stationary; portal choices have readable light/dark selected states',async({page})=>{
  await page.goto('/?fixture=1');const chooser=page.getByRole('button',{name:'Choose section',exact:true});
- const original=await chooser.boundingBox();await chooser.click();await expect(chooser).toHaveCSS('border-bottom-left-radius','0px');
+ await settleAnimations(page);const original=await chooser.boundingBox();const radius=await chooser.evaluate(el=>getComputedStyle(el).borderBottomLeftRadius);await chooser.click();await settleAnimations(page);await expect(chooser).toHaveCSS('border-bottom-left-radius',radius);
  expect(await chooser.boundingBox()).toEqual(original);await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  for(const mode of ['Dark','Light']){
   await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:mode,exact:true}).click();

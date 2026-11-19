@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {setPlayerView} from './support/ui';
 const collections=[{id:'playlist/1',name:'Road home',track_ids:[1,2,3],kind:'manual',spark:null,artwork_choice:'collage'},{id:'audio/1',name:'Late evening',track_ids:[13,14,15],kind:'audio',spark:null,artwork_choice:'auto/2'},{id:'spark/1',name:'Always favorites',track_ids:[1,13],kind:'rule',spark:{name:'Always favorites',rules:[]},artwork_choice:'auto/1'}];
 async function seed(page:import('@playwright/test').Page){await page.addInitScript(items=>{localStorage.setItem('musicos-fixture-collections',JSON.stringify(items));localStorage.setItem('musicos-fixture-home-activity',JSON.stringify({frequent:[{id:13,plays:18},{id:1,plays:5}],recent:[13,1,2]}));},collections);}
 test('personal home is the first destination and connects listening, albums and saved collections',async({page})=>{
@@ -17,6 +18,13 @@ test('home and collection shelves fit compact/wide windows at every scale and th
  }
  await page.screenshot({path:'out/rebuild-qa/personal-home-compact.png',animations:'disabled'});
 });
-test('home resume toggles the current song without replacing its queue',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.locator('.sidebar-home').click();await page.getByRole('button',{name:'Pause current song',exact:true}).click();await expect(page.getByRole('button',{name:'Resume current song',exact:true})).toBeVisible();const calls=await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback').map((r:any)=>r.args.action));expect(calls.at(-1).type).toBe('toggle');expect(calls.filter((r:any)=>r.type==='play')).toHaveLength(1);await page.getByRole('button',{name:'Resume current song',exact:true}).click();await expect(page.getByRole('button',{name:'Pause current song',exact:true})).toBeVisible();await page.locator('.now-playing').getByRole('button',{name:'Open Up next',exact:true}).click();await expect(page.locator('.audio-panel .queue-row')).toHaveCount(11);
+test('home resumes the saved song once without replacing its queue or returning after later pauses',async({page})=>{
+ await page.goto('/?fixture=1&lyrics=1');
+ const player=page.locator('.now-playing'),resume=page.getByRole('button',{name:'Resume current song',exact:true});
+ await expect(resume).toBeVisible();await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
+ await setPlayerView(player,'queue');const rows=page.locator('.audio-panel .queue-row strong');await expect(rows).toHaveText(['Second Light']);const before=await rows.allTextContents();await setPlayerView(player,'playing');
+ await page.locator('.home-resume').hover();await resume.click();await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();await expect(resume).toHaveCount(0);
+ const calls=await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback').map((r:any)=>r.args.action));expect(calls.map((action:any)=>action.type)).toEqual(['toggle']);
+ await player.getByRole('button',{name:'Pause',exact:true}).click();await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();await expect(resume).toHaveCount(0);
+ await setPlayerView(player,'queue');await expect(rows).toHaveText(before);
 });

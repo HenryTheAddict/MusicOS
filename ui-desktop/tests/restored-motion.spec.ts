@@ -38,14 +38,14 @@ test('current-row Play morphs into levels and back on pause without hiding the n
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Songs',exact:true}).click();
  const row=page.locator('.track-row').first(),control=row.locator('.row-play'),label=row.locator('.track-label');
  await row.hover();await control.click();
- await expect(control).toHaveAttribute('data-meter','true');
+ await expect(control).toHaveAttribute('data-meter','true');await page.mouse.move(10,10);
  await expect(control.locator('[data-icon=rowLevels] rect')).toHaveCount(3);
  await expect(row.locator('.track-index')).toHaveCSS('opacity','1');
  const height=(await row.boundingBox())!.height,x=(await label.boundingBox())!.x;
  await control.click();await expect(control).toHaveAttribute('data-meter','false');await expect(control.locator('[data-icon=play]')).toHaveCount(1);
  await expect(control.locator('[data-morphing=true]')).toHaveCount(0);
  expect((await row.boundingBox())!.height).toBe(height);expect((await label.boundingBox())!.x).toBe(x);
- await page.emulateMedia({reducedMotion:'reduce'});await control.click();await expect(control.locator('[data-icon=rowLevels] rect')).toHaveCount(3);await expect(control.locator('[data-morphing=true]')).toHaveCount(0);
+ await page.emulateMedia({reducedMotion:'reduce'});await control.click();await page.mouse.move(10,10);await expect(control.locator('[data-icon=rowLevels] rect')).toHaveCount(3);await expect(control.locator('[data-morphing=true]')).toHaveCount(0);
 });
 
 test('album durations stay on the song row and compact About stays beside header controls',async({page})=>{

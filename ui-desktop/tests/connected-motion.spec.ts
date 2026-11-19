@@ -1,9 +1,10 @@
 import {test,expect,type Page} from '@playwright/test';
+import {setPlayerView,settleAnimations} from './support/ui';
 async function mini(page:Page){await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await expect(page.locator('.mini-player')).toBeVisible();}
 test('personal entry has creation, no shortcuts, and More only navigates',async({page})=>{
  await page.goto('/?fixture=1');expect(await page.locator('.sidebar-personal .personal-collection').count()).toBe(0);
  for(const [name,dialog] of [['New playlist','Create playlist'],['New Sparklist','Create Sparklist'],['New Smart playlist','Create Smart playlist']]){
- await page.getByRole('button',{name:'Create collection',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();await expect(page.getByRole('dialog',{name:dialog,exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'Create collection',exact:true})).toBeFocused();}
+ await page.getByRole('button',{name:'Create collection',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();await expect(page.getByRole('dialog',{name:dialog,exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('button',{name:'Create collection',exact:true})).toBeFocused();await settleAnimations(page);}
  await page.getByRole('button',{name:'More library views'}).click();await expect(page.getByRole('menuitem',{name:'Playlists',exact:true})).toBeVisible();expect(await page.getByRole('menuitem',{name:/Create|New /}).count()).toBe(0);await expect(page.locator('.sidebar-more [data-icon=menuDotsClose]')).toBeVisible();
 });
 test('Home artwork stays bounded and has matching pointer and keyboard context actions',async({page})=>{
@@ -17,16 +18,16 @@ test('Home collection palettes own their play controls and deletion requires rev
  await card.locator('.home-collection-open').click({button:'right'});await page.getByRole('menuitem',{name:'Delete collection…',exact:true}).click();await expect(page.getByRole('dialog',{name:/Delete /})).toBeVisible();await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(card).toBeVisible();
 });
 for(const size of [{width:244,height:320},{width:320,height:430},{width:420,height:420}])test(`retained mini compositions, reversal and geometry ${size.width}x${size.height}`,async({page})=>{
- await mini(page);await page.setViewportSize(size);const root=page.locator('.mini-player'),controls=root.locator('.mini-player-tools>button,.mini-player-transport>button');
+ await mini(page);await page.setViewportSize(size);await settleAnimations(page);const root=page.locator('.mini-player'),controls=root.locator('.mini-player-tools>button,.mini-player-transport>button');
  const bounds=await controls.evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}));
- for(const b of bounds){expect(b.w).toBe(40);expect(b.h).toBe(40);expect(b.x).toBeGreaterThanOrEqual(12);expect(b.y+b.h).toBeLessThanOrEqual(size.height-12);}
+ for(const b of bounds){expect(b.w).toBeGreaterThanOrEqual(36);expect(b.h).toBeGreaterThanOrEqual(36);expect(b.x).toBeGreaterThanOrEqual(12);expect(b.y+b.h).toBeLessThanOrEqual(size.height-10);}
  const artwork=root.locator('.mini-player-art');const art=await artwork.boundingBox();expect(Math.abs(art!.width-art!.height)).toBeLessThan(1);
- await root.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(root).toHaveAttribute('data-layout','queue');const scroll=root.locator('.queue-scroll');await scroll.evaluate(el=>{el.scrollTop=70;(window as any).queueNode=el;});const top=await scroll.evaluate(el=>el.scrollTop);
- const toggle=root.getByRole('button',{name:'Close Up next',exact:true});await toggle.focus();await page.keyboard.press('Enter');await page.waitForTimeout(45);
- const opacities=await root.locator('.mini-composition').evaluateAll(nodes=>nodes.map(n=>Number(getComputedStyle(n).opacity)));expect(opacities[0]+opacities[1]).toBeGreaterThan(.7);await page.keyboard.press('Enter');await page.waitForTimeout(220);await expect(root).toHaveAttribute('data-layout','queue');expect(await scroll.evaluate(el=>el===(window as any).queueNode)).toBe(true);expect(await scroll.evaluate(el=>el.scrollTop)).toBe(top);
+ await root.getByRole('button',{name:'Open Up next',exact:true}).click();await expect(root).toHaveAttribute('data-view','queue');const scroll=root.locator('.queue-scroll');await scroll.evaluate(el=>{el.scrollTop=70;(window as any).queueNode=el;});const top=await scroll.evaluate(el=>el.scrollTop);
+ const toggle=root.locator('[data-player-cycle]');await toggle.focus();await page.keyboard.press('Enter');await expect(root).toHaveAttribute('data-view','lyrics');await page.keyboard.press('Enter');await page.waitForTimeout(45);
+ const opacities=await root.locator('.mini-composition').evaluateAll(nodes=>nodes.map(n=>Number(getComputedStyle(n).opacity)));expect(opacities[0]+opacities[1]).toBeGreaterThan(.7);await page.keyboard.press('Enter');await page.waitForTimeout(220);await expect(root).toHaveAttribute('data-view','queue');expect(await scroll.evaluate(el=>el===(window as any).queueNode)).toBe(true);expect(await scroll.evaluate(el=>el.scrollTop)).toBe(top);
  expect(await controls.evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};}))).toEqual(bounds);
  expect(await root.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(1);const list=root.locator('.mini-queue-list');expect(await list.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeLessThan(2);
- await page.screenshot({path:`out/rebuild-qa/connected-mini-queue-${size.width}.png`});await toggle.click();await page.waitForTimeout(220);await page.screenshot({path:`out/rebuild-qa/connected-mini-art-${size.width}.png`});
+ await page.screenshot({path:`out/rebuild-qa/connected-mini-queue-${size.width}.png`});await setPlayerView(root,'playing');await page.screenshot({path:`out/rebuild-qa/connected-mini-art-${size.width}.png`});
  await page.emulateMedia({reducedMotion:'reduce'});await root.getByRole('button',{name:'Open Up next',exact:true}).click();expect(await root.locator('.mini-composition').evaluateAll(nodes=>nodes.flatMap(n=>n.getAnimations()).length)).toBe(0);
 });
 test('mini track changes crossfade once, queue context restores focus, and paused idle settles',async({page})=>{

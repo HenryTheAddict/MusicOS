@@ -28,7 +28,7 @@ for(const scale of [80,100,125,150])test(`Now Playing aligns title and cover at 
 test('mini-player tools and transport center their supplied icons in both views',async({page})=>{
  await page.goto('/?fixture=1');await play(page);await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();await page.setViewportSize({width:244,height:320});
  for(const mode of ['tall','queue']){
-  const mini=page.locator('.mini-player');await expect(mini).toHaveAttribute('data-layout',mode);await mini.getByRole('button',{name:'Pause',exact:true}).click();
+  const mini=page.locator('.mini-player');await expect(mini).toHaveAttribute('data-view',mode);await mini.getByRole('button',{name:'Pause',exact:true}).click();
   const offsets=await mini.locator('.mini-player-tools>button,.mini-player-transport>button').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect(),icon=button.querySelector('.heart-beat,.icon')!.getBoundingClientRect();return {x:(r.left+r.right-icon.left-icon.right)/2,y:(r.top+r.bottom-icon.top-icon.bottom)/2};}));
   for(const offset of offsets){expect(Math.abs(offset.x)).toBeLessThan(1);expect(Math.abs(offset.y)).toBeLessThan(1);}
   await page.screenshot({path:`out/persistent-qa/mini-centered-${mode}.png`,animations:'disabled'});await mini.getByRole('button',{name:'Play',exact:true}).click();if(mode==='tall')await mini.getByRole('button',{name:'Open Up next',exact:true}).click();

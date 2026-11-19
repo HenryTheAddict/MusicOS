@@ -31,7 +31,7 @@ test('Favorites live with your collections and recent songs preview from their m
  await expect(row).toHaveCSS('border-top-style','solid');
  const measures=await row.evaluate(node=>{
   const middle=(el:Element)=>{const r=el.getBoundingClientRect();return r.top+r.height/2;};
-  return Math.abs(middle(node.querySelector('.icon-button')!)-middle(node.querySelector('.menu-trigger')!));
+  return Math.abs(middle(node.querySelector('.icon-button')!)-middle(node));
  });
  expect(measures).toBeLessThan(1);
 

@@ -1,4 +1,5 @@
 import {test,expect,type Page} from '@playwright/test';
+import {openAlbums} from './support/ui';
 async function observeMotion(page:Page){
  await page.addInitScript(()=>{
   const original=Element.prototype.animate;(window as any).detailMotion=[];(window as any).holdCover=false;
@@ -6,14 +7,14 @@ async function observeMotion(page:Page){
  });
 }
 test('album cover moves from its clicked grid position and copy reveals in order',async({page})=>{
- await observeMotion(page);await page.goto('/?fixture=1');
+ await observeMotion(page);await page.goto('/?fixture=1');await openAlbums(page);
  const card=page.getByRole('button',{name:'Open Junk',exact:true});const start=(await card.locator('.card-artwork').boundingBox())!;
  await page.evaluate(()=>(window as any).holdCover=true);await card.click();
  const transfer=page.locator('.album-cover-transfer');await expect(transfer).toHaveCount(1);const initial=(await transfer.boundingBox())!;
  expect(Math.abs(initial.x-start.x)).toBeLessThan(2);expect(Math.abs(initial.y-start.y)).toBeLessThan(2);expect(Math.abs(initial.width-start.width)).toBeLessThan(2);
  await expect(transfer).toHaveCSS('pointer-events','none');await expect(page.locator('.album-artwork-stage')).toHaveCSS('opacity','0');
  const reveal=await page.evaluate(()=>(window as any).detailMotion.filter((item:any)=>item.animation.id==='album-detail-reveal').map((item:any)=>({delay:item.options.delay,duration:item.options.duration,frames:item.frames})));
- expect(reveal.length).toBeGreaterThanOrEqual(5);expect(reveal.length).toBeLessThanOrEqual(7);expect(reveal.slice(0,4).map((item:any)=>item.delay)).toEqual([30,78,102,126]);expect(reveal.every((item:any)=>item.duration<=220)).toBe(true);
+ expect(reveal).toHaveLength(4);expect(reveal.every((item:any)=>(item.delay??0)===0&&item.duration===180)).toBe(true);
  await page.evaluate(()=>{const item=(window as any).detailMotion.find((item:any)=>item.animation.id==='album-cover-transfer');item.animation.finish();});
  await expect(transfer).toHaveCount(0);await expect(page.locator('.album-artwork-stage')).toHaveCSS('opacity','1');
  const before=await page.evaluate(()=>(window as any).detailMotion.filter((item:any)=>item.animation.id==='album-detail-reveal').length);
@@ -22,7 +23,7 @@ test('album cover moves from its clicked grid position and copy reveals in order
  await page.screenshot({path:'out/persistent-qa/album-motion-light.png',animations:'disabled'});
 });
 test('interrupted return starts from the visible cover and resize removes transient layers',async({page})=>{
- await observeMotion(page);await page.goto('/?fixture=1');await page.evaluate(()=>(window as any).holdCover=true);
+ await observeMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.evaluate(()=>(window as any).holdCover=true);
  await page.getByRole('button',{name:'Open Junk',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(1);
  await page.evaluate(()=>{const item=(window as any).detailMotion.find((item:any)=>item.animation.id==='album-cover-transfer');item.animation.currentTime=140;});
  const halfway=(await page.locator('.album-cover-transfer').boundingBox())!;
@@ -31,7 +32,7 @@ test('interrupted return starts from the visible cover and resize removes transi
  await page.setViewportSize({width:1000,height:700});await expect(page.locator('.album-cover-transfer')).toHaveCount(0);expect(await page.locator('[data-album-entering=true]').count()).toBe(0);
 });
 test('keyboard opening works and Reduced Motion cancels all spatial detail motion',async({page})=>{
- await observeMotion(page);await page.goto('/?fixture=1');await page.evaluate(()=>(window as any).holdCover=true);
+ await observeMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.evaluate(()=>(window as any).holdCover=true);
  await page.getByRole('button',{name:'Open Junk',exact:true}).focus();await page.keyboard.press('Enter');await expect(page.locator('.album-cover-transfer')).toHaveCount(1);
  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.album-cover-transfer')).toHaveCount(0);await expect(page.locator('.album-artwork-stage')).toHaveCSS('opacity','1');
  const before=await page.evaluate(()=>(window as any).detailMotion.length);await page.getByRole('button',{name:'Back to Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();expect(await page.evaluate(()=>(window as any).detailMotion.length)).toBe(before);
@@ -55,13 +56,13 @@ test('artist portrait stays flat and theme controls keep readable neutral ink',a
  }
 });
 test('artist album-strip return completes promptly with no lingering cover layer',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
  await page.getByRole('button',{name:'Junk',exact:true}).click();await expect(page.locator('.album-detail')).toBeVisible();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:800});
  await page.locator('.sidebar-back').click();await expect(page.locator('.artist-detail')).toBeVisible();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:800});
 });
 test('album opening fits compact windows at every interface scale',async({page})=>{
  for(const percent of [80,100,125,150]){
-  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
+  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await openAlbums(page);await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();await openAlbums(page);
   await page.getByRole('button',{name:'Open Junk',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:800});
   const cover=(await page.locator('.album-artwork-stage').boundingBox())!,title=(await page.locator('.album-copy h1').boundingBox())!;
   expect(cover.x).toBeGreaterThanOrEqual(0);expect(cover.x+cover.width).toBeLessThanOrEqual(720);expect(title.x+title.width).toBeLessThanOrEqual(721);
@@ -70,14 +71,14 @@ test('album opening fits compact windows at every interface scale',async({page})
  }
 });
 test('artist portrait connects to its header, reverses from current bounds, and stays steady afterward',async({page})=>{
- await observeMotion(page);await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();
+ await observeMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Artists',exact:true}).click();
  const card=page.getByRole('button',{name:'Open M83',exact:true});await expect.poll(()=>card.locator('img.cover:not(.placeholder)').evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
  const start=(await card.locator('.card-artwork').boundingBox())!;const source=await card.locator('img.cover').evaluate((img:HTMLImageElement)=>img.currentSrc||img.src);
  await page.evaluate(()=>(window as any).holdCover=true);await card.focus();await page.keyboard.press('Enter');
  const transfer=page.locator('.album-cover-transfer[data-cover-kind=artist]');await expect(transfer).toHaveCount(1);expect(await transfer.getAttribute('src')).toBe(source);
  const initial=(await transfer.boundingBox())!;expect(Math.abs(initial.x-start.x)).toBeLessThan(2);expect(Math.abs(initial.y-start.y)).toBeLessThan(2);expect(Math.abs(initial.width-start.width)).toBeLessThan(2);
  await expect(page.locator('.artist-portrait-button')).toHaveCSS('opacity','0');await expect(transfer).toHaveCSS('pointer-events','none');
- const reveal=await page.evaluate(()=>(window as any).detailMotion.filter((item:any)=>item.animation.id==='artist-detail-reveal').map((item:any)=>({delay:item.options.delay??0,duration:item.options.duration})));expect(reveal).toHaveLength(4);expect(reveal.every((item:any)=>item.delay===0&&item.duration===180)).toBe(true);
+ const reveal=await page.evaluate(()=>(window as any).detailMotion.filter((item:any)=>item.animation.id==='artist-detail-reveal').map((item:any)=>({delay:item.options.delay??0,duration:item.options.duration})));expect(reveal).toHaveLength(5);expect(reveal.every((item:any)=>item.delay===0&&item.duration===180)).toBe(true);
  await page.evaluate(()=>{const item=(window as any).detailMotion.find((item:any)=>item.animation.id==='artist-cover-transfer');item.animation.currentTime=140;});const halfway=(await transfer.boundingBox())!;
  await page.locator('.sidebar-back').click();await expect(transfer).toHaveCount(1);const returned=(await transfer.boundingBox())!;expect(Math.abs(returned.x-halfway.x)).toBeLessThan(2);expect(Math.abs(returned.y-halfway.y)).toBeLessThan(2);
  await page.evaluate(()=>{const items=(window as any).detailMotion.filter((item:any)=>item.animation.id==='artist-cover-transfer');items.at(-1).animation.finish();});await expect(transfer).toHaveCount(0);
@@ -86,24 +87,30 @@ test('artist portrait connects to its header, reverses from current bounds, and 
  const before=await page.evaluate(()=>(window as any).detailMotion.length);await page.evaluate(()=>window.dispatchEvent(new Event('musicos-artwork-invalidated')));expect(await page.evaluate(()=>(window as any).detailMotion.length)).toBe(before);
 });
 test('artist transfer cancels cleanly on resize and Reduced Motion',async({page})=>{
- await observeMotion(page);await page.goto('/?fixture=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await page.evaluate(()=>(window as any).holdCover=true);
+ await observeMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Artists',exact:true}).click();await page.evaluate(()=>(window as any).holdCover=true);
  await page.getByRole('button',{name:'Open M83',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(1);await page.setViewportSize({width:1100,height:750});await expect(page.locator('.album-cover-transfer')).toHaveCount(0);await expect(page.locator('.artist-portrait-button')).toHaveCSS('opacity','1');
  await page.locator('.sidebar-back').click();await expect(page.locator('.album-cover-transfer')).toHaveCount(1);await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.album-cover-transfer')).toHaveCount(0);expect(await page.locator('[data-album-entering=true]').count()).toBe(0);
  const before=await page.evaluate(()=>(window as any).detailMotion.length);await page.getByRole('button',{name:'Open M83',exact:true}).click();expect(await page.evaluate(()=>(window as any).detailMotion.length)).toBe(before);
 });
 test('dark artwork hue reaches player and portal menus without pale surfaces',async({page})=>{
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode:'dark',source:'artwork',accent:'#0064df',saturation:150,tint:20}})));
- await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
+ await page.goto('/?fixture=1');await openAlbums(page);await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
  const albumColor=await page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim());expect(albumColor).not.toBe('#202124');
  await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:800});
  await expect.poll(()=>page.locator('html').evaluate(el=>getComputedStyle(el).getPropertyValue('--surface-color').trim())).not.toBe(albumColor);
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await expect(page.locator('.section-dropdown')).toBeVisible();
- const colors=await page.evaluate(()=>{const root=getComputedStyle(document.documentElement);return {control:root.getPropertyValue('--control-surface').trim(),player:getComputedStyle(document.querySelector('.now-playing')!).backgroundColor,menu:getComputedStyle(document.querySelector('.section-dropdown')!).backgroundColor};});expect(colors.player).toBe(colors.menu);expect(colors.player).not.toBe('rgb(41, 43, 48)');
+ const colors=await page.evaluate(()=>{
+  const player=document.querySelector('.now-playing')!,menu=document.querySelector('.section-dropdown > .menu-panel-surface')!;
+  const resolve=(owner:Element,token:string)=>{const probe=document.createElement('i');probe.style.backgroundColor=`var(${token})`;owner.append(probe);const color=getComputedStyle(probe).backgroundColor;probe.remove();return color;};
+  const pixels=(color:string)=>{const canvas=document.createElement('canvas');canvas.width=canvas.height=1;const context=canvas.getContext('2d')!;context.fillStyle=color;context.fillRect(0,0,1,1);return [...context.getImageData(0,0,1,1).data];};
+  const playerColor=getComputedStyle(player).backgroundColor,menuColor=getComputedStyle(menu).backgroundColor;
+  return {control:resolve(document.documentElement,'--control-surface'),playback:resolve(player,'--surface-color'),player:playerColor,menu:menuColor,pixels:[pixels(playerColor),pixels(menuColor)]};
+ });expect(colors.menu).toBe(colors.control);expect(colors.player).toBe(colors.playback);for(const pixel of colors.pixels){expect(pixel[3]).toBe(255);expect(Math.max(...pixel.slice(0,3))).toBeLessThan(128);}
  await page.screenshot({path:'out/persistent-qa/artist-color-dark-menu.png',animations:'disabled'});await page.keyboard.press('Escape');await page.screenshot({path:'out/persistent-qa/artist-color-dark.png',animations:'disabled'});
 });
 test('artist portrait opening fits compact windows at every interface scale',async({page})=>{
  for(const percent of [80,100,125,150]){
-  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,appearance:{mode:'dark',source:'artwork',accent:'#0064df',saturation:150,tint:20}}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
+  await page.setViewportSize({width:720,height:480});await page.goto('/?fixture=1');await openAlbums(page);await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,appearance:{mode:'dark',source:'artwork',accent:'#0064df',saturation:150,tint:20}}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
   await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:800});
   const portrait=(await page.locator('.artist-portrait-button').boundingBox())!,title=(await page.locator('.artist-hero > h1').boundingBox())!;
   expect(portrait.x).toBeGreaterThanOrEqual(0);expect(portrait.x+portrait.width).toBeLessThanOrEqual(720);expect(title.x+title.width).toBeLessThanOrEqual(721);await expect(page.getByRole('button',{name:'Expand M83 portrait',exact:true})).toBeEnabled();
