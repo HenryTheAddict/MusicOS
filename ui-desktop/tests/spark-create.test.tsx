@@ -17,6 +17,21 @@ test('unapproved model stays unavailable and never sends a generation request',a
  expect(screen.getByRole('button',{name:'Preview Sparklist'})).toBeDisabled();expect(screen.getByRole('button',{name:'Choose for me'})).toBeDisabled();
  expect(bridge.call).toHaveBeenCalledTimes(1);
 });
+test('sparkles stay in the background and primary actions carry the shine, never the artwork',async()=>{
+ bridge.call.mockImplementation(async(_command,{request})=>request.action==='status'?base:request.action==='choose'?{...base,chosen_id:1}:{...base,preview:{track_ids:[1,2],analyzed:2,available:3,generation_version:'test',configuration:request.generation}});
+ const view=render(<SparkCreate {...props()}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());
+ expect(view.container.querySelectorAll('.spark-glitter')).toHaveLength(1);
+ expect(view.container.querySelector('.spark-glitter')?.parentElement).toHaveClass('spark-composer-atmosphere');
+ expect(view.container.querySelector('.spark-composer-atmosphere')).toHaveAttribute('aria-hidden','true');
+ expect(view.container.querySelectorAll('.spark-artwork-sleeve .spark-glitter,.spark-composer-mark .spark-glitter')).toHaveLength(0);
+ expect(screen.getByRole('button',{name:'Preview Sparklist'})).toHaveClass('spark-advance');
+ expect(screen.getByRole('button',{name:'Choose for me'})).not.toHaveClass('spark-advance');
+ fireEvent.click(screen.getByRole('button',{name:'Choose for me'}));
+ const advance=await screen.findByRole('button',{name:'Name & save'});expect(advance).toHaveClass('spark-advance');fireEvent.click(advance);
+ expect(screen.getByRole('button',{name:'Save Sparklist'})).toHaveClass('spark-advance');
+ expect(view.container.querySelectorAll('.spark-artwork-sleeve .spark-glitter')).toHaveLength(0);
+});
 test('selected seed stays visible after filtering and unanalyzed seeds lead to Audio settings',async()=>{
  bridge.call.mockResolvedValue(base);const handlers=props();render(<SparkCreate {...handlers}/>);
  await waitFor(()=>expect(screen.getByRole('button',{name:'Choose for me'})).toBeEnabled());
