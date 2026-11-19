@@ -21,9 +21,6 @@ function ArtworkPicker({value,onChange,spark,onClose}:{value:string;onChange:(ch
  const ref=useRef<HTMLDialogElement>(null),opener=useRef(document.activeElement as HTMLElement|null);useEffect(()=>{const dialog=ref.current;dialog?.showModal();dialog?.querySelector<HTMLElement>('.cover-picker [aria-pressed=true]')?.focus();return()=>{dialog?.close();opener.current?.isConnected&&opener.current.focus();};},[]);
  return <dialog ref={ref} className="artwork-picker song-selector" aria-label="Choose cover artwork" onCancel={e=>{e.preventDefault();e.stopPropagation();onClose();}}><header><div><h2>Cover artwork</h2><p>{spark?'Color for your next discovery.':'Find a cover that feels like your music.'}</p></div><button type="button" aria-label="Close artwork picker" onClick={onClose}><Icon name="controlClose"/></button></header><CoverPicker value={value} spark={spark} onChange={onChange}/></dialog>;
 }
-export function PuffyToggle<T extends string>({label,value,options,onChange}:{label:string;value:T;options:{value:T;label:string}[];onChange:(value:T)=>void}){
- return <div className="puffy-toggle" role="group" aria-label={label}>{options.map(option=><button key={option.value} aria-pressed={value===option.value} onClick={()=>onChange(option.value)}>{option.label}</button>)}</div>;
-}
 export default function CollectionCreate({kind,library,items,onChange,onOpen,onClose,sparkContent}:{kind:'manual'|'spark';library:Library;items:SavedCollection[];onChange:(items:SavedCollection[])=>void;onOpen:(item:SavedCollection)=>void;onClose:()=>void;sparkContent?:React.ReactNode}){
  const opener=useRef(document.activeElement as HTMLElement|null);
  const [songs,setSongs]=useState<number[]>([]),[choosingSongs,setChoosingSongs]=useState(false);
