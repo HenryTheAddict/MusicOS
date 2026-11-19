@@ -26,6 +26,15 @@ test('layout follows effective width at every scale and all narrow surfaces fit'
   await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await expect(page.getByRole('heading',{name:'Appearance',exact:true})).toBeVisible();expect(await page.locator('.page-scroll').evaluate(el=>el.scrollWidth-el.clientWidth),`${width}/${scale}/${mode}/${source}/settings`).toBeLessThan(2);
   if(width===480&&scale===100&&source==='artwork'&&mode==='light')await page.screenshot({path:'out/persistent-qa/adaptive-settings-480.png'});
  }
+ for(const mode of ['light','dark']){
+  await page.goto(`/?fixture=1&scale=100&mode=${mode}&source=blue`);
+  for(let width=900;width<=1120;width+=20){
+   await page.setViewportSize({width,height:800});await expect(page.locator('.adaptive-shell')).toHaveAttribute('data-layout','wide');await settleAnimations(page);
+   const brand=(await page.locator('.header-brand>.icon').boundingBox())!,section=(await page.getByRole('button',{name:'Choose section',exact:true}).boundingBox())!;
+   expect(brand.x+brand.width,`${width}/${mode} brand clears section control`).toBeLessThanOrEqual(section.x);
+   if(width===1080)await page.screenshot({path:`out/persistent-qa/adaptive-header-1080-${mode}.png`});
+  }
+ }
 });
 test('More keeps a fixed icon slot, label and hit area while opening, pressing and closing',async({page})=>{
  for(const width of [1280,480]){await page.setViewportSize({width,height:800});await page.goto('/?fixture=1');if(width===480)await tab(page,'Library');const more=page.getByRole('button',{name:'More library views',exact:true});await expect(more).toBeVisible();const geometry=()=>more.evaluate(el=>{const r=el.getBoundingClientRect(),icon=el.querySelector('.icon')!.getBoundingClientRect(),label=el.querySelector('span:not(.icon)')!.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,iconWidth:icon.width,iconHeight:icon.height,labelX:label.x,labelY:label.y};});await settleAnimations(page);const before=await geometry();const expectStable=async()=>{const after=await geometry();for(const key of Object.keys(before) as (keyof typeof before)[])expect(Math.abs(after[key]-before[key]),key).toBeLessThanOrEqual(1);};await more.hover();await page.mouse.down();await expectStable();await page.mouse.up();await expect(more).toHaveAttribute('aria-expanded','true');await expect(page.getByRole('menuitem',{name:'Playlists',exact:true})).toBeVisible();await expectStable();await page.keyboard.press('Escape');await expect(page.locator('.dropdown.menu-panel')).toHaveCount(0);await expectStable();await expect(more).toBeFocused();expect(await more.locator('.icon').evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);await page.screenshot({path:`out/persistent-qa/adaptive-more-${width}.png`});}
