@@ -72,6 +72,47 @@ pub fn update_latest_screenshot(bytes: &[u8], resolution: Resolution) {
 static ICON_CACHE: OnceLock<Mutex<HashMap<String, tiny_skia::Pixmap>>> = OnceLock::new();
 
 #[cfg(test)]
+mod canvas_tests {
+    use super::*;
+
+    #[test]
+    fn clear_matches_pixel_reference_for_all_opacities_and_buffer_sizes() {
+        for resolution in [
+            Resolution { width: 0, height: 0 },
+            Resolution { width: 1, height: 1 },
+            Resolution { width: 17, height: 13 },
+            Resolution::VGA_4_3,
+            Resolution::HD_4_3,
+        ] {
+            let size = resolution.width as usize * resolution.height as usize * 4;
+            for extra in [0, 1, 3, 4, 7] {
+                for alpha in [0, 1, 127, 254, 255] {
+                    let color = Color::rgba(23, 87, 149, alpha);
+                    let mut actual: Vec<u8> = (0..size + extra)
+                        .map(|index| index.wrapping_mul(37) as u8)
+                        .collect();
+                    let mut expected = actual.clone();
+                    if alpha == 255 {
+                        for pixel in expected.chunks_exact_mut(4) {
+                            pixel.copy_from_slice(&[color.b, color.g, color.r, 255]);
+                        }
+                    } else {
+                        let mut reference = Canvas::new(resolution, &mut expected).unwrap();
+                        for y in 0..resolution.height as i32 {
+                            for x in 0..resolution.width as i32 {
+                                reference.put_pixel(x, y, color);
+                            }
+                        }
+                    }
+                    Canvas::new(resolution, &mut actual).unwrap().clear(color);
+                    assert_eq!(actual, expected, "{resolution:?} extra={extra} alpha={alpha}");
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
 mod screenshot_tests {
     use super::*;
 
@@ -394,11 +435,16 @@ impl<'a> Canvas<'a> {
             return;
         }
         if color.a == 255 {
-            for chunk in self.buffer.chunks_exact_mut(4) {
-                chunk[0] = color.b;
-                chunk[1] = color.g;
-                chunk[2] = color.r;
-                chunk[3] = 255;
+            let len = self.buffer.len() / 4 * 4;
+            if len == 0 {
+                return;
+            }
+            self.buffer[..4].copy_from_slice(&[color.b, color.g, color.r, 255]);
+            let mut filled = 4;
+            while filled < len {
+                let count = filled.min(len - filled);
+                self.buffer.copy_within(..count, filled);
+                filled += count;
             }
         } else {
             for y in 0..self.resolution.height as i32 {
