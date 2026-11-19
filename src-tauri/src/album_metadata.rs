@@ -318,7 +318,7 @@ pub fn apply(path:&Path,library:&crate::library::Library,request:Request)->Resul
    let mut ids=Vec::new();let mut originals=Vec::new();
    for n in 1..=2{
     let audio=temp.path().join(format!("{n}.flac"));
-    assert!(std::process::Command::new("/opt/homebrew/bin/ffmpeg").args(["-v","error","-f","lavfi","-i","sine=frequency=440:duration=0.1","-metadata","title=Original","-metadata","artist=Artist","-metadata","album=Record","-metadata","album_artist=Artist","-metadata","date=2000","-metadata","track=1","-metadata","disc=1","-metadata","genre=Rock"]).arg(&audio).status().unwrap().success());
+    assert!(std::process::Command::new("ffmpeg").args(["-v","error","-f","lavfi","-i","sine=frequency=440:duration=0.1","-metadata","title=Original","-metadata","artist=Artist","-metadata","album=Record","-metadata","album_artist=Artist","-metadata","date=2000","-metadata","track=1","-metadata","disc=1","-metadata","genre=Rock"]).arg(&audio).status().unwrap().success());
     let id=db.insert_track(&audio.to_string_lossy(),"Original","Artist","Record",n,2,1).unwrap();ids.push(id);originals.push(std::fs::read(audio).unwrap());
    }
    let outside=db.insert_track("/other.flac","Other song","Artist","Other album",1,2,1).unwrap();let outside_before=db.metadata_values(outside).unwrap();

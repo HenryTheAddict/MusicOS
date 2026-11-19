@@ -61,6 +61,8 @@ impl Health {
 }
 
 pub(super) struct AudioOutput {
+    #[cfg(test)]
+    silent:Option<(Arc<std::sync::atomic::AtomicBool>,std::thread::JoinHandle<()>)>,
     // Drop sink before stream, so queued as well as active sources are released.
     sink:Option<Sink>,
     stream:Option<OutputStream>,
@@ -76,11 +78,18 @@ pub(super) struct AudioOutput {
 impl AudioOutput {
     pub fn new(mixer:Mixer)->Self {
         let now=Instant::now();let (return_to,returned)=mpsc::sync_channel(1);
-        Self{sink:None,stream:None,parked:Some(mixer),returned,return_to,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None}
+        Self{
+            #[cfg(test)]
+            silent:None,
+            sink:None,stream:None,parked:Some(mixer),returned,return_to,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None}
     }
-    pub fn available(&self)->bool{self.sink.is_some()}
+    pub fn available(&self)->bool{
+        #[cfg(test)]
+        if self.silent.is_some(){return true;}
+        self.sink.is_some()
+    }
     pub fn service_parked(&mut self) {
-        if self.sink.is_some() { return; }
+        if self.available() { return; }
         if self.parked.is_none() { self.parked=self.returned.try_recv().ok(); }
         if let Some(mixer)=self.parked.as_mut() { mixer.service_parked(); }
     }
@@ -91,13 +100,39 @@ impl AudioOutput {
     }
 
     pub fn poll(&mut self,force:bool){
+        #[cfg(test)]
+        if std::env::var("MUSICOS_TEST_AUDIO_BACKEND").as_deref()==Ok("none"){
+            self.start_silent();
+            return;
+        }
         let now=Instant::now();
         if !force&&now.duration_since(self.checked_at)<Duration::from_millis(250){return;}
         self.checked_at=now;self.inspect(now,current_route());
     }
     #[cfg(test)]
     pub(super) fn simulate_disconnect(&mut self){self.disconnect();}
+    #[cfg(test)]
+    fn start_silent(&mut self){
+        if self.available(){return;}
+        if self.parked.is_none(){self.parked=self.returned.try_recv().ok();}
+        let Some(mixer)=self.parked.take() else{return;};
+        let mut source=OutputSource{mixer:Some(mixer),returned:self.return_to.clone(),heartbeat:self.heartbeat.clone(),samples:0};
+        let stop=Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopped=stop.clone();
+        let worker=std::thread::spawn(move||{
+            let started=Instant::now();
+            let mut frames=0u64;
+            while !stopped.load(Ordering::Acquire){
+                for _ in 0..super::dj_audio::RATE/100{source.next();source.next();frames+=1;}
+                std::thread::sleep(Duration::from_secs_f64(frames as f64/super::dj_audio::RATE as f64).saturating_sub(started.elapsed()));
+            }
+        });
+        self.silent=Some((stop,worker));
+        self.error=None;
+    }
     fn disconnect(&mut self){
+        #[cfg(test)]
+        if let Some((stop,worker))=self.silent.take(){stop.store(true,Ordering::Release);worker.join().unwrap();}
         drop(self.sink.take());drop(self.stream.take());
         if self.parked.is_none(){self.parked=self.returned.try_recv().ok();}
     }
@@ -155,8 +190,27 @@ impl Drop for AudioOutput {fn drop(&mut self){self.disconnect();}}
     }
     #[test]fn unavailable_route_keeps_mixer_and_does_not_turn_resume_into_a_restart(){
         let (_,mixer)=dj_audio::create(1);let now=Instant::now();let (tx,rx)=mpsc::sync_channel(1);
-        let mut output=AudioOutput{sink:None,stream:None,parked:Some(mixer),returned:rx,return_to:tx,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None};
+        let mut output=AudioOutput{silent:None,sink:None,stream:None,parked:Some(mixer),returned:rx,return_to:tx,heartbeat:Arc::new(AtomicU64::new(0)),route:None,checked_at:now,health:Health::new(now),error:None};
         for n in 0..10{output.inspect(now+Duration::from_secs(n),Err(anyhow::anyhow!("headphones connecting")));assert!(!output.available());assert!(output.parked.is_some());}
+    }
+    #[test]fn silent_output_consumes_commands_and_returns_the_mixer_on_suspend(){
+        let (mut control,mixer)=dj_audio::create(1);
+        control.commands.push(Command::Pause(true)).unwrap();
+        let mut output=AudioOutput::new(mixer);
+        output.start_silent();
+        output.start_silent();
+        assert!(output.available());
+        let deadline=Instant::now()+Duration::from_secs(2);
+        while output.heartbeat.load(Ordering::Relaxed)==0{
+            assert!(Instant::now()<deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        output.suspend();
+        assert!(!output.available());
+        assert!(output.parked.is_some());
+        assert!(output.error.is_none());
+        output.start_silent();
+        assert!(output.available());
     }
     #[cfg(target_os="macos")]
     #[test]fn native_output_can_reclaim_and_reopen_the_same_muted_mixer(){
