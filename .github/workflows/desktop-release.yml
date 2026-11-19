@@ -20,7 +20,29 @@ env:
   MUSICOS_UPDATER_PUBLIC_KEY: ${{ vars.MUSICOS_UPDATER_PUBLIC_KEY }}
 
 jobs:
+  model:
+    name: Fetch the pinned Sparklist model
+    if: github.repository == 'HenryTheAddict/MusicOS' && !github.event.repository.private && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download and verify the pinned Sparklist model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p out/desktop-model
+          gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/629370311" > out/desktop-model/model.tar.gz
+          node --input-type=module -e 'import {createHash} from "node:crypto"; import {readFileSync} from "node:fs"; if (createHash("sha256").update(readFileSync(process.argv[1])).digest("hex") !== "cf720c9932d370c23e38d6f43b16395677e102a946cee876b3c2994a1f02a6c3") throw Error("Sparklist archive checksum mismatch")' out/desktop-model/model.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sparklist-model
+          path: out/desktop-model/model.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+
   bundle:
+    needs: model
     if: github.repository == 'HenryTheAddict/MusicOS' && !github.event.repository.private && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     strategy:
       fail-fast: false
@@ -64,12 +86,12 @@ jobs:
       - name: Stage Windows runtime
         if: runner.os == 'Windows'
         run: python scripts/prepare-windows-runtime.py
+      - uses: actions/download-artifact@v4
+        with:
+          name: sparklist-model
+          path: out/desktop-model
       - name: Verify and stage the pinned Sparklist model
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p out/desktop-model
-          gh api -H 'Accept: application/octet-stream' "repos/$GITHUB_REPOSITORY/releases/assets/629370311" > out/desktop-model/model.tar.gz
           node --input-type=module -e 'import {createHash} from "node:crypto"; import {readFileSync} from "node:fs"; if (createHash("sha256").update(readFileSync(process.argv[1])).digest("hex") !== "cf720c9932d370c23e38d6f43b16395677e102a946cee876b3c2994a1f02a6c3") throw Error("Sparklist archive checksum mismatch")' out/desktop-model/model.tar.gz
           tar -xzf out/desktop-model/model.tar.gz -C out/desktop-model
       - run: npm ci
