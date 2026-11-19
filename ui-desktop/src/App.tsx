@@ -432,7 +432,10 @@ export default function App() {
                 return;
               }
               void call("inspect_import", { paths })
-                .then(() => call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path}}))
+                .then(async () => {
+                  if(savingPreferences.current)await savePromise.current;
+                  return call("library_task", {request:{kind:"copy",paths,root:dropTarget.current?.path,dropped:true}});
+                })
                 .catch((e) => setError(errorText(e)));
             }
           },
@@ -989,6 +992,8 @@ export default function App() {
       <LibraryTools
         view={route.view}
         library={library}
+        copyOnlyNonLibraryDrops={!!preferences.copy_only_non_library_drops}
+        onCopyOnlyNonLibraryDropsChange={copy_only_non_library_drops=>changePreferences({...preferences,copy_only_non_library_drops})}
         busy={task.running}
         task={task}
         playing={player.is_playing}
@@ -1374,7 +1379,7 @@ export default function App() {
                   libraryView={settingsLibraryView}
                   onLibraryView={setSettingsLibraryView}
                   onManageCollections={()=>{setSection("Library");goScope("playlists");}}
-                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={(kind,albumId)=>startTask(kind,undefined,albumId)} onRefresh={refresh} onError={setError}/>}
+                  libraryContent={<LibraryTools view={settingsLibraryView==='review'?'review':'sources'} entry={metadataEntry} library={library} copyOnlyNonLibraryDrops={!!preferences.copy_only_non_library_drops} onCopyOnlyNonLibraryDropsChange={copy_only_non_library_drops=>changePreferences({...preferences,copy_only_non_library_drops})} busy={task.running} task={task} playing={player.is_playing} onAdd={copy=>void chooseFolder(copy)} onTask={(kind,albumId)=>startTask(kind,undefined,albumId)} onRefresh={refresh} onError={setError}/>}
 
                 />
               </Suspense></KeepView><KeepView className="search-page-view" active={section==='Library'&&route.view==='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading search"/>}><SuperCommand presentation="page" focusRequest={searchFocus} open recommendations={sparkRecommendations} library={library} collections={collections} isPlaying={player.is_playing} hasTrack={!!player.track} onClose={()=>chooseDestination(previousDestination.current)} onPlay={id=>playIds([id])} onAlbum={a=>{setSection('Library');openAlbum(a);}} onArtist={a=>{setSection('Library');openArtist(a);}} onCollection={openCollection} onNavigate={value=>{if(value==='Settings'||value==='Devices')chooseSection(value);else goScope(value.toLowerCase() as Route['view']);}} onPlayback={type=>void run({type})} onQueue={()=>void showQueue()} onCreate={setCollections}/></Suspense></KeepView><KeepView className="library-view" active={section==='Library'&&route.view!=='search'}><Suspense fallback={<div className="screen-placeholder" aria-label="Loading library view" aria-busy="true"/>}>{content}</Suspense></KeepView>{section === "Devices" ? (<Suspense fallback={<div className="screen-placeholder" aria-label="Loading devices" aria-busy="true"/>}>
