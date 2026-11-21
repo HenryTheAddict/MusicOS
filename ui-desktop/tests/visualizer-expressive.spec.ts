@@ -89,13 +89,28 @@ test('visualizer keeps the scene transparent behind its lyrics and pauses',async
  await page.screenshot({path:'out/musicos-polish-visualizer.png'});
 });
 
-test('visualizer zooms a long pause in place and honors Reduced Motion',async({page})=>{
+test('visualizer uses only a progress bar during long lyric breaks',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed&lyricsCase=intro');
  await page.getByRole('button',{name:'Open visualizer'}).click();
  await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');
- const marker=page.locator('.lyric-pause[data-current=true] .lyric-activity');
- await expect(marker).toBeVisible();
- await expect(marker).toHaveCSS('animation-name','lyric-zoom-out');
- await page.emulateMedia({reducedMotion:'reduce'});
- await expect(marker).toHaveCSS('animation-name','none');
+ const pane=page.locator('.lyrics-pane[data-variant=visualizer]');
+ await expect(pane).toHaveAttribute('data-lyric-pause','true');
+ const bar=pane.getByRole('progressbar',{name:'Instrumental break progress'});
+ await expect(bar).toBeVisible();
+ await expect(pane.locator('.lyric-line[data-in-window=true]')).toBeHidden();
+ await page.getByRole('button',{name:'Play',exact:true}).click();
+ await expect.poll(async()=>Number(await bar.getAttribute('value'))).toBeGreaterThan(0);
 });
+
+test('Beat Pulse morphs the SVG on a downbeat and clears it when paused',async({page})=>{
+  await page.goto('/visualizer-proof.html?lyrics=timed&beatPulse=1');
+  await page.getByRole('button',{name:'Open visualizer'}).click();
+  await page.mouse.move(300,120);
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  const grid=page.locator('.beat-pulse-grid');
+  const morph=grid.locator('.beat-pulse-morph[data-morphing=true] path').first();
+  await expect(morph).toHaveAttribute('d',/^M.+L/);
+  await page.mouse.move(320,120);
+  await page.getByRole('button',{name:'Pause',exact:true}).click();
+  await expect(grid.locator('.beat-pulse-morph[data-morphing=true]')).toHaveCount(0);
+ });

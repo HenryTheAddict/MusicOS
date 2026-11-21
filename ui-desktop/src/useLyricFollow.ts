@@ -16,7 +16,7 @@ export function useLyricFollow(host:RefObject<HTMLDivElement|null>,{
   const firstLayout=!previous.current.initialized||previous.current.doc!==doc||previous.current.trackId!==trackId||previous.current.variant!==variant;
   previous.current={doc,trackId,variant,initialized:true};
   if(firstLayout||media.matches||Math.abs(to-from)<.5){node.scrollTop=to;sync.current?.();return;}
-  let frame=0;const began=performance.now(),duration=variant==='full'?180:240;
+  let frame=0;const began=performance.now(),duration=variant==='full'?125:variant==='visualizer'?160:240;
   const stop=()=>{cancelAnimationFrame(frame);frame=0;};
   const reduced=()=>{if(media.matches){stop();node.scrollTop=to;sync.current?.();}};
   const visibility=()=>{if(document.hidden)stop();};

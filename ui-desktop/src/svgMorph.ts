@@ -78,9 +78,9 @@ function color(a: string, b: string, t: number) {
   return `rgb(${x.slice(0, 3).map((v, i) => Math.round(v + (y[i] - v) * t)).join(",")})`;
 }
 
-export function morphSvg(host: HTMLElement, from: string, to: string, duration = 180) {
+export function morphSvg(host: HTMLElement, from: string, to: string, duration = 180, onFinish?: () => void) {
   const a = prepared(from,host), b = prepared(to,host);
-  if (!a.length || !b.length) { host.innerHTML = to; return () => {}; }
+  if (!a.length || !b.length) { host.innerHTML = to; onFinish?.(); return () => {}; }
   const svg = document.createElementNS(ns, "svg");
   svg.setAttribute("viewBox", "0 0 32 32");
   svg.setAttribute("aria-hidden", "true");
@@ -111,7 +111,7 @@ export function morphSvg(host: HTMLElement, from: string, to: string, duration =
       element.setAttribute("opacity", String(!left ? t : !right ? 1 - t : 1));
     }
     if (progress < 1) frame = requestAnimationFrame(render);
-    else { host.innerHTML = to; delete host.dataset.morphing; }
+    else { host.innerHTML = to; delete host.dataset.morphing; onFinish?.(); }
   };
   render(started);
   return () => { cancelAnimationFrame(frame); delete host.dataset.morphing; };

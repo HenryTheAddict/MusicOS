@@ -369,8 +369,8 @@ export async function fixtureCall(
     }
     case "metadata_review":
       return [];
-    case "cancel_search":
-    case "activity_jobs": return [];
+    case "cancel_search": return [];
+    case "activity_jobs": return JSON.parse(localStorage.getItem("musicos-fixture-activity-jobs") ?? "[]");
     case "track_waveform": return {low:Array.from({length:128},(_,i)=>30+i%17*10),mid:Array.from({length:128},(_,i)=>20+i%11*8),high:Array.from({length:128},(_,i)=>5+i%7*5)};
     case "cancel_task":
       return;

@@ -1,62 +1,247 @@
-import {useEffect,useRef,useState,useId,type ComponentProps,type CSSProperties} from 'react';
-import {listen} from '@tauri-apps/api/event';
+import { useEffect, useId, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import BeatPulseGrid from './BeatPulseGrid';
 import ExpandedPlayer from './ExpandedPlayer';
-import {call,native,errorText} from './bridge';
-import {beatOffsets} from './heartVisibility';
-import {defaultVisualizer,type VisualizerSettings,type VisualizerStatus} from './visualizer';
-import {useVisualizerAlbumPalette} from './visualizerAlbumPalette';
+import { call, native, errorText } from './bridge';
+import { beatOffsets } from './heartVisibility';
+import { defaultVisualizer, type AlbumPalette, type VisualizerSettings, type VisualizerStatus } from './visualizer';
+import { useVisualizerAlbumPalette } from './visualizerAlbumPalette';
 import VisualizerPicker from './VisualizerPicker';
 import VisualizerSettingsPanel from './VisualizerSettings';
-import type {Preferences} from './types';
+import type { Preferences } from './types';
 import './visualizer.css';
-let windowOperation=Promise.resolve<unknown>(undefined);
+
+const stills = import.meta.glob<string>('../../assets/visualizers/thumbnails/*.png', {
+  query: '?url', import: 'default', eager: true,
+});
+const reducedMotion = '(prefers-reduced-motion: reduce)';
+let windowOperation = Promise.resolve<unknown>(undefined);
 // Keep a reloaded webview newer than its previous in-flight native requests.
-let nextRequestId=Date.now()*1000;
-function serializeWindow(work:()=>Promise<unknown>){const next=windowOperation.then(work);windowOperation=next.catch(()=>{});return next;}
-export default function VisualizerPlayer({preferences,onPreferences,...props}:{preferences:Preferences;onPreferences:(p:Preferences)=>void}&ComponentProps<typeof ExpandedPlayer>){
- const [reduced,setReduced]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);
- const prefs=preferences.visualizer??defaultVisualizer,settings=useRef<VisualizerSettings>(null!),[ready,setReady]=useState(!native),[status,setStatus]=useState<VisualizerStatus|null>(null),[error,setError]=useState(''),[attempt,setAttempt]=useState(0);
- const web=prefs.preset==='beat-pulse';
- const latest=useRef({preferences,onPreferences});latest.current={preferences,onPreferences};
- const id=props.player.track?.id,offset=id===undefined?undefined:beatOffsets.get(id);
- const colorFilter=useId();
- const artwork=useVisualizerAlbumPalette(true,id,props.cover);
- const albumPalette=prefs.album_colors?artwork.palette:undefined;
- const albumPalettePending=!!prefs.album_colors&&artwork.pending;
- const webPalette=useRef(albumPalette);
- if(!albumPalettePending)webPalette.current=albumPalette;
- const chromeColor=useRef<string|undefined>(undefined);
- if(!artwork.pending){
-  const chroma=(rgb:number[])=>Math.max(...rgb)-Math.min(...rgb);
-  const dominant=artwork.palette?.reduce((best,swatch)=>chroma(swatch)>chroma(best)?swatch:best);
-  chromeColor.current=dominant&&chroma(dominant)>.08?'#'+dominant.map(channel=>Math.round(channel*255).toString(16).padStart(2,'0')).join(''):undefined;
- }
- const theme={...props.theme,'--visualizer-source':chromeColor.current??'#858996'} as CSSProperties;
- const beat={trackId:id,bpm:props.bpm,offset,confidence:offset===undefined?0:0.5};
- const configIdentity=useRef(''),requestId=useRef(0),identity=JSON.stringify([prefs,albumPalette,albumPalettePending,beat,reduced,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
- if(configIdentity.current!==identity){configIdentity.current=identity;requestId.current=++nextRequestId;}
- settings.current={requestId:requestId.current,preferences:prefs,albumPalette,albumPalettePending,beat,reduced};
- useEffect(()=>{
-  let alive=true,off:(()=>void)|undefined,previousFull:boolean|undefined;
-  const previousBrowserFull=document.fullscreenElement;
-  const restore=async()=>{if(native){await call('visualizer',{request:{action:'close'}}).catch(()=>{});if(previousFull!==undefined){const {getCurrentWindow}=await import('@tauri-apps/api/window');await getCurrentWindow().setFullscreen(previousFull).catch(()=>{});}}else if(document.fullscreenElement!==previousBrowserFull){if(previousBrowserFull)await previousBrowserFull.requestFullscreen().catch(()=>{});else if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});}delete document.documentElement.dataset.nativeVisualizer;};
-  const open=async()=>{
-   if(!alive)return;
-   try{
-    if(web){if(native){const {getCurrentWindow}=await import('@tauri-apps/api/window');previousFull=await getCurrentWindow().isFullscreen();if(document.documentElement.dataset.nativeVisualizer)await call('visualizer',{request:{action:'close'}});}delete document.documentElement.dataset.nativeVisualizer;if(alive)setStatus(null);}
-    else if(native){const {getCurrentWindow}=await import('@tauri-apps/api/window');const w=getCurrentWindow();previousFull=await w.isFullscreen();if(!alive)return;await w.setFullscreen(true);if(!alive)return;
-     const stop=await listen<VisualizerStatus>('musicos-visualizer-status',({payload})=>{if(!alive||payload.requestId!==settings.current.requestId)return;setStatus(payload);if(payload.error)setError(payload.error);if(payload.preset&&payload.preset!==(latest.current.preferences.visualizer??defaultVisualizer).preset){const p=latest.current.preferences;latest.current.onPreferences({...p,visualizer:{...(p.visualizer??defaultVisualizer),preset:payload.preset}});}});if(!alive){stop();return;}off=stop;
-     document.documentElement.dataset.nativeVisualizer='true';const opened=await call('visualizer',{request:{action:'open',settings:settings.current}});if(alive&&opened.requestId===settings.current.requestId)setStatus(opened);
-    }else{throw Error('Native Metal visualizers are available in the macOS desktop app.');}
-    if(alive)setReady(true);
-   }catch(e){if(alive){setError(errorText(e));setReady(true);}}
-  };setError('');setReady(!native);void serializeWindow(open);
-  return()=>{alive=false;off?.();void serializeWindow(restore);};
- },[attempt,web]);
- useEffect(()=>{if(web||!native||!ready||document.documentElement.dataset.nativeVisualizer!=='true')return;let alive=true;const revision=settings.current.requestId;void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(e=>{if(alive&&revision===settings.current.requestId)setError(errorText(e));});return()=>{alive=false;};},[web,ready,prefs,albumPalette,albumPalettePending,id,offset,props.bpm,props.player.is_playing,props.player.listening?.speed,props.player.queue_entry_ids?.[props.player.queue_index??-1]]);
- useEffect(()=>{const media=matchMedia('(prefers-reduced-motion: reduce)'),update=()=>{setReduced(media.matches);settings.current={...settings.current,reduced:media.matches};if(!web&&native&&ready)void call('visualizer',{request:{action:'refresh',settings:settings.current}}).catch(()=>{});};media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[ready,web]);
- const view=props.view;
- const stills=import.meta.glob<string>('../../assets/visualizers/thumbnails/*.png',{query:'?url',import:'default',eager:true});
- return <ExpandedPlayer {...props} theme={theme} view={view} onView={next=>{props.onView(next);onPreferences({...preferences,visualizer:{...prefs,lyrics:next==='lyrics'}});}} visualizerMode fullscreenManaged visualizerControls={<><VisualizerPicker value={web?prefs.preset:status?.preset||prefs.preset} onChange={preset=>onPreferences({...preferences,visualizer:{...prefs,preset}})}/><VisualizerSettingsPanel value={prefs} fallback={!!status?.beatFallback} onChange={visualizer=>{onPreferences({...preferences,visualizer});if(visualizer.lyrics!==prefs.lyrics)props.onView(visualizer.lyrics?'lyrics':'playing');}}/></>} visualizerStatus={<>{web&&<BeatPulseGrid beatSync={prefs.beat_sync} bpm={props.bpm} offset={offset} trackId={id} playing={props.player.is_playing} active={props.open} reduced={reduced} palette={webPalette.current}/>}{!web&&reduced&&<>{albumPalette&&<svg width="0" height="0" aria-hidden="true"><filter id={colorFilter} colorInterpolationFilters="sRGB"><feColorMatrix type="saturate" values="0"/><feComponentTransfer>{(['R','G','B'] as const).map((channel,index)=>{const Component=(`feFunc${channel}`) as 'feFuncR';return <Component key={channel} type="table" tableValues={[0,...albumPalette.map(color=>color[index]),1].join(' ')}/>;})}</feComponentTransfer></filter></svg>}<img className="visualizer-still" style={albumPalette?{filter:`url(#${colorFilter})`}:undefined} src={stills[`../../assets/visualizers/thumbnails/${status?.preset||prefs.preset}.png`]} alt="" aria-hidden="true"/></>}{error?<div className="visualizer-unavailable" role="alert"><strong>Visualizer unavailable</strong><p>{error}</p><button className="soft-action" onClick={()=>{void call('visualizer',{request:{action:'close'}}).finally(()=>setAttempt(v=>v+1));}}>Retry</button></div>:!ready||status?.phase==='starting'?<div className="visualizer-starting" role="status">Preparing visualizer…</div>:null}</>} onToggleFullscreen={web?undefined:props.onClose}/>;
+let nextRequestId = Date.now() * 1000;
+
+function serializeWindow(work: () => Promise<unknown>) {
+  const next = windowOperation.then(work);
+  windowOperation = next.catch(() => {});
+}
+
+function VisualizerStill({ preset, palette }: { preset: string; palette?: AlbumPalette }) {
+  const filter = useId();
+  return (
+    <>
+      {palette && (
+        <svg width="0" height="0" aria-hidden="true">
+          <filter id={filter} colorInterpolationFilters="sRGB">
+            <feColorMatrix type="saturate" values="0" />
+            <feComponentTransfer>
+              {(['feFuncR', 'feFuncG', 'feFuncB'] as const).map((Channel, index) => (
+                <Channel key={Channel} type="table" tableValues={[0, ...palette.map(color => color[index]), 1].join(' ')} />
+              ))}
+            </feComponentTransfer>
+          </filter>
+        </svg>
+      )}
+      <img
+        className="visualizer-still"
+        style={palette ? { filter: `url(#${filter})` } : undefined}
+        src={stills[`../../assets/visualizers/thumbnails/${preset}.png`]}
+        alt=""
+        aria-hidden="true"
+      />
+    </>
+  );
+}
+
+type VisualizerPlayerProps = ComponentProps<typeof ExpandedPlayer> & {
+  preferences: Preferences;
+  onPreferences: (preferences: Preferences) => void;
+};
+
+export default function VisualizerPlayer({ preferences, onPreferences, ...props }: VisualizerPlayerProps) {
+  const [reduced, setReduced] = useState(() => matchMedia(reducedMotion).matches);
+  const [ready, setReady] = useState(!native);
+  const [status, setStatus] = useState<VisualizerStatus | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const prefs = preferences.visualizer ?? defaultVisualizer;
+  const beatPulse = prefs.preset === 'beat-pulse';
+  const latest = useRef({ preferences, onPreferences });
+  latest.current = { preferences, onPreferences };
+
+  const { player, bpm } = props;
+  const trackId = player.track?.id;
+  const offset = trackId === undefined ? undefined : beatOffsets.get(trackId);
+  const artwork = useVisualizerAlbumPalette(true, trackId, props.cover);
+  const albumPalette = prefs.album_colors ? artwork.palette : undefined;
+  const albumPalettePending = Boolean(prefs.album_colors && artwork.pending);
+  const webPalette = useRef(albumPalette);
+  if (!albumPalettePending) webPalette.current = albumPalette;
+
+  const chromeColor = useRef<string | undefined>(undefined);
+  if (!artwork.pending) {
+    const chroma = (rgb: number[]) => Math.max(...rgb) - Math.min(...rgb);
+    const dominant = artwork.palette?.reduce((best, swatch) => chroma(swatch) > chroma(best) ? swatch : best);
+    chromeColor.current = dominant && chroma(dominant) > .08
+      ? '#' + dominant.map(channel => Math.round(channel * 255).toString(16).padStart(2, '0')).join('')
+      : undefined;
+  }
+  const theme = { ...props.theme, '--visualizer-source': chromeColor.current ?? '#858996' } as CSSProperties;
+
+  const beat = { trackId, bpm, offset, confidence: offset === undefined ? 0 : 0.5 };
+  const queueEntry = player.queue_entry_ids?.[player.queue_index ?? -1];
+  const identity = JSON.stringify([
+    prefs, albumPalette, albumPalettePending, beat, reduced, player.is_playing, player.listening?.speed, queueEntry,
+  ]);
+  const revision = useRef({ identity: '', id: 0 });
+  if (revision.current.identity !== identity) revision.current = { identity, id: ++nextRequestId };
+  const requestId = revision.current.id;
+  const settings = useRef<VisualizerSettings>(null!);
+  settings.current = { requestId, preferences: prefs, albumPalette, albumPalettePending, beat, reduced };
+
+  useEffect(() => {
+    let alive = true;
+    let unsubscribe: (() => void) | undefined;
+    let restoreWindow: (() => Promise<void>) | undefined;
+    let openedNativeSurface = false;
+    const previousBrowserFull = document.fullscreenElement;
+
+    async function restore() {
+      if (openedNativeSurface) await call('visualizer', { request: { action: 'close' } }).catch(() => {});
+      if (restoreWindow) {
+        await restoreWindow().catch(() => {});
+      } else if (!native && document.fullscreenElement !== previousBrowserFull) {
+        if (previousBrowserFull) await previousBrowserFull.requestFullscreen().catch(() => {});
+        else if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      }
+      delete document.documentElement.dataset.nativeVisualizer;
+    }
+
+    async function open() {
+      if (!alive) return;
+      try {
+        if (native) {
+          const { getCurrentWindow } = await import('@tauri-apps/api/window');
+          const window = getCurrentWindow();
+          const wasFullscreen = await window.isFullscreen();
+          restoreWindow = () => window.setFullscreen(wasFullscreen);
+          if (!alive) return;
+          if (!wasFullscreen || !beatPulse) await window.setFullscreen(true);
+          if (!alive) return;
+        }
+
+        if (beatPulse) {
+          setStatus(null);
+        } else {
+          if (!native) throw Error('Native Metal visualizers are available in the macOS desktop app.');
+          const stop = await listen<VisualizerStatus>('musicos-visualizer-status', ({ payload }) => {
+            if (!alive || payload.requestId !== settings.current.requestId) return;
+            setStatus(payload);
+            if (payload.error) setError(payload.error);
+            const { preferences, onPreferences } = latest.current;
+            const visualizer = preferences.visualizer ?? defaultVisualizer;
+            if (payload.preset && payload.preset !== visualizer.preset) {
+              onPreferences({ ...preferences, visualizer: { ...visualizer, preset: payload.preset } });
+            }
+          });
+          if (!alive) {
+            stop();
+            return;
+          }
+          unsubscribe = stop;
+          openedNativeSurface = true;
+          document.documentElement.dataset.nativeVisualizer = 'true';
+          const status = await call('visualizer', { request: { action: 'open', settings: settings.current } });
+          if (alive && status.requestId === settings.current.requestId) setStatus(status);
+        }
+        if (alive) setReady(true);
+      } catch (failure) {
+        if (alive) {
+          setError(errorText(failure));
+          setReady(true);
+        }
+      }
+    }
+
+    setError('');
+    setReady(!native);
+    serializeWindow(open);
+    return () => {
+      alive = false;
+      unsubscribe?.();
+      serializeWindow(restore);
+    };
+  }, [attempt, beatPulse]);
+
+  useEffect(() => {
+    if (beatPulse || !native || !ready || document.documentElement.dataset.nativeVisualizer !== 'true') return;
+    let alive = true;
+    void call('visualizer', { request: { action: 'refresh', settings: settings.current } }).catch(failure => {
+      if (alive && requestId === settings.current.requestId) setError(errorText(failure));
+    });
+    return () => { alive = false; };
+  }, [beatPulse, ready, requestId]);
+
+  useEffect(() => {
+    const media = matchMedia(reducedMotion);
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  const save = (visualizer: typeof prefs) => onPreferences({ ...preferences, visualizer });
+  const preset = beatPulse ? prefs.preset : status?.preset || prefs.preset;
+  return (
+    <ExpandedPlayer
+      {...props}
+      theme={theme}
+      onView={next => {
+        props.onView(next);
+        save({ ...prefs, lyrics: next === 'lyrics' });
+      }}
+      visualizerMode
+      fullscreenManaged
+      onToggleFullscreen={beatPulse ? undefined : props.onClose}
+      visualizerControls={(
+        <>
+          <VisualizerPicker value={preset} onChange={preset => save({ ...prefs, preset })} />
+          <VisualizerSettingsPanel
+            value={prefs}
+            fallback={Boolean(status?.beatFallback)}
+            onChange={visualizer => {
+              save(visualizer);
+              if (visualizer.lyrics !== prefs.lyrics) props.onView(visualizer.lyrics ? 'lyrics' : 'playing');
+            }}
+          />
+        </>
+      )}
+      visualizerStatus={(
+        <>
+          {beatPulse && (
+            <BeatPulseGrid
+              beatSync={prefs.beat_sync}
+              bpm={bpm}
+              offset={offset}
+              trackId={trackId}
+              playing={player.is_playing}
+              active={props.open}
+              reduced={reduced}
+              palette={webPalette.current}
+            />
+          )}
+          {!beatPulse && reduced && <VisualizerStill preset={preset} palette={albumPalette} />}
+          {error ? (
+            <div className="visualizer-unavailable" role="alert">
+              <strong>Visualizer unavailable</strong>
+              <p>{error}</p>
+              <button className="soft-action" onClick={() => {
+                void call('visualizer', { request: { action: 'close' } }).finally(() => setAttempt(value => value + 1));
+              }}>Retry</button>
+            </div>
+          ) : (!ready || status?.phase === 'starting') && (
+            <div className="visualizer-starting" role="status">Preparing visualizer…</div>
+          )}
+        </>
+      )}
+    />
+  );
 }

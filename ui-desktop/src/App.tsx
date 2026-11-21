@@ -840,6 +840,7 @@ export default function App() {
   const rows = (records: Track[]) => {const content=(
     <TrackRows
       tracks={records}
+      playInIndex={route.view==='favorites'}
       showDurations={preferences.show_song_durations!==false}
       albumArtist={route.view==='album'?album?.artist:undefined}
       levels={player.audio_levels}

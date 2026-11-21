@@ -4,7 +4,7 @@ import {haptic} from './haptics';
 import {displayData} from './displayData';
 import {TrackSelection} from './TrackSelection';
 import SongSelector from './SongSelector';
-import {songDragFeedback,type SongDrag} from './songDrag';
+import {songDragFeedback,startSongDrag,type SongDrag} from './songDrag';
 import {useEffect,useLayoutEffect} from 'react';
 import SparkLength from './SparkLength';
 import {SmartEditor} from './SmartEditor';
@@ -36,9 +36,11 @@ export function PlaylistDetail({finding,audioModel,item,library,onChange,childre
  const root=useRef<HTMLElement>(null),sheet=useRef<HTMLDialogElement>(null),anchor=useRef<number|null>(null),state=useRef({item,selected,busy});state.current={item,selected,busy};
  const lookup=useMemo(()=>new Map(library.tracks.map(t=>[t.id,t])),[library.tracks]);
  const seconds=item.track_ids.reduce((sum,id)=>sum+(lookup.get(id)?.duration??0),0);
+ const empty=!item.spark&&item.track_ids.length===0;
+ function editDetails(){setName(item.name);setDescription(item.description??'');setEditing(true);}
  async function change(request:CollectionRequest){if(state.current.busy)throw Error('Wait for the current change');state.current.busy=true;setBusy(true);setError('');try{onChange(await call('collections',{request}));}catch(e){setError(errorText(e));throw e;}finally{state.current.busy=false;setBusy(false);}}
  async function file(action:'export'|'artwork'){setBusy(true);setError('');try{const result=await playlistFile(action,item.id);if(result)onChange(result.items);}catch(e){setError(errorText(e));}finally{setBusy(false);}}
- useEffect(()=>{if(item.spark)return;let alive=true;
+ useEffect(()=>{if(item.spark||empty)return;let alive=true;
   const refresh=()=>void displayData('playlist_suggestions',{id:item.id},true).then(value=>{if(alive)setSuggestions(value);}).catch(e=>{if(alive)setSuggestions({ids:[],state:'attention',message:errorText(e)});});
   const changed=(event:Event)=>{const command=(event as CustomEvent).detail;if(event.type==='musicos-library-changed'||!command||command==='playlist_suggestions')refresh();};
   refresh();window.addEventListener('musicos-display-invalidated',changed);window.addEventListener('musicos-library-changed',changed);return()=>{alive=false;window.removeEventListener('musicos-display-invalidated',changed);window.removeEventListener('musicos-library-changed',changed);};
@@ -49,11 +51,36 @@ export function PlaylistDetail({finding,audioModel,item,library,onChange,childre
  function select(id:number,_index:number,event:React.MouseEvent){const visible=visibleTrackIds??item.track_ids,index=visible.indexOf(id),start=anchor.current===null?-1:visible.indexOf(anchor.current);setSelected(old=>{if(event.shiftKey&&start>=0&&index>=0)return new Set(visible.slice(Math.min(start,index),Math.max(start,index)+1));anchor.current=id;if(event.metaKey||event.ctrlKey){const next=new Set(old);next.has(id)?next.delete(id):next.add(id);return next;}return new Set([id]);});}
  function remove(ids=[...selected]){if(ids.length)void change({action:'remove',id:item.id,track_ids:ids}).then(()=>setSelected(new Set())).catch(()=>{});}
  function setup(){window.dispatchEvent(new CustomEvent('musicos-open-audio-settings',{detail:{page:'spark'}}));}
- return <article ref={root} className="playlist-detail"><header className="playlist-hero" data-collection-tone="true"><PlaylistArtwork item={item} library={library}/><div><small>{item.spark?'Smart playlist':'Playlist'}</small><h1>{item.name}</h1>{item.description&&<p>{item.description}</p>}<p>{item.track_ids.length} songs · {collectionDuration(seconds)}</p>{actions}</div></header><div className="playlist-tools sketch-actions">{!item.spark&&<button disabled={busy} onClick={()=>setAdding(true)}><Icon name="Playlist"/>Add Music</button>}<button onClick={()=>{setName(item.name);setDescription(item.description??'');setEditing(true);}}><Icon name="File"/>{item.spark?'Edit rules':'Edit details'}</button>{selected.size>0&&!item.spark&&<button disabled={busy} onClick={()=>remove()}><Icon name="Delete"/>Remove {selected.size} songs</button>}{deleting?<><button disabled={busy} onClick={()=>void change({action:'delete',id:item.id}).then(onDeleted).catch(()=>{})}>Confirm delete</button><button onClick={()=>setDeleting(false)}>Cancel</button></>:<button onClick={()=>setDeleting(true)}><Icon name="Delete"/>Delete {item.spark?'Smart playlist':'playlist'}</button>}</div>{error&&<p role="alert">{error}</p>}
- {item.spark?<>{editing&&<SmartEditor item={item} onChange={onChange} onClose={()=>setEditing(false)}/>}<CoverChoice preview={<PlaylistArtwork item={item} library={library}/>} value={item.artwork_choice??'collage'} onChange={artwork_choice=>void change({action:'cover',id:item.id,artwork_choice}).catch(()=>{})}/>{children}</>:<TrackSelection.Provider value={{ids:selected,select,remove,canRemove:true,selectAll:()=>setSelected(new Set(visibleTrackIds??item.track_ids))}}>{children}</TrackSelection.Provider>}
+ const tools=<div className="playlist-tools sketch-actions">
+   {!empty&&<>
+    {!item.spark&&<button className="playlist-add-action" disabled={busy} onClick={()=>setAdding(true)}><Icon name="Playlist"/>Add Music</button>}
+    <button onClick={editDetails}><Icon name="File"/>{item.spark?'Edit rules':'Edit details'}</button>
+    {selected.size>0&&!item.spark&&<button disabled={busy} onClick={()=>remove()}><Icon name="Delete"/>Remove {selected.size} songs</button>}
+   </>}
+   {deleting?<><button disabled={busy} onClick={()=>void change({action:'delete',id:item.id}).then(onDeleted).catch(()=>{})}>Confirm delete</button><button onClick={()=>setDeleting(false)}>Cancel</button></>:<button onClick={()=>setDeleting(true)}><Icon name="Delete"/>Delete {item.spark?'Smart playlist':'playlist'}</button>}
+ </div>;
+ return <article ref={root} className="playlist-detail" data-empty-playlist={empty||undefined}>
+  <header className="playlist-hero" data-playlist-tools={!empty||undefined} data-collection-tone="true" data-manual-collection={!item.spark&&!empty?item.id:undefined}>
+   <PlaylistArtwork item={item} library={library}/>
+   <div className="playlist-heading">
+    <small>{item.spark?'Smart playlist':'Playlist'}</small>
+    <h1>{item.name}</h1>
+    {item.description&&<p>{item.description}</p>}
+    {!empty&&<><p>{item.track_ids.length} {item.track_ids.length===1?'song':'songs'} · {collectionDuration(seconds)}</p>{actions}</>}
+   </div>
+   {!empty&&tools}
+   {empty&&<Overflow items={[{label:'Edit details',icon:'File',onSelect:editDetails},{label:'Delete playlist',icon:'Delete',onSelect:()=>setDeleting(true)}]}/>}
+  </header>
+  {empty&&deleting&&tools}
+  {error&&<p role="alert">{error}</p>}
+  {empty?<section className="playlist-empty-drop" data-manual-collection={item.id} aria-label="Add songs to playlist">
+   <Icon name="Playlist"/>
+   <div><h2>No songs yet</h2><p>Drag songs here from your library.</p></div>
+   <button className="sketch-button" disabled={busy} onClick={()=>setAdding(true)}><Icon name="Plus"/>Add Music</button>
+  </section>:item.spark?<>{editing&&<SmartEditor item={item} onChange={onChange} onClose={()=>setEditing(false)}/>}<CoverChoice preview={<PlaylistArtwork item={item} library={library}/>} value={item.artwork_choice??'collage'} onChange={artwork_choice=>void change({action:'cover',id:item.id,artwork_choice}).catch(()=>{})}/>{children}</>:<TrackSelection.Provider value={{ids:selected,select,remove,canRemove:true,selectAll:()=>setSelected(new Set(visibleTrackIds??item.track_ids))}}>{children}</TrackSelection.Provider>}
  {editing&&!item.spark&&<dialog ref={sheet} className="playlist-details-sheet song-selector" aria-label="Edit playlist details" onCancel={e=>{e.preventDefault();setEditing(false);}}><header><h2>Edit playlist</h2><button aria-label="Close playlist details" onClick={()=>setEditing(false)}>×</button></header><form onSubmit={e=>{e.preventDefault();void (async()=>{try{await change({action:'rename',id:item.id,name});await change({action:'describe',id:item.id,description});setEditing(false);}catch{}})();}}><label>Name<input aria-label="Playlist name" required maxLength={120} value={name} onChange={e=>setName(e.target.value)}/></label><label>Description<textarea aria-label="Playlist description" maxLength={2000} value={description} onChange={e=>setDescription(e.target.value)}/></label><CoverChoice preview={<PlaylistArtwork item={item} library={library}/>} value={item.artwork_choice??(item.artwork?'custom':'collage')} onChange={artwork_choice=>void change({action:'cover',id:item.id,artwork_choice}).catch(()=>{})}/><button type="button" disabled={busy} onClick={()=>void file('artwork')}><Icon name="File"/>Choose image file</button><button className="sketch-button" disabled={busy}>Done</button></form></dialog>}
  {adding&&<SongSelector tracks={library.tracks} selected={null} onSelect={()=>{}} added={item.track_ids} onAdd={track_ids=>change({action:'add',id:item.id,track_ids})} onClose={()=>setAdding(false)}/>}
- {!item.spark&&!finding&&<section className="playlist-suggestions" aria-label="Suggested additions"><h2>Suggested additions</h2>{audioModel?.installation?.running?<p role="status">Preparing the audio model… Your music stays on this device.</p>:suggestions?.message&&<p>{suggestions.message}</p>}{suggestions?.state==='empty'&&<button onClick={()=>setAdding(true)}>Choose a starting song</button>}{suggestions&&['setup','analysis','attention'].includes(suggestions.state)&&!audioModel?.installation?.running&&<button className="audio-suggestions-action" onClick={setup}><Icon name="AudioBot"/><span>{suggestions.state==='analysis'?'Prepare audio suggestions':'Set up audio suggestions'}</span><Icon name="Back"/></button>}{suggestions?.ids.filter(id=>!item.track_ids.includes(id)).map(id=>{const track=lookup.get(id);return track?<div className="suggested-song" key={id}><Cover src={track.cover_art_path} title={track.album}/><span><strong>{track.title}</strong><small>{track.artist}</small></span><PreviewButton track={track}/><button className="suggestion-add" aria-label={`Add ${track.title}`} disabled={busy} onClick={()=>void change({action:'add',id:item.id,track_ids:[id]}).catch(()=>{})}><Icon name="Plus"/></button></div>:null;})}</section>}
+ {!item.spark&&!finding&&!empty&&<section className="playlist-suggestions" aria-label="Suggested additions"><h2>Suggested additions</h2>{audioModel?.installation?.running?<p role="status">Preparing the audio model… Your music stays on this device.</p>:suggestions?.message&&<p>{suggestions.message}</p>}{suggestions?.state==='empty'&&<button onClick={()=>setAdding(true)}>Choose a starting song</button>}{suggestions&&['setup','analysis','attention'].includes(suggestions.state)&&!audioModel?.installation?.running&&<button className="audio-suggestions-action" onClick={setup}><Icon name="AudioBot"/><span>{suggestions.state==='analysis'?'Prepare audio suggestions':'Set up audio suggestions'}</span><Icon name="Back"/></button>}{suggestions?.ids.filter(id=>!item.track_ids.includes(id)).map(id=>{const track=lookup.get(id);return track?<div className="suggested-song" key={id} onPointerDown={event=>{if(track.available&&!(event.target as Element).closest("button,a,input"))startSongDrag(event,track);}}><Cover src={track.cover_art_path} title={track.album}/><span><strong>{track.title}</strong><small>{track.artist}</small></span><PreviewButton track={track}/><button className="suggestion-add" aria-label={`Add ${track.title}`} disabled={busy} onClick={()=>void change({action:'add',id:item.id,track_ids:[id]}).catch(()=>{})}><Icon name="Plus"/></button></div>:null;})}</section>}
  </article>;
 }
 

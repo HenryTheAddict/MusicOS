@@ -7,8 +7,10 @@
 **/*.rs.bk
 
 # Node / Electron
-/node_modules/
+**/node_modules/
 /dist/
+/test-results/
+**/__pycache__/
 /electron/renderer-vite/
 npm-debug.log*
 yarn-debug.log*

@@ -359,9 +359,9 @@ export function TrackRows({
   isPlaying = false,
   selected,
   onSelect,
-  albumArtist,showDurations=true,levels,
+  albumArtist,showDurations=true,levels,playInIndex=false,
 }: {
-  albumArtist?:string;showDurations?:boolean;levels?:number[];
+  albumArtist?:string;showDurations?:boolean;levels?:number[];playInIndex?:boolean;
   tracks: Track[];
   scrollRef: RefObject<HTMLElement | null>;
   scale: number;
@@ -396,7 +396,7 @@ export function TrackRows({
   const virtual = useVirtualizer({useAnimationFrameWithResizeObserver:true,enabled:tracks.length>70,initialOffset,count:entries.length,getItemKey:i=>entries[i].track?.id??`disc-${entries[i].disc}`,getScrollElement:()=>scrollRef.current,estimateSize:i=>(entries[i].disc?38:44)*scale,gap:4*scale,overscan:8,scrollMargin:margin});
   const rows=tracks.length>70?virtual.getVirtualItems().map(v=>({...entries[v.index],virtualIndex:v.index,style:{position:'absolute',top:0,left:0,width:'100%',transform:`translateY(${v.start-margin}px)`} as CSSProperties})):entries.map((entry,virtualIndex)=>({...entry,virtualIndex,style:undefined}));
   return (
-    <div className="track-table" data-local-songs data-durations={showDurations} role="table" aria-label="Songs">
+    <div className="track-table" data-local-songs data-play-in-index={playInIndex||undefined} data-durations={showDurations} role="table" aria-label="Songs">
       <div className="track-head" role="row">
         <span>#</span>
         <span>Title / Artist</span>
@@ -433,9 +433,10 @@ export function TrackRows({
           >
             <span className="track-index" role="cell">
               <span>{multiDisc?track.track_number||index+1:index+1}</span>
+              {playInIndex&&<SongPlaybackControl track={track} current={playingId===track.id} playing={isPlaying} levels={levels} onPlay={onPlay} onToggle={onToggle}/>}
             </span>
             <div className="track-title" role="cell">
-              <SongPlaybackControl track={track} current={playingId===track.id} playing={isPlaying} levels={levels} onPlay={onPlay} onToggle={onToggle}/>
+              {!playInIndex&&<SongPlaybackControl track={track} current={playingId===track.id} playing={isPlaying} levels={levels} onPlay={onPlay} onToggle={onToggle}/>}
               <div className="track-label">
                 <span title={track.title}>{track.title}</span>
                 <div className="track-credits" title={track.artist} hidden={!!albumArtist&&trackCredits(track).length===1&&trackCredits(track)[0].toLocaleLowerCase()===albumArtist.trim().toLocaleLowerCase()}>{trackCredits(track).map((name,index)=><span key={name}>{index>0?(trackCredits(track).length===2?' & ':', '):''}<button className="text-link muted" onClick={e=>{e.stopPropagation();onArtist(track,name);}}>{name}</button></span>)}{!track.available?' · Unavailable':''}</div>

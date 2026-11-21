@@ -203,7 +203,7 @@
 
 .lyrics-pane[data-variant=full]{--lyric-word-idle:64%;--lyric-feather-scale:1.5;}
 .lyrics-pane[data-variant=full] .lyric-line[data-current=true] .lyric-word[data-weight-text]{position:relative;background-image:none;-webkit-text-fill-color:transparent!important;}
-.lyrics-pane[data-variant=full] .lyric-line[data-current=true] .lyric-word[data-weight-text]::after{content:attr(data-weight-text) / "";position:absolute;inset:0;pointer-events:none;white-space:pre;font-weight:var(--word-weight,450);background-image:var(--lyric-word-fill);background-clip:text;-webkit-background-clip:text;}
+.lyrics-pane[data-variant=full] .lyric-line[data-current=true] .lyric-word[data-weight-text]::after{content:attr(data-weight-text) / "";position:absolute;inset:0;pointer-events:none;white-space:pre;font-weight:var(--word-weight,400);background-image:var(--lyric-word-fill);background-clip:text;-webkit-background-clip:text;}
 @media(prefers-reduced-motion:reduce){
  .lyrics-pane[data-variant=full] .lyric-line[data-current=true] .lyric-word[data-weight-text]::after{font-weight:450;background:none;-webkit-text-fill-color:currentColor;}
  .lyrics-pane[data-variant=full] .lyric-line[data-current=true] .lyric-word[data-weight-text][data-sung=true]::after{font-weight:700;}
@@ -213,14 +213,27 @@
 .lyrics-pane[data-variant=full] .lyrics-follow{height:44px;min-height:44px;}
 .lyrics-pane[data-variant=full] .lyrics-follow:not(:focus-visible):hover{background:var(--hover);}
 .lyrics-pane[data-variant=full] :is(.lyrics-preview-notice,.lyrics-empty,.lyrics-kind,.lyrics-candidates,.apple-lyric-preview){padding-inline:.5rem;}
-.lyrics-pane[data-variant=full] .lyrics-lines{padding:0 .5rem!important;mask-image:linear-gradient(transparent,#000 8%,#000 88%,transparent)!important;}
+.lyrics-pane[data-variant=full] .lyrics-lines{padding:0 clamp(1rem,2.5vw,2rem)!important;mask-image:linear-gradient(transparent,#000 8%,#000 88%,transparent)!important;}
 .lyrics-pane[data-variant=full] .lyrics-lines:has(.lyrics-plain){mask-image:none!important;}
 .lyrics-pane[data-variant=full] .lyrics-lines:has(.lyrics-plain)::before,.lyrics-pane[data-variant=full] .lyrics-lines:has(.lyrics-plain)::after{display:none;}
 .lyrics-pane[data-variant=full] .lyrics-lines:focus-visible{outline:2px solid var(--accent)!important;outline-offset:-2px;border-radius:.5rem;}
-.lyrics-pane[data-variant=full] .lyric-line{font-size:clamp(1.5rem,3vw,2.25rem)!important;line-height:1.2!important;font-weight:700!important;padding-block:.25rem!important;min-height:44px;overflow-wrap:anywhere;}
-.lyrics-pane[data-variant=full] .lyric-line[data-current=true]::before{content:"";position:absolute;top:.5rem;bottom:.5rem;left:-.5rem;width:3px;border-radius:4px;background:var(--accent);pointer-events:none;}
-.lyrics-pane[data-variant=full] .lyric-line[data-current=true][data-voice=second]::before{left:auto;right:-.5rem;}
-.lyrics-pane[data-variant=full][data-following=true] .lyric-line:not([data-current=true],:hover,:focus-visible){opacity:clamp(.2,calc(.72 - var(--lyric-distance,0)*.1),.62);filter:var(--lyric-focus-filter,none);}
+/* Keep surrounding lines legible and let contrast carry the playback cue. */
+.lyrics-pane[data-variant=full] .lyric-line{
+  font-size:clamp(1.375rem,2.75vw,2.125rem)!important;
+  line-height:1.27!important;
+  font-weight:400!important;
+  padding-block:.48rem!important;
+  min-height:44px;
+  overflow-wrap:anywhere;
+  text-wrap:pretty;
+  filter:none;
+  transition:opacity 110ms ease-out;
+}
+.lyrics-pane[data-variant=full] .lyric-line:is([data-current=true],[data-past=true]){font-weight:680!important;}
+.lyrics-pane[data-variant=full][data-following=true] .lyric-line:not([data-current=true],:hover,:focus-visible){
+  opacity:clamp(.26,calc(.72 - var(--lyric-distance,0)*.09),.64);
+  filter:none;
+}
 .lyrics-pane[data-variant=full][data-following=true] .lyric-line:is(:hover,:focus-visible){opacity:1;}
 .lyrics-pane[data-variant=full] .lyric-line:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
 @container(max-width:48rem){

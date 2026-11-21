@@ -41,8 +41,9 @@ it.each([false,true])('restores desktop fullscreen before reopening native (init
  state.native=true;state.full=initiallyFull;
  const p=props(),view=render(<VisualizerPlayer {...p}/>),scope=within(view.container);
  await waitFor(()=>expect(scope.queryByRole('status')).toBeNull());
- expect(state.override).toBeUndefined();fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(!initiallyFull);expect(p.onClose).not.toHaveBeenCalled();
- fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(initiallyFull);
+ expect(state.full).toBe(true);
+ expect(state.override).toBeUndefined();fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(false);expect(p.onClose).not.toHaveBeenCalled();
+ fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(true);
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));state.setFull.mockClear();
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'boxes'}}}/>);
  await waitFor(()=>expect(state.call).toHaveBeenCalledWith('visualizer',expect.objectContaining({request:expect.objectContaining({action:'open'})})));

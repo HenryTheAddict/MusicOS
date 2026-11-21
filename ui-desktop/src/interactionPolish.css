@@ -2,7 +2,7 @@
 .track-table[data-local-songs] .track-title{position:relative;overflow:hidden;user-select:none;}
 .track-table[data-local-songs] .track-title>.track-label{width:calc(100% - 1.75rem);padding-left:0;transform:translateX(0);transition:transform 180ms cubic-bezier(.2,.7,.2,1);}
 .track-table[data-local-songs] .track-title>.row-play{position:absolute;left:0;top:50%;translate:0 -50%;display:grid;place-items:center;width:1.5rem;height:1.75rem;padding:0;opacity:0;transform:translateX(-.25rem) scale(.7);pointer-events:none;transition:opacity 140ms ease-out,transform 180ms cubic-bezier(.2,.7,.2,1);border:0;border-radius:0;background:transparent;box-shadow:none;}
-.track-table[data-local-songs] .track-row:is(:hover,:has(:focus-visible),.playing,:has(.menu-trigger[data-state=open])) .track-label{transform:translateX(1.75rem);}
+.track-table[data-local-songs]:not([data-play-in-index]) .track-row:is(:hover,:has(:focus-visible),.playing,:has(.menu-trigger[data-state=open])) .track-label{transform:translateX(1.75rem);}
 .track-table[data-local-songs] .track-row:is(:hover,:has(:focus-visible),.playing,:has(.menu-trigger[data-state=open])) .row-play{opacity:1;transform:none;pointer-events:auto;}
 .track-table[data-local-songs] .track-title>.row-play .icon{width:1.125rem;height:1.125rem;}
 .track-table[data-local-songs] .track-index{align-self:stretch;display:grid;place-items:center;}
@@ -68,10 +68,6 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
 .home-recent>article>button>span{flex:1;min-width:0;}
 .home-recent>article>button>.icon{width:1.3rem;height:1.3rem;flex:none;}
 .home-recent>article>button:hover{background:var(--control-surface);}
-.home-collection-grid>article>.icon-button{display:grid;place-items:center;width:2.75rem;height:2.75rem;padding:.125rem;border:0;border-radius:.625rem;background:var(--collection-control-surface,var(--control-surface));color:var(--ink);box-shadow:none;transition:border-color 140ms ease-out,scale 140ms ease-out;}
-.home-collection-grid>article>.icon-button>.icon{width:2rem;height:2rem;opacity:1;}
-.home-collection-grid>article>.icon-button:is(:hover,:focus-visible){background:var(--collection-control-surface,var(--control-surface));filter:none;border-color:var(--collection-transport-stroke,var(--control-border));}
-.home-collection-grid>article>.icon-button:active:not(:disabled){scale:.98;}
 .home-collection-grid>article>.icon-button:disabled{--home-play-opacity:.45;}
 .home-create>.sketch-action,.playlist-tools.sketch-actions>button{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;min-height:2rem;padding:.375rem .625rem;border:1px solid var(--control-border);border-radius:.625rem;background:var(--control-surface);color:var(--ink);font-size:.75rem;line-height:1.4;transition:background-color 140ms ease-out,scale 140ms ease-out;}
 .home-create>.sketch-action>.icon,.playlist-tools.sketch-actions>button>.icon{display:block;flex:none;width:1.125rem;height:1.125rem;margin:0;}
@@ -161,7 +157,20 @@ body:has(.section-control>.menu-trigger:first-child[data-state=open]) .dropdown.
   text-align:left;
 }
 
-@media(hover:none){.track-table[data-local-songs] .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
+@media(hover:none){.track-table[data-local-songs]:not([data-play-in-index]) .track-title>.track-label{transform:translateX(1.75rem);}.track-table[data-local-songs] .track-title>.row-play{opacity:1;transform:none;pointer-events:auto;}}
 .settings .settings-panel :is(.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters)>button:is([aria-pressed=true],[aria-selected=true]){background:var(--accent);color:var(--accent-ink);}
 /* Selection uses fill and ink, never a changing text width. */
 .home-tabs>button,.home-tabs>button[aria-pressed],.settings :is(.settings-tabs,.size-options,.library-settings-nav,.management-tabs,.metadata-review-filters,.lyric-editor-modes,.lyric-voice-choices)>:is(button,[role=tab]){font-weight:500!important;}
+
+/* Favorites swaps the track number for Play without moving the song title. */
+.track-table[data-play-in-index] .track-title>.track-label{width:100%;transform:none;}
+.track-table[data-play-in-index] .track-index{position:relative;}
+.track-table[data-play-in-index] .track-index>span{transition:opacity 130ms ease-out,scale 160ms ease-out;}
+.track-table[data-play-in-index] .track-index>.row-play{position:absolute;inset:0;margin:auto;display:grid;place-items:center;width:100%;height:100%;padding:0;border:0;background:transparent;opacity:0;scale:.72;transition:opacity 140ms ease-out,scale 180ms cubic-bezier(.2,.7,.2,1);pointer-events:none;}
+.track-table[data-play-in-index] .track-row:has(.row-play:enabled):is(:hover,:focus-within,.playing) .track-index>span{opacity:0;scale:.8;}
+.track-table[data-play-in-index] .track-row:is(:hover,:focus-within,.playing) .track-index>.row-play:enabled{opacity:1;scale:1;pointer-events:auto;}
+@media(hover:none){
+ .track-table[data-play-in-index] .track-index:has(.row-play:enabled)>span{opacity:0;}
+ .track-table[data-play-in-index] .track-index>.row-play:enabled{opacity:1;scale:1;pointer-events:auto;}
+}
+@media(prefers-reduced-motion:reduce){.track-table[data-play-in-index] .track-index>:is(span,.row-play){transition:none!important;}}

@@ -1,7 +1,7 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {cleanup,render,within} from '@testing-library/react';
 import BeatPulseGrid,{beatPosition,downbeatGlyph,gridSize,ripplePulse} from '../src/BeatPulseGrid';
-vi.mock('../src/AssetIcon',()=>({AssetIcon:({name}:{name:string})=><i data-icon={name}/>}));
+vi.mock('../src/AssetIcon',()=>({AssetIcon:({name}:{name:string})=><i className="asset-icon" data-icon={name}/>}));
 const feed=vi.hoisted(()=>({clock:{trackId:1,playing:true,position:2,levels:[] as number[]},position:vi.fn(()=>2)}));
 vi.mock('../src/playbackFeed',()=>({currentPlaybackClock:()=>feed.clock,clockPosition:feed.position,subscribePlaybackClock:()=>()=>{}}));
 afterEach(()=>{cleanup();vi.unstubAllGlobals();});
@@ -27,7 +27,7 @@ describe('motion lifecycle',()=>{
   feed.clock.levels=[.45];request.mock.calls.at(-1)![0](2);expect(cell.style.transform).not.toBe(high);
   feed.clock.levels=[];request.mock.calls.at(-1)![0](3);expect(cell.style.transform).not.toContain('NaN');expect(feed.position).not.toHaveBeenCalled();
  });
- it('renders a static decorative grid with no rAF in Reduced Motion',()=>{const {request}=setup();const view=render(<BeatPulseGrid playing active reduced trackId={1} bpm={120}/>);expect(within(view.container).queryAllByRole('button')).toHaveLength(0);expect(view.container.querySelector('[aria-hidden=true]')).not.toBeNull();expect(view.container.querySelectorAll('[data-icon=Song]')).toHaveLength(9);expect(request).not.toHaveBeenCalled();});
+ it('renders a static decorative grid with no rAF in Reduced Motion',()=>{const {request}=setup();const view=render(<BeatPulseGrid playing active reduced trackId={1} bpm={120}/>);expect(within(view.container).queryAllByRole('button')).toHaveLength(0);expect(view.container.querySelector('[aria-hidden=true]')).not.toBeNull();expect(new Set(Array.from(view.container.querySelectorAll('[data-icon]'),icon=>icon.getAttribute('data-icon'))).size).toBe(7);expect(request).not.toHaveBeenCalled();});
  it('cancels its sole frame on pause and unmount',()=>{const {request,cancel}=setup();const view=render(<BeatPulseGrid playing active reduced={false} trackId={1} bpm={120}/>);expect(request).toHaveBeenCalledTimes(1);view.rerender(<BeatPulseGrid playing={false} active reduced={false} trackId={1} bpm={120}/>);expect(cancel).toHaveBeenCalledWith(1);expect(request).toHaveBeenCalledTimes(1);view.unmount();});
  it('does not schedule frames for inactive or hidden views',()=>{const {request}=setup();const view=render(<BeatPulseGrid playing active={false} reduced={false} trackId={1} bpm={120}/>);expect(request).not.toHaveBeenCalled();view.unmount();vi.spyOn(document,'hidden','get').mockReturnValue(true);render(<BeatPulseGrid playing active reduced={false} trackId={1} bpm={120}/>);expect(request).not.toHaveBeenCalled();vi.restoreAllMocks();});
 });

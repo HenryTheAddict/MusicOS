@@ -116,6 +116,8 @@ impl Effects {
         output
     }
 }
+const OUTPUT_RAMP_FRAMES: usize = 96;
+
 pub struct Mixer {
     pending: [Option<Frame>; 2],
     decks: [Consumer<Frame>; 2],
@@ -133,6 +135,10 @@ pub struct Mixer {
     history_at:usize,
     fade_at:usize,
     fade_left:usize,
+    output_gap: bool,
+    previous_gap: bool,
+    gap_ramp_left: usize,
+    gap_ramp_from: [f32; 2],
     clock: Arc<Clock>,
     eq: super::listening::EqProcessor,
     room:super::listening::Reverb,
@@ -208,6 +214,10 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
             volume: 1.,
             right: None,
             history:[[0.;2];960],history_at:0,fade_at:0,fade_left:0,
+            output_gap: false,
+            previous_gap: false,
+            gap_ramp_left: 0,
+            gap_ramp_from: [0.; 2],
             clock,
             meter,
             eq: Default::default(),
@@ -330,6 +340,7 @@ impl Mixer {
                         }
                     }
                 }
+                self.output_gap = true;
                 self.clock.underruns.fetch_add(1, Ordering::Relaxed);
                 return self.process_output([0.;2]);
             }
@@ -419,11 +430,31 @@ impl Iterator for Mixer {
         if let Some(right) = self.right.take() {
             return Some(right);
         }
+        self.output_gap = false;
         let mut frame = self.frame();
         if self.paused {self.fade_left=0;}else if self.fade_left>0 {
             let old=self.history[self.fade_at];self.fade_at=(self.fade_at+1)%960;
             let progress=1.-self.fade_left as f32/960.;self.fade_left-=1;
             for c in 0..2{frame[c]=old[c]*(1.-progress)+frame[c]*progress;}
+        }
+        if self.paused {
+            self.previous_gap = false;
+            self.gap_ramp_left = 0;
+        } else {
+            // A decoder gap can begin or end on a nonzero sample. Ramp from
+            // the last output in either direction to avoid a discontinuity.
+            if self.output_gap != self.previous_gap {
+                self.previous_gap = self.output_gap;
+                self.gap_ramp_from = self.history[(self.history_at + self.history.len() - 1) % self.history.len()];
+                self.gap_ramp_left = OUTPUT_RAMP_FRAMES;
+            }
+            if self.gap_ramp_left > 0 {
+                let blend = 1. - self.gap_ramp_left as f32 / OUTPUT_RAMP_FRAMES as f32;
+                for (sample, previous) in frame.iter_mut().zip(self.gap_ramp_from) {
+                    *sample = previous * (1. - blend) + *sample * blend;
+                }
+                self.gap_ramp_left -= 1;
+            }
         }
         let _=self.meter.push(frame);
         self.history[self.history_at]=frame;self.history_at=(self.history_at+1)%960;
@@ -467,6 +498,28 @@ pub fn stretch_stereo(input: &[f32], tempo: f32) -> anyhow::Result<Vec<f32>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn decoder_gap_ramps_out_and_back_without_advancing_source_time() {
+        let (mut control, mut mixer) = create(2048);
+        control.commands.push(Command::Pause(false)).unwrap();
+        control.decks[0].push(Frame { samples: [0.5; 2], ..Default::default() }).unwrap();
+        let mut next = || [mixer.next().unwrap(), mixer.next().unwrap()];
+        assert_eq!(next(), [0.5; 2]);
+        assert_eq!(next(), [0.5; 2]);
+        for _ in 0..OUTPUT_RAMP_FRAMES { next(); }
+        assert_eq!(next(), [0.; 2]);
+        assert_eq!(control.clock.audible_frames[0].load(Ordering::Relaxed), 1);
+
+        for _ in 0..=OUTPUT_RAMP_FRAMES {
+            control.decks[0].push(Frame { samples: [-0.5; 2], ..Default::default() }).unwrap();
+        }
+        assert_eq!(next(), [0.; 2]);
+        let resumed = next();
+        assert!(resumed[0] < 0. && resumed[0] > -0.02);
+        for _ in 2..OUTPUT_RAMP_FRAMES { next(); }
+        assert_eq!(next(), [-0.5; 2]);
+    }
+
     #[test]
     fn zero_overlap_promotes_at_eof_and_retains_trimmed_incoming_position() {
         let (mut c, mut mixer) = create(2048);
