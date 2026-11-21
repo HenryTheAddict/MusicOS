@@ -1,10 +1,13 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::path::Path;
 
 use anyhow::Result;
 use musicos_init::app::{Focus, MusicOs, Screen};
 use musicos_init::database::Track;
+use musicos_init::input::{Button, InputEvent};
 use musicos_init::renderer::{Canvas, Resolution};
+use musicos_init::ui::theme::ThemeName;
 
 fn main() -> Result<()> {
     let resolution = Resolution::from_env_or_default();
@@ -12,22 +15,108 @@ fn main() -> Result<()> {
         .nth(1)
         .unwrap_or_else(|| "out/musicos-snapshot.bmp".to_string());
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
-    let mut app = MusicOs::new(resolution);
-    match std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() {
+    let snapshot_screen = std::env::var("MUSICOS_SNAPSHOT_SCREEN");
+    let mut app = if matches!(
+        snapshot_screen.as_deref(),
+        Ok("home-albums"
+            | "home-artists"
+            | "home-nowplaying"
+            | "albums"
+            | "album"
+            | "artists"
+            | "artist-albums"
+            | "album-tracks"
+            | "nowplaying-track"
+            | "songs")
+    ) {
+        MusicOs::with_db_path(resolution, ":memory:")
+    } else {
+        MusicOs::new(resolution)
+    };
+    if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
+        app.active_theme = ThemeName::from_str(&theme);
+    }
+    match snapshot_screen.as_deref() {
+        Ok("first") => app.force_screen_for_snapshot(Screen::First),
         Ok("welcome") | Ok("hello") => app.force_screen_for_snapshot(Screen::Welcome),
         Ok("theme") => app.force_screen_for_snapshot(Screen::Theme),
         Ok("datetime") | Ok("date-time") | Ok("time") => {
             app.force_screen_for_snapshot(Screen::DateTimeSetup)
         }
         Ok("home") => app.force_screen_for_snapshot(Screen::Home),
+        Ok("home-albums" | "home-nowplaying" | "home-artists") => {
+            seed_home_library(&mut app)?;
+            app.force_screen_for_snapshot(Screen::Home);
+            match snapshot_screen.as_deref() {
+                Ok("home-nowplaying") => {
+                    app.handle_input(InputEvent::Button(Button::Up));
+                }
+                Ok("home-artists") => {
+                    app.handle_input(InputEvent::Button(Button::Down));
+                }
+                _ => {}
+            }
+        }
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
-        Ok("albums") | Ok("album") => {
-            seed_demo_albums(&mut app);
-            app.force_screen_for_snapshot(Screen::AlbumsList);
+        Ok("songs" | "albums" | "album" | "artists" | "artist-albums" | "album-tracks") => {
+            seed_home_library(&mut app)?;
+            match snapshot_screen.as_deref() {
+                Ok("songs") => {
+                    app.tracks_queue = app.db.get_tracks()?;
+                    app.force_screen_for_snapshot(Screen::SongsList);
+                }
+                Ok("artists" | "artist-albums") => {
+                    app.force_screen_for_snapshot(Screen::ArtistsList);
+                    if snapshot_screen.as_deref() == Ok("artist-albums") {
+                        app.selected_index = app
+                            .artists_list
+                            .iter()
+                            .position(|name| name == "Tame Impala")
+                            .unwrap_or(0);
+                        app.handle_input(InputEvent::Button(Button::Confirm));
+                    }
+                }
+                _ => {
+                    app.force_screen_for_snapshot(Screen::AlbumsList);
+                    if snapshot_screen.as_deref() == Ok("album-tracks") {
+                        app.selected_index = app
+                            .albums_list
+                            .iter()
+                            .position(|title| title == "The Slow Rush")
+                            .unwrap_or(0);
+                        app.handle_input(InputEvent::Button(Button::Confirm));
+                    }
+                }
+            }
+            app.screen_transition = 1.0;
         }
         Ok("queue") => {
             seed_demo_queue(&mut app);
             app.force_screen_for_snapshot(Screen::Queue);
+        }
+        Ok("playlists") => app.force_screen_for_snapshot(Screen::PlaylistsList),
+        Ok("playlist-tracks") => {
+            seed_demo_queue(&mut app);
+            app.force_screen_for_snapshot(Screen::PlaylistTracksList);
+        }
+        Ok("search") => {
+            seed_demo_queue(&mut app);
+            app.search_query = "Tanger".into();
+            app.search_results = app.tracks_queue.clone();
+            app.force_screen_for_snapshot(Screen::Search);
+        }
+        Ok("search-results") | Ok("search-empty") => {
+            seed_demo_queue(&mut app);
+            app.search_query = "Tanger".into();
+            if std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() == Ok("search-results") {
+                app.search_results = app.tracks_queue.clone();
+            }
+            app.force_screen_for_snapshot(Screen::Search);
+            app.focus = Focus::SearchResults;
+        }
+        Ok("rating") => {
+            app.pending_rating = 3;
+            app.force_screen_for_snapshot(Screen::RatingPicker);
         }
         Ok("context") => {
             seed_demo_albums(&mut app);
@@ -45,6 +134,16 @@ fn main() -> Result<()> {
         Ok("apps") => app.force_screen_for_snapshot(Screen::Apps),
         Ok("about") | Ok("status") => app.force_screen_for_snapshot(Screen::About),
         Ok("now") | Ok("nowplaying") => app.force_screen_for_snapshot(Screen::NowPlaying),
+        Ok("nowplaying-track") => {
+            seed_home_library(&mut app)?;
+            app.motion_mode = musicos_init::preferences::MotionMode::Reduced;
+            app.force_screen_for_snapshot(Screen::NowPlaying);
+        }
+        Ok("wifi-sync") => {
+            app.force_screen_for_snapshot(Screen::Home);
+            app.wifi_sync_overlay = true;
+            app.wifi_sync_ip = "192.0.2.1".into();
+        }
         Ok("volume-hud") | Ok("volume_hud") => {
             app.force_screen_for_snapshot(Screen::Home);
             app.hud_type = musicos_init::app::HudType::Volume;
@@ -72,6 +171,82 @@ fn main() -> Result<()> {
     app.draw(&mut canvas, seconds);
     write_bmp(&output, resolution, &bgra)?;
     println!("{output}");
+    Ok(())
+}
+
+fn seed_home_library(app: &mut MusicOs) -> Result<()> {
+    let assets = musicos_init::ui::assets_dir();
+    for (title, artist, album, artwork) in [
+        (
+            "One More Year",
+            "Tame Impala",
+            "The Slow Rush",
+            "SlowRush.png",
+        ),
+        ("Let It Happen", "Tame Impala", "Currents", "Currents.png"),
+        ("Feel Good Inc.", "Gorillaz", "Demon Days", "DemonDays.png"),
+        (
+            "Radioactive",
+            "Imagine Dragons",
+            "Night Visions",
+            "NightVisions.png",
+        ),
+        ("Pink", "Luna", "Flamingo", "Flamingo.png"),
+        (
+            "Midnight City",
+            "M83",
+            "Hurry Up, We're Dreaming",
+            "Sea.png",
+        ),
+    ] {
+        let id = app.db.insert_track_with_number(
+            &format!("/music/{artwork}.ogg"),
+            title,
+            artist,
+            album,
+            1,
+            327,
+            1,
+            1,
+        )?;
+        let path = Path::new(&assets).join("covers").join(artwork);
+        app.db.set_track_cover_art(id, path.to_str(), 1)?;
+    }
+    for (number, title, duration) in [
+        (2, "Instant Destiny", 193),
+        (3, "Borderline", 238),
+        (4, "Posthumous Forgiveness", 367),
+        (5, "Breathe Deeper", 372),
+    ] {
+        let id = app.db.insert_track_with_number(
+            &format!("/music/slow-rush-{number}.ogg"),
+            title,
+            "Tame Impala",
+            "The Slow Rush",
+            number,
+            duration,
+            1,
+            1,
+        )?;
+        app.db.set_track_cover_art(
+            id,
+            Path::new(&assets).join("covers/SlowRush.png").to_str(),
+            1,
+        )?;
+    }
+    app.refresh_library();
+    let tracks = app.db.get_tracks()?;
+    if let Some((index, track)) = tracks
+        .iter()
+        .enumerate()
+        .find(|(_, track)| track.title == "One More Year")
+    {
+        app.current_cover_art = track
+            .cover_art_path
+            .as_deref()
+            .and_then(|path| musicos_init::media::load_cover_art_file(Path::new(path)));
+        app.player.restore_queue_paused(tracks, index, 118.0);
+    }
     Ok(())
 }
 

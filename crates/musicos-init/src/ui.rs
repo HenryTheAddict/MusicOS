@@ -1,6 +1,7 @@
 pub mod apps;
 pub mod globe;
 pub mod home;
+pub mod library;
 pub mod localization;
 pub mod music;
 pub mod nowplaying;
@@ -25,9 +26,66 @@ pub const IPOD_CHROME_BOTTOM: Color = Color::rgb(202, 205, 209);
 pub const IPOD_BORDER: Color = Color::rgb(126, 130, 136);
 pub const IPOD_ROW: Color = Color::rgb(252, 252, 252);
 pub const IPOD_ROW_ALT: Color = Color::rgb(239, 241, 243);
+pub const INK: Color = Color::rgb(18, 32, 42);
+
+pub fn accent(canvas: &Canvas<'_>) -> Color {
+    canvas.theme_top_color.unwrap_or(Color::rgb(171, 51, 23))
+}
+
+pub fn ink(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        Color::rgb(238, 233, 229)
+    } else {
+        INK
+    }
+}
+
+pub fn ink_secondary(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        Color::rgb(194, 178, 169)
+    } else {
+        Color::rgb(78, 65, 60)
+    }
+}
+
+pub fn on_accent(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        Color::rgb(35, 25, 23)
+    } else {
+        Color::WHITE
+    }
+}
+
+pub fn surface(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        Color::rgb(38, 33, 31)
+    } else {
+        Color::rgb(249, 240, 234)
+    }
+}
+
+pub fn control(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        surface(canvas).mix(accent(canvas), 0.13)
+    } else {
+        surface(canvas).mix(accent(canvas), 0.11)
+    }
+}
+
+pub fn selected_surface(canvas: &Canvas<'_>) -> Color {
+    surface(canvas).mix(accent(canvas), if canvas.dark_theme { 0.24 } else { 0.21 })
+}
+
+pub fn shell(canvas: &Canvas<'_>) -> Color {
+    if canvas.dark_theme {
+        Color::rgb(26, 22, 21)
+    } else {
+        Color::rgb(240, 226, 216)
+    }
+}
 
 pub fn draw_figma_background(canvas: &mut Canvas<'_>) {
-    canvas.clear(Color::rgb(244, 245, 246));
+    canvas.clear(shell(canvas));
 }
 
 pub fn animated_focus_blue(seconds: f32, phase: f32) -> Color {
@@ -54,7 +112,7 @@ pub fn focus_halo(
         h + 4.0,
         r + 2.0,
         2.0,
-        Color::rgb(24, 77, 132),
+        accent(canvas),
     );
 }
 
@@ -102,46 +160,32 @@ pub fn button_with_radius(
     seconds: f32,
     selected: bool,
 ) {
-    let _ = fill;
-    let radius = radius.min(8.0);
+    let _ = (fill, text, seconds);
+    let radius = radius.clamp(28.0, h / 2.0);
     let button_fill = if selected {
-        canvas
-            .theme_top_color
-            .unwrap_or_else(|| animated_focus_blue(seconds, 0.0))
+        accent(canvas)
     } else {
-        IPOD_CHROME_TOP
+        control(canvas)
     };
-    rr_gradient(
-        canvas,
-        x,
-        y,
-        w,
-        h,
-        radius,
-        if selected {
-            button_fill.mix(Color::WHITE, 0.12)
-        } else {
-            Color::WHITE
-        },
-        if selected {
-            button_fill.mix(Color::BLACK, 0.08)
-        } else {
-            IPOD_CHROME_BOTTOM
-        },
-    );
-    rr_stroke(canvas, x, y, w, h, radius, 2.0, IPOD_BORDER);
+    rr(canvas, x, y, w, h, radius, button_fill);
 
     if selected {
-        canvas.register_selected(x, y, w, h, radius, 8.0);
+        register_focus(canvas, x, y, w, h, radius);
     }
 
-    canvas.text_centered(
+    text_fit_centered(
+        canvas,
         label,
         x + w / 2.0,
-        y + 45.0,
-        80.0,
-        if selected { Color::WHITE } else { text },
-        FontWeight::Regular,
+        y + (h - 48.0) / 2.0,
+        w - 36.0,
+        44.0,
+        if selected {
+            on_accent(canvas)
+        } else {
+            ink(canvas)
+        },
+        FontWeight::Bold,
     );
 }
 
@@ -156,41 +200,7 @@ pub fn panel_gradient(
     bottom: Color,
 ) {
     let _ = (top, bottom);
-    rr(canvas, x, y, w, h, r.min(8.0), Color::WHITE);
-    rr_stroke(canvas, x, y, w, h, r.min(8.0), 2.0, IPOD_BORDER);
-}
-
-pub fn figma_split_panels(
-    canvas: &mut Canvas<'_>,
-    theme: theme::ThemeName,
-    left_w: f32,
-    right_x: f32,
-    right_w: f32,
-) {
-    let accent = canvas
-        .theme_top_color
-        .unwrap_or_else(|| theme.primary_color());
-    draw_figma_background(canvas);
-    panel_gradient(
-        canvas,
-        12.0,
-        64.0,
-        left_w,
-        884.0,
-        RADIUS_LG,
-        IPOD_ROW_ALT,
-        IPOD_ROW,
-    );
-    panel_gradient(
-        canvas,
-        right_x,
-        64.0,
-        right_w,
-        884.0,
-        RADIUS_LG,
-        Color::WHITE,
-        accent.mix(Color::WHITE, 0.94),
-    );
+    rr(canvas, x, y, w, h, r.clamp(32.0, 48.0), surface(canvas));
 }
 
 pub fn figma_list_row(
@@ -202,128 +212,180 @@ pub fn figma_list_row(
     selected: bool,
     seconds: f32,
 ) {
-    let radius = RADIUS_SM.min(h / 2.0);
-    let accent = canvas
-        .theme_top_color
-        .unwrap_or_else(|| animated_focus_blue(seconds, 0.8));
+    let _ = seconds;
+    let radius = (h * 0.5).min(42.0);
     if selected {
-        rr_gradient(
-            canvas,
-            x,
-            y,
-            w,
-            h,
-            radius,
-            accent.mix(Color::WHITE, 0.14),
-            accent.mix(Color::BLACK, 0.08),
-        );
-        rr_stroke(
-            canvas,
-            x,
-            y,
-            w,
-            h,
-            radius,
-            1.0,
-            accent.mix(Color::BLACK, 0.28),
-        );
-        canvas.register_selected(x, y, w, h, radius, 8.0);
+        rr(canvas, x, y, w, h, radius, selected_surface(canvas));
+        register_focus(canvas, x, y, w, h, radius);
     } else {
-        rr(canvas, x, y, w, h, radius, IPOD_ROW);
-        rr_stroke(canvas, x, y, w, h, radius, 1.0, Color::rgb(208, 211, 215));
+        rr(canvas, x, y, w, h, radius, control(canvas));
     }
 }
 
-pub fn ipod_status_bar(
+pub fn register_focus(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, radius: f32) {
+    canvas.register_selected(x - 2.0, y - 2.0, w + 4.0, h + 4.0, radius + 2.0, 4.0);
+}
+
+pub(crate) fn compact_row(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, selected: bool) {
+    if selected {
+        rr(canvas, x, y, w, h, 12.0, selected_surface(canvas));
+        register_focus(canvas, x, y, w, h, 12.0);
+    } else {
+        rr(
+            canvas,
+            x + 12.0,
+            y + h - 2.0,
+            w - 24.0,
+            2.0,
+            0.0,
+            control(canvas),
+        );
+    }
+}
+
+pub fn status_bar(
     canvas: &mut Canvas<'_>,
     title: &str,
     clock: &str,
     battery_text: &str,
-    theme: theme::ThemeName,
-    playing: bool,
+    _theme: theme::ThemeName,
+    _playing: bool,
 ) {
-    rr_gradient(
-        canvas,
-        0.0,
-        0.0,
-        1280.0,
-        64.0,
-        0.0,
-        IPOD_CHROME_TOP,
-        IPOD_CHROME_BOTTOM,
+    let secondary = ink_secondary(canvas);
+    let resolution = canvas.resolution();
+    canvas.rect(
+        resolution.scale_x(0.0),
+        resolution.scale_y(0.0),
+        1280.0 * resolution.scale(),
+        64.0 * resolution.scale(),
+        shell(canvas),
     );
-    line(canvas, 0.0, 63.0, 1280.0, 63.0, 2.0, IPOD_BORDER);
-    canvas.text(
-        clock,
-        20.0,
-        15.0,
-        30.0,
-        Color::rgb(38, 40, 44),
-        FontWeight::Bold,
-    );
-    if playing {
-        canvas.text(
-            "▶",
-            168.0,
-            14.0,
-            28.0,
-            theme.primary_color(),
-            FontWeight::Bold,
-        );
-    }
+    canvas.text(clock, 40.0, 11.0, 32.0, secondary, FontWeight::Regular);
     text_fit_centered(
         canvas,
         title,
         640.0,
         9.0,
         650.0,
-        40.0,
-        Color::rgb(32, 34, 38),
+        38.0,
+        ink(canvas),
         FontWeight::Bold,
     );
 
-    let battery_x = 1158.0;
-    rr(canvas, battery_x, 17.0, 86.0, 32.0, 5.0, Color::WHITE);
-    rr_stroke(
-        canvas,
-        battery_x,
-        17.0,
-        86.0,
-        32.0,
-        5.0,
-        2.0,
-        Color::rgb(52, 55, 60),
-    );
-    rr(
-        canvas,
-        battery_x + 86.0,
-        25.0,
-        7.0,
-        16.0,
-        2.0,
-        Color::rgb(52, 55, 60),
-    );
-    rr(
-        canvas,
-        battery_x + 5.0,
-        22.0,
-        62.0,
-        22.0,
-        2.0,
-        theme.primary_color(),
-    );
-    let battery_label = battery_text
+    let battery = battery_text
         .split_whitespace()
-        .find(|part| part.contains('%'))
-        .unwrap_or("--");
+        .find(|part| part.ends_with('%'));
     canvas.text_right(
-        battery_label,
-        1144.0,
-        18.0,
-        23.0,
-        Color::rgb(52, 55, 60),
+        battery.unwrap_or("—"),
+        1170.0,
+        11.0,
+        32.0,
+        secondary,
+        FontWeight::Regular,
+    );
+    rr_stroke(canvas, 1184.0, 18.0, 50.0, 24.0, 7.0, 3.0, secondary);
+    rr(canvas, 1234.0, 25.0, 4.0, 10.0, 2.0, secondary);
+    if let Some(percent) = battery.and_then(|label| label.trim_end_matches('%').parse::<f32>().ok())
+    {
+        rr(
+            canvas,
+            1190.0,
+            24.0,
+            38.0 * (percent / 100.0).clamp(0.0, 1.0),
+            12.0,
+            3.0,
+            secondary,
+        );
+    }
+}
+
+pub fn legend_bar(canvas: &mut Canvas<'_>, legend: &str) {
+    legend_bar_at(canvas, legend, 918.0, 0.0);
+}
+
+pub(crate) fn home_legend_bar(canvas: &mut Canvas<'_>, legend: &str) {
+    legend_bar_at(canvas, legend, 878.0, 10.0);
+}
+
+pub(crate) fn rows_preview(canvas: &mut Canvas<'_>) {
+    draw_figma_background(canvas);
+    rr(canvas, 652.0, 68.0, 604.0, 797.0, 32.0, surface(canvas));
+}
+
+pub(crate) fn page_heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
+    text_fit(
+        canvas,
+        title,
+        48.0,
+        100.0,
+        1184.0,
+        45.0,
+        ink(canvas),
         FontWeight::Bold,
     );
+    text_fit(
+        canvas,
+        subtitle,
+        48.0,
+        160.0,
+        1184.0,
+        30.0,
+        ink_secondary(canvas),
+        FontWeight::Regular,
+    );
+}
+
+fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
+    let resolution = canvas.resolution();
+    canvas.rect(
+        resolution.scale_x(0.0),
+        resolution.scale_y(top),
+        1280.0 * resolution.scale(),
+        (960.0 - top) * resolution.scale(),
+        shell(canvas),
+    );
+    let y = top + inset;
+    let height = if inset > 0.0 { 48.0 } else { 38.0 };
+    let mut x = 40.0;
+    for action in legend.split("     ") {
+        let Some((button, label)) = action.split_once("  ") else {
+            continue;
+        };
+        let button = match button {
+            "A" => "CLICK",
+            "B" => "BACK",
+            "X" => "CONTEXT",
+            _ => button,
+        };
+        let font_size = if inset > 0.0 { 27.0 } else { 24.0 };
+        let chip = (canvas.text_width(button, font_size, FontWeight::Bold) + 30.0).max(38.0);
+        rr(
+            canvas,
+            x,
+            y + 2.0,
+            chip,
+            height,
+            height / 2.0,
+            control(canvas),
+        );
+        canvas.text_centered(
+            button,
+            x + chip * 0.5,
+            y + height / 4.0,
+            font_size,
+            ink_secondary(canvas),
+            FontWeight::Bold,
+        );
+        canvas.text(
+            label,
+            x + chip + 12.0,
+            y + 9.0,
+            29.0,
+            ink_secondary(canvas),
+            FontWeight::Regular,
+        );
+        x += chip + 44.0 + canvas.text_width(label, 29.0, FontWeight::Regular);
+    }
 }
 
 pub fn ipod_scrollbar(
@@ -338,7 +400,7 @@ pub fn ipod_scrollbar(
     if total <= visible || total == 0 {
         return;
     }
-    rr(canvas, x, y, 8.0, h, 4.0, Color::rgb(220, 223, 226));
+    rr(canvas, x, y, 8.0, h, 4.0, control(canvas));
     let thumb_h = (h * visible as f32 / total as f32).clamp(42.0, h);
     let max_offset = (h - thumb_h).max(0.0);
     let ratio = selected as f32 / total.saturating_sub(1).max(1) as f32;
@@ -349,7 +411,7 @@ pub fn ipod_scrollbar(
         8.0,
         thumb_h,
         4.0,
-        Color::rgb(105, 110, 116),
+        accent(canvas),
     );
 }
 
@@ -573,19 +635,8 @@ pub fn shadow_rr(
     );
 }
 
-pub fn liquid_glass(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, r: f32, opacity: u8) {
-    let fill = Color::rgba(255, 255, 255, opacity);
-    rr(canvas, x, y, w, h, r.min(8.0), fill);
-    rr_stroke(
-        canvas,
-        x,
-        y,
-        w,
-        h,
-        r.min(8.0),
-        1.0,
-        Color::rgb(172, 177, 184),
-    );
+pub fn liquid_glass(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, r: f32, _opacity: u8) {
+    rr(canvas, x, y, w, h, r, control(canvas));
 }
 
 pub fn inner_shadow(
@@ -662,92 +713,71 @@ pub fn draw_context_menu(
     seconds: f32,
 ) {
     let transition_t = transitions::ease_out_cubic(transition_t);
-    let menu_t = transitions::ease_out_back(transition_t);
-    let (top, bottom) = theme.gradient_colors();
-    canvas.rect(
+    let _ = theme;
+    let menu_t = transitions::ease_out_cubic(transition_t);
+    canvas.selected_box = None;
+    rr(
+        canvas,
         0.0,
         0.0,
         1280.0,
         960.0,
-        Color::rgba(0, 0, 0, (transition_t * 110.0) as u8),
+        0.0,
+        Color::rgba(18, 32, 42, (menu_t * 134.0) as u8),
     );
-    let modal_w = 560.0;
-    let modal_h = 896.0;
-    let modal_x = 1280.0 - menu_t * 580.0; // Slides from 1280 (closed) to 700 (fully open with 20px right margin)
-    let modal_y = 32.0;
+    let modal_w = 584.0;
+    let modal_h = 812.0;
+    let modal_x = 1280.0 - menu_t * 608.0;
+    let modal_y = 88.0;
 
-    shadow_rr(canvas, modal_x, modal_y, modal_w, modal_h, 58.0, 10.0, 20.0);
-    panel_gradient(
+    shadow_rr(canvas, modal_x, modal_y, modal_w, modal_h, 48.0, 4.0, 8.0);
+    rr(
         canvas,
         modal_x,
         modal_y,
         modal_w,
         modal_h,
-        58.0,
-        Color::WHITE.mix(top, 0.12),
-        Color::WHITE.mix(bottom, 0.22),
+        48.0,
+        surface(canvas),
     );
-    liquid_glass(canvas, modal_x, modal_y, modal_w, modal_h, 58.0, 42);
 
-    canvas.text_centered(
+    canvas.text(
         "Options",
-        modal_x + modal_w / 2.0,
-        modal_y + 42.0,
-        54.0,
-        Color::BLACK,
+        modal_x + 40.0,
+        modal_y + 36.0,
+        48.0,
+        ink(canvas),
         FontWeight::Bold,
     );
-    text_fit_centered(
+    text_fit(
         canvas,
         title,
-        modal_x + modal_w / 2.0,
-        modal_y + 104.0,
-        480.0,
-        30.0,
-        Color::rgba(0, 0, 0, 185),
-        FontWeight::Bold,
+        modal_x + 40.0,
+        modal_y + 98.0,
+        modal_w - 80.0,
+        32.0,
+        ink_secondary(canvas),
+        FontWeight::Regular,
     );
 
-    let step = (650.0 / actions.len().max(1) as f32).min(82.0);
-    let row_h = (step - 8.0).max(54.0);
+    let step = (610.0 / actions.len().max(1) as f32).min(82.0);
+    let row_h = step - 6.0;
     for (index, (row_focus, label, danger)) in actions.iter().enumerate() {
-        let row_t =
-            transitions::ease_out_back(transitions::stagger(transition_t, index, 0.04, 0.78));
         let selected = focus == *row_focus;
         let x = modal_x + 40.0;
-        let y = modal_y + 170.0 + index as f32 * step + (1.0 - row_t) * 34.0;
+        let y = modal_y + 152.0 + index as f32 * step;
         let w = modal_w - 80.0;
         let h = row_h;
-        if selected {
-            focus_halo(canvas, x, y, w, h, 24.0, seconds, index as f32 * 0.35);
-            let fill = if *danger {
-                Color::rgb(255, 54, 54)
-            } else {
-                top.mix(
-                    Color::WHITE,
-                    transitions::pulse01(seconds, 3.2, index as f32 * 0.35) * 0.14,
-                )
-            };
-            rr(canvas, x, y, w, h, 24.0, fill);
-            rr_stroke(canvas, x, y, w, h, 24.0, 5.0, Color::BLACK);
-            canvas.register_selected(x, y, w, h, 24.0, 6.0);
-        } else {
-            let fill = if *danger {
-                Color::rgba(255, 255, 255, 176)
-            } else {
-                Color::rgba(255, 255, 255, 142)
-            };
-            rr(canvas, x, y, w, h, 24.0, fill);
-            liquid_glass(canvas, x, y, w, h, 24.0, 96);
-            rr_stroke(canvas, x, y, w, h, 24.0, 2.0, Color::rgba(0, 0, 0, 70));
-        }
-
-        canvas.text_centered(
+        figma_list_row(canvas, x, y, w, h, selected, seconds);
+        let ink = if *danger { accent(canvas) } else { ink(canvas) };
+        text_fit(
+            canvas,
             label,
-            x + w / 2.0,
-            y + (h - 42.0) / 2.0,
-            38.0,
-            if selected { Color::WHITE } else { Color::BLACK },
+            x + 24.0,
+            y + (h - 34.0) / 2.0,
+            w - 48.0,
+            33.0,
+            ink,
             FontWeight::Bold,
         );
     }

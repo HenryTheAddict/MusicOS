@@ -170,6 +170,7 @@ pub struct Preferences {
     pub theme: ThemeName,
     pub language: Language,
     pub setup_complete: bool,
+    pub controls_seen: bool,
     pub time_configured: bool,
     pub clock_hour: u8,
     pub clock_minute: u8,
@@ -208,9 +209,10 @@ impl Default for Preferences {
             schema_version: CURRENT_SCHEMA_VERSION,
             user_name: "MusicOS User".to_string(),
             device_name: "MusicOS".to_string(),
-            theme: ThemeName::Blue,
+            theme: ThemeName::Seaglass,
             language: Language::En,
             setup_complete: false,
+            controls_seen: false,
             // The RG35XX boot chain initializes the system clock. Keep manual date/time
             // available in Settings without forcing a six-step wizard on first boot.
             time_configured: true,

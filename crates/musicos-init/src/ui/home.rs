@@ -1,566 +1,434 @@
-#![allow(dead_code)]
+use std::collections::BTreeMap;
+use std::path::Path;
 
 use crate::app::{Focus, HomePane};
 use crate::audio::PlaybackStatus;
-use crate::database::{Playlist, Track};
-use crate::renderer::{Canvas, Color};
-use crate::ui::localization::Language;
-use crate::ui::theme::ThemeName;
-use crate::ui::transitions::{ease_out_cubic, stagger};
+use crate::database::{LibraryCounts, Playlist, Track};
+use crate::renderer::{Canvas, Color, CoverArt};
+use crate::ui::nowplaying::draw_cover_art;
 use crate::ui::{
-    figma_list_row, focus_halo, inner_shadow, liquid_glass, rr, shadow_rr, FontWeight,
+    accent, assets_dir, control, figma_list_row, ink, ink_secondary, on_accent, register_focus, rr,
+    selected_surface, shadow_rr, surface, text_fit, FontWeight,
 };
 
-pub fn draw_home(
+pub(crate) struct AlbumPreview {
+    cover: Option<CoverArt>,
+}
+
+pub(crate) fn artist_preview(tracks: &[Track]) -> Option<CoverArt> {
+    let root = Path::new(&assets_dir()).join("artists");
+    let mut portraits = std::fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("png"))
+        .collect::<Vec<_>>();
+    portraits.sort();
+    portraits.into_iter().find_map(|path| {
+        let name = path.file_stem()?.to_str()?;
+        tracks
+            .iter()
+            .any(|track| track.artist.eq_ignore_ascii_case(name))
+            .then(|| crate::media::load_cover_art_thumbnail(&path, 384))
+            .flatten()
+    })
+}
+
+pub(crate) fn album_previews(tracks: &[Track]) -> (Vec<AlbumPreview>, usize) {
+    let recent_cutoff = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |age| age.as_secs().saturating_sub(7 * 24 * 60 * 60))
+        as i64;
+    let mut albums: BTreeMap<&str, &Track> = BTreeMap::new();
+    for track in tracks.iter().filter(|track| !track.album.is_empty()) {
+        let entry = albums.entry(track.album.as_str()).or_insert(track);
+        if track.indexed_at > entry.indexed_at
+            || (track.indexed_at == entry.indexed_at && entry.cover_art_path.is_none())
+        {
+            *entry = track;
+        }
+    }
+    let mut albums: Vec<_> = albums.into_values().collect();
+    albums.sort_by_key(|track| std::cmp::Reverse(track.indexed_at));
+    let recent = albums
+        .iter()
+        .take_while(|track| track.indexed_at >= recent_cutoff)
+        .count();
+    let previews = albums
+        .into_iter()
+        .take(4)
+        .map(|track| AlbumPreview {
+            cover: track
+                .cover_art_path
+                .as_deref()
+                .and_then(|path| crate::media::load_cover_art_thumbnail(Path::new(path), 384)),
+        })
+        .collect();
+    (previews, recent)
+}
+
+pub(crate) fn album_mosaic(previews: &[AlbumPreview]) -> Option<CoverArt> {
+    const CELL: usize = 144;
+    const SIDE: usize = 2 * CELL;
+    if previews.iter().all(|album| album.cover.is_none()) {
+        return None;
+    }
+    let mut pixels = vec![Color::rgb(111, 92, 83); SIDE * SIDE];
+    for (index, preview) in previews.iter().enumerate() {
+        let Some(cover) = &preview.cover else {
+            continue;
+        };
+        let left = index % 2 * CELL;
+        let top = index / 2 * CELL;
+        let size = cover.width.min(cover.height) as usize;
+        let offset_x = (cover.width as usize - size) / 2;
+        let offset_y = (cover.height as usize - size) / 2;
+        for y in 0..CELL {
+            let sy = offset_y + y * size / CELL;
+            for x in 0..CELL {
+                let sx = offset_x + x * size / CELL;
+                pixels[(top + y) * SIDE + left + x] = cover.pixels[sy * cover.width as usize + sx];
+            }
+        }
+    }
+    Some(CoverArt {
+        width: SIDE as u32,
+        height: SIDE as u32,
+        pixels,
+    })
+}
+
+pub(crate) fn draw_home(
     canvas: &mut Canvas<'_>,
     focus: Focus,
-    home_pane: HomePane,
+    pane: HomePane,
     main_index: usize,
-    seconds: f32,
-    lang: Language,
-    theme: ThemeName,
+    counts: LibraryCounts,
+    previews: &[AlbumPreview],
+    recent_albums: usize,
+    mosaic: Option<&CoverArt>,
+    portrait: Option<&CoverArt>,
     playlists: &[Playlist],
-    tracks: &[Track],
     status: &PlaybackStatus,
-    cover_art: Option<&crate::renderer::CoverArt>,
-    battery_text: &str,
-    time_str: &str,
-    transition_t: f32,
+    has_queue: bool,
+    cover_art: Option<&CoverArt>,
 ) {
-    let _ = (lang, battery_text, time_str, transition_t, seconds);
-    crate::ui::draw_figma_background(canvas);
-    rr(
-        canvas,
-        0.0,
-        64.0,
-        510.0,
-        896.0,
-        0.0,
-        Color::rgb(238, 240, 242),
-    );
-    crate::ui::line(
-        canvas,
-        509.0,
-        64.0,
-        509.0,
-        960.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
-    );
-    rr(canvas, 510.0, 64.0, 770.0, 896.0, 0.0, Color::WHITE);
-
-    let menu = ["Music", "Now Playing", "Extras", "Settings"];
-    let menu_icons = [
-        ("Music.svg", "MusicSelected.svg"),
-        ("NowPlaying.svg", "NowPlayingSelected.svg"),
-        ("Apps.svg", "AppsSelected.svg"),
-        ("settings.svg", "settingsSelected.svg"),
-    ];
-    let icon_base = crate::ui::assets_dir();
-    for (index, label) in menu.into_iter().enumerate() {
-        let y = 132.0 + index as f32 * 116.0;
-        let selected = home_pane == HomePane::Main && main_index == index;
-        figma_list_row(canvas, 28.0, y, 454.0, 96.0, selected, seconds);
-        let icon_file = if selected {
-            menu_icons[index].1
-        } else {
-            menu_icons[index].0
-        };
-        canvas.draw_svg(
-            &format!("{icon_base}/icons/appicons/{icon_file}"),
-            44.0,
-            y + 18.0,
-            60.0,
-            60.0,
-        );
-        crate::ui::text_fit(
-            canvas,
-            label,
-            118.0,
-            y + 18.0,
-            290.0,
-            58.0,
-            if selected { Color::WHITE } else { Color::BLACK },
-            FontWeight::Bold,
-        );
-        canvas.text_right(
-            "›",
-            452.0,
-            y + 20.0,
-            52.0,
-            if selected {
-                Color::WHITE
-            } else {
-                Color::rgb(103, 108, 114)
-            },
-            FontWeight::Bold,
-        );
-    }
-
-    let (heading, description) = match main_index {
-        0 => ("Music", "Recently added tracks and playlists"),
-        1 => ("Now Playing", "Playback and queue controls"),
-        2 => ("Extras", "MusicOS shortcuts and utilities"),
-        _ => ("Settings", "Device preferences"),
-    };
-    canvas.text(
-        heading,
-        556.0,
-        94.0,
-        40.0,
-        Color::rgb(54, 58, 64),
-        FontWeight::Bold,
-    );
-    canvas.text(
-        description,
-        556.0,
-        140.0,
-        25.0,
-        Color::rgb(103, 108, 114),
-        FontWeight::Regular,
-    );
-
-    if main_index == 0 {
-        let art_x = 814.0;
-        let art_y = 190.0;
-        let art_size = 210.0;
-        shadow_rr(canvas, art_x, art_y, art_size, art_size, 8.0, 3.0, 8.0);
-        crate::ui::nowplaying::draw_cover_art(canvas, cover_art, art_x, art_y, art_size, 8.0, 1.0);
-        if let Some(track) = status.track.as_ref().or_else(|| tracks.first()) {
-            crate::ui::text_fit_centered(
+    crate::ui::rows_preview(canvas);
+    let first = usize::from(main_index == 7);
+    for (index, (label, icon, count)) in [
+        ("Now Playing", "song.svg", None),
+        ("Albums", "album.svg", Some(counts.albums)),
+        ("Artists", "artist.svg", Some(counts.artists)),
+        ("Songs", "song.svg", Some(counts.tracks)),
+        ("Playlists", "playlist.svg", Some(counts.playlists)),
+        ("Search", "search.svg", None),
+        ("Settings", "settings.svg", None),
+        ("Apps", "device.svg", None),
+    ]
+    .into_iter()
+    .enumerate()
+    .skip(first)
+    .take(7)
+    {
+        let y = 64.0 + (index - first) as f32 * 112.0;
+        let selected = pane == HomePane::Main && main_index == index;
+        if selected {
+            rr(
                 canvas,
-                &track.title,
-                920.0,
-                420.0,
-                610.0,
-                38.0,
-                Color::BLACK,
-                FontWeight::Bold,
+                20.0,
+                y,
+                608.0,
+                108.0,
+                54.0,
+                selected_surface(canvas),
             );
-            crate::ui::text_fit_centered(
-                canvas,
-                &track.artist,
-                920.0,
-                462.0,
-                610.0,
-                27.0,
-                Color::rgb(94, 99, 105),
+            register_focus(canvas, 20.0, y, 608.0, 108.0, 54.0);
+        }
+        let fill = if selected {
+            accent(canvas)
+        } else {
+            control(canvas)
+        };
+        let glyph = if selected {
+            on_accent(canvas)
+        } else {
+            accent(canvas)
+        };
+        rr(canvas, 40.0, y + 18.0, 72.0, 72.0, 36.0, fill);
+        canvas.draw_svg_tinted(
+            &format!("{}/icons/desktop/{icon}", assets_dir()),
+            57.0,
+            y + 35.0,
+            38.0,
+            38.0,
+            glyph,
+        );
+        canvas.text(label, 136.0, y + 28.0, 43.0, ink(canvas), FontWeight::Bold);
+        if let Some(count) = count {
+            canvas.text_right(
+                &count.to_string(),
+                598.0,
+                y + 34.0,
+                32.0,
+                ink_secondary(canvas),
                 FontWeight::Regular,
             );
         }
+        if index == 0 && status.track.is_some() {
+            for (x, h) in [(565.0, 18.0), (578.0, 32.0), (591.0, 23.0)] {
+                rr(canvas, x, y + 64.0 - h, 7.0, h, 3.5, accent(canvas));
+            }
+        }
     }
 
-    let detail_base_y = if main_index == 0 { 532.0 } else { 216.0 };
-    if main_index != 0 {
-        let detail_caption = match main_index {
-            1 => "Quick controls",
-            2 => "Shortcuts",
-            _ => "Categories",
+    if (pane == HomePane::Detail && matches!(main_index, 0 | 4)) || main_index >= 6 {
+        draw_detail(
+            canvas,
+            focus,
+            main_index,
+            playlists,
+            status.track.is_some() || has_queue,
+        );
+    } else if main_index == 0 {
+        if let Some(track) = &status.track {
+            shadow_rr(canvas, 685.0, 100.0, 540.0, 540.0, 42.0, 7.0, 12.0);
+            draw_cover_art(canvas, cover_art, 685.0, 100.0, 540.0, 42.0, 1.0);
+            text_fit(
+                canvas,
+                &track.title,
+                685.0,
+                655.0,
+                540.0,
+                50.0,
+                ink(canvas),
+                FontWeight::Bold,
+            );
+            text_fit(
+                canvas,
+                &format!("{} · {}", track.artist, track.album),
+                685.0,
+                726.0,
+                540.0,
+                32.0,
+                ink_secondary(canvas),
+                FontWeight::Regular,
+            );
+            let duration = track.duration.max(0) as f32;
+            let position = status.position.clamp(0.0, duration);
+            rr(canvas, 685.0, 785.0, 540.0, 14.0, 7.0, control(canvas));
+            if duration > 0.0 {
+                rr(
+                    canvas,
+                    685.0,
+                    785.0,
+                    540.0 * position / duration,
+                    14.0,
+                    7.0,
+                    accent(canvas),
+                );
+            }
+            canvas.text(
+                &format_time(position),
+                685.0,
+                807.0,
+                29.0,
+                ink_secondary(canvas),
+                FontWeight::Regular,
+            );
+            canvas.text_right(
+                &format!("-{}", format_time(duration - position)),
+                1225.0,
+                807.0,
+                29.0,
+                ink_secondary(canvas),
+                FontWeight::Regular,
+            );
+        } else {
+            heading(canvas, "Now Playing", "No song selected");
+        }
+    } else if matches!(main_index, 1 | 2) {
+        let artist = main_index == 2;
+        let (title, meta) = if artist {
+            ("Artists", format!("{} artists", counts.artists))
+        } else {
+            (
+                "Albums",
+                format!("{} albums · {} new", counts.albums, recent_albums),
+            )
         };
+        if artist {
+            rr(canvas, 684.0, 100.0, 540.0, 540.0, 42.0, control(canvas));
+            album_bubble(
+                canvas,
+                portrait.or_else(|| previews.first().and_then(|p| p.cover.as_ref())),
+                766.0,
+                155.0,
+                375.0,
+            );
+            for (index, (x, y, size)) in [
+                (1068.0, 124.0, 132.0),
+                (706.0, 447.0, 165.0),
+                (1038.0, 475.0, 153.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                if let Some(album) = previews.get(index + usize::from(portrait.is_none())) {
+                    album_bubble(canvas, album.cover.as_ref(), x, y, size);
+                }
+            }
+        } else {
+            shadow_rr(canvas, 684.0, 100.0, 540.0, 540.0, 42.0, 7.0, 12.0);
+            draw_cover_art(canvas, mosaic, 684.0, 100.0, 540.0, 42.0, 1.0);
+        }
+        canvas.text(title, 684.0, 655.0, 50.0, ink(canvas), FontWeight::Bold);
         canvas.text(
-            detail_caption,
-            556.0,
-            detail_base_y - 36.0,
-            22.0,
-            Color::rgb(131, 136, 142),
-            FontWeight::Bold,
-        );
-    }
-    for index in 0..4 {
-        let y = detail_base_y + index as f32 * 84.0;
-        let selected = matches!(
-            (index, focus),
-            (0, Focus::HomePlaylist1)
-                | (1, Focus::HomePlaylist2)
-                | (2, Focus::HomePlaylist3)
-                | (3, Focus::HomePlaylist4)
-        );
-        let name = match main_index {
-            0 => playlists
-                .get(index)
-                .map(|playlist| playlist.name.as_str())
-                .or_else(|| tracks.get(index).map(|track| track.title.as_str()))
-                .unwrap_or("No item"),
-            1 => ["Play / pause", "Previous track", "Next track", "Open queue"][index],
-            2 => ["Music", "Now Playing", "USB Sync", "Utilities"][index],
-            _ => ["General", "Audio", "Appearance", "Updates"][index],
-        };
-        figma_list_row(canvas, 548.0, y, 694.0, 66.0, selected, seconds);
-        crate::ui::text_fit(
-            canvas,
-            name,
-            568.0,
-            y + 14.0,
-            610.0,
-            34.0,
-            if selected { Color::WHITE } else { Color::BLACK },
-            FontWeight::Bold,
-        );
-        canvas.text_right(
-            "›",
-            1210.0,
-            y + 12.0,
-            38.0,
-            if selected {
-                Color::WHITE
-            } else {
-                Color::rgb(103, 108, 114)
-            },
-            FontWeight::Bold,
-        );
-    }
-
-    if home_pane == HomePane::Main {
-        let accent = theme.primary_color();
-        rr(canvas, 0.0, 64.0, 7.0, 896.0, 0.0, accent);
-    } else {
-        let accent = theme.primary_color();
-        rr(canvas, 510.0, 64.0, 7.0, 896.0, 0.0, accent);
-    }
-}
-
-fn draw_music_side(
-    canvas: &mut Canvas<'_>,
-    playlists: &[Playlist],
-    tracks: &[Track],
-    focus: Focus,
-    panel_t: f32,
-    seconds: f32,
-) {
-    if playlists.is_empty() && tracks.is_empty() {
-        liquid_glass(canvas, 44.0, 286.0, 540.0, 250.0, 32.0, 210);
-        canvas.text_centered(
-            "No music yet",
-            314.0,
-            338.0,
-            64.0,
-            Color::BLACK,
-            FontWeight::Bold,
-        );
-        crate::ui::text_fit_centered(
-            canvas,
-            "Sync from the desktop to get started.",
-            314.0,
-            432.0,
-            450.0,
-            30.0,
-            Color::rgba(0, 0, 0, 165),
+            &meta,
+            684.0,
+            724.0,
+            32.0,
+            ink_secondary(canvas),
             FontWeight::Regular,
         );
-        return;
-    }
-
-    let y_coords = [218.0, 380.0, 542.0, 704.0];
-    for (i, &y) in y_coords.iter().enumerate() {
-        let row_y = y + (1.0 - ease_out_cubic(stagger(panel_t, i, 0.08, 0.82))) * 44.0;
-        let selected = matches!(
-            (i, focus),
-            (0, Focus::HomePlaylist1)
-                | (1, Focus::HomePlaylist2)
-                | (2, Focus::HomePlaylist3)
-                | (3, Focus::HomePlaylist4)
-        );
-        if let Some(playlist) = playlists.get(i) {
-            playlist_row(
-                canvas,
+        if counts.tracks > 0 {
+            if pane == HomePane::Detail {
+                register_focus(canvas, 1134.0, 662.0, 94.0, 94.0, 47.0);
+            }
+            rr(canvas, 1136.0, 664.0, 88.0, 88.0, 44.0, accent(canvas));
+            canvas.draw_svg_tinted(
+                &format!("{}/icons/desktop/shuffle.svg", assets_dir()),
+                1158.0,
+                686.0,
                 44.0,
-                row_y,
-                &playlist.name,
-                "Playlist",
-                selected,
-                seconds,
-                i as f32 * 0.35,
-            );
-        } else if let Some(track) = tracks.get(i) {
-            playlist_row(
-                canvas,
                 44.0,
-                row_y,
-                &track.title,
-                &track.artist,
-                selected,
-                seconds,
-                i as f32 * 0.35,
+                on_accent(canvas),
             );
         }
-    }
-}
-
-fn draw_now_playing_side(
-    canvas: &mut Canvas<'_>,
-    status: &PlaybackStatus,
-    tracks: &[Track],
-    cover_art: Option<&crate::renderer::CoverArt>,
-    panel_t: f32,
-    seconds: f32,
-) {
-    let Some(track) = &status.track else {
-        for (idx, track) in tracks.iter().take(4).enumerate() {
-            compact_song_row(
-                canvas,
-                44.0,
-                218.0 + idx as f32 * 146.0,
-                &track.title,
-                &track.artist,
-                idx,
-                panel_t,
-                seconds,
-            );
-        }
-        return;
-    };
-
-    let card_y = 218.0 + (1.0 - ease_out_cubic(stagger(panel_t, 0, 0.08, 0.82))) * 44.0;
-    shadow_rr(canvas, 44.0, card_y, 540.0, 240.0, 32.0, 5.0, 14.0);
-    liquid_glass(canvas, 44.0, card_y, 540.0, 240.0, 32.0, 232);
-    inner_shadow(canvas, 44.0, card_y, 540.0, 240.0, 32.0, 10.0);
-    crate::ui::nowplaying::draw_cover_art(canvas, cover_art, 82.0, card_y + 42.0, 96.0, 18.0, 1.0);
-
-    let (title, artist, duration, position) = (
-        track.title.as_str(),
-        track.artist.as_str(),
-        track.duration,
-        status.position,
-    );
-    crate::ui::text_fit(
-        canvas,
-        title,
-        196.0,
-        card_y + 48.0,
-        330.0,
-        48.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    crate::ui::text_fit(
-        canvas,
-        artist,
-        196.0,
-        card_y + 96.0,
-        330.0,
-        32.0,
-        Color::BLACK,
-        FontWeight::Regular,
-    );
-    let ratio = if duration > 0 {
-        (position / duration as f32).clamp(0.0, 1.0)
     } else {
-        0.0
-    };
-    rr(canvas, 82.0, card_y + 150.0, 462.0, 10.0, 5.0, Color::BLACK);
-    rr(
-        canvas,
-        82.0,
-        card_y + 146.0,
-        462.0 * ratio,
-        18.0,
-        9.0,
-        canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229)),
-    );
-    canvas.text(
-        &format_time(position),
-        82.0,
-        card_y + 174.0,
-        30.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    canvas.text_right(
-        &format_time(duration as f32),
-        544.0,
-        card_y + 174.0,
-        30.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    draw_side_icon(canvas, 228.0, card_y + 194.0, "previous.svg", 48.0);
-    draw_side_icon(canvas, 314.0, card_y + 190.0, "pause.svg", 66.0);
-    draw_side_icon(canvas, 400.0, card_y + 194.0, "skip.svg", 48.0);
-    draw_side_icon(canvas, 490.0, card_y + 194.0, "Heart.svg", 54.0);
-
-    for (idx, track) in tracks.iter().take(3).enumerate() {
-        compact_song_row(
-            canvas,
-            44.0,
-            512.0 + idx as f32 * 146.0,
-            &track.title,
-            &track.artist,
-            idx,
-            panel_t,
-            seconds,
+        let (title, subtitle, icon) = match main_index {
+            3 => ("Songs", format!("{} songs", counts.tracks), "song"),
+            4 => (
+                "Playlists",
+                format!("{} playlists", counts.playlists),
+                "playlist",
+            ),
+            _ => (
+                "Search",
+                "Find a song, artist or album".to_string(),
+                "search",
+            ),
+        };
+        rr(canvas, 684.0, 100.0, 540.0, 540.0, 42.0, control(canvas));
+        canvas.draw_svg_tinted(
+            &format!("{}/icons/desktop/{icon}.svg", assets_dir()),
+            866.0,
+            282.0,
+            176.0,
+            176.0,
+            accent(canvas),
+        );
+        canvas.text(title, 684.0, 655.0, 50.0, ink(canvas), FontWeight::Bold);
+        canvas.text(
+            &subtitle,
+            684.0,
+            724.0,
+            32.0,
+            ink_secondary(canvas),
+            FontWeight::Regular,
         );
     }
 }
 
-fn draw_apps_side(canvas: &mut Canvas<'_>, panel_t: f32, seconds: f32) {
-    let rows = [
-        ("Music", "library and albums", "Music.svg"),
-        ("Now Playing", "big player view", "NowPlaying.svg"),
-        ("Settings", "device controls", "settings.svg"),
-        ("USB Sync", "import and update", "Apps.svg"),
-    ];
-    for (idx, (title, subtitle, icon)) in rows.into_iter().enumerate() {
-        app_side_row(
-            canvas,
-            44.0,
-            218.0 + idx as f32 * 154.0,
-            title,
-            subtitle,
-            icon,
-            idx,
-            panel_t,
-            seconds,
+fn album_bubble(canvas: &mut Canvas<'_>, cover: Option<&CoverArt>, x: f32, y: f32, size: f32) {
+    rr(canvas, x, y, size, size, size / 2.0, surface(canvas));
+    if let Some(cover) = cover {
+        canvas.draw_image_rounded(
+            cover,
+            x + 7.0,
+            y + 7.0,
+            size - 14.0,
+            size - 14.0,
+            size / 2.0,
+            1.0,
+        );
+    } else {
+        canvas.draw_svg_tinted(
+            &format!("{}/icons/desktop/artist.svg", assets_dir()),
+            x + size * 0.25,
+            y + size * 0.25,
+            size * 0.5,
+            size * 0.5,
+            accent(canvas),
         );
     }
 }
 
-fn draw_settings_side(canvas: &mut Canvas<'_>, panel_t: f32, seconds: f32) {
-    let rows = [
-        ("General", "language, date, time"),
-        ("Audio", "volume and playback"),
-        ("Looks", "theme and brightness"),
-        ("Get Update", "USB updater"),
-    ];
-    for (idx, (title, subtitle)) in rows.into_iter().enumerate() {
-        compact_song_row(
-            canvas,
-            44.0,
-            218.0 + idx as f32 * 154.0,
-            title,
-            subtitle,
-            idx,
-            panel_t,
-            seconds,
-        );
-    }
-}
-
-fn compact_song_row(
-    canvas: &mut Canvas<'_>,
-    x: f32,
-    y: f32,
-    title: &str,
-    subtitle: &str,
-    index: usize,
-    panel_t: f32,
-    seconds: f32,
-) {
-    let y = y + (1.0 - ease_out_cubic(stagger(panel_t, index, 0.06, 0.82))) * 44.0;
-    playlist_row(
-        canvas,
-        x,
-        y,
-        title,
-        subtitle,
-        false,
-        seconds,
-        index as f32 * 0.35,
-    );
-}
-
-fn app_side_row(
-    canvas: &mut Canvas<'_>,
-    x: f32,
-    y: f32,
-    title: &str,
-    subtitle: &str,
-    icon: &str,
-    index: usize,
-    panel_t: f32,
-    _seconds: f32,
-) {
-    let y = y + (1.0 - ease_out_cubic(stagger(panel_t, index, 0.06, 0.82))) * 44.0;
-    shadow_rr(canvas, x, y, 540.0, 136.0, 24.0, 4.0, 12.0);
-    liquid_glass(canvas, x, y, 540.0, 136.0, 24.0, 220);
-    inner_shadow(canvas, x, y, 540.0, 136.0, 24.0, 12.0);
-    let base_path = crate::ui::assets_dir();
-    canvas.draw_svg(
-        &format!("{}/icons/appicons/{}", base_path, icon),
-        x + 36.0,
-        y + 20.0,
-        96.0,
-        96.0,
-    );
-    crate::ui::text_fit(
-        canvas,
-        title,
-        x + 154.0,
-        y + 28.0,
-        340.0,
-        48.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    crate::ui::text_fit(
+fn heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
+    canvas.text(title, 688.0, 104.0, 50.0, ink(canvas), FontWeight::Bold);
+    text_fit(
         canvas,
         subtitle,
-        x + 154.0,
-        y + 78.0,
-        340.0,
-        30.0,
-        Color::BLACK,
+        688.0,
+        166.0,
+        532.0,
+        32.0,
+        ink_secondary(canvas),
         FontWeight::Regular,
     );
 }
 
-fn draw_side_icon(canvas: &mut Canvas<'_>, cx: f32, cy: f32, filename: &str, size: f32) {
-    let base_path = crate::ui::assets_dir();
-    canvas.draw_svg(
-        &format!("{}/icons/nowplaying/{}", base_path, filename),
-        cx - size / 2.0,
-        cy - size / 2.0,
-        size,
-        size,
-    );
-}
-
-fn playlist_row(
+fn draw_detail(
     canvas: &mut Canvas<'_>,
-    x: f32,
-    y: f32,
-    title: &str,
-    subtitle: &str,
-    selected: bool,
-    seconds: f32,
-    phase: f32,
+    focus: Focus,
+    index: usize,
+    playlists: &[Playlist],
+    has_track: bool,
 ) {
-    if selected {
-        focus_halo(canvas, x, y, 540.0, 136.0, 24.0, seconds, phase);
+    let (title, subtitle) = match index {
+        0 => ("Now Playing", "Quick controls"),
+        4 => ("Playlists", "Quick play"),
+        7 => ("Apps", "Shortcuts and utilities"),
+        _ => ("Settings", "Device preferences"),
+    };
+    heading(canvas, title, subtitle);
+    let count = match index {
+        0 if !has_track => 0,
+        4 => playlists.len().min(4),
+        _ => 4,
+    };
+    for (row, detail_focus) in [
+        Focus::HomePlaylist1,
+        Focus::HomePlaylist2,
+        Focus::HomePlaylist3,
+        Focus::HomePlaylist4,
+    ]
+    .into_iter()
+    .enumerate()
+    .take(count)
+    {
+        let label = match index {
+            0 => ["Play / pause", "Previous track", "Next track", "Open queue"][row],
+            4 => &playlists[row].name,
+            7 => ["Music", "Now Playing", "USB Sync", "Utilities"][row],
+            _ => ["General", "Audio", "Appearance", "Updates"][row],
+        };
+        let y = 236.0 + row as f32 * 116.0;
+        let selected = focus == detail_focus;
+        figma_list_row(canvas, 688.0, y, 530.0, 88.0, selected, 0.0);
+        text_fit(
+            canvas,
+            label,
+            716.0,
+            y + 20.0,
+            465.0,
+            39.0,
+            ink(canvas),
+            FontWeight::Bold,
+        );
     }
-    shadow_rr(canvas, x, y, 540.0, 136.0, 24.0, 4.0, 12.0);
-    liquid_glass(canvas, x, y, 540.0, 136.0, 24.0, 220);
-    inner_shadow(canvas, x, y, 540.0, 136.0, 24.0, 12.0);
-    rr(canvas, x + 40.0, y + 20.0, 96.0, 96.0, 16.0, Color::BLACK);
-
-    if selected {
-        canvas.register_selected(x, y, 540.0, 136.0, 24.0, 8.0);
-    }
-
-    crate::ui::text_fit(
-        canvas,
-        title,
-        x + 144.0,
-        y + 28.0,
-        350.0,
-        48.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    crate::ui::text_fit(
-        canvas,
-        subtitle,
-        x + 144.0,
-        y + 76.0,
-        340.0,
-        32.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
 }
 
-fn format_time(sec: f32) -> String {
-    let sec = sec.max(0.0);
-    let m = (sec / 60.0) as i32;
-    let s = (sec % 60.0) as i32;
-    format!("{m}:{s:02}")
+fn format_time(position: f32) -> String {
+    let seconds = position as u32;
+    format!("{}:{:02}", seconds / 60, seconds % 60)
 }

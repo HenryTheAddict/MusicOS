@@ -399,6 +399,7 @@ pub struct Canvas<'a> {
     pub selected_box: Option<(f32, f32, f32, f32, f32, f32)>, // x, y, w, h, r, thick
     pub theme_top_color: Option<Color>,
     pub theme_bottom_color: Option<Color>,
+    pub dark_theme: bool,
 }
 
 impl<'a> Canvas<'a> {
@@ -419,6 +420,7 @@ impl<'a> Canvas<'a> {
             selected_box: None,
             theme_top_color: None,
             theme_bottom_color: None,
+            dark_theme: false,
         })
     }
 
@@ -456,6 +458,22 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn draw_svg(&mut self, path: &str, x: f32, y: f32, w: f32, h: f32) {
+        self.draw_svg_with_tint(path, x, y, w, h, None);
+    }
+
+    pub fn draw_svg_tinted(&mut self, path: &str, x: f32, y: f32, w: f32, h: f32, tint: Color) {
+        self.draw_svg_with_tint(path, x, y, w, h, Some(tint));
+    }
+
+    fn draw_svg_with_tint(
+        &mut self,
+        path: &str,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        tint: Option<Color>,
+    ) {
         let res = self.resolution();
         let scaled_w = (w * res.scale()).round() as u32;
         let scaled_h = (h * res.scale()).round() as u32;
@@ -473,6 +491,14 @@ impl<'a> Canvas<'a> {
                     let pixel = pixels[(py * scaled_w + px) as usize];
                     let a = pixel.alpha();
                     if a > 0 {
+                        if let Some(tint) = tint {
+                            self.put_pixel(
+                                x0 + px as i32,
+                                y0 + py as i32,
+                                Color::rgba(tint.r, tint.g, tint.b, a),
+                            );
+                            continue;
+                        }
                         let r = pixel.red();
                         let g = pixel.green();
                         let b = pixel.blue();

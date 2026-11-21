@@ -1,18 +1,15 @@
 use crate::app::Focus;
 use crate::database::{LibraryCounts, Pin, Track};
-use crate::renderer::{Canvas, Color};
+use crate::renderer::Canvas;
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
-use crate::ui::{
-    animated_focus_blue, figma_list_row, figma_split_panels, liquid_glass, panel_gradient, rr,
-    text_fit_centered, FontWeight,
-};
+use crate::ui::{compact_row, rr, FontWeight};
 
 pub fn draw_music_menu(
     canvas: &mut Canvas<'_>,
     focus: Focus,
-    seconds: f32,
+    _seconds: f32,
     lang: Language,
     theme: ThemeName,
     pins: &[Pin],
@@ -21,93 +18,56 @@ pub fn draw_music_menu(
     transition_t: f32,
 ) {
     let transition_t = ease_out_cubic(transition_t);
-    figma_split_panels(canvas, theme, 375.0, 427.0, 832.0);
-    canvas.text_centered(
-        lang.translate("pins"),
-        208.0,
-        82.0,
-        50.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-
-    if pins.is_empty() {
-        let help = lang.translate("pins_help");
-        let lines: Vec<&str> = help.lines().collect();
-        crate::ui::centered_lines(
-            canvas,
-            &lines,
-            208.0,
-            252.0,
-            36.0,
-            36.0,
-            Color::BLACK,
-            FontWeight::Regular,
-        );
-    } else {
-        let limit = pins.len().min(5);
-        for i in 0..limit {
-            let y = 180.0 + i as f32 * 130.0;
-
-            crate::ui::liquid_glass(canvas, 40.0, y, 335.0, 110.0, 30.0, 160);
-
-            canvas.text(
-                &pins[i].name,
-                60.0,
-                y + 16.0,
-                40.0,
-                Color::BLACK,
-                FontWeight::Bold,
-            );
-            canvas.text(
-                &pins[i].subtitle,
-                60.0,
-                y + 60.0,
-                28.0,
-                Color::rgb(80, 80, 80),
-                FontWeight::Regular,
-            );
-        }
+    let _ = theme;
+    crate::ui::draw_figma_background(canvas);
+    let pin_summary = pins
+        .iter()
+        .take(4)
+        .map(|pin| pin.name.as_str())
+        .collect::<Vec<_>>()
+        .join(" · ");
+    if !pin_summary.is_empty() {
+        crate::ui::page_heading(canvas, lang.translate("pins"), &pin_summary);
     }
 
     let items = [
-        (Focus::Search, lang.translate("search"), 0, 78.0),
+        (Focus::Search, lang.translate("search"), 0, 68.0),
         (
             Focus::Albums,
             lang.translate("albums"),
             counts.albums,
-            172.0,
+            156.0,
         ),
-        (Focus::Songs, lang.translate("songs"), counts.tracks, 266.0),
+        (Focus::Songs, lang.translate("songs"), counts.tracks, 244.0),
         (
             Focus::Artists,
             lang.translate("artists"),
             counts.artists,
-            360.0,
+            332.0,
         ),
         (
             Focus::Playlists,
             lang.translate("playlists"),
             counts.playlists,
-            454.0,
+            420.0,
         ),
         (
             Focus::Favorites,
             lang.translate("favorites"),
             counts.favorites,
-            548.0,
+            508.0,
         ),
         (
             Focus::Queue,
             lang.translate("queue"),
             queue_len as i64,
-            642.0,
+            596.0,
         ),
-        (Focus::History, lang.translate("history"), 0, 736.0),
-        (Focus::ShuffleAll, lang.translate("shuffle_all"), 0, 830.0),
+        (Focus::History, lang.translate("history"), 0, 684.0),
+        (Focus::ShuffleAll, lang.translate("shuffle_all"), 0, 772.0),
     ];
 
-    for (item_focus, label, badge, y) in items {
+    for (item_focus, label, badge, _) in items {
         let index = match item_focus {
             Focus::Search => 0,
             Focus::Albums => 1,
@@ -121,62 +81,31 @@ pub fn draw_music_menu(
             _ => 0,
         };
         let row_t = ease_out_back(stagger(transition_t, index, 0.05, 0.76));
-        let x = 487.0 + (1.0 - row_t) * 70.0;
+        let x = 44.0 - (1.0 - row_t) * 26.0;
+        let y = if pin_summary.is_empty() { 92.0 } else { 206.0 }
+            + index as f32 * if pin_summary.is_empty() { 84.0 } else { 73.0 };
         let selected = focus == item_focus;
-        figma_list_row(canvas, x, y, 711.0, 80.0, selected, seconds);
-        text_fit_centered(
+        compact_row(canvas, x, y, 1192.0, 68.0, selected);
+        crate::ui::text_fit(
             canvas,
             label,
-            x + 355.0,
+            x + 24.0,
             y + 16.0,
-            620.0,
-            42.0,
-            if selected { Color::WHITE } else { Color::BLACK },
+            1040.0,
+            36.0,
+            crate::ui::ink(canvas),
             FontWeight::Bold,
         );
         if badge > 0 {
-            rr(
-                canvas,
-                x + 590.0,
-                y + 25.0,
-                74.0,
-                42.0,
-                6.0,
-                if selected {
-                    Color::WHITE
-                } else {
-                    Color::rgb(95, 101, 108)
-                },
-            );
-            canvas.text_centered(
+            canvas.text_right(
                 &badge.to_string(),
-                x + 627.0,
-                y + 30.0,
+                x + 1158.0,
+                y + 18.0,
                 28.0,
-                if selected {
-                    theme.primary_color()
-                } else {
-                    Color::WHITE
-                },
+                crate::ui::ink_secondary(canvas),
                 FontWeight::Bold,
             );
         }
-    }
-    crate::ui::ipod_scrollbar(canvas, 1222.0, 82.0, 820.0, 8, 9, index_for_focus(focus));
-}
-
-fn index_for_focus(focus: Focus) -> usize {
-    match focus {
-        Focus::Search => 0,
-        Focus::Albums => 1,
-        Focus::Songs => 2,
-        Focus::Artists => 3,
-        Focus::Playlists => 4,
-        Focus::Favorites => 5,
-        Focus::Queue => 6,
-        Focus::History => 7,
-        Focus::ShuffleAll => 8,
-        _ => 0,
     }
 }
 
@@ -185,12 +114,12 @@ pub fn draw_items_list(
     title: &str,
     items: &[String],
     selected_idx: usize,
-    theme: ThemeName,
+    _theme: ThemeName,
     scroll_offset: f32,
     transition_t: f32,
     seconds: f32,
 ) {
-    draw_collection_shell(canvas, title, theme);
+    crate::ui::draw_figma_background(canvas);
 
     if items.is_empty() {
         draw_empty_collection(
@@ -201,11 +130,12 @@ pub fn draw_items_list(
         return;
     }
 
+    crate::ui::page_heading(canvas, title, &format!("{} items", items.len()));
     for (idx, item) in items.iter().enumerate() {
         let selected = idx == selected_idx;
-        let y = 260.0 + idx as f32 * 144.0 - scroll_offset;
+        let y = 220.0 + idx as f32 * COLLECTION_ROW_STEP - scroll_offset;
 
-        if y < 252.0 || y + 128.0 > 862.0 {
+        if y < 204.0 || y + COLLECTION_ROW_HEIGHT > 864.0 {
             continue;
         }
 
@@ -213,7 +143,8 @@ pub fn draw_items_list(
             canvas,
             y,
             item,
-            "Local library",
+            "",
+            None,
             selected,
             idx,
             transition_t,
@@ -231,12 +162,12 @@ pub fn draw_tracks_list(
     title: &str,
     tracks: &[Track],
     selected_idx: usize,
-    theme: ThemeName,
+    _theme: ThemeName,
     scroll_offset: f32,
     transition_t: f32,
     seconds: f32,
 ) {
-    draw_collection_shell(canvas, title, theme);
+    crate::ui::draw_figma_background(canvas);
 
     if tracks.is_empty() {
         draw_empty_collection(
@@ -247,24 +178,26 @@ pub fn draw_tracks_list(
         return;
     }
 
+    crate::ui::page_heading(canvas, title, &format!("{} tracks", tracks.len()));
     for (idx, track) in tracks.iter().enumerate() {
         let selected = idx == selected_idx;
-        let y = 260.0 + idx as f32 * 144.0 - scroll_offset;
+        let y = 220.0 + idx as f32 * COLLECTION_ROW_STEP - scroll_offset;
 
-        if y < 252.0 || y + 128.0 > 862.0 {
+        if y < 204.0 || y + COLLECTION_ROW_HEIGHT > 864.0 {
             continue;
         }
 
-        let subtitle = if track.rating > 0 {
-            format!("{}  |  Rating {}/5", track.artist, track.rating)
-        } else {
-            track.artist.clone()
-        };
+        let mut subtitle = format!("{} · {}", track.artist, track.album);
+        if track.rating > 0 {
+            subtitle.push_str(&format!(" · {}/5", track.rating));
+        }
+        let duration = track.duration.max(0);
         collection_row(
             canvas,
             y,
-            &track.title,
+            &format!("{:02}  {}", idx + 1, track.title),
             &subtitle,
+            Some(format!("{}:{:02}", duration / 60, duration % 60)),
             selected,
             idx,
             transition_t,
@@ -281,26 +214,7 @@ pub fn draw_tracks_list(
 }
 
 fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
-    liquid_glass(canvas, 238.0, 330.0, 824.0, 300.0, 32.0, 190);
-    canvas.text_centered(title, 650.0, 392.0, 68.0, Color::BLACK, FontWeight::Bold);
-    text_fit_centered(
-        canvas,
-        help,
-        650.0,
-        500.0,
-        680.0,
-        34.0,
-        Color::rgb(70, 70, 70),
-        FontWeight::Regular,
-    );
-    canvas.text_centered(
-        "A  open     B  back",
-        650.0,
-        570.0,
-        28.0,
-        Color::rgba(0, 0, 0, 140),
-        FontWeight::Regular,
-    );
+    crate::ui::page_heading(canvas, title, help);
 }
 
 pub fn draw_search(
@@ -321,6 +235,11 @@ pub fn draw_search(
         } else {
             format!("Search: {query}")
         };
+        if results.is_empty() {
+            crate::ui::draw_figma_background(canvas);
+            draw_empty_collection(canvas, "No matching songs", "Try another title or artist.");
+            return;
+        }
         draw_tracks_list(
             canvas,
             &title,
@@ -331,52 +250,19 @@ pub fn draw_search(
             transition_t,
             seconds,
         );
-        if results.is_empty() {
-            canvas.text_centered(
-                "No matching songs",
-                653.0,
-                490.0,
-                48.0,
-                Color::rgb(80, 80, 80),
-                FontWeight::Bold,
-            );
-        }
         return;
     }
 
-    draw_collection_shell(canvas, "Search Library", theme);
-    rr(
-        canvas,
-        180.0,
-        250.0,
-        940.0,
-        96.0,
-        36.0,
-        Color::rgba(0, 0, 0, 48),
-    );
-    text_fit_centered(
+    crate::ui::draw_figma_background(canvas);
+    crate::ui::page_heading(
         canvas,
         if query.is_empty() {
-            "Enter a search"
+            "Search Library"
         } else {
             query
         },
-        650.0,
-        270.0,
-        850.0,
-        48.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    canvas.text_centered(
         &format!("{} results", results.len()),
-        650.0,
-        360.0,
-        28.0,
-        Color::rgb(70, 70, 70),
-        FontWeight::Regular,
     );
-
     const KEYS: [&str; 30] = [
         "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R",
         "S", "T", "U", "V", "W", "X", "Y", "Z", "SPACE", "DEL", "CLEAR", "RESULTS",
@@ -384,33 +270,37 @@ pub fn draw_search(
     for (index, label) in KEYS.iter().enumerate() {
         let col = index % 6;
         let row = index / 6;
-        let x = 188.0 + col as f32 * 153.0;
-        let y = 418.0 + row as f32 * 82.0;
+        let x = 48.0 + col as f32 * 199.0;
+        let y = 220.0 + row as f32 * 124.0;
         let selected = index == key_index;
-        let w = 136.0;
-        let h = 66.0;
+        let w = 182.0;
+        let h = 97.0;
         rr(
             canvas,
             x,
             y,
             w,
             h,
-            22.0,
+            12.0,
             if selected {
-                animated_focus_blue(seconds, index as f32 * 0.2)
+                crate::ui::accent(canvas)
             } else {
-                Color::rgba(255, 255, 255, 170)
+                crate::ui::control(canvas)
             },
         );
         if selected {
-            canvas.register_selected(x, y, w, h, 22.0, 5.0);
+            crate::ui::register_focus(canvas, x, y, w, h, 22.0);
         }
         canvas.text_centered(
             label,
             x + w / 2.0,
-            y + 17.0,
-            if label.len() > 3 { 24.0 } else { 30.0 },
-            if selected { Color::WHITE } else { Color::BLACK },
+            y + 29.0,
+            if label.len() > 3 { 24.0 } else { 34.0 },
+            if selected {
+                crate::ui::on_accent(canvas)
+            } else {
+                crate::ui::ink(canvas)
+            },
             FontWeight::Bold,
         );
     }
@@ -420,60 +310,51 @@ pub fn draw_rating_picker(
     canvas: &mut Canvas<'_>,
     title: &str,
     rating: u8,
-    theme: ThemeName,
-    seconds: f32,
+    _theme: ThemeName,
+    _seconds: f32,
 ) {
-    draw_collection_shell(canvas, "Rate Track", theme);
-    text_fit_centered(
-        canvas,
-        title,
-        650.0,
-        300.0,
-        900.0,
-        48.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
+    crate::ui::draw_figma_background(canvas);
+    crate::ui::page_heading(canvas, "Rate Track", title);
     for index in 0..5 {
         let active = index < rating as usize;
-        let x = 325.0 + index as f32 * 130.0;
+        let x = 340.0 + index as f32 * 128.0;
         rr(
             canvas,
             x,
             450.0,
             104.0,
             104.0,
-            52.0,
+            14.0,
             if active {
-                animated_focus_blue(seconds, index as f32 * 0.25)
+                crate::ui::accent(canvas)
             } else {
-                Color::rgba(0, 0, 0, 42)
+                crate::ui::control(canvas)
             },
         );
         canvas.text_centered(
-            "*",
+            "★",
             x + 52.0,
-            465.0,
-            70.0,
+            469.0,
+            57.0,
             if active {
-                Color::WHITE
+                crate::ui::on_accent(canvas)
             } else {
-                Color::rgb(100, 100, 100)
+                crate::ui::ink_secondary(canvas)
             },
             FontWeight::Bold,
         );
     }
-    canvas.register_selected(305.0, 430.0, 670.0, 144.0, 72.0, 6.0);
+
     canvas.text_centered(
         if rating == 0 {
             "Unrated"
         } else {
             "Confirm rating"
         },
-        650.0,
+        640.0,
         620.0,
         36.0,
-        Color::rgb(70, 70, 70),
+        crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
 }
@@ -497,101 +378,67 @@ fn draw_alpha_index(canvas: &mut Canvas<'_>, labels: &[&str]) {
         return;
     }
     let step = (560.0 / letters.len().max(1) as f32).clamp(24.0, 42.0);
-    let mut y = 276.0;
+    let mut y = 229.0;
     for letter in letters.into_iter().take(18) {
         canvas.text_centered(
             &letter.to_string(),
-            1152.0,
+            1212.0,
             y,
             22.0,
-            Color::rgba(0, 0, 0, 160),
+            crate::ui::ink_secondary(canvas),
             FontWeight::Bold,
         );
         y += step;
     }
 }
 
-fn draw_collection_shell(canvas: &mut Canvas<'_>, title: &str, theme: ThemeName) {
-    crate::ui::draw_figma_background(canvas);
-    let _ = theme;
-    panel_gradient(
-        canvas,
-        32.0,
-        78.0,
-        1216.0,
-        850.0,
-        8.0,
-        Color::WHITE,
-        Color::WHITE,
-    );
-    text_fit_centered(
-        canvas,
-        title,
-        640.0,
-        91.0,
-        960.0,
-        58.0,
-        Color::BLACK,
-        FontWeight::Bold,
-    );
-    crate::ui::line(
-        canvas,
-        32.0,
-        164.0,
-        1248.0,
-        164.0,
-        2.0,
-        crate::ui::IPOD_BORDER,
-    );
-}
+pub(crate) const COLLECTION_ROW_STEP: f32 = 90.0;
+pub(crate) const COLLECTION_ROW_HEIGHT: f32 = 84.0;
 
 fn collection_row(
     canvas: &mut Canvas<'_>,
     y: f32,
     title: &str,
     subtitle: &str,
+    trailing: Option<String>,
     selected: bool,
     index: usize,
     transition_t: f32,
-    seconds: f32,
+    _seconds: f32,
 ) {
-    let x = 72.0;
-    let w = 1136.0;
-    let h = 112.0;
+    let x = 44.0;
+    let w = 1138.0;
     let row_t = ease_out_back(stagger(transition_t, index, 0.06, 0.78));
-    let y = y + (1.0 - row_t) * 46.0;
-    figma_list_row(canvas, x, y, w, h, selected, seconds);
-
-    let text_color = if selected { Color::WHITE } else { Color::BLACK };
-
+    let x = x - (1.0 - row_t) * 24.0;
+    compact_row(canvas, x, y, w, COLLECTION_ROW_HEIGHT, selected);
     crate::ui::text_fit(
         canvas,
         title,
-        x + 26.0,
-        y + if subtitle.is_empty() { 26.0 } else { 14.0 },
-        940.0,
-        52.0,
-        text_color,
+        x + 20.0,
+        y + if subtitle.is_empty() { 21.0 } else { 8.0 },
+        975.0,
+        35.0,
+        crate::ui::ink(canvas),
         FontWeight::Bold,
     );
     if !subtitle.is_empty() {
         crate::ui::text_fit(
             canvas,
             subtitle,
-            x + 28.0,
-            y + 67.0,
-            880.0,
-            28.0,
-            text_color,
+            x + 20.0,
+            y + 46.0,
+            975.0,
+            26.0,
+            crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );
     }
     canvas.text_right(
-        "›",
-        x + w - 26.0,
-        y + 26.0,
-        54.0,
-        text_color,
-        FontWeight::Bold,
+        trailing.as_deref().unwrap_or("›"),
+        x + w - 20.0,
+        y + 23.0,
+        31.0,
+        crate::ui::ink_secondary(canvas),
+        FontWeight::Regular,
     );
 }

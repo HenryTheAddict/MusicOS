@@ -406,7 +406,26 @@ fn is_disc_directory(path: &Path) -> bool {
 }
 
 pub fn load_cover_art_file(path: &Path) -> Option<CoverArt> {
-    image::open(path).ok().map(cover_art_from_image)
+    read_cover_image(path).map(cover_art_from_image)
+}
+
+pub(crate) fn load_cover_art_thumbnail(path: &Path, size: u32) -> Option<CoverArt> {
+    read_cover_image(path).map(|image| {
+        if image.width() > size || image.height() > size {
+            cover_art_from_image(image.thumbnail(size, size))
+        } else {
+            cover_art_from_image(image)
+        }
+    })
+}
+
+fn read_cover_image(path: &Path) -> Option<image::DynamicImage> {
+    image::io::Reader::open(path)
+        .ok()?
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()
 }
 
 fn cover_art_from_image(img: image::DynamicImage) -> CoverArt {
