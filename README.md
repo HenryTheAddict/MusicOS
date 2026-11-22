@@ -4,6 +4,18 @@ musicOS is a React + Tauri 2 desktop music player with DJ mode and library
 management, an embedded handheld OS for the Anbernic RG35XX 2024 / Allwinner
 H700, and companion mobile apps.
 
+![musicOS desktop album library in light mode, with artwork-tinted colors and a track playing](docs/images/desktop-light.png)
+
+<table>
+  <tr>
+    <td width="33%"><img src="docs/images/desktop-dark.png" alt="musicOS album library in dark mode"><br><sub>Desktop · Dark appearance</sub></td>
+    <td width="33%"><img src="docs/images/desktop-playing.png" alt="musicOS Now Playing with album artwork and playback controls"><br><sub>Desktop · Now Playing</sub></td>
+    <td width="33%"><img src="docs/images/handheld-home.png" alt="musicOS handheld Home with navigation rows and an album artwork preview"><br><sub>Handheld · Home (upcoming UI, PR #42)</sub></td>
+  </tr>
+</table>
+
+<sub>Desktop screenshots use the browser preview with fixture library and playback data.</sub>
+
 Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
 
 ## Download
