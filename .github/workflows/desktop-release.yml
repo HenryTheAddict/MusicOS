@@ -77,23 +77,24 @@ jobs:
       - name: Set Mac deployment target
         if: runner.os == 'macOS'
         run: echo 'MACOSX_DEPLOYMENT_TARGET=14.0' >> "$GITHUB_ENV"
-      - name: Check out pinned Intel ONNX Runtime source
+      - name: Download and verify pinned Intel ONNX Runtime source
         if: matrix.platform == 'darwin-x86_64'
-        uses: actions/checkout@v4
-        with:
-          repository: microsoft/onnxruntime
-          ref: 402979ac1bef89dcd55add41eaa7277c407599eb
-          path: out/onnxruntime-source
-          submodules: recursive
-          persist-credentials: false
+        run: |
+          mkdir -p out/onnxruntime-source
+          archive=out/microsoft-onnxruntime-v1.31.0_GH0.tar.gz
+          curl --fail --location --retry 3 --output "$archive" \
+            http://distcache.FreeBSD.org/ports-distfiles/onnxruntime/microsoft-onnxruntime-v1.31.0_GH0.tar.gz
+          echo "a7e84230b5d509e48fbd6b73c2453a56345ccb22da34a46dac1f0cb4a2d6507b  $archive" | shasum -a 256 --check
+          tar -xzf "$archive" --strip-components=1 -C out/onnxruntime-source
       - name: Build Intel ONNX Runtime
         if: matrix.platform == 'darwin-x86_64'
         run: |
           test "$(uname -m)" = x86_64
           test "$(cat out/onnxruntime-source/VERSION_NUMBER)" = 1.31.0
           out/onnxruntime-source/build.sh --config Release --build_shared_lib --parallel 3 \
-            --compile_no_warning_as_error \
-            --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=x86_64 CMAKE_OSX_DEPLOYMENT_TARGET=14.0
+            --compile_no_warning_as_error --skip_submodule_sync \
+            --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=x86_64 CMAKE_OSX_DEPLOYMENT_TARGET=14.0 \
+              CMAKE_POLICY_VERSION_MINIMUM=3.5 CMAKE_DISABLE_FIND_PACKAGE_Git=ON
           cp out/onnxruntime-source/build/MacOS/Release/libonnxruntime.1.31.0.dylib src-tauri/resources/runtime/
           mkdir -p third_party/licenses/onnxruntime-macos-x86_64
           cp out/onnxruntime-source/LICENSE out/onnxruntime-source/ThirdPartyNotices.txt third_party/licenses/onnxruntime-macos-x86_64/
