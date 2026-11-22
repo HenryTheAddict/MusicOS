@@ -144,3 +144,7 @@
 .lyrics-pane[data-variant=visualizer] .lyric-line[data-current=true]:dir(rtl) .lyric-word{--lyric-fill-direction:to left;}
 .lyrics-pane[data-variant=visualizer] .lyric-glow-clone .lyric-word{text-shadow:0 0 .17em #fff6,0 0 .27em color-mix(in srgb,var(--visualizer-ink) 32%,transparent)!important;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line[data-in-window=true]:not([data-current=true]){opacity:.66;filter:none!important;}
+.expanded-player[data-visualizer=true][data-visualizer-cover=hidden][data-view=playing] .expanded-song-column{display:none!important;}
+.expanded-player-art.cover-beat[data-pulsing=true]{animation:cover-tempo var(--heart-period) ease-out infinite;transform-origin:center;}
+@keyframes cover-tempo{0%,100%{transform:scale(1)}9%{transform:scale(1.035)}45%{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.expanded-player-art.cover-beat{animation:none!important;}}

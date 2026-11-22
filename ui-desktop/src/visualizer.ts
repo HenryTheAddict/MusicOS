@@ -1,7 +1,7 @@
 import catalog from '../../assets/visualizers/manifest.json';
 export const visualizerCatalog=[...catalog.presets,{id:'beat-pulse',name:'beat pulse'}];
-export type VisualizerPreferences={preset:string;rotation:'manual'|'each_song'|'timed'|'beats';timed_seconds:15|30|60;beat_interval:16|32|64;beat_sync:boolean;album_colors?:boolean;lyrics:boolean};
-export const defaultVisualizer:VisualizerPreferences={preset:'boxes',rotation:'manual',timed_seconds:30,beat_interval:32,beat_sync:true,album_colors:false,lyrics:false};
+export type VisualizerPreferences={preset:string;rotation:'manual'|'each_song'|'timed'|'beats';timed_seconds:15|30|60;beat_interval:16|32|64;beat_sync:boolean;album_colors?:boolean;lyrics:boolean;show_cover?:boolean};
+export const defaultVisualizer:VisualizerPreferences={preset:'boxes',rotation:'manual',timed_seconds:30,beat_interval:32,beat_sync:true,album_colors:false,lyrics:false,show_cover:true};
 export type VisualizerStatus={requestId:number;phase:string;preset:string;error?:string|null;frames:number;width:number;height:number;missedFrames:number;submissionMs:number;beatFallback:boolean};
 export type VisualizerSettings={requestId:number;preferences:VisualizerPreferences;albumPalette?:AlbumPalette;albumPalettePending?:boolean;beat:{trackId?:number;bpm?:number;offset?:number;confidence:number};reduced:boolean};
 export function isEditing(target:EventTarget|null){return target instanceof Element&&!!target.closest('input:not([type=range]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]):not([type=color]):not([type=file]),textarea,select,[contenteditable]:not([contenteditable=false]),[role=textbox],[role=combobox]');}
