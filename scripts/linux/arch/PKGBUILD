@@ -27,4 +27,7 @@ package() {
   test "${#desktops[@]}" -eq 1
   sed 's|^Exec=.*|Exec=musicos %U|' "${desktops[0]}" > "$pkgdir/usr/share/applications/musicos.desktop"
   cp -a squashfs-root/usr/share/icons "$pkgdir/usr/share/"
+  find "$pkgdir" -type d -exec chmod 755 {} +
+  find "$pkgdir" -type f ! -perm /111 -exec chmod 644 {} +
+  find "$pkgdir" -type f -perm /111 -exec chmod 755 {} +
 }
