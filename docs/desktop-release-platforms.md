@@ -42,7 +42,10 @@ Tauri's default is 10.13, but that was not a truthful effective minimum:
   verification is never disabled. This avoids the unavailable upstream GitHub
   repository without changing the runtime version.
   The non-Git source tree uses `--skip_submodule_sync`; CMake fetches ONNX and
-  other dependencies using the URLs and hashes in the archive's `cmake/deps.txt`.
+  other dependencies from the URLs in the archive's `cmake/deps.txt`. The archive
+  checksum pins ONNX Runtime's own source only: upstream CMake checks most, but
+  not all, of those downloads against their listed hashes (Boost.MP11, for
+  example, is fetched without one).
   Optional CMake Git discovery is disabled so build metadata cannot pick up the
   enclosing MusicOS checkout. `CMAKE_POLICY_VERSION_MINIMUM=3.5` supports older
   dependency projects with CMake 4. The build sets
