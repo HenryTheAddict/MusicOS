@@ -86,7 +86,7 @@ pub fn draw_now_playing(
         518.0,
         241.0,
         694.0,
-        32.0,
+        36.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );
@@ -104,9 +104,9 @@ pub fn draw_now_playing(
             canvas,
             error,
             534.0,
-            342.0,
+            339.0,
             662.0,
-            30.0,
+            36.0,
             Color::WHITE,
             FontWeight::Bold,
         );
@@ -117,7 +117,7 @@ pub fn draw_now_playing(
             518.0,
             338.0,
             694.0,
-            22.0,
+            30.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Bold,
         );
@@ -125,9 +125,9 @@ pub fn draw_now_playing(
             canvas,
             &next_track.title,
             518.0,
-            374.0,
+            377.0,
             694.0,
-            33.0,
+            36.0,
             crate::ui::ink(canvas),
             FontWeight::Bold,
         );

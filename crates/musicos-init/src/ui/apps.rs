@@ -107,7 +107,7 @@ fn app_row(
         x + 130.0,
         y + 64.0,
         980.0,
-        30.0,
+        36.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Bold,
     );
@@ -197,8 +197,8 @@ fn status_row(
     canvas.text(
         label,
         x + 32.0,
-        y + 10.0,
-        32.0,
+        y + 8.0,
+        36.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
@@ -206,9 +206,9 @@ fn status_row(
         canvas,
         value,
         x + 303.0,
-        y + 12.0,
+        y + 8.0,
         856.0,
-        32.0,
+        36.0,
         crate::ui::ink(canvas),
         FontWeight::Regular,
     );

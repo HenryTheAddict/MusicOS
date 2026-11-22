@@ -102,7 +102,7 @@ pub fn draw_music_menu(
                 &badge.to_string(),
                 x + 1158.0,
                 y + 18.0,
-                28.0,
+                30.0,
                 crate::ui::ink_secondary(canvas),
                 FontWeight::Bold,
             );
@@ -376,14 +376,14 @@ fn draw_alpha_index(canvas: &mut Canvas<'_>, labels: &[&str]) {
     if letters.len() < 3 {
         return;
     }
-    let step = (560.0 / letters.len().max(1) as f32).clamp(24.0, 42.0);
+    let step = (560.0 / letters.len().max(1) as f32).clamp(31.0, 42.0);
     let mut y = 229.0;
     for letter in letters.into_iter().take(18) {
         canvas.text_centered(
             &letter.to_string(),
             1212.0,
             y,
-            22.0,
+            30.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Bold,
         );
@@ -422,9 +422,9 @@ fn collection_row(
         canvas,
         title,
         text_x,
-        y + if subtitle.is_empty() { 21.0 } else { 8.0 },
+        y + if subtitle.is_empty() { 20.0 } else { 3.0 },
         text_width,
-        35.0,
+        40.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
@@ -433,9 +433,9 @@ fn collection_row(
             canvas,
             subtitle,
             text_x,
-            y + 46.0,
+            y + 42.0,
             text_width,
-            26.0,
+            36.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Regular,
         );

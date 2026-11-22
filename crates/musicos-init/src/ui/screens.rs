@@ -69,7 +69,7 @@ pub fn draw_welcome(
             68.0,
             y + 22.0,
             155.0,
-            34.0,
+            36.0,
             crate::ui::ink(canvas),
             FontWeight::Bold,
         );
@@ -79,7 +79,7 @@ pub fn draw_welcome(
             252.0,
             y + 22.0,
             940.0,
-            34.0,
+            36.0,
             crate::ui::ink(canvas),
             FontWeight::Regular,
         );
@@ -91,7 +91,7 @@ pub fn draw_welcome(
         68.0,
         694.0 + offset,
         1110.0,
-        35.0,
+        36.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
@@ -129,7 +129,7 @@ pub fn draw_theme_selection(
                     cx,
                     cy + 72.0,
                     170.0,
-                    27.0,
+                    30.0,
                     crate::ui::ink_secondary(canvas),
                     FontWeight::Bold,
                 );

@@ -115,7 +115,7 @@ pub(crate) fn draw_home(
     portrait: Option<&CoverArt>,
     playlists: &[Playlist],
     status: &PlaybackStatus,
-    has_queue: bool,
+    now_playing_controls_available: bool,
     cover_art: Option<&CoverArt>,
 ) {
     crate::ui::rows_preview(canvas);
@@ -192,7 +192,7 @@ pub(crate) fn draw_home(
             focus,
             main_index,
             playlists,
-            status.track.is_some() || has_queue,
+            now_playing_controls_available,
         );
     } else if main_index == 0 {
         if let Some(track) = &status.track {
@@ -214,7 +214,7 @@ pub(crate) fn draw_home(
                 685.0,
                 726.0,
                 540.0,
-                32.0,
+                36.0,
                 ink_secondary(canvas),
                 FontWeight::Regular,
             );
@@ -236,7 +236,7 @@ pub(crate) fn draw_home(
                 &format_time(position),
                 685.0,
                 807.0,
-                29.0,
+                30.0,
                 ink_secondary(canvas),
                 FontWeight::Regular,
             );
@@ -244,7 +244,7 @@ pub(crate) fn draw_home(
                 &format!("-{}", format_time(duration - position)),
                 1225.0,
                 807.0,
-                29.0,
+                30.0,
                 ink_secondary(canvas),
                 FontWeight::Regular,
             );
@@ -376,7 +376,7 @@ fn heading(canvas: &mut Canvas<'_>, title: &str, subtitle: &str) {
         688.0,
         166.0,
         532.0,
-        32.0,
+        36.0,
         ink_secondary(canvas),
         FontWeight::Regular,
     );

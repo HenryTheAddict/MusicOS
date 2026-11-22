@@ -180,11 +180,12 @@ fn detail_row(
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
+    let value = super::fitted_text(canvas, value, 576.0, 36.0, FontWeight::Regular);
     canvas.text_right(
-        value,
+        &value,
         x + 1166.0,
-        y + 24.0,
-        30.0,
+        y + 20.0,
+        36.0,
         crate::ui::ink_secondary(canvas),
         FontWeight::Regular,
     );

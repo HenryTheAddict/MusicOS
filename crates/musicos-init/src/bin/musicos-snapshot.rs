@@ -1,6 +1,6 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Result};
 use musicos_init::app::{Focus, MusicOs, Screen};
@@ -10,13 +10,14 @@ use musicos_init::ui::theme::ThemeName;
 
 fn main() -> Result<()> {
     let resolution = Resolution::from_env_or_default();
-    let output = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "out/musicos-snapshot.bmp".to_string());
-    let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
     let snapshot_screen = std::env::var("MUSICOS_SNAPSHOT_SCREEN");
+    let output = std::env::args_os()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| default_output(snapshot_screen.as_deref().ok()));
+    let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
     let mut app = if snapshot_screen.is_ok() {
-        MusicOs::with_db_path(resolution, ":memory:")
+        MusicOs::for_snapshot(resolution)
     } else {
         MusicOs::new(resolution)
     };
@@ -24,7 +25,7 @@ fn main() -> Result<()> {
         app.active_theme = ThemeName::from_str(&theme);
     }
     if snapshot_screen.as_deref() == Ok("motion") {
-        return write_motion_frames(app, Path::new(&output), &mut bgra);
+        return write_motion_frames(app, &output, &mut bgra);
     }
     if matches!(
         snapshot_screen.as_deref(),
@@ -39,6 +40,8 @@ fn main() -> Result<()> {
             | "artist-albums"
             | "album-tracks"
             | "songs"
+            | "now"
+            | "nowplaying"
             | "nowplaying-track"
             | "queue"
             | "playlists"
@@ -150,8 +153,7 @@ fn main() -> Result<()> {
         }
         Ok("apps") => app.force_screen_for_snapshot(Screen::Apps),
         Ok("about") | Ok("status") => app.force_screen_for_snapshot(Screen::About),
-        Ok("now") | Ok("nowplaying") => app.force_screen_for_snapshot(Screen::NowPlaying),
-        Ok("nowplaying-track") => {
+        Ok("now" | "nowplaying" | "nowplaying-track") => {
             app.motion_mode = musicos_init::preferences::MotionMode::Reduced;
             app.force_screen_for_snapshot(Screen::NowPlaying);
         }
@@ -185,9 +187,25 @@ fn main() -> Result<()> {
         .and_then(|value| value.parse::<f32>().ok())
         .unwrap_or(0.75);
     app.draw(&mut canvas, seconds);
+    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
     write_bmp(&output, resolution, &bgra)?;
-    println!("{output}");
+    println!("{}", output.display());
     Ok(())
+}
+
+fn default_output(screen: Option<&str>) -> PathBuf {
+    match screen {
+        Some("motion") => "out/musicos-snapshot-motion".into(),
+        Some(name)
+            if !name.is_empty()
+                && name.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')) =>
+        {
+            format!("out/musicos-snapshot-{name}.bmp").into()
+        }
+        _ => "out/musicos-snapshot.bmp".into(),
+    }
 }
 
 fn write_motion_frames(mut app: MusicOs, output: &Path, bgra: &mut [u8]) -> Result<()> {
@@ -213,7 +231,13 @@ fn write_motion_frames(mut app: MusicOs, output: &Path, bgra: &mut [u8]) -> Resu
             ensure!(app.screen == screen, "unexpected screen at frame {frame}");
             if screen == Screen::NowPlaying {
                 app.tick();
-                let art = app.player.get_current_track().and_then(|track| {
+                let status = app.player.get_status();
+                ensure!(
+                    status.last_error.is_none() && status.is_playing,
+                    "motion playback failed at frame {frame}: {}",
+                    status.last_error.as_deref().unwrap_or("playback did not start"),
+                );
+                let art = status.track.and_then(|track| {
                     track
                         .cover_art_path
                         .as_deref()
@@ -232,7 +256,7 @@ fn write_motion_frames(mut app: MusicOs, output: &Path, bgra: &mut [u8]) -> Resu
         app.draw(&mut Canvas::new(app.resolution, bgra)?, frame as f32 / 30.0);
         render_times.push(start.elapsed().as_secs_f64() * 1000.0);
         let path = output.join(format!("{frame:04}.bmp"));
-        write_bmp(&path.to_string_lossy(), app.resolution, bgra)?;
+        write_bmp(&path, app.resolution, bgra)?;
     }
     render_times.sort_by(f64::total_cmp);
     let p95 = render_times[(render_times.len() * 95).div_ceil(100) - 1];
@@ -321,7 +345,7 @@ fn seed_library(app: &mut MusicOs) -> Result<()> {
     Ok(())
 }
 
-fn write_bmp(path: &str, resolution: Resolution, bgra: &[u8]) -> Result<()> {
+fn write_bmp(path: &Path, resolution: Resolution, bgra: &[u8]) -> Result<()> {
     let width = resolution.width as usize;
     let height = resolution.height as usize;
     let row_bytes = width * 4;
@@ -353,6 +377,15 @@ fn write_bmp(path: &str, resolution: Resolution, bgra: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn motion_uses_its_own_default_directory() {
+        assert_eq!(
+            default_output(Some("motion")),
+            Path::new("out/musicos-snapshot-motion")
+        );
+        assert_eq!(default_output(None), Path::new("out/musicos-snapshot.bmp"));
+    }
 
     #[test]
     fn snapshot_library_uses_the_real_desktop_album_catalog() -> Result<()> {

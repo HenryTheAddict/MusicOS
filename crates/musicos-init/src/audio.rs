@@ -165,6 +165,7 @@ pub struct AudioPlayer {
     play_start: Option<Instant>,
     accumulated_time: Duration,
     current_loaded: bool,
+    simulate_output: bool,
     last_backend: String,
     selected_pcm: Option<String>,
     last_error: Option<String>,
@@ -273,6 +274,7 @@ impl AudioPlayer {
                 play_start: None,
                 accumulated_time: Duration::ZERO,
                 current_loaded: false,
+                simulate_output: false,
                 last_backend,
                 selected_pcm: None,
                 last_error,
@@ -298,6 +300,7 @@ impl AudioPlayer {
                 play_start: None,
                 accumulated_time: Duration::ZERO,
                 current_loaded: false,
+                simulate_output: false,
                 last_backend: "silent".to_string(),
                 selected_pcm: None,
                 last_error: None,
@@ -358,7 +361,7 @@ impl AudioPlayer {
 
         self.stop();
 
-        if prefers_silent_backend() {
+        if self.simulate_output || prefers_silent_backend() {
             self.is_paused = false;
             self.last_backend = "none".to_string();
             self.selected_pcm = None;
@@ -471,6 +474,12 @@ impl AudioPlayer {
         }
     }
 
+    pub(crate) fn for_snapshot() -> Self {
+        let mut player = Self::silent("none");
+        player.simulate_output = true;
+        player
+    }
+
     fn silent(backend: &str) -> Self {
         let shuffle_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -495,6 +504,7 @@ impl AudioPlayer {
             play_start: None,
             accumulated_time: Duration::ZERO,
             current_loaded: false,
+            simulate_output: false,
             last_backend: backend.to_string(),
             selected_pcm: None,
             last_error: None,

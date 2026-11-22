@@ -176,6 +176,7 @@ struct NavigationState {
 
 pub struct MusicOs {
     controls_seen: bool,
+    snapshot_fixture: bool,
     pub screen: Screen,
     pub focus: Focus,
     pub previous_screen: Screen,
@@ -444,6 +445,21 @@ impl MusicOs {
     }
 
     pub fn with_options(resolution: Resolution, options: MusicOsOptions) -> Self {
+        Self::initialize(resolution, options, false)
+    }
+
+    pub fn for_snapshot(resolution: Resolution) -> Self {
+        Self::initialize(
+            resolution,
+            MusicOsOptions {
+                db_path: PathBuf::from(":memory:"),
+                scan_policy: LibraryScanPolicy::ReadOnlyPreview,
+            },
+            true,
+        )
+    }
+
+    fn initialize(resolution: Resolution, options: MusicOsOptions, snapshot_fixture: bool) -> Self {
         let db_path = options.db_path.display().to_string();
         let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
@@ -454,9 +470,13 @@ impl MusicOs {
             })
         });
 
-        let preferences = crate::preferences::load();
-        apply_audio_runtime_preferences(&preferences);
-        let mut player = AudioPlayer::new();
+        let (preferences, mut player) = if snapshot_fixture {
+            (Preferences::default(), AudioPlayer::for_snapshot())
+        } else {
+            let preferences = crate::preferences::load();
+            apply_audio_runtime_preferences(&preferences);
+            (preferences, AudioPlayer::new())
+        };
         player.set_volume(preferences.volume);
         player.set_eq_preset(preferences.eq_preset);
         player.set_shuffle(preferences.shuffle);
@@ -468,10 +488,13 @@ impl MusicOs {
                 .min(restore_tracks.len().saturating_sub(1));
             player.restore_queue_paused(restore_tracks, index, preferences.resume_position_seconds);
         }
-        crate::system::apply_brightness(preferences.brightness);
+        if !snapshot_fixture {
+            crate::system::apply_brightness(preferences.brightness);
+        }
 
         let mut app = Self {
             controls_seen: preferences.controls_seen,
+            snapshot_fixture,
             screen: if !preferences.setup_complete {
                 Screen::First
             } else if !preferences.time_configured {
@@ -606,7 +629,7 @@ impl MusicOs {
         if self.scan_rx.is_some() || self.cover_art_rx.is_some() {
             deadline = deadline.min(now + Duration::from_millis(20));
         }
-        if self.current_track_id.is_some() {
+        if !self.snapshot_fixture && self.current_track_id.is_some() {
             deadline = deadline.min(self.last_session_save + Duration::from_secs(5));
         }
         if !self.is_asleep {
@@ -716,7 +739,10 @@ impl MusicOs {
             self.hud_t = (self.hud_t - dt * 4.0).max(0.0);
         }
 
-        if current_id.is_some() && self.last_session_save.elapsed() >= Duration::from_secs(5) {
+        if !self.snapshot_fixture
+            && current_id.is_some()
+            && self.last_session_save.elapsed() >= Duration::from_secs(5)
+        {
             self.save_preferences(false);
             self.last_session_save = Instant::now();
         }
@@ -1766,7 +1792,7 @@ impl MusicOs {
             "Connect companion app to:",
             card_x + card_w / 2.0,
             card_y + 110.0,
-            28.0,
+            36.0,
             ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
@@ -1785,7 +1811,7 @@ impl MusicOs {
             "Press any key to dismiss",
             card_x + card_w / 2.0,
             card_y + 250.0,
-            24.0,
+            30.0,
             ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
@@ -1975,7 +2001,7 @@ impl MusicOs {
                 self.home_artist_portrait.as_ref(),
                 &self.playlists_list,
                 &self.player.get_status(),
-                !self.tracks_queue.is_empty(),
+                self.home_now_playing_controls_available(),
                 self.current_cover_art.as_ref(),
             ),
             Screen::MusicApp => ui::music::draw_music_menu(
@@ -2893,6 +2919,9 @@ impl MusicOs {
     }
 
     pub fn save_preferences(&self, setup_complete: bool) {
+        if self.snapshot_fixture {
+            return;
+        }
         let preferences = self.current_preferences(setup_complete);
         if let Err(err) = crate::preferences::save(&preferences) {
             log::warn!("failed to save MusicOS preferences: {err:#}");
@@ -3383,17 +3412,15 @@ impl MusicOs {
         self.close_context();
     }
 
+    fn home_now_playing_controls_available(&self) -> bool {
+        self.player.get_current_track().is_some() || !self.tracks_queue.is_empty()
+    }
+
     fn home_detail_item_count(&self) -> usize {
         match HOME_ROWS[self.home_navigation.main_index] {
             Focus::HomeMusic | Focus::Artists => usize::from(!self.library_tracks.is_empty()),
             Focus::Playlists => self.playlists_list.len().min(4),
-            Focus::HomeNowPlaying => {
-                usize::from(
-                    self.player.get_current_track().is_some()
-                        || !self.library_tracks.is_empty()
-                        || !self.tracks_queue.is_empty(),
-                ) * 4
-            }
+            Focus::HomeNowPlaying => usize::from(self.home_now_playing_controls_available()) * 4,
             Focus::HomeApps | Focus::HomeSettings => 4,
             _ => 0,
         }
@@ -4603,6 +4630,22 @@ impl MusicOs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_playback_does_not_save_an_elapsed_session() {
+        let mut app = MusicOs::for_snapshot(Resolution::VGA_4_3);
+        app.db
+            .insert_track("/fixture/no-audio.flac", "Song", "Artist", "Album", 120, 1, 1)
+            .unwrap();
+        app.player.set_queue(app.db.get_tracks().unwrap(), 0);
+        let elapsed = Instant::now() - Duration::from_secs(6);
+        app.last_session_save = elapsed;
+        app.tick();
+        let status = app.player.get_status();
+        assert!(status.is_playing);
+        assert_eq!(status.last_error, None);
+        assert_eq!(app.last_session_save, elapsed);
+    }
 
     #[test]
     fn library_grids_keep_dpad_focus_on_real_cells() {

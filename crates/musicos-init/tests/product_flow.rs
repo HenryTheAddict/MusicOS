@@ -603,6 +603,27 @@ fn context_menu_only_opens_for_real_targets() {
 }
 
 #[test]
+fn home_now_playing_does_not_focus_hidden_controls_after_import() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    app.db
+        .insert_track("/music/real.ogg", "Real", "Tanger", "Works", 120, 1, 1)
+        .unwrap();
+    app.refresh_library();
+    app.force_screen_for_snapshot(Screen::Home);
+    app.handle_input(InputEvent::Button(Button::Up));
+    assert_eq!(app.focus, Focus::HomeNowPlaying);
+    for button in [Button::Right, Button::Context] {
+        app.handle_input(InputEvent::Button(button));
+        assert_eq!(app.focus, Focus::HomeNowPlaying);
+    }
+    app.player
+        .restore_queue_paused(app.db.get_tracks().unwrap(), 0, 0.0);
+    app.handle_input(InputEvent::Button(Button::Right));
+    assert_eq!(app.focus, Focus::HomePlaylist1);
+}
+
+#[test]
 fn empty_home_does_not_create_demo_content() {
     let _guard = ENV_LOCK.lock().unwrap();
     let root = std::env::temp_dir().join(format!("musicos-empty-home-{}", std::process::id()));

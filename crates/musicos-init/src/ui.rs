@@ -405,7 +405,7 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
             "X" => "CONTEXT",
             _ => button,
         };
-        let font_size = if inset > 0.0 { 27.0 } else { 24.0 };
+        let font_size = 30.0;
         let chip = (canvas.text_width(button, font_size, FontWeight::Bold) + 30.0).max(38.0);
         rr(
             canvas,
@@ -419,7 +419,7 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
         canvas.text_centered(
             button,
             x + chip * 0.5,
-            y + height / 4.0 + 3.0 * press,
+            y + 4.0 + 3.0 * press,
             font_size,
             ink_secondary(canvas),
             FontWeight::Bold,
@@ -427,12 +427,12 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
         canvas.text(
             label,
             x + chip + 12.0,
-            y + 9.0,
-            29.0,
+            y + 6.0,
+            30.0,
             ink_secondary(canvas),
             FontWeight::Regular,
         );
-        x += chip + 44.0 + canvas.text_width(label, 29.0, FontWeight::Regular);
+        x += chip + 44.0 + canvas.text_width(label, 30.0, FontWeight::Regular);
     }
 }
 
@@ -803,7 +803,7 @@ pub fn draw_context_menu(
         modal_x + 40.0,
         modal_y + 98.0,
         modal_w - 80.0,
-        32.0,
+        36.0,
         ink_secondary(canvas),
         FontWeight::Regular,
     );
@@ -822,9 +822,9 @@ pub fn draw_context_menu(
             canvas,
             label,
             x + 24.0,
-            y + (h - 34.0) / 2.0,
+            y + (h - 38.0) / 2.0,
             w - 48.0,
-            33.0,
+            36.0,
             ink,
             FontWeight::Bold,
         );
