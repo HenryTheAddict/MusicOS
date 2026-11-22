@@ -359,18 +359,11 @@ mod tests {
         let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
         seed_library(&mut app)?;
         let tracks = app.db.get_tracks()?;
-        assert_eq!(tracks.len(), 160);
-        assert_eq!(app.albums_list.len(), 11);
+        assert_eq!(tracks.len(), 150);
+        assert_eq!(app.albums_list.len(), 10);
         assert_eq!(
             app.artists_list,
-            [
-                "Coldplay",
-                "Daft Punk",
-                "Frank Ocean",
-                "Gorillaz",
-                "M83",
-                "Tame Impala"
-            ]
+            ["Daft Punk", "Frank Ocean", "Gorillaz", "M83", "Tame Impala"]
         );
         assert_eq!(app.playlists_list.len(), 3);
         assert!(tracks.iter().any(|track| track.artist == "Daft Punk"
@@ -379,6 +372,12 @@ mod tests {
         if std::env::var_os("MUSICOS_SNAPSHOT_ART_DIR").is_some() {
             assert!(tracks.iter().all(|track| track.cover_art_path.is_some()));
         }
+        let queue = app.player.queue_tracks();
+        assert_eq!(
+            (queue[0].title.as_str(), queue[0].duration),
+            ("One More Year", 322)
+        );
+        assert_eq!(queue[1].title, "Instant Destiny");
         assert!(app.current_cover_art.is_some());
         Ok(())
     }

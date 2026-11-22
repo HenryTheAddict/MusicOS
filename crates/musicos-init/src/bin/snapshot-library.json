@@ -66,19 +66,19 @@
     ["Too Long", 600, 1, 14]
   ]},
   {"key": "currents", "artist": "Tame Impala", "title": "Currents", "year": 2015, "genre": "Alternative", "bundled_cover": "Currents.png", "artwork_url": null, "tracks": [
-    ["Let It Happen", 467, 1, 1],
+    ["Let It Happen", 466, 1, 1],
     ["Nangs", 107, 1, 2],
     ["The Moment", 255, 1, 3],
     ["Yes I’m Changing", 270, 1, 4],
     ["Eventually", 319, 1, 5],
     ["Gossip", 55, 1, 6],
-    ["The Less I Know the Better", 216, 1, 7],
+    ["The Less I Know the Better", 218, 1, 7],
     ["Past Life", 227, 1, 8],
     ["Disciples", 108, 1, 9],
     ["’Cause I’m a Man", 241, 1, 10],
     ["Reality in Motion", 252, 1, 11],
     ["Love/Paranoia", 186, 1, 12],
-    ["New Person, Same Old Mistakes", 363, 1, 13]
+    ["New Person, Same Old Mistakes", 362, 1, 13]
   ]},
   {"key": "the-slow-rush", "artist": "Tame Impala", "title": "The Slow Rush", "year": 2020, "genre": "Alternative", "bundled_cover": "SlowRush.png", "artwork_url": null, "tracks": [
     ["One More Year", 322, 1, 1],
@@ -149,18 +149,6 @@
     ["Time Wind (feat. Beck)", 249, 1, 13],
     ["Ludivine", 95, 1, 14],
     ["Sunday Night 1987", 240, 1, 15]
-  ]},
-  {"key": "parachutes", "artist": "Coldplay", "title": "Parachutes", "year": 2000, "genre": "Alternative", "bundled_cover": null, "artwork_url": "https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/f5/93/8c/f5938c49-964c-31d1-4b33-78b634f71fb7/190295978075.jpg/600x600bb.jpg", "tracks": [
-    ["Don't Panic", 137, 1, 1],
-    ["Shiver", 299, 1, 2],
-    ["Spies", 318, 1, 3],
-    ["Sparks", 227, 1, 4],
-    ["Yellow", 269, 1, 5],
-    ["Trouble", 270, 1, 6],
-    ["Parachutes", 46, 1, 7],
-    ["High Speed", 254, 1, 8],
-    ["We Never Change", 249, 1, 9],
-    ["Everything's Not Lost", 435, 1, 10]
   ]},
   {"key": "channel-orange", "artist": "Frank Ocean", "title": "channel ORANGE", "year": 2012, "genre": "R&B/Soul", "bundled_cover": null, "artwork_url": "https://coverartarchive.org/release-group/f8f4167d-897c-4b25-a171-638374d1dfa4/front-500", "tracks": [
     ["Start", 45, 1, 1],
