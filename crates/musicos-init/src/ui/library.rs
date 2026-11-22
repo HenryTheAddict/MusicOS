@@ -6,7 +6,7 @@ use crate::database::Track;
 use crate::renderer::{Canvas, CoverArt};
 use crate::ui::{
     accent, assets_dir, control, draw_art_wash, draw_figma_background, ink, ink_secondary,
-    register_focus, rr, selected_surface, surface, text_fit, FontWeight,
+    moving_selected_surface, register_focus, rr, surface, text_fit, FontWeight,
 };
 
 pub(crate) const COLUMNS: usize = 3;
@@ -186,7 +186,7 @@ impl LibraryView {
                     width,
                     row_height - 13.0,
                     20.0,
-                    selected_surface(canvas),
+                    moving_selected_surface(canvas, x, y),
                 );
                 register_focus(canvas, x, y, width, row_height - 13.0, 20.0);
             }

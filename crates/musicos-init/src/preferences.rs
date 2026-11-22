@@ -116,7 +116,7 @@ impl MotionMode {
     pub fn profile(self) -> MotionProfile {
         match self {
             Self::Visuals => MotionProfile {
-                screen_seconds: 0.28,
+                screen_seconds: 0.20,
                 artwork_seconds: 0.42,
                 selection_response: 15.0,
                 ambient_time_scale: 1.0,
@@ -124,7 +124,7 @@ impl MotionMode {
                 overshoot: 0.04,
             },
             Self::Balanced => MotionProfile {
-                screen_seconds: 0.21,
+                screen_seconds: 0.18,
                 artwork_seconds: 0.32,
                 selection_response: 17.0,
                 ambient_time_scale: 0.8,

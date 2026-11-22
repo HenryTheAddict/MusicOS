@@ -7,8 +7,8 @@ use crate::database::{LibraryCounts, Playlist, Track};
 use crate::renderer::{Canvas, Color, CoverArt};
 use crate::ui::nowplaying::draw_cover_art;
 use crate::ui::{
-    accent, assets_dir, control, figma_list_row, ink, ink_secondary, on_accent, register_focus, rr,
-    selected_surface, shadow_rr, surface, text_fit, FontWeight,
+    accent, assets_dir, control, figma_list_row, ink, ink_secondary, moving_selected_surface,
+    on_accent, register_focus, rr, shadow_rr, surface, text_fit, FontWeight,
 };
 
 pub(crate) struct AlbumPreview {
@@ -140,7 +140,7 @@ pub(crate) fn draw_home(
                 608.0,
                 108.0,
                 54.0,
-                selected_surface(canvas),
+                moving_selected_surface(canvas, 20.0, y),
             );
             register_focus(canvas, 20.0, y, 608.0, 108.0, 54.0);
         }

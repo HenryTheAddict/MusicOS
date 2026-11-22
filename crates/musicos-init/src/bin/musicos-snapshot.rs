@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use musicos_init::app::{Focus, MusicOs, Screen};
 use musicos_init::input::{Button, InputEvent};
 use musicos_init::renderer::{Canvas, Resolution};
@@ -22,6 +22,9 @@ fn main() -> Result<()> {
     };
     if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
         app.active_theme = ThemeName::from_str(&theme);
+    }
+    if snapshot_screen.as_deref() == Ok("motion") {
+        return write_motion_frames(app, Path::new(&output), &mut bgra);
     }
     if matches!(
         snapshot_screen.as_deref(),
@@ -184,6 +187,56 @@ fn main() -> Result<()> {
     app.draw(&mut canvas, seconds);
     write_bmp(&output, resolution, &bgra)?;
     println!("{output}");
+    Ok(())
+}
+
+fn write_motion_frames(mut app: MusicOs, output: &Path, bgra: &mut [u8]) -> Result<()> {
+    app.motion_mode = musicos_init::preferences::MotionMode::Balanced;
+    seed_library(&mut app)?;
+    app.force_screen_for_snapshot(Screen::Home);
+    std::fs::create_dir_all(output)?;
+    let mut render_times = Vec::new();
+    for frame in 0..168 {
+        let action = match frame {
+            15 => Some((Button::Up, Screen::Home)),
+            27 => Some((Button::Down, Screen::Home)),
+            42 => Some((Button::Confirm, Screen::AlbumsList)),
+            60 => Some((Button::Right, Screen::AlbumsList)),
+            68 => Some((Button::Up, Screen::AlbumsList)),
+            78 => Some((Button::Confirm, Screen::AlbumTracksList)),
+            108 => Some((Button::Confirm, Screen::NowPlaying)),
+            144 => Some((Button::Back, Screen::AlbumTracksList)),
+            _ => None,
+        };
+        if let Some((button, screen)) = action {
+            app.handle_input(InputEvent::Button(button));
+            ensure!(app.screen == screen, "unexpected screen at frame {frame}");
+            if screen == Screen::NowPlaying {
+                app.tick();
+                let art = app.player.get_current_track().and_then(|track| {
+                    track
+                        .cover_art_path
+                        .as_deref()
+                        .and_then(|path| musicos_init::media::load_cover_art_file(Path::new(path)))
+                });
+                let (tx, rx) = std::sync::mpsc::channel();
+                tx.send(art)?;
+                app.cover_art_rx = Some(rx);
+                app.tick();
+            }
+        }
+        if app.screen == Screen::NowPlaying {
+            app.player.seek(32.0 + (frame - 108) as f32 / 30.0);
+        }
+        let start = std::time::Instant::now();
+        app.draw(&mut Canvas::new(app.resolution, bgra)?, frame as f32 / 30.0);
+        render_times.push(start.elapsed().as_secs_f64() * 1000.0);
+        let path = output.join(format!("{frame:04}.bmp"));
+        write_bmp(&path.to_string_lossy(), app.resolution, bgra)?;
+    }
+    render_times.sort_by(f64::total_cmp);
+    let p95 = render_times[(render_times.len() * 95).div_ceil(100) - 1];
+    println!("168 frames at 30 fps, offscreen frame p95: {p95:.2} ms");
     Ok(())
 }
 

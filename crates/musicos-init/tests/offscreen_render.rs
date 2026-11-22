@@ -1,6 +1,127 @@
 use musicos_init::app::{Focus, MusicOs, Screen};
+use musicos_init::input::{Button, InputEvent};
+use musicos_init::preferences::MotionMode;
 use musicos_init::renderer::{Canvas, Color, CoverArt, Resolution};
 use musicos_init::ui::{legend_bar, status_bar, theme::ThemeName};
+
+fn render_frame(app: &mut MusicOs, seconds: f32) -> Vec<u8> {
+    let mut buffer = vec![0; app.resolution.width as usize * app.resolution.height as usize * 4];
+    app.draw(
+        &mut Canvas::new(app.resolution, &mut buffer).unwrap(),
+        seconds,
+    );
+    buffer
+}
+
+#[test]
+fn stepped_navigation_moves_focus_and_settles_both_slide_directions() {
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    app.motion_mode = MotionMode::Balanced;
+    app.force_screen_for_snapshot(Screen::Home);
+    render_frame(&mut app, 0.0);
+    let old_y = app.outline_y;
+    app.handle_input(InputEvent::Button(Button::Down));
+    render_frame(&mut app, 0.016);
+    assert!(app.outline_y > old_y && app.outline_y < old_y + 112.0);
+    app.handle_input(InputEvent::Button(Button::Up));
+    for frame in 2..32 {
+        render_frame(&mut app, frame as f32 / 60.0);
+    }
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::AlbumsList);
+    let push = render_frame(&mut app, 0.55);
+    let mut settled = Vec::new();
+    for frame in 34..55 {
+        settled = render_frame(&mut app, frame as f32 / 60.0);
+    }
+    let body = 32 * 640 * 4..439 * 640 * 4;
+    let click = 460 * 640 * 4..478 * 640 * 4;
+    assert_ne!(push[body.clone()], settled[body.clone()]);
+    assert_ne!(push[click.clone()], settled[click]);
+
+    app.handle_input(InputEvent::Button(Button::Back));
+    assert_eq!(app.screen, Screen::Home);
+    let pop = render_frame(&mut app, 0.95);
+    for frame in 58..79 {
+        settled = render_frame(&mut app, frame as f32 / 60.0);
+    }
+    let pixel = |x: usize, y: usize| (y * 640 + x) * 4;
+    let right_edge = pixel(620, 100);
+    assert_ne!(
+        pop[right_edge..right_edge + 3],
+        settled[right_edge..right_edge + 3]
+    );
+
+    app.motion_mode = MotionMode::Reduced;
+    app.handle_input(InputEvent::Button(Button::Confirm));
+    let immediate = render_frame(&mut app, 1.4);
+    let later = render_frame(&mut app, 1.6);
+    assert_eq!(immediate[body.clone()], later[body]);
+    assert_eq!(app.screen_transition, 1.0);
+}
+
+#[test]
+fn stepped_list_edge_feedback_moves_pixels_without_changing_selection() {
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    app.db
+        .insert_track("test.ogg", "Song", "Artist", "Album", 120, 1, 1)
+        .unwrap();
+    app.tracks_queue = app.db.get_tracks().unwrap();
+    app.force_screen_for_snapshot(Screen::AlbumTracksList);
+    app.motion_mode = MotionMode::Balanced;
+    let resting = render_frame(&mut app, 0.0);
+    assert!(app.handle_input(InputEvent::Button(Button::Up)));
+    render_frame(&mut app, 0.03);
+    let bounce = render_frame(&mut app, 0.06);
+    let body = 32 * 640 * 4..439 * 640 * 4;
+    assert_ne!(bounce[body.clone()], resting[body.clone()]);
+    assert_eq!(app.selected_index, 0);
+    app.motion_mode = MotionMode::Reduced;
+    let reduced = render_frame(&mut app, 0.09);
+    assert!(!app.handle_input(InputEvent::Button(Button::Up)));
+    let after = render_frame(&mut app, 0.12);
+    assert_eq!(after[body.clone()], reduced[body]);
+}
+
+#[test]
+fn stepped_track_change_blends_the_old_and_new_covers() {
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    app.motion_mode = MotionMode::Balanced;
+    app.force_screen_for_snapshot(Screen::NowPlaying);
+    for title in ["First track", "Next track"] {
+        app.db
+            .insert_track(title, title, "Artist", "Album", 120, 1, 1)
+            .unwrap();
+    }
+    let tracks = app.db.get_tracks().unwrap();
+    let cover = |color| CoverArt {
+        width: 1,
+        height: 1,
+        pixels: vec![color],
+    };
+    app.player.restore_queue_paused(tracks.clone(), 0, 0.0);
+    app.current_track_id = Some(tracks[0].id);
+    app.current_cover_art = Some(cover(Color::rgb(255, 0, 0)));
+    app.cover_art_opacity = 1.0;
+    let pixel = (120 * 640 + 100) * 4;
+    let first = render_frame(&mut app, 0.0);
+    assert_eq!(&first[pixel..pixel + 3], &[0, 0, 255]);
+
+    app.player.restore_queue_paused(tracks, 1, 0.0);
+    app.tick();
+    let (tx, rx) = std::sync::mpsc::channel();
+    tx.send(Some(cover(Color::rgb(0, 0, 255)))).unwrap();
+    app.cover_art_rx = Some(rx);
+    app.tick();
+    let blended = render_frame(&mut app, 0.08);
+    assert!((1..255).contains(&blended[pixel]));
+    assert!((1..255).contains(&blended[pixel + 2]));
+    let mut settled = Vec::new();
+    for frame in 2..7 {
+        settled = render_frame(&mut app, frame as f32 * 0.08);
+    }
+    assert_eq!(&settled[pixel..pixel + 3], &[255, 0, 0]);
+}
 
 #[test]
 fn artwork_rounding_blends_the_corner_without_fading_the_center() {

@@ -240,6 +240,7 @@ pub struct MusicOs {
     pub scroll_offset: f32,
     pub target_scroll_offset: f32,
     pub current_cover_art: Option<crate::renderer::CoverArt>,
+    previous_cover_art: Option<crate::renderer::CoverArt>,
     pub current_track_id: Option<i64>,
     pub cover_art_rx: Option<std::sync::mpsc::Receiver<Option<crate::renderer::CoverArt>>>,
     pub usb_status: UsbStatus,
@@ -256,6 +257,10 @@ pub struct MusicOs {
     pub outline_active: bool,
     pub outline_animating: bool,
     pub screen_transition: f32,
+    transition_direction: f32,
+    button_feedback: Option<(&'static str, f32)>,
+    edge_feedback: Option<(f32, f32)>,
+    progress_sample: Option<(i64, f32)>,
     pub theme_colors_initialized: bool,
     pub cur_top_r: f32,
     pub cur_top_g: f32,
@@ -543,6 +548,7 @@ impl MusicOs {
             scroll_offset: 0.0,
             target_scroll_offset: 0.0,
             current_cover_art: None,
+            previous_cover_art: None,
             current_track_id: None,
             cover_art_rx: None,
             usb_status: UsbStatus::default(),
@@ -559,6 +565,10 @@ impl MusicOs {
             outline_active: false,
             outline_animating: false,
             screen_transition: 1.0,
+            transition_direction: 1.0,
+            button_feedback: None,
+            edge_feedback: None,
+            progress_sample: None,
             theme_colors_initialized: false,
             cur_top_r: 0.0,
             cur_top_g: 0.0,
@@ -626,7 +636,12 @@ impl MusicOs {
         let current_id = status.track.as_ref().map(|t| t.id);
         if current_id != self.current_track_id {
             self.current_track_id = current_id;
-            self.current_cover_art = None;
+            if current_id.is_none() || self.motion_mode == MotionMode::Reduced {
+                self.current_cover_art = None;
+                self.previous_cover_art = None;
+            } else if let Some(art) = self.current_cover_art.take() {
+                self.previous_cover_art = Some(art);
+            }
             self.cover_art_opacity = 0.0;
 
             if let Some(ref track) = status.track {
@@ -764,6 +779,7 @@ impl MusicOs {
         let old_screen = self.screen;
         let old_focus = self.focus;
         let old_idx = self.selected_index;
+        let mut feedback = false;
         if self.screen == Screen::Home {
             self.sync_home_navigation_from_focus();
         }
@@ -882,18 +898,72 @@ impl MusicOs {
             InputEvent::Power => self.enter_sleep(),
             InputEvent::ButtonRelease(_) => {}
         }
+        let moved =
+            self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx;
         if self.screen != old_screen
             && self.screen != Screen::ContextMenu
             && old_screen != Screen::ContextMenu
-            && !self.navigation_restored
         {
-            self.screen_transition = 0.0;
-            self.target_scroll_offset = 0.0;
-            self.scroll_offset = 0.0;
+            if !self.navigation_restored {
+                self.target_scroll_offset = 0.0;
+                self.scroll_offset = 0.0;
+            }
+            self.screen_transition = if self.motion_mode == MotionMode::Reduced {
+                1.0
+            } else {
+                0.0
+            };
+            self.transition_direction = if event == InputEvent::Button(Button::Back) {
+                -1.0
+            } else {
+                1.0
+            };
+        }
+        if self.motion_mode != MotionMode::Reduced {
+            let key = match event {
+                InputEvent::Button(Button::Confirm) | InputEvent::Tap => Some("A"),
+                InputEvent::Button(Button::Back) if moved => Some("B"),
+                InputEvent::Button(Button::Context) if moved => Some("X"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                self.button_feedback = Some((key, 0.0));
+                feedback = true;
+            }
+            let list_len = self.current_list_len();
+            if !moved && list_len > 0 {
+                let columns = if matches!(
+                    self.screen,
+                    Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList
+                ) {
+                    COLUMNS
+                } else {
+                    1
+                };
+                let direction = match event {
+                    InputEvent::Button(Button::Up) | InputEvent::Swipe(SwipeDirection::Up)
+                        if self.selected_index < columns =>
+                    {
+                        Some(-1.0)
+                    }
+                    InputEvent::Button(Button::Down) | InputEvent::Swipe(SwipeDirection::Down)
+                        if self.selected_index / columns == (list_len - 1) / columns =>
+                    {
+                        Some(1.0)
+                    }
+                    _ => None,
+                };
+                if let Some(direction) = direction {
+                    self.edge_feedback = Some((direction, 0.0));
+                    feedback = true;
+                }
+            } else if moved {
+                self.edge_feedback = None;
+            }
         }
         self.navigation_restored = false;
 
-        self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx
+        moved || feedback
     }
 
     pub fn set_last_frame_ms(&mut self, frame_ms: f32) {
@@ -1373,9 +1443,31 @@ impl MusicOs {
         canvas.language = self.active_language;
         let (tt_color, tb_color) = self.active_theme.gradient_colors();
         let dt = (seconds - self.last_draw_seconds).max(0.0).min(0.1);
+        let feedback_dt = dt.min(1.0 / 30.0);
         self.last_draw_seconds = seconds;
         let motion = self.motion_mode.profile();
         let motion_seconds = seconds * motion.ambient_time_scale;
+
+        self.progress_sample = if self.screen == Screen::NowPlaying {
+            self.player.get_current_track().map(|track| {
+                let position = self.player.get_position();
+                let displayed = match self.progress_sample {
+                    Some((id, last))
+                        if id == track.id
+                            && self.motion_mode != MotionMode::Reduced
+                            && self.player.is_playing()
+                            && (position - last).abs() < 1.0 =>
+                    {
+                        (last + (position - last) * (1.0 - (-20.0 * dt).exp()))
+                            .clamp(0.0, track.duration.max(0) as f32)
+                    }
+                    _ => position,
+                };
+                (track.id, displayed)
+            })
+        } else {
+            None
+        };
 
         if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
             self.cover_art_opacity = if motion.artwork_seconds <= f32::EPSILON {
@@ -1383,7 +1475,24 @@ impl MusicOs {
             } else {
                 (self.cover_art_opacity + dt / motion.artwork_seconds).min(1.0)
             };
+            if self.cover_art_opacity >= 1.0 {
+                self.previous_cover_art = None;
+            }
         }
+        if self.motion_mode == MotionMode::Reduced {
+            self.button_feedback = None;
+            self.edge_feedback = None;
+            self.previous_cover_art = None;
+        }
+        let press = self
+            .button_feedback
+            .map(|(key, t)| (key, 1.0 - crate::ui::transitions::ease_out_cubic(t)));
+        canvas.legend_press = press;
+        canvas.focus_origin = (self.outline_active
+            && self.last_drawn_screen == Some(self.screen)
+            && self.motion_mode != MotionMode::Reduced)
+            .then_some((self.outline_x, self.outline_y));
+        canvas.selected_box = None;
 
         if !self.theme_colors_initialized {
             self.cur_top_r = tt_color.r as f32;
@@ -1443,13 +1552,7 @@ impl MusicOs {
                 motion_seconds,
             );
         } else {
-            self.draw_screen(
-                self.screen,
-                self.focus,
-                canvas,
-                motion_seconds,
-                transition_t,
-            );
+            self.draw_screen(self.screen, self.focus, canvas, motion_seconds, 1.0);
         }
 
         ui::status_bar(
@@ -1474,7 +1577,7 @@ impl MusicOs {
         );
 
         let legend = self.button_legend();
-        if matches!(
+        let home_legend = matches!(
             self.screen,
             Screen::Home
                 | Screen::MusicApp
@@ -1494,7 +1597,8 @@ impl MusicOs {
                 | Screen::Queue
                 | Screen::Search
                 | Screen::RatingPicker
-        ) {
+        );
+        if home_legend {
             ui::home_legend_bar(canvas, legend);
         } else if !legend.is_empty() {
             ui::legend_bar(canvas, legend);
@@ -1514,7 +1618,7 @@ impl MusicOs {
                 self.outline_active = true;
             } else {
                 let factor = if motion.selection_response.is_finite() {
-                    (motion.selection_response * dt).min(1.0)
+                    1.0 - (-motion.selection_response * feedback_dt).exp()
                 } else {
                     1.0
                 };
@@ -1532,21 +1636,40 @@ impl MusicOs {
                 crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
             };
             let outline_color = ui::accent(canvas);
+            let edge_y = self.edge_feedback.map_or(0.0, |(direction, t)| {
+                direction * 8.0 * (t * std::f32::consts::PI).sin()
+            });
+            let press_scale = press
+                .filter(|(key, _)| *key == "A")
+                .map_or(0.0, |(_, value)| value);
+            let inset = 3.0 * press_scale;
+            let outline_y = self.outline_y + edge_y + inset;
+            let dist = (tx - self.outline_x).abs()
+                + (ty - self.outline_y).abs()
+                + (tw - self.outline_w).abs()
+                + (th - self.outline_h).abs();
+            if dist > 0.5 || press_scale > 0.0 {
+                crate::ui::rr(
+                    canvas,
+                    self.outline_x + inset,
+                    outline_y,
+                    self.outline_w - 2.0 * inset,
+                    self.outline_h - 2.0 * inset,
+                    self.outline_r,
+                    outline_color.with_alpha((14.0 + 22.0 * press_scale) as u8),
+                );
+            }
             crate::ui::rr_stroke(
                 canvas,
-                self.outline_x,
-                self.outline_y,
-                self.outline_w,
-                self.outline_h,
+                self.outline_x + inset,
+                outline_y,
+                self.outline_w - 2.0 * inset,
+                self.outline_h - 2.0 * inset,
                 self.outline_r,
                 self.outline_thick + outline_pulse * 0.6,
                 outline_color,
             );
 
-            let dist = (tx - self.outline_x).abs()
-                + (ty - self.outline_y).abs()
-                + (tw - self.outline_w).abs()
-                + (th - self.outline_h).abs();
             self.outline_animating = dist > 0.5;
         } else {
             self.outline_active = false;
@@ -1554,12 +1677,32 @@ impl MusicOs {
         }
 
         if self.screen_transition < 1.0 {
+            if transition_t < 1.0 && self.screen != Screen::ContextMenu {
+                let remaining = 1.0 - transition_t;
+                let offset =
+                    (44.0 * remaining * self.transition_direction * canvas.resolution().scale())
+                        .round() as i32;
+                let wash = ui::shell(canvas);
+                let bottom = if home_legend { 878.0 } else { 918.0 };
+                canvas.slide_content(offset, 64.0, bottom, wash, (70.0 * remaining) as u8);
+            }
             self.screen_transition = if motion.screen_seconds <= f32::EPSILON {
                 1.0
             } else {
-                (self.screen_transition + dt / motion.screen_seconds).min(1.0)
+                let next = self.screen_transition + dt / motion.screen_seconds;
+                if self.screen_transition == 0.0 {
+                    next.clamp(0.01, 0.16)
+                } else {
+                    next.min(1.0)
+                }
             };
         }
+        self.button_feedback = self.button_feedback.and_then(|(key, t)| {
+            (t + feedback_dt / 0.14 < 1.0).then_some((key, t + feedback_dt / 0.14))
+        });
+        self.edge_feedback = self.edge_feedback.and_then(|(direction, t)| {
+            (t + feedback_dt / 0.16 < 1.0).then_some((direction, t + feedback_dt / 0.16))
+        });
 
         if self.hud_t > 0.0 {
             self.draw_hud(canvas, motion_seconds);
@@ -1744,6 +1887,12 @@ impl MusicOs {
 
     pub fn animation_in_progress(&self) -> bool {
         self.outline_animating
+            || self.button_feedback.is_some()
+            || self.edge_feedback.is_some()
+            || (self.screen == Screen::NowPlaying
+                && (self.current_cover_art.is_some() || self.previous_cover_art.is_some())
+                && (self.current_cover_art.is_some() || self.cover_art_rx.is_none())
+                && self.cover_art_opacity < 1.0)
             || self.screen_transition < 1.0
             || self.hud_t > 0.0
             || (self.target_scroll_offset - self.scroll_offset).abs() > 0.5
@@ -1956,8 +2105,10 @@ impl MusicOs {
                     &status,
                     &self.player.queue_tracks(),
                     self.current_cover_art.as_ref(),
+                    self.previous_cover_art.as_ref(),
                     self.cover_art_opacity,
-                    transition_t,
+                    self.progress_sample
+                        .map_or(status.position, |(_, value)| value),
                 )
             }
             Screen::Settings => ui::settings::draw_settings(

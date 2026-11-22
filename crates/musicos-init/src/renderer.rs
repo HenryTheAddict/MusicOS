@@ -400,6 +400,8 @@ pub struct Canvas<'a> {
     pub theme_top_color: Option<Color>,
     pub theme_bottom_color: Option<Color>,
     pub dark_theme: bool,
+    pub(crate) legend_press: Option<(&'static str, f32)>,
+    pub(crate) focus_origin: Option<(f32, f32)>,
 }
 
 impl<'a> Canvas<'a> {
@@ -421,6 +423,8 @@ impl<'a> Canvas<'a> {
             theme_top_color: None,
             theme_bottom_color: None,
             dark_theme: false,
+            legend_press: None,
+            focus_origin: None,
         })
     }
 
@@ -430,6 +434,39 @@ impl<'a> Canvas<'a> {
 
     pub fn resolution(&self) -> Resolution {
         self.resolution
+    }
+
+    pub(crate) fn slide_content(&mut self, x: i32, top: f32, bottom: f32, wash: Color, fade: u8) {
+        let top = self.resolution.scale_y(top).round() as usize;
+        let bottom =
+            (self.resolution.scale_y(bottom).round() as usize).min(self.resolution.height as usize);
+        let offset = (x.unsigned_abs() as usize * 4).min(self.stride);
+        let background = [wash.b, wash.g, wash.r, 255];
+        let weight = u16::from(fade);
+        for y in top..bottom {
+            let row = &mut self.buffer[y * self.stride..(y + 1) * self.stride];
+            let split = self.stride - offset;
+            if x > 0 {
+                row.copy_within(..split, offset);
+                for pixel in row[..offset].chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&background);
+                }
+            } else if x < 0 {
+                row.copy_within(offset.., 0);
+                for pixel in row[split..].chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&background);
+                }
+            }
+            if weight > 0 {
+                for pixel in row.chunks_exact_mut(4) {
+                    for channel in 0..3 {
+                        pixel[channel] = ((u16::from(pixel[channel]) * (256 - weight)
+                            + u16::from(background[channel]) * weight)
+                            >> 8) as u8;
+                    }
+                }
+            }
+        }
     }
 
     pub fn clear(&mut self, color: Color) {

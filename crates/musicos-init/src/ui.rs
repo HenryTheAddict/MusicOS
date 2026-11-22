@@ -76,6 +76,13 @@ pub fn selected_surface(canvas: &Canvas<'_>) -> Color {
     surface(canvas).mix(accent(canvas), if canvas.dark_theme { 0.24 } else { 0.21 })
 }
 
+pub(crate) fn moving_selected_surface(canvas: &Canvas<'_>, x: f32, y: f32) -> Color {
+    let opacity = canvas.focus_origin.map_or(1.0, |(from_x, from_y)| {
+        let distance = (x - 2.0 - from_x).abs() + (y - 2.0 - from_y).abs();
+        (1.0 - distance / 100.0).clamp(0.0, 1.0)
+    });
+    selected_surface(canvas).with_alpha((opacity * 255.0).round() as u8)
+}
 pub fn shell(canvas: &Canvas<'_>) -> Color {
     if canvas.dark_theme {
         Color::rgb(26, 22, 21)
@@ -257,7 +264,15 @@ pub fn register_focus(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, r
 
 pub(crate) fn compact_row(canvas: &mut Canvas<'_>, x: f32, y: f32, w: f32, h: f32, selected: bool) {
     if selected {
-        rr(canvas, x, y, w, h, 12.0, selected_surface(canvas));
+        rr(
+            canvas,
+            x,
+            y,
+            w,
+            h,
+            12.0,
+            moving_selected_surface(canvas, x, y),
+        );
         register_focus(canvas, x, y, w, h, 12.0);
     } else {
         rr(
@@ -380,6 +395,10 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
         let Some((button, label)) = action.split_once("  ") else {
             continue;
         };
+        let press = canvas
+            .legend_press
+            .filter(|(key, _)| *key == button)
+            .map_or(0.0, |(_, strength)| strength);
         let button = match button {
             "A" => "CLICK",
             "B" => "BACK",
@@ -391,16 +410,16 @@ fn legend_bar_at(canvas: &mut Canvas<'_>, legend: &str, top: f32, inset: f32) {
         rr(
             canvas,
             x,
-            y + 2.0,
+            y + 2.0 + 3.0 * press,
             chip,
             height,
             height / 2.0,
-            control(canvas),
+            control(canvas).mix(accent(canvas), 0.28 * press),
         );
         canvas.text_centered(
             button,
             x + chip * 0.5,
-            y + height / 4.0,
+            y + height / 4.0 + 3.0 * press,
             font_size,
             ink_secondary(canvas),
             FontWeight::Bold,

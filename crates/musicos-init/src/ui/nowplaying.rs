@@ -17,10 +17,10 @@ pub fn draw_now_playing(
     status: &PlaybackStatus,
     queue: &[Track],
     cover_art: Option<&CoverArt>,
+    previous_cover_art: Option<&CoverArt>,
     cover_art_opacity: f32,
-    transition_t: f32,
+    displayed_position: f32,
 ) {
-    let _ = transition_t;
     crate::ui::draw_figma_background(canvas);
     let _ = theme;
     let accent = crate::ui::accent(canvas);
@@ -28,22 +28,48 @@ pub fn draw_now_playing(
         crate::ui::page_heading(canvas, "Now Playing", "Choose a song from Music");
         return;
     };
-    if let Some(art) = cover_art {
+    if let Some(art) = cover_art.or(previous_cover_art) {
         crate::ui::draw_art_wash(canvas, art, 680.0);
     }
 
     let art_x = 48.0;
     let art_y = 132.0;
     let art_size = 416.0;
-    draw_cover_art(
-        canvas,
-        cover_art,
-        art_x,
-        art_y,
-        art_size,
-        24.0,
-        cover_art_opacity,
-    );
+    if let Some(previous) = previous_cover_art {
+        if let Some(art) = cover_art {
+            canvas.draw_image_rounded(previous, art_x, art_y, art_size, art_size, 24.0, 1.0);
+            canvas.draw_image_rounded(
+                art,
+                art_x,
+                art_y,
+                art_size,
+                art_size,
+                24.0,
+                cover_art_opacity,
+            );
+        } else {
+            draw_cover_art(canvas, None, art_x, art_y, art_size, 24.0, 1.0);
+            canvas.draw_image_rounded(
+                previous,
+                art_x,
+                art_y,
+                art_size,
+                art_size,
+                24.0,
+                1.0 - cover_art_opacity,
+            );
+        }
+    } else {
+        draw_cover_art(
+            canvas,
+            cover_art,
+            art_x,
+            art_y,
+            art_size,
+            24.0,
+            cover_art_opacity,
+        );
+    }
     text_fit(
         canvas,
         &track.title,
@@ -111,7 +137,7 @@ pub fn draw_now_playing(
     let slider_y = 586.0;
     let slider_w = 1184.0;
     let ratio = if track.duration > 0 {
-        (status.position / track.duration as f32).clamp(0.0, 1.0)
+        (displayed_position / track.duration as f32).clamp(0.0, 1.0)
     } else {
         0.0
     };
