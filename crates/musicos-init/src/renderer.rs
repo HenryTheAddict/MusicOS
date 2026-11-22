@@ -637,44 +637,25 @@ impl<'a> Canvas<'a> {
                 let src_x = ((src_x_accum >> 16) as u32).min(image.width - 1);
                 src_x_accum += step_x;
 
-                let mut is_inside = true;
-                if in_top_corner_zone {
-                    if (px as f32) < sr {
-                        let dx = (px as f32 + 0.5) - sr;
-                        let dy = (py as f32 + 0.5) - sr;
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
+                let x = px as f32 + 0.5;
+                let coverage =
+                    if (in_top_corner_zone || in_bottom_corner_zone) && (x < sr || x > sw - sr) {
+                        let dx = x - x.clamp(sr, sw - sr);
+                        let y = py as f32 + 0.5;
+                        let dy = y - y.clamp(sr, sh - sr);
+                        let distance_sq = dx * dx + dy * dy;
+                        if sr >= 0.5 && distance_sq <= (sr - 0.5) * (sr - 0.5) {
+                            1.0
+                        } else {
+                            (sr + 0.5 - distance_sq.sqrt()).clamp(0.0, 1.0)
                         }
-                    } else if (px as f32) >= sw - sr {
-                        let dx = (px as f32 + 0.5) - (sw - sr);
-                        let dy = (py as f32 + 0.5) - sr;
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    }
-                } else if in_bottom_corner_zone {
-                    if (px as f32) < sr {
-                        let dx = (px as f32 + 0.5) - sr;
-                        let dy = (py as f32 + 0.5) - (sh - sr);
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    } else if (px as f32) >= sw - sr {
-                        let dx = (px as f32 + 0.5) - (sw - sr);
-                        let dy = (py as f32 + 0.5) - (sh - sr);
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    }
-                }
-
-                if !is_inside {
-                    continue;
-                }
+                    } else {
+                        1.0
+                    };
 
                 let idx = (src_y * image.width + src_x) as usize;
                 let color = image.pixels[idx];
-                let alpha = (color.a as f32 * opacity).round() as u8;
+                let alpha = (color.a as f32 * opacity * coverage).round() as u8;
                 if alpha > 0 {
                     let mut faded_color = color;
                     faded_color.a = alpha;

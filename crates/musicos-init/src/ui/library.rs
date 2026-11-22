@@ -5,8 +5,8 @@ use std::path::Path;
 use crate::database::Track;
 use crate::renderer::{Canvas, CoverArt};
 use crate::ui::{
-    accent, assets_dir, control, draw_figma_background, ink, ink_secondary, register_focus, rr,
-    selected_surface, surface, text_fit, FontWeight,
+    accent, assets_dir, control, draw_art_wash, draw_figma_background, ink, ink_secondary,
+    register_focus, rr, selected_surface, surface, text_fit, FontWeight,
 };
 
 pub(crate) const COLUMNS: usize = 3;
@@ -67,7 +67,28 @@ impl LibraryView {
         }
     }
 
-    fn artwork(
+    fn with_art(&self, path: &str, draw: impl FnOnce(&CoverArt)) -> bool {
+        let mut cache = self.art.borrow_mut();
+        let entry = if let Some(index) = cache.iter().position(|(key, _)| key == path) {
+            cache.remove(index).unwrap()
+        } else {
+            (
+                path.to_owned(),
+                crate::media::load_cover_art_thumbnail(Path::new(path), 384),
+            )
+        };
+        let found = if let Some(cover) = &entry.1 {
+            draw(cover);
+            true
+        } else {
+            false
+        };
+        cache.push_front(entry);
+        cache.truncate(16);
+        found
+    }
+
+    pub(crate) fn artwork(
         &self,
         canvas: &mut Canvas<'_>,
         path: Option<&str>,
@@ -81,25 +102,14 @@ impl LibraryView {
         } else {
             (size / 6.0).min(32.0)
         };
-        rr(canvas, x, y, size, size, radius, control(canvas));
-        if let Some(path) = path {
-            let mut art = self.art.borrow_mut();
-            let entry = if let Some(index) = art.iter().position(|(key, _)| key == path) {
-                art.remove(index).unwrap()
-            } else {
-                let source = crate::media::load_cover_art_thumbnail(Path::new(path), 384);
-                (path.to_owned(), source)
-            };
-            let found = entry.1.is_some();
-            if let Some(cover) = &entry.1 {
+        if path.is_some_and(|path| {
+            self.with_art(path, |cover| {
                 canvas.draw_image_rounded(cover, x, y, size, size, radius, 1.0);
-            }
-            art.push_front(entry);
-            art.truncate(16);
-            if found {
-                return;
-            }
+            })
+        }) {
+            return;
         }
+        rr(canvas, x, y, size, size, radius, control(canvas));
         let icon = if portrait { "artist" } else { "album" };
         canvas.draw_svg_tinted(
             &format!("{}/icons/desktop/{icon}.svg", assets_dir()),
@@ -142,7 +152,16 @@ impl LibraryView {
                     "album"
                 };
                 heading(canvas, title, &plural(items.len(), kind));
-                (224.0, 326.0, 224.0, 2)
+                (
+                    218.0,
+                    326.0,
+                    if matches!(mode, Grid::Artists) {
+                        222.0
+                    } else {
+                        232.0
+                    },
+                    2,
+                )
             }
         };
         if items.is_empty() {
@@ -159,13 +178,18 @@ impl LibraryView {
             let x = 43.0 + cell.rem_euclid(COLUMNS) as f32 * 405.0;
             let y = start_y + (cell / COLUMNS) as f32 * row_height;
             let width = 384.0;
-            let fill = if cell + start == selected {
+            if cell + start == selected {
+                rr(
+                    canvas,
+                    x,
+                    y,
+                    width,
+                    row_height - 13.0,
+                    20.0,
+                    selected_surface(canvas),
+                );
                 register_focus(canvas, x, y, width, row_height - 13.0, 20.0);
-                selected_surface(canvas)
-            } else {
-                surface(canvas)
-            };
-            rr(canvas, x, y, width, row_height - 13.0, 20.0, fill);
+            }
             let (subtitle, cover) = match mode {
                 Grid::Artists => self
                     .artists
@@ -192,7 +216,11 @@ impl LibraryView {
             self.artwork(
                 canvas,
                 cover,
-                x + (width - art_size) / 2.0,
+                if matches!(mode, Grid::Artists) {
+                    x + (width - art_size) / 2.0
+                } else {
+                    x + 20.0
+                },
                 y + 11.0,
                 art_size,
                 matches!(mode, Grid::Artists),
@@ -201,9 +229,9 @@ impl LibraryView {
                 canvas,
                 item,
                 x + 20.0,
-                y + art_size + 19.0,
+                y + art_size + 14.0,
                 width - 40.0,
-                36.0,
+                34.0,
                 ink(canvas),
                 FontWeight::Bold,
             );
@@ -211,9 +239,9 @@ impl LibraryView {
                 canvas,
                 &subtitle,
                 x + 20.0,
-                y + art_size + 59.0,
+                y + art_size + 49.0,
                 width - 40.0,
-                27.0,
+                25.0,
                 ink_secondary(canvas),
                 FontWeight::Regular,
             );
@@ -366,7 +394,9 @@ impl LibraryView {
         cover: Option<&str>,
         portrait: bool,
     ) {
-        rr(canvas, 42.0, 78.0, 1196.0, 218.0, 46.0, surface(canvas));
+        if let Some(path) = cover {
+            self.with_art(path, |art| draw_art_wash(canvas, art, 340.0));
+        }
         self.artwork(canvas, cover, 68.0, 98.0, 176.0, portrait);
         text_fit(
             canvas,

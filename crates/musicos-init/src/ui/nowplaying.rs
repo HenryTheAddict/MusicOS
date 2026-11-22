@@ -1,23 +1,17 @@
 #![allow(dead_code)]
 
-use std::path::Path;
-use std::sync::OnceLock;
-
 use crate::app::Focus;
 use crate::audio::{LoopMode, PlaybackStatus};
 use crate::database::Track;
 use crate::renderer::{Canvas, Color, CoverArt};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
-use crate::ui::transitions::pulse01;
 use crate::ui::{register_focus, text_fit, FontWeight};
-
-static PLACEHOLDER_ART: OnceLock<Option<CoverArt>> = OnceLock::new();
 
 pub fn draw_now_playing(
     canvas: &mut Canvas<'_>,
     focus: Focus,
-    seconds: f32,
+    _seconds: f32,
     _lang: Language,
     theme: ThemeName,
     status: &PlaybackStatus,
@@ -34,6 +28,9 @@ pub fn draw_now_playing(
         crate::ui::page_heading(canvas, "Now Playing", "Choose a song from Music");
         return;
     };
+    if let Some(art) = cover_art {
+        crate::ui::draw_art_wash(canvas, art, 680.0);
+    }
 
     let art_x = 48.0;
     let art_y = 132.0;
@@ -44,16 +41,16 @@ pub fn draw_now_playing(
         art_x,
         art_y,
         art_size,
-        20.0,
+        24.0,
         cover_art_opacity,
     );
     text_fit(
         canvas,
         &track.title,
         518.0,
-        156.0,
+        147.0,
         694.0,
-        50.0,
+        62.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
     );
@@ -61,7 +58,7 @@ pub fn draw_now_playing(
         canvas,
         &format!("{} · {}", track.artist, track.album),
         518.0,
-        229.0,
+        241.0,
         694.0,
         32.0,
         crate::ui::ink_secondary(canvas),
@@ -90,13 +87,23 @@ pub fn draw_now_playing(
     } else if let Some(next_track) = status.queue_index.and_then(|index| queue.get(index + 1)) {
         text_fit(
             canvas,
-            &format!("Up next: {}", next_track.title),
+            "UP NEXT",
             518.0,
-            344.0,
+            338.0,
             694.0,
-            30.0,
+            22.0,
             crate::ui::ink_secondary(canvas),
-            FontWeight::Regular,
+            FontWeight::Bold,
+        );
+        text_fit(
+            canvas,
+            &next_track.title,
+            518.0,
+            374.0,
+            694.0,
+            33.0,
+            crate::ui::ink(canvas),
+            FontWeight::Bold,
         );
     }
 
@@ -155,7 +162,7 @@ pub fn draw_now_playing(
         "prev",
         focus == Focus::Artists,
         status,
-        78.0,
+        60.0,
     );
     draw_player_icon(
         canvas,
@@ -164,7 +171,7 @@ pub fn draw_now_playing(
         "play",
         focus == Focus::Albums,
         status,
-        102.0,
+        68.0,
     );
     draw_player_icon(
         canvas,
@@ -173,34 +180,33 @@ pub fn draw_now_playing(
         "next",
         focus == Focus::Playlists,
         status,
-        78.0,
+        60.0,
     );
 
     draw_player_icon(
         canvas,
-        192.0,
+        300.0,
         726.0,
         "loop",
         focus == Focus::Songs,
         status,
-        58.0,
+        53.0,
     );
     draw_heart(
         canvas,
-        1072.0,
+        1142.0,
         722.0,
         track.favorited,
         focus == Focus::Favorites,
-        seconds,
     );
     draw_player_icon(
         canvas,
-        960.0,
+        980.0,
         726.0,
         "shuffle",
         focus == Focus::History,
         status,
-        58.0,
+        53.0,
     );
 }
 
@@ -214,34 +220,23 @@ pub fn draw_cover_art(
     opacity: f32,
 ) {
     if let Some(art) = cover_art {
-        if let Some(placeholder) = placeholder_cover_art() {
-            canvas.draw_image_rounded(placeholder, x, y, size, size, radius, 1.0);
-        } else {
-            crate::ui::rr(canvas, x, y, size, size, radius, Color::BLACK);
+        if opacity < 1.0 {
+            crate::ui::rr(canvas, x, y, size, size, radius, crate::ui::control(canvas));
         }
         canvas.draw_image_rounded(art, x, y, size, size, radius, opacity);
         return;
     }
-
-    if let Some(art) = placeholder_cover_art() {
-        canvas.draw_image_rounded(art, x, y, size, size, radius, opacity.max(0.96));
-        return;
-    }
-
-    crate::ui::rr(canvas, x, y, size, size, radius, Color::BLACK);
-}
-
-pub fn placeholder_cover_art() -> Option<&'static CoverArt> {
-    PLACEHOLDER_ART
-        .get_or_init(|| {
-            let base_path = crate::ui::assets_dir();
-            crate::media::load_cover_art_file(
-                Path::new(&base_path)
-                    .join("icons/coverartplaceholder.png")
-                    .as_path(),
-            )
-        })
-        .as_ref()
+    crate::ui::rr(canvas, x, y, size, size, radius, crate::ui::control(canvas));
+    let icon = size * 0.38;
+    let inset = (size - icon) / 2.0;
+    canvas.draw_svg_tinted(
+        &format!("{}/icons/desktop/album.svg", crate::ui::assets_dir()),
+        x + inset,
+        y + inset,
+        icon,
+        icon,
+        crate::ui::ink_secondary(canvas),
+    );
 }
 
 fn outlined_text(canvas: &mut Canvas<'_>, text: &str, x: f32, y: f32, size: f32, color: Color) {
@@ -283,44 +278,41 @@ fn draw_player_icon(
             diameter,
             diameter,
             diameter / 2.0,
-            crate::ui::control(canvas),
+            crate::ui::ink(canvas),
         );
     }
     let filename = match kind {
         "play" if status.is_playing => "pause.svg",
-        "play" => "Play.svg",
-        "next" => "skip.svg",
-        "prev" => "previous.svg",
-        "shuffle" if status.shuffle => "shuffle-1.svg",
-        "shuffle" => "shuffle.svg",
+        "play" => "play.svg",
+        "next" => "next.svg",
+        "prev" => "prev.svg",
+        "shuffle" if status.shuffle => "ShuffleON.svg",
+        "shuffle" => "ShuffleOFF.svg",
         "loop" => match status.loop_mode {
-            LoopMode::None => "no loop.svg",
-            LoopMode::All => "loop.svg",
-            LoopMode::One => "loop1.svg",
+            LoopMode::None => "RepeatOFF.svg",
+            LoopMode::All => "RepeatON.svg",
+            LoopMode::One => "RepeatONE.svg",
         },
-        _ => "Play.svg",
+        _ => "play.svg",
     };
     let base_path = crate::ui::assets_dir();
-    let path = format!("{}/icons/nowplaying/{}", base_path, filename);
+    let path = format!("{}/icons/ui/{}", base_path, filename);
     canvas.draw_svg_tinted(
         &path,
         cx - size / 2.0,
         cy - size / 2.0,
         size,
         size,
-        crate::ui::ink(canvas),
+        if kind == "play" {
+            crate::ui::shell(canvas)
+        } else {
+            crate::ui::ink(canvas)
+        },
     );
 }
 
-fn draw_heart(
-    canvas: &mut Canvas<'_>,
-    cx: f32,
-    cy: f32,
-    filled: bool,
-    selected: bool,
-    seconds: f32,
-) {
-    let size = 96.0 + pulse01(seconds, 3.8, 0.4) * 4.0;
+fn draw_heart(canvas: &mut Canvas<'_>, cx: f32, cy: f32, filled: bool, selected: bool) {
+    let size = 54.0;
     if selected {
         let ring = size + 24.0;
         register_focus(
@@ -333,12 +325,8 @@ fn draw_heart(
         );
     }
     let base_path = crate::ui::assets_dir();
-    let filename = if filled {
-        "HeartFilled.svg"
-    } else {
-        "Heart.svg"
-    };
-    let path = format!("{}/icons/nowplaying/{}", base_path, filename);
+    let filename = if filled { "hearted.svg" } else { "noheart.svg" };
+    let path = format!("{}/icons/ui/{}", base_path, filename);
     canvas.draw_svg_tinted(
         &path,
         cx - size / 2.0,

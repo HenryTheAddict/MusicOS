@@ -4,7 +4,6 @@ use std::path::Path;
 
 use anyhow::Result;
 use musicos_init::app::{Focus, MusicOs, Screen};
-use musicos_init::database::Track;
 use musicos_init::input::{Button, InputEvent};
 use musicos_init::renderer::{Canvas, Resolution};
 use musicos_init::ui::theme::ThemeName;
@@ -16,25 +15,45 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "out/musicos-snapshot.bmp".to_string());
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
     let snapshot_screen = std::env::var("MUSICOS_SNAPSHOT_SCREEN");
-    let mut app = if matches!(
-        snapshot_screen.as_deref(),
-        Ok("home-albums"
-            | "home-artists"
-            | "home-nowplaying"
-            | "albums"
-            | "album"
-            | "artists"
-            | "artist-albums"
-            | "album-tracks"
-            | "nowplaying-track"
-            | "songs")
-    ) {
+    let mut app = if snapshot_screen.is_ok() {
         MusicOs::with_db_path(resolution, ":memory:")
     } else {
         MusicOs::new(resolution)
     };
     if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
         app.active_theme = ThemeName::from_str(&theme);
+    }
+    if matches!(
+        snapshot_screen.as_deref(),
+        Ok("home"
+            | "home-albums"
+            | "home-artists"
+            | "home-nowplaying"
+            | "music"
+            | "albums"
+            | "album"
+            | "artists"
+            | "artist-albums"
+            | "album-tracks"
+            | "songs"
+            | "nowplaying-track"
+            | "queue"
+            | "playlists"
+            | "playlist-tracks"
+            | "search"
+            | "search-results"
+            | "search-empty"
+            | "context"
+            | "about"
+            | "status"
+            | "wifi-sync"
+            | "volume-hud"
+            | "volume_hud"
+            | "brightness-hud"
+            | "brightness_hud"
+            | "rating")
+    ) {
+        seed_library(&mut app)?;
     }
     match snapshot_screen.as_deref() {
         Ok("first") => app.force_screen_for_snapshot(Screen::First),
@@ -45,7 +64,6 @@ fn main() -> Result<()> {
         }
         Ok("home") => app.force_screen_for_snapshot(Screen::Home),
         Ok("home-albums" | "home-nowplaying" | "home-artists") => {
-            seed_home_library(&mut app)?;
             app.force_screen_for_snapshot(Screen::Home);
             match snapshot_screen.as_deref() {
                 Ok("home-nowplaying") => {
@@ -59,7 +77,6 @@ fn main() -> Result<()> {
         }
         Ok("music") => app.force_screen_for_snapshot(Screen::MusicApp),
         Ok("songs" | "albums" | "album" | "artists" | "artist-albums" | "album-tracks") => {
-            seed_home_library(&mut app)?;
             match snapshot_screen.as_deref() {
                 Ok("songs") => {
                     app.tracks_queue = app.db.get_tracks()?;
@@ -91,35 +108,32 @@ fn main() -> Result<()> {
             app.screen_transition = 1.0;
         }
         Ok("queue") => {
-            seed_demo_queue(&mut app);
+            app.tracks_queue = app.player.queue_tracks();
             app.force_screen_for_snapshot(Screen::Queue);
         }
         Ok("playlists") => app.force_screen_for_snapshot(Screen::PlaylistsList),
         Ok("playlist-tracks") => {
-            seed_demo_queue(&mut app);
-            app.force_screen_for_snapshot(Screen::PlaylistTracksList);
+            app.force_screen_for_snapshot(Screen::PlaylistsList);
+            app.handle_input(InputEvent::Button(Button::Confirm));
         }
-        Ok("search") => {
-            seed_demo_queue(&mut app);
-            app.search_query = "Tanger".into();
-            app.search_results = app.tracks_queue.clone();
-            app.force_screen_for_snapshot(Screen::Search);
-        }
-        Ok("search-results") | Ok("search-empty") => {
-            seed_demo_queue(&mut app);
-            app.search_query = "Tanger".into();
-            if std::env::var("MUSICOS_SNAPSHOT_SCREEN").as_deref() == Ok("search-results") {
-                app.search_results = app.tracks_queue.clone();
+        Ok("search" | "search-results" | "search-empty") => {
+            app.search_query = if snapshot_screen.as_deref() == Ok("search-empty") {
+                "Unmatched"
+            } else {
+                "Tame"
             }
+            .into();
+            app.search_results = app.db.search_tracks(&app.search_query, 100)?;
             app.force_screen_for_snapshot(Screen::Search);
-            app.focus = Focus::SearchResults;
+            if snapshot_screen.as_deref() != Ok("search") {
+                app.focus = Focus::SearchResults;
+            }
         }
         Ok("rating") => {
             app.pending_rating = 3;
             app.force_screen_for_snapshot(Screen::RatingPicker);
         }
         Ok("context") => {
-            seed_demo_albums(&mut app);
             app.force_screen_for_snapshot(Screen::ContextMenu);
             app.previous_screen = Screen::AlbumsList;
             app.previous_focus = Focus::Albums;
@@ -135,7 +149,6 @@ fn main() -> Result<()> {
         Ok("about") | Ok("status") => app.force_screen_for_snapshot(Screen::About),
         Ok("now") | Ok("nowplaying") => app.force_screen_for_snapshot(Screen::NowPlaying),
         Ok("nowplaying-track") => {
-            seed_home_library(&mut app)?;
             app.motion_mode = musicos_init::preferences::MotionMode::Reduced;
             app.force_screen_for_snapshot(Screen::NowPlaying);
         }
@@ -174,133 +187,244 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn seed_home_library(app: &mut MusicOs) -> Result<()> {
-    let assets = musicos_init::ui::assets_dir();
-    for (title, artist, album, artwork) in [
+fn seed_library(app: &mut MusicOs) -> Result<()> {
+    const FEATURED: [(&str, &str, &str, &[&str]); 6] = [
         (
-            "One More Year",
             "Tame Impala",
             "The Slow Rush",
             "SlowRush.png",
+            &[
+                "One More Year",
+                "Instant Destiny",
+                "Borderline",
+                "Posthumous Forgiveness",
+                "Breathe Deeper",
+            ],
         ),
-        ("Let It Happen", "Tame Impala", "Currents", "Currents.png"),
-        ("Feel Good Inc.", "Gorillaz", "Demon Days", "DemonDays.png"),
         (
-            "Radioactive",
+            "Tame Impala",
+            "Currents",
+            "Currents.png",
+            &["Let It Happen", "Nangs", "The Moment"],
+        ),
+        (
+            "Gorillaz",
+            "Demon Days",
+            "DemonDays.png",
+            &[
+                "Intro",
+                "Last Living Souls",
+                "Kids with Guns",
+                "Feel Good Inc.",
+            ],
+        ),
+        (
             "Imagine Dragons",
             "Night Visions",
             "NightVisions.png",
+            &["Radioactive", "Tiptoe", "It's Time"],
         ),
-        ("Pink", "Luna", "Flamingo", "Flamingo.png"),
+        ("Luna", "Flamingo", "Flamingo.png", &["Pink", "Blue Hour"]),
         (
-            "Midnight City",
             "M83",
             "Hurry Up, We're Dreaming",
             "Sea.png",
+            &["Intro", "Midnight City", "Reunion"],
         ),
-    ] {
-        let id = app.db.insert_track_with_number(
-            &format!("/music/{artwork}.ogg"),
-            title,
-            artist,
-            album,
-            1,
-            327,
-            1,
-            1,
-        )?;
-        let path = Path::new(&assets).join("covers").join(artwork);
-        app.db.set_track_cover_art(id, path.to_str(), 1)?;
+    ];
+    const ARTISTS: [&str; 33] = [
+        "Aerial Rooms",
+        "Amber Arcade",
+        "Atlas Bloom",
+        "Blue Hours",
+        "Caldera",
+        "Cedar Sound",
+        "Common Weather",
+        "Dawn Assembly",
+        "Delta Coast",
+        "Ember Field",
+        "Far Meridian",
+        "Field Notes",
+        "Glass Atlas",
+        "Harborlight",
+        "Inland Current",
+        "Juniper",
+        "Kite Lines",
+        "Low Sun",
+        "Mallow",
+        "Mirror District",
+        "North Transit",
+        "Orchard Radio",
+        "Paper Kites",
+        "Quiet Avenue",
+        "River Index",
+        "Salt Circuit",
+        "Soft Signal",
+        "Still Summer",
+        "The Night Ferry",
+        "Thread Count",
+        "Valley Echo",
+        "Westward",
+        "Wild Static",
+    ];
+    const TITLES: [&str; 16] = [
+        "Afterimages",
+        "Air Between",
+        "All the Way Home",
+        "Before the Glow",
+        "Blue Hour",
+        "Borrowed Light",
+        "Close to the Coast",
+        "Common Ground",
+        "Daybreak",
+        "Driftwood",
+        "Evening Lines",
+        "Field Recordings",
+        "Half Awake",
+        "Late Motion",
+        "Low Water",
+        "Night Window",
+    ];
+    let assets = musicos_init::ui::assets_dir();
+    let assets = Path::new(&assets);
+    let cover_dir = if assets.is_dir() {
+        assets.join("covers")
+    } else {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/covers")
+    };
+    let local = std::env::var_os("MUSICOS_SNAPSHOT_ART_DIR").map(std::path::PathBuf::from);
+    let fallback = [
+        "Apart.png",
+        "Baltimore.png",
+        "Beach.png",
+        "Cave.png",
+        "Clouds.png",
+        "Crowd.png",
+        "Hills.png",
+        "Lake.png",
+        "Overcast.png",
+        "Pier.png",
+        "Rocks.png",
+        "Sand.png",
+        "Towers.png",
+        "Vacate.png",
+        "sky.png",
+        "skate.png",
+    ];
+    let mut ids = Vec::new();
+    for index in 0..64 {
+        let featured = FEATURED.get(index);
+        let artist = featured.map_or_else(
+            || ARTISTS[(index - FEATURED.len()) % ARTISTS.len()],
+            |entry| entry.0,
+        );
+        let album = featured.map_or_else(
+            || {
+                let adjective = [
+                    "Northern", "Open", "Quiet", "Silver", "Still", "Summer", "Tidal", "Winter",
+                ];
+                let noun = [
+                    "Arc", "Coast", "Current", "Field", "Light", "Signal", "Sky", "Water",
+                ];
+                format!("{} {}", adjective[index % 8], noun[index / 8])
+            },
+            |entry| entry.1.to_owned(),
+        );
+        let file = featured.map_or(fallback[index % fallback.len()], |entry| entry.2);
+        let filename = if featured.is_some() {
+            file.to_owned()
+        } else {
+            format!("{index:02}.png")
+        };
+        let art = local
+            .as_ref()
+            .map(|root| root.join(filename))
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| cover_dir.join(file));
+        let mut album_ids = Vec::new();
+        for number in 0..(12 + usize::from(index < 44)) {
+            let title = featured
+                .and_then(|entry| entry.3.get(number))
+                .map(|title| (*title).to_owned())
+                .unwrap_or_else(|| {
+                    let suffixes = [
+                        "at Dawn",
+                        "at Dusk",
+                        "in Blue",
+                        "in Bloom",
+                        "in June",
+                        "in Motion",
+                        "in the Rain",
+                        "on Film",
+                        "on the Coast",
+                        "Under Glass",
+                        "Underwater",
+                        "Without Signal",
+                    ];
+                    format!(
+                        "{} {}",
+                        TITLES[(number + index * 7) % TITLES.len()],
+                        suffixes[(index + number * 5) % suffixes.len()]
+                    )
+                });
+            let duration = if index == 0 && number == 0 {
+                327
+            } else {
+                158 + (index * 43 + number * 31) % 191
+            };
+            let id = app.db.insert_track_with_number(
+                &format!("/music/{index:02}/{:02}.ogg", number + 1),
+                &title,
+                artist,
+                &album,
+                number as i32 + 1,
+                duration as i32,
+                1,
+                1,
+            )?;
+            app.db.set_track_cover_art(id, art.to_str(), 1)?;
+            if (index + number) % 29 == 0 {
+                app.db.toggle_favorite(id)?;
+            }
+            if (index + number) % 17 == 3 {
+                app.db.set_track_rating(id, 4)?;
+            }
+            album_ids.push(id);
+        }
+        ids.push(album_ids);
     }
-    for (number, title, duration) in [
-        (2, "Instant Destiny", 193),
-        (3, "Borderline", 238),
-        (4, "Posthumous Forgiveness", 367),
-        (5, "Breathe Deeper", 372),
-    ] {
-        let id = app.db.insert_track_with_number(
-            &format!("/music/slow-rush-{number}.ogg"),
-            title,
-            "Tame Impala",
-            "The Slow Rush",
-            number,
-            duration,
-            1,
-            1,
-        )?;
-        app.db.set_track_cover_art(
-            id,
-            Path::new(&assets).join("covers/SlowRush.png").to_str(),
-            1,
-        )?;
+    for (index, name) in [
+        "After Hours",
+        "Coastline",
+        "Daybreak",
+        "Deep Focus",
+        "Headphones On",
+        "Late Night Drive",
+        "New Finds",
+        "On Repeat",
+        "Weekend Mix",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = app.db.create_playlist(name)?;
+        let tracks = (0..18 + index)
+            .map(|row| ids[(row * 7 + index + 1) % ids.len()][row % 12])
+            .collect::<Vec<_>>();
+        app.db.add_tracks_to_playlist(id, &tracks)?;
     }
     app.refresh_library();
     let tracks = app.db.get_tracks()?;
-    if let Some((index, track)) = tracks
-        .iter()
-        .enumerate()
-        .find(|(_, track)| track.title == "One More Year")
-    {
+    if let Some(track) = tracks.iter().find(|track| track.id == ids[0][0]) {
         app.current_cover_art = track
             .cover_art_path
             .as_deref()
             .and_then(|path| musicos_init::media::load_cover_art_file(Path::new(path)));
-        app.player.restore_queue_paused(tracks, index, 118.0);
+        let mut queue = vec![track.clone()];
+        queue.extend(app.db.get_playlist_tracks(app.playlists_list[0].id)?);
+        app.player.restore_queue_paused(queue, 0, 118.0);
     }
     Ok(())
-}
-
-fn seed_demo_albums(app: &mut MusicOs) {
-    app.albums_list = vec![
-        "mr henry and the stink store vol 2".to_string(),
-        "bad album".to_string(),
-        "goop eating".to_string(),
-    ];
-    app.selected_index = 0;
-}
-
-fn seed_demo_queue(app: &mut MusicOs) {
-    app.tracks_queue = vec![
-        Track {
-            id: 1,
-            path: "/music/alpha.ogg".to_string(),
-            title: "Alpha".to_string(),
-            artist: "Tanger".to_string(),
-            album: "Glow".to_string(),
-            track_number: 1,
-            duration: 120,
-            file_size: 0,
-            modified_at: 0,
-            indexed_at: 0,
-            cover_art_path: None,
-            cover_art_updated_at: None,
-            cover_art_source_modified_at: None,
-            favorited: false,
-            play_count: 0,
-            last_played: None,
-            rating: 4,
-        },
-        Track {
-            id: 2,
-            path: "/music/beta.ogg".to_string(),
-            title: "Beta".to_string(),
-            artist: "Tanger".to_string(),
-            album: "Glow".to_string(),
-            track_number: 2,
-            duration: 140,
-            file_size: 0,
-            modified_at: 0,
-            indexed_at: 0,
-            cover_art_path: None,
-            cover_art_updated_at: None,
-            cover_art_source_modified_at: None,
-            favorited: true,
-            play_count: 0,
-            last_played: None,
-            rating: 0,
-        },
-    ];
-    app.selected_index = 1;
 }
 
 fn write_bmp(path: &str, resolution: Resolution, bgra: &[u8]) -> Result<()> {
@@ -330,4 +454,23 @@ fn write_bmp(path: &str, resolution: Resolution, bgra: &[u8]) -> Result<()> {
 
     file.write_all(bgra)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn snapshot_library_has_album_art_throughout_the_catalog() -> Result<()> {
+        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+        seed_library(&mut app)?;
+        let tracks = app.db.get_tracks()?;
+        assert_eq!(tracks.len(), 812);
+        assert_eq!(app.albums_list.len(), 64);
+        assert_eq!(app.artists_list.len(), 38);
+        assert_eq!(app.playlists_list.len(), 9);
+        assert!(tracks.iter().all(|track| track.cover_art_path.is_some()));
+        assert!(app.current_cover_art.is_some());
+        Ok(())
+    }
 }

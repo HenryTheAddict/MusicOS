@@ -1,6 +1,7 @@
 use crate::app::Focus;
 use crate::database::{LibraryCounts, Pin, Track};
 use crate::renderer::Canvas;
+use crate::ui::library::LibraryView;
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::ui::transitions::{ease_out_back, ease_out_cubic, stagger};
@@ -145,6 +146,7 @@ pub fn draw_items_list(
             item,
             "",
             None,
+            None,
             selected,
             idx,
             transition_t,
@@ -157,8 +159,9 @@ pub fn draw_items_list(
     );
 }
 
-pub fn draw_tracks_list(
+pub(crate) fn draw_tracks_list(
     canvas: &mut Canvas<'_>,
+    library: &LibraryView,
     title: &str,
     tracks: &[Track],
     selected_idx: usize,
@@ -198,27 +201,22 @@ pub fn draw_tracks_list(
             &format!("{:02}  {}", idx + 1, track.title),
             &subtitle,
             Some(format!("{}:{:02}", duration / 60, duration % 60)),
+            Some((library, track.cover_art_path.as_deref())),
             selected,
             idx,
             transition_t,
             seconds,
         );
     }
-    draw_alpha_index(
-        canvas,
-        &tracks
-            .iter()
-            .map(|track| track.title.as_str())
-            .collect::<Vec<_>>(),
-    );
 }
 
 fn draw_empty_collection(canvas: &mut Canvas<'_>, title: &str, help: &str) {
     crate::ui::page_heading(canvas, title, help);
 }
 
-pub fn draw_search(
+pub(crate) fn draw_search(
     canvas: &mut Canvas<'_>,
+    library: &LibraryView,
     query: &str,
     results: &[Track],
     key_index: usize,
@@ -242,6 +240,7 @@ pub fn draw_search(
         }
         draw_tracks_list(
             canvas,
+            library,
             &title,
             results,
             selected_idx,
@@ -401,6 +400,7 @@ fn collection_row(
     title: &str,
     subtitle: &str,
     trailing: Option<String>,
+    artwork: Option<(&LibraryView, Option<&str>)>,
     selected: bool,
     index: usize,
     transition_t: f32,
@@ -411,12 +411,19 @@ fn collection_row(
     let row_t = ease_out_back(stagger(transition_t, index, 0.06, 0.78));
     let x = x - (1.0 - row_t) * 24.0;
     compact_row(canvas, x, y, w, COLLECTION_ROW_HEIGHT, selected);
+    let text_x = if let Some((library, path)) = artwork {
+        library.artwork(canvas, path, x + 20.0, y + 12.0, 60.0, false);
+        x + 100.0
+    } else {
+        x + 20.0
+    };
+    let text_width = x + w - 142.0 - text_x;
     crate::ui::text_fit(
         canvas,
         title,
-        x + 20.0,
+        text_x,
         y + if subtitle.is_empty() { 21.0 } else { 8.0 },
-        975.0,
+        text_width,
         35.0,
         crate::ui::ink(canvas),
         FontWeight::Bold,
@@ -425,9 +432,9 @@ fn collection_row(
         crate::ui::text_fit(
             canvas,
             subtitle,
-            x + 20.0,
+            text_x,
             y + 46.0,
-            975.0,
+            text_width,
             26.0,
             crate::ui::ink_secondary(canvas),
             FontWeight::Regular,

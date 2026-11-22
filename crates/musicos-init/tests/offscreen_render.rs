@@ -1,6 +1,25 @@
 use musicos_init::app::{Focus, MusicOs, Screen};
-use musicos_init::renderer::{Canvas, Color, Resolution};
+use musicos_init::renderer::{Canvas, Color, CoverArt, Resolution};
 use musicos_init::ui::{legend_bar, status_bar, theme::ThemeName};
+
+#[test]
+fn artwork_rounding_blends_the_corner_without_fading_the_center() {
+    let resolution = Resolution::VGA_4_3;
+    let width = resolution.width as usize;
+    let mut buffer = vec![0; width * resolution.height as usize * 4];
+    let mut canvas = Canvas::new(resolution, &mut buffer).unwrap();
+    let image = CoverArt {
+        width: 1,
+        height: 1,
+        pixels: vec![Color::WHITE],
+    };
+    canvas.clear(Color::BLACK);
+    canvas.draw_image_rounded(&image, 0.0, 0.0, 40.0, 40.0, 20.0, 1.0);
+    let pixel = |x: usize, y: usize| buffer[(y * width + x) * 4];
+    assert_eq!(pixel(0, 0), 0);
+    assert!((1..255).contains(&pixel(3, 2)));
+    assert_eq!(pixel(10, 10), 255);
+}
 
 #[test]
 fn scales_chrome_to_the_framebuffer_without_covering_content() {

@@ -10,7 +10,7 @@ pub mod settings;
 pub mod theme;
 pub mod transitions;
 
-use crate::renderer::{Canvas, Color};
+use crate::renderer::{Canvas, Color, CoverArt};
 
 #[derive(Debug, Clone, Copy)]
 pub enum FontWeight {
@@ -86,6 +86,35 @@ pub fn shell(canvas: &Canvas<'_>) -> Color {
 
 pub fn draw_figma_background(canvas: &mut Canvas<'_>) {
     canvas.clear(shell(canvas));
+}
+
+pub(crate) fn draw_art_wash(canvas: &mut Canvas<'_>, art: &CoverArt, height: f32) {
+    if art.width == 0 || art.height == 0 {
+        return;
+    }
+    let mut channels = [0u32; 3];
+    for y in [1, 2, 3] {
+        for x in [1, 2, 3] {
+            let sample = art.pixels[(y * art.height / 4 * art.width + x * art.width / 4) as usize];
+            for (sum, color) in channels.iter_mut().zip([sample.r, sample.g, sample.b]) {
+                *sum += u32::from(color);
+            }
+        }
+    }
+    let [r, g, b] = channels.map(|channel| (channel / 9) as u8);
+    let base = shell(canvas);
+    let tint = base.mix(Color::rgb(r, g, b), 0.17);
+    let resolution = canvas.resolution();
+    let rows = resolution.scale_y(height).round() as u32;
+    for y in 0..rows {
+        canvas.rect(
+            0.0,
+            y as f32,
+            resolution.width as f32,
+            1.0,
+            tint.mix(base, y as f32 / rows.saturating_sub(1).max(1) as f32),
+        );
+    }
 }
 
 pub fn animated_focus_blue(seconds: f32, phase: f32) -> Color {

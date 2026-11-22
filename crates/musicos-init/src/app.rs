@@ -1897,6 +1897,7 @@ impl MusicOs {
                     .unwrap_or("Playlist Tracks");
                 ui::music::draw_tracks_list(
                     canvas,
+                    &self.library_view,
                     title,
                     &self.tracks_queue,
                     self.selected_index,
@@ -1908,6 +1909,7 @@ impl MusicOs {
             }
             Screen::Queue => ui::music::draw_tracks_list(
                 canvas,
+                &self.library_view,
                 self.active_language.translate("queue"),
                 &self.tracks_queue,
                 self.selected_index,
@@ -1918,6 +1920,7 @@ impl MusicOs {
             ),
             Screen::Search => ui::music::draw_search(
                 canvas,
+                &self.library_view,
                 &self.search_query,
                 &self.search_results,
                 self.search_key_index,
