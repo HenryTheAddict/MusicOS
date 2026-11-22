@@ -16,22 +16,27 @@ pub(crate) struct AlbumPreview {
 }
 
 pub(crate) fn artist_preview(tracks: &[Track]) -> Option<CoverArt> {
+    artist_portraits(tracks)
+        .into_values()
+        .find_map(|path| crate::media::load_cover_art_thumbnail(Path::new(&path), 384))
+}
+
+pub(crate) fn artist_portraits(tracks: &[Track]) -> BTreeMap<String, String> {
     let root = Path::new(&assets_dir()).join("artists");
-    let mut portraits = std::fs::read_dir(root)
-        .ok()?
+    std::fs::read_dir(root)
+        .into_iter()
         .flatten()
+        .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("png"))
-        .collect::<Vec<_>>();
-    portraits.sort();
-    portraits.into_iter().find_map(|path| {
-        let name = path.file_stem()?.to_str()?;
-        tracks
-            .iter()
-            .any(|track| track.artist.eq_ignore_ascii_case(name))
-            .then(|| crate::media::load_cover_art_thumbnail(&path, 384))
-            .flatten()
-    })
+        .filter_map(|path| {
+            let name = path.file_stem()?.to_str()?;
+            let artist = tracks
+                .iter()
+                .find(|track| track.artist.eq_ignore_ascii_case(name))?;
+            Some((artist.artist.clone(), path.to_str()?.to_owned()))
+        })
+        .collect()
 }
 
 pub(crate) fn album_previews(tracks: &[Track]) -> (Vec<AlbumPreview>, usize) {

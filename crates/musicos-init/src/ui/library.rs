@@ -65,6 +65,11 @@ impl LibraryView {
                 }
             }
         }
+        for (name, portrait) in super::home::artist_portraits(tracks) {
+            if let Some(artist) = self.artists.get_mut(&name) {
+                artist.cover = Some(portrait);
+            }
+        }
     }
 
     fn with_art(&self, path: &str, draw: impl FnOnce(&CoverArt)) -> bool {

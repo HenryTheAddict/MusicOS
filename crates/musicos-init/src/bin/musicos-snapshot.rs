@@ -240,241 +240,82 @@ fn write_motion_frames(mut app: MusicOs, output: &Path, bgra: &mut [u8]) -> Resu
     Ok(())
 }
 
+#[derive(serde::Deserialize)]
+struct SnapshotAlbum {
+    key: String,
+    artist: String,
+    title: String,
+    bundled_cover: Option<String>,
+    tracks: Vec<(String, i32, i32, i32)>,
+}
+
 fn seed_library(app: &mut MusicOs) -> Result<()> {
-    const FEATURED: [(&str, &str, &str, &[&str]); 6] = [
-        (
-            "Tame Impala",
-            "The Slow Rush",
-            "SlowRush.png",
-            &[
-                "One More Year",
-                "Instant Destiny",
-                "Borderline",
-                "Posthumous Forgiveness",
-                "Breathe Deeper",
-            ],
-        ),
-        (
-            "Tame Impala",
-            "Currents",
-            "Currents.png",
-            &["Let It Happen", "Nangs", "The Moment"],
-        ),
-        (
-            "Gorillaz",
-            "Demon Days",
-            "DemonDays.png",
-            &[
-                "Intro",
-                "Last Living Souls",
-                "Kids with Guns",
-                "Feel Good Inc.",
-            ],
-        ),
-        (
-            "Imagine Dragons",
-            "Night Visions",
-            "NightVisions.png",
-            &["Radioactive", "Tiptoe", "It's Time"],
-        ),
-        ("Luna", "Flamingo", "Flamingo.png", &["Pink", "Blue Hour"]),
-        (
-            "M83",
-            "Hurry Up, We're Dreaming",
-            "Sea.png",
-            &["Intro", "Midnight City", "Reunion"],
-        ),
-    ];
-    const ARTISTS: [&str; 33] = [
-        "Aerial Rooms",
-        "Amber Arcade",
-        "Atlas Bloom",
-        "Blue Hours",
-        "Caldera",
-        "Cedar Sound",
-        "Common Weather",
-        "Dawn Assembly",
-        "Delta Coast",
-        "Ember Field",
-        "Far Meridian",
-        "Field Notes",
-        "Glass Atlas",
-        "Harborlight",
-        "Inland Current",
-        "Juniper",
-        "Kite Lines",
-        "Low Sun",
-        "Mallow",
-        "Mirror District",
-        "North Transit",
-        "Orchard Radio",
-        "Paper Kites",
-        "Quiet Avenue",
-        "River Index",
-        "Salt Circuit",
-        "Soft Signal",
-        "Still Summer",
-        "The Night Ferry",
-        "Thread Count",
-        "Valley Echo",
-        "Westward",
-        "Wild Static",
-    ];
-    const TITLES: [&str; 16] = [
-        "Low Water",
-        "Mirror Lake",
-        "Night Window",
-        "Open Road",
-        "Paper Lanterns",
-        "Quiet Company",
-        "Room Tone",
-        "Salt Lines",
-        "Still Frames",
-        "Telephone Wires",
-        "The Long Way",
-        "Tidal Pool",
-        "Under Glass",
-        "Velvet Sky",
-        "Waterline",
-        "Winter Light",
-    ];
+    let albums: Vec<SnapshotAlbum> = serde_json::from_str(include_str!("snapshot-library.json"))?;
     let assets = musicos_init::ui::assets_dir();
-    let assets = Path::new(&assets);
-    let cover_dir = if assets.is_dir() {
-        assets.join("covers")
+    let covers = Path::new(&assets).join("covers");
+    let covers = if covers.is_dir() {
+        covers
     } else {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/covers")
     };
     let local = std::env::var_os("MUSICOS_SNAPSHOT_ART_DIR").map(std::path::PathBuf::from);
-    let fallback = [
-        "Apart.png",
-        "Baltimore.png",
-        "Beach.png",
-        "Cave.png",
-        "Clouds.png",
-        "Crowd.png",
-        "Hills.png",
-        "Lake.png",
-        "Overcast.png",
-        "Pier.png",
-        "Rocks.png",
-        "Sand.png",
-        "Towers.png",
-        "Vacate.png",
-        "sky.png",
-        "skate.png",
-    ];
+    let mut playback_ids = Vec::new();
     let mut ids = Vec::new();
-    for index in 0..64 {
-        let featured = FEATURED.get(index);
-        let artist = featured.map_or_else(
-            || ARTISTS[(index - FEATURED.len()) % ARTISTS.len()],
-            |entry| entry.0,
-        );
-        let album = featured.map_or_else(
-            || {
-                let adjective = [
-                    "Northern", "Open", "Quiet", "Silver", "Still", "Summer", "Tidal", "Winter",
-                ];
-                let noun = [
-                    "Arc", "Coast", "Current", "Field", "Light", "Signal", "Sky", "Water",
-                ];
-                format!("{} {}", adjective[index % 8], noun[index / 8])
-            },
-            |entry| entry.1.to_owned(),
-        );
-        let file = featured.map_or(fallback[index % fallback.len()], |entry| entry.2);
-        let filename = if featured.is_some() {
-            file.to_owned()
-        } else {
-            format!("{index:02}.png")
-        };
-        let art = local
+    for album in &albums {
+        let artwork = local
             .as_ref()
-            .map(|root| root.join(filename))
+            .map(|root| root.join(format!("{}.jpg", album.key)))
             .filter(|path| path.is_file())
-            .unwrap_or_else(|| cover_dir.join(file));
+            .or_else(|| album.bundled_cover.as_ref().map(|file| covers.join(file)));
         let mut album_ids = Vec::new();
-        for number in 0..(12 + usize::from(index < 44)) {
-            let title = featured
-                .and_then(|entry| entry.3.get(number))
-                .map(|title| (*title).to_owned())
-                .unwrap_or_else(|| {
-                    let suffixes = [
-                        "at Dawn",
-                        "at Dusk",
-                        "in Blue",
-                        "in Bloom",
-                        "in June",
-                        "in Motion",
-                        "in the Rain",
-                        "on Film",
-                        "on the Coast",
-                        "Under Glass",
-                        "Underwater",
-                        "Without Signal",
-                    ];
-                    format!(
-                        "{} {}",
-                        TITLES[(number + index * 7) % TITLES.len()],
-                        suffixes[(index + number * 5) % suffixes.len()]
-                    )
-                });
-            let duration = if index == 0 && number == 0 {
-                327
-            } else {
-                158 + (index * 43 + number * 31) % 191
-            };
+        for (title, duration, disc, number) in &album.tracks {
             let id = app.db.insert_track_with_number(
-                &format!("/music/{index:02}/{:02}.ogg", number + 1),
-                &title,
-                artist,
-                &album,
-                number as i32 + 1,
-                duration as i32,
+                &format!("/fixture/{}/{disc}-{number}.flac", album.key),
+                title,
+                &album.artist,
+                &album.title,
+                *number,
+                *duration,
                 1,
                 1,
             )?;
-            app.db.set_track_cover_art(id, art.to_str(), 1)?;
-            if (index + number) % 29 == 0 {
-                app.db.toggle_favorite(id)?;
+            if let Some(path) = &artwork {
+                app.db.set_track_cover_art(id, path.to_str(), 1)?;
             }
-            if (index + number) % 17 == 3 {
-                app.db.set_track_rating(id, 4)?;
+            if *number == 2 {
+                app.db.toggle_favorite(id)?;
             }
             album_ids.push(id);
         }
+        if album.key == "the-slow-rush" {
+            playback_ids.clone_from(&album_ids);
+        }
         ids.push(album_ids);
     }
-    for (index, name) in [
-        "After Hours",
-        "Coastline",
-        "Daybreak",
-        "Deep Focus",
-        "Headphones On",
-        "Late Night Drive",
-        "New Finds",
-        "On Repeat",
-        "Weekend Mix",
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let id = app.db.create_playlist(name)?;
-        let tracks = (0..18 + index)
-            .map(|row| ids[(row * 7 + index + 1) % ids.len()][row % 12])
-            .collect::<Vec<_>>();
-        app.db.add_tracks_to_playlist(id, &tracks)?;
+
+    for (name, offset) in [("Evening", 0), ("On Repeat", 1), ("Weekend Mix", 2)] {
+        let playlist = app.db.create_playlist(name)?;
+        let tracks: Vec<_> = ids
+            .iter()
+            .filter_map(|album| album.get(offset).copied())
+            .collect();
+        app.db.add_tracks_to_playlist(playlist, &tracks)?;
     }
     app.refresh_library();
-    let tracks = app.db.get_tracks()?;
-    if let Some(track) = tracks.iter().find(|track| track.id == ids[0][0]) {
+
+    let queue = playback_ids
+        .into_iter()
+        .map(|id| app.db.get_track_by_id(id))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if let Some(track) = queue.first() {
         app.current_cover_art = track
             .cover_art_path
             .as_deref()
             .and_then(|path| musicos_init::media::load_cover_art_file(Path::new(path)));
-        let mut queue = vec![track.clone()];
-        queue.extend(app.db.get_playlist_tracks(app.playlists_list[0].id)?);
+        app.current_track_id = Some(track.id);
         app.player.restore_queue_paused(queue, 0, 118.0);
     }
     Ok(())
@@ -514,15 +355,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn snapshot_library_has_album_art_throughout_the_catalog() -> Result<()> {
+    fn snapshot_library_uses_the_real_desktop_album_catalog() -> Result<()> {
         let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
         seed_library(&mut app)?;
         let tracks = app.db.get_tracks()?;
-        assert_eq!(tracks.len(), 812);
-        assert_eq!(app.albums_list.len(), 64);
-        assert_eq!(app.artists_list.len(), 38);
-        assert_eq!(app.playlists_list.len(), 9);
-        assert!(tracks.iter().all(|track| track.cover_art_path.is_some()));
+        assert_eq!(tracks.len(), 172);
+        assert_eq!(app.albums_list.len(), 12);
+        assert_eq!(
+            app.artists_list,
+            [
+                "Arctic Monkeys",
+                "Coldplay",
+                "Daft Punk",
+                "Frank Ocean",
+                "Gorillaz",
+                "M83",
+                "Tame Impala"
+            ]
+        );
+        assert_eq!(app.playlists_list.len(), 3);
+        assert!(tracks.iter().any(|track| track.artist == "Daft Punk"
+            && track.title == "One More Time"
+            && track.cover_art_path.is_some()));
+        if std::env::var_os("MUSICOS_SNAPSHOT_ART_DIR").is_some() {
+            assert!(tracks.iter().all(|track| track.cover_art_path.is_some()));
+        }
         assert!(app.current_cover_art.is_some());
         Ok(())
     }
