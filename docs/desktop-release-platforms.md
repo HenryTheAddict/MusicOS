@@ -31,9 +31,24 @@ Tauri's default is 10.13, but that was not a truthful effective minimum:
   likewise names its Mac wheels `macosx_14_0_arm64`.
 - Neither that distribution nor the official
   [Microsoft.ML.OnnxRuntime 1.31.0 NuGet package](https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/1.31.0/microsoft.ml.onnxruntime.1.31.0.nupkg)
-  contains an Intel Mac library. The Intel job builds CPU ONNX Runtime from the
-  release commit `402979ac1bef89dcd55add41eaa7277c407599eb`, recorded in that
-  package's `.nuspec` repository and release metadata. It sets
+  contains an Intel Mac library. The Intel job builds CPU ONNX Runtime from
+  [FreeBSD's cached upstream 1.31.0 source archive](http://distcache.FreeBSD.org/ports-distfiles/onnxruntime/microsoft-onnxruntime-v1.31.0_GH0.tar.gz).
+  Before extracting, it verifies SHA-256
+  `a7e84230b5d509e48fbd6b73c2453a56345ccb22da34a46dac1f0cb4a2d6507b`,
+  independently published in the pinned
+  [FreeBSD distinfo](https://raw.githubusercontent.com/freebsd/freebsd-ports/1b7fa2671caf10e13faec991ed8de42e5c2acd3e/misc/onnxruntime/distinfo)
+  and [Homebrew formula](https://raw.githubusercontent.com/Homebrew/homebrew-core/f5321f5c2212cde1695609caf0155a8a8fc3b191/Formula/o/onnxruntime.rb).
+  The cache uses HTTP; the pinned checksum authenticates its contents, and TLS
+  verification is never disabled. This avoids the unavailable upstream GitHub
+  repository without changing the runtime version.
+  The non-Git source tree uses `--skip_submodule_sync`; CMake fetches ONNX and
+  other dependencies from the URLs in the archive's `cmake/deps.txt`. The archive
+  checksum pins ONNX Runtime's own source only: upstream CMake checks most, but
+  not all, of those downloads against their listed hashes (Boost.MP11, for
+  example, is fetched without one).
+  Optional CMake Git discovery is disabled so build metadata cannot pick up the
+  enclosing MusicOS checkout. `CMAKE_POLICY_VERSION_MINIMUM=3.5` supports older
+  dependency projects with CMake 4. The build sets
   `CMAKE_OSX_ARCHITECTURES=x86_64` and `CMAKE_OSX_DEPLOYMENT_TARGET=14.0`, and
   stages the resulting versioned dylib and upstream license notices.
   Intel release builds load the copy in `Contents/Frameworks`, which Tauri signs
@@ -42,7 +57,7 @@ Tauri's default is 10.13, but that was not a truthful effective minimum:
   ad-hoc case). Development and Apple Silicon runtime paths are unchanged.
   See the upstream [native CPU build instructions](https://onnxruntime.ai/docs/build/inferencing.html).
 - The workflow checks the staged dylib's native architecture with `lipo` and its
-  minimum OS with `otool` before packaging. Source checkout, compilation and the
+  minimum OS with `otool` before packaging. Intel compilation and the
   resulting Intel load commands still need a real Mac release run for validation.
 - There are **no bundled FFmpeg executables or dylibs** in the existing desktop
   resource configuration. Audio decoding uses Rust/rodio/Symphonia. Optional
