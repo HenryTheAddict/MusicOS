@@ -52,9 +52,11 @@ Tauri's default is 10.13, but that was not a truthful effective minimum:
 The Intel runner is documented in GitHub's
 [hosted runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 and [Intel macOS 15 announcement](https://github.com/actions/runner-images/issues/13045).
-Intel releases require Developer ID signing and notarization credentials; they
-cannot use the existing Apple Silicon job's ad-hoc signing fallback. After
-bundling, `codesign`, Gatekeeper and the stapler validate the Intel application.
+Both Mac jobs use Developer ID signing when configured, otherwise they fall back
+to ad-hoc signing with `APPLE_SIGNING_IDENTITY=-`. Notarization is available when
+the Apple credentials are configured, but is not required. After bundling,
+`codesign --verify --deep --strict` validates the Intel application with either
+signature type.
 
 ## Arch packaging
 

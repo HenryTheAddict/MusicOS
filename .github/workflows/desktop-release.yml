@@ -143,7 +143,6 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
           BUNDLES: ${{ matrix.bundles }}
-          PLATFORM: ${{ matrix.platform }}
           MUSICOS_SPARK_MODEL_SOURCE: ${{ github.workspace }}/out/desktop-model/clap-general-v1
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -162,14 +161,6 @@ jobs:
             export LIBCLANG_PATH='C:\Program Files\LLVM\bin'
           fi
           if [[ "$RUNNER_OS" == macOS ]]; then
-            if [[ "$PLATFORM" == darwin-x86_64 ]]; then
-              for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
-                if [[ -z "${!name}" || "${!name}" == - ]]; then
-                  echo "Intel Mac releases require $name for Developer ID signing and notarization." >&2
-                  exit 1
-                fi
-              done
-            fi
             if [[ -z "$APPLE_CERTIFICATE" && -z "$APPLE_SIGNING_IDENTITY" ]]; then
               export APPLE_SIGNING_IDENTITY=-
             fi
@@ -178,12 +169,10 @@ jobs:
             done
           fi
           npm run tauri -- build --ci --bundles "$BUNDLES" --config out/desktop-release/tauri.conf.json -- --locked
-      - name: Verify Intel Developer ID signature and notarization
+      - name: Verify Intel application signature
         if: matrix.platform == 'darwin-x86_64'
         run: |
           codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/musicOS.app
-          spctl --assess --type execute --verbose=2 target/release/bundle/macos/musicOS.app
-          xcrun stapler validate target/release/bundle/dmg/*.dmg
       - name: Stage signed bundles
         env:
           PLATFORM: ${{ matrix.platform }}
