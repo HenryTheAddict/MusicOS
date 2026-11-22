@@ -4,17 +4,20 @@ musicOS is a React + Tauri 2 desktop music player with DJ mode and library
 management, an embedded handheld OS for the Anbernic RG35XX 2024 / Allwinner
 H700, and companion mobile apps.
 
-![musicOS desktop album library in light mode, with artwork-tinted colors and a track playing](docs/images/desktop-light.png)
+![musicOS desktop Albums grid with pink artwork-tinted colors and playback controls](docs/images/desktop-albums.png)
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/images/desktop-dark.png" alt="musicOS album library in dark mode"><br><sub>Desktop · Dark appearance</sub></td>
-    <td width="33%"><img src="docs/images/desktop-playing.png" alt="musicOS Now Playing with album artwork and playback controls"><br><sub>Desktop · Now Playing</sub></td>
+    <td width="33%"><img src="docs/images/desktop-lyrics.png" alt="musicOS Now Playing with album artwork and synchronized lyrics"><br><sub>Desktop · Lyrics</sub></td>
+    <td width="33%"><img src="docs/images/desktop-artist.png" alt="musicOS PinkPantheress artist page with albums and songs"><br><sub>Desktop · Artist page</sub></td>
+    <td width="33%"><img src="docs/images/desktop-visualizer.png" alt="musicOS full-screen visualizer with album artwork and playback controls"><br><sub>Desktop · Visualizer</sub></td>
+  </tr>
+  <tr>
+    <td width="33%"><img src="docs/images/compact-albums.png" alt="musicOS album library in a compact blue window"><br><sub>Compact window · Blue</sub></td>
+    <td width="33%"><img src="docs/images/compact-tall.png" alt="musicOS in a tall compact window with red artwork-tinted colors"><br><sub>Compact window · Red</sub></td>
     <td width="33%"><img src="docs/images/handheld-home.png" alt="musicOS handheld Home with navigation rows and an album artwork preview"><br><sub>Handheld · Home (upcoming UI, PR #42)</sub></td>
   </tr>
 </table>
-
-<sub>Desktop screenshots use the browser preview with fixture library and playback data.</sub>
 
 Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
 
@@ -396,4 +399,3 @@ Control Center workflow. KNULLI/RG35XX payload builds use `pid1,device-audio`,
 which enables the ALSA probing and playback path used on device. The legacy
 `audio` feature remains available as a compatibility umbrella for both audio
 backends.
-
