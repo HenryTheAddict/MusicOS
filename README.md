@@ -1,64 +1,34 @@
 # musicOS
 
+musicOS is a React + Tauri 2 desktop music player with DJ mode and library
+management, an embedded handheld OS for the Anbernic RG35XX 2024 / Allwinner
+H700, and companion mobile apps.
+
 Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
 
-Minimal Rust-first embedded Linux shell for low-energy music hardware. The first
-target is Anbernic RG35XX 2024 / Allwinner H700, with a real QEMU aarch64 boot
-target and a desktop preview loop for Windows, macOS, and Linux development.
+## Download
 
-## What Is Implemented
+Get the [0.1.1 beta (v0.1.1)](https://github.com/HenryTheAddict/MusicOS/releases/tag/v0.1.1):
 
-- Rust `musicos-init` binary intended to install as `/sbin/init`.
-- PID 1 setup for `/proc`, `/sys`, `/dev`, `/run`, and `/var/lib/musicos`.
-- Classic-iPod-inspired setup, home, music, now-playing, settings, status, and
-  overlay screens with restrained accent themes.
-- Raster Gothic font rendering from the bundled font archive.
-- `640x480` and `1280x960` logical display modes.
-- Linux framebuffer rendering with in-memory fallback for host checks.
-- evdev gamepad/button input and Apple TV-style swipe/tap navigation.
-- SQLite media indexer for local MicroSD-style media folders.
-- USB sync path that indexes mounted media and a Settings `Get Update` action
-  that installs `musicos-init` updates from USB storage.
-- Native desktop app target for Windows/macOS/Linux UI testing.
-- Legacy GPUI `MusicOS Control Center` for Windows, macOS, and Linux, with an
-  iTunes 9-inspired library shell, virtualized song rows, Cover Flow, playback
-  chrome, device operations, diagnostics, and local emulator controls.
-- Framework-independent Rust services for managed imports, reference sources,
-  sync, transcoding, playlist reconciliation, persistence, and runtime process
-  management.
-- `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
-  USB update staging/install checks, settings, devices, and doctor output.
-- Smart dynamic mixes, playback history, queue maintenance, seek controls,
-  sleep timer commands, motion/performance settings, and cover-art cache tools.
-- Ordered playlist tracks, sync dry-run/retry tools, database repair, changed
-  versus full library rescans, and frame timing diagnostics.
-- Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
-- QEMU launch script using `qemu-system-aarch64 -M virt -cpu cortex-a53`.
+| Platform | Download |
+| --- | --- |
+| macOS 14 Sonoma or later, Apple Silicon | [DMG](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_darwin-aarch64.dmg) |
+| Windows x64 | [Installer](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_windows-x86_64-setup.exe) |
+| Linux x86_64 | [AppImage](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_linux-x86_64.AppImage) |
 
-## Quick Checks
+The macOS build needs macOS 14 Sonoma or later and is Apple Silicon only for now. Intel Mac and Arch packages
+are being added separately.
 
-```sh
-scripts/check-host.sh
-```
-
-On Windows PowerShell:
-
-```powershell
-.\scripts\check-host.ps1
-```
-
-## Android offline player
-
-The native Android app copies selected music, artwork and collection sequences from the Mac over encrypted Wi-Fi, then plays independently offline. Mac **Devices** handles sharing and phone approval. The phone provides a background audio session, media notifications, a persistent queue, lock-screen/headset controls and the supplied Sketch/Figtree presentation.
-
-See [Android setup, build and transfer contract](docs/android-offline-sync.md). This is separate from the embedded MusicOS OS image and desktop runtime/model bundle.
+Supported release builds offer manual update checks in **Settings → General →
+Software updates**. See [Desktop releases and in-app updates](docs/desktop-releases.md)
+for supported formats and update behavior.
 
 ## React desktop app
 
 The default desktop is now React + TypeScript in Tauri 2, backed by the existing
 Rust library, audio, metadata, and device services without GPUI. It uses the
-Sketch blue appearance and bundled Rodin fonts, native macOS window controls,
-and ordinary overflow scrolling.
+Sketch-based visual design and bundled Figtree fonts, native macOS window
+controls, and ordinary overflow scrolling.
 
 ```sh
 ./run.sh                 # install JS dependencies if needed; launch Tauri dev
@@ -108,14 +78,61 @@ npm run package:legacy      # legacy cargo-packager workflow
 ```
 
 PowerShell GPUI launcher: `scripts/run-desktop-gpui.ps1`.
-The embedded MusicOS runtime and its `musicos-mac` preview remain unchanged by
+The embedded musicOS runtime and its `musicos-mac` preview remain unchanged by
 the React rewrite. To launch that runtime directly:
 
 ```sh
 cargo run --bin musicos-mac --features desktop-app,desktop-audio
 ```
 
-## MusicOS CLI
+## Android offline player
+
+The native Android app copies selected music, artwork and collection sequences from the Mac over encrypted Wi-Fi, then plays independently offline. Mac **Devices** handles sharing and phone approval. The phone provides a background audio session, media notifications, a persistent queue, lock-screen/headset controls and the supplied Sketch/Figtree presentation.
+
+See [Android setup, build and transfer contract](docs/android-offline-sync.md). This is separate from the embedded musicOS OS image and desktop runtime/model bundle.
+
+## Embedded and shared capabilities
+
+- Rust `musicos-init` binary intended to install as `/sbin/init`.
+- PID 1 setup for `/proc`, `/sys`, `/dev`, `/run`, and `/var/lib/musicos`.
+- Classic-iPod-inspired setup, home, music, now-playing, settings, status, and
+  overlay screens with restrained accent themes.
+- Raster Gothic font rendering from the bundled font archive.
+- `640x480` and `1280x960` logical display modes.
+- Linux framebuffer rendering with in-memory fallback for host checks.
+- evdev gamepad/button input and Apple TV-style swipe/tap navigation.
+- SQLite media indexer for local MicroSD-style media folders.
+- USB sync path that indexes mounted media and a Settings `Get Update` action
+  that installs `musicos-init` updates from USB storage.
+- Native desktop app target for Windows/macOS/Linux UI testing.
+- Legacy GPUI `MusicOS Control Center` for Windows, macOS, and Linux, with an
+  iTunes 9-inspired library shell, virtualized song rows, Cover Flow, playback
+  chrome, device operations, diagnostics, and local emulator controls.
+- Framework-independent Rust services for managed imports, reference sources,
+  sync, transcoding, playlist reconciliation, persistence, and runtime process
+  management.
+- `musicos` CLI for library scans, stats, playlists, sync dry-run planning,
+  USB update staging/install checks, settings, devices, and doctor output.
+- Smart dynamic mixes, playback history, queue maintenance, seek controls,
+  sleep timer commands, motion/performance settings, and cover-art cache tools.
+- Ordered playlist tracks, sync dry-run/retry tools, database repair, changed
+  versus full library rescans, and frame timing diagnostics.
+- Buildroot external tree for `musicos-qemu` and `musicos-rg35xx`.
+- QEMU launch script using `qemu-system-aarch64 -M virt -cpu cortex-a53`.
+
+## Quick checks
+
+```sh
+scripts/check-host.sh
+```
+
+On Windows PowerShell:
+
+```powershell
+.\scripts\check-host.ps1
+```
+
+## musicOS CLI
 
 Run the CLI through npm or Cargo:
 
@@ -155,7 +172,7 @@ update, and companion upload paths. `sync start --dry-run` never writes to a
 device. `sync start desktop` uploads files from `MUSICOS_SYNC_DIR` to
 `MUSICOS_SYNC_TARGET` using the same `/api/upload` headers as the Control Center,
 then triggers one `/api/control` library scan. You can also pass an explicit
-`http://host:port` target as the device id for a reachable MusicOS companion API.
+`http://host:port` target as the device id for a reachable musicOS companion API.
 
 ### Agent sync CLI
 
@@ -226,8 +243,8 @@ Useful runtime APIs:
 - `POST /api/library/rescan` with `{ "mode": "changed" | "full" }` starts a
   bounded scan using changed-file skips or a full metadata/art refresh.
 - `POST /api/sync-usb` scans configured/removable USB roots, indexes USB media,
-  stages MusicOS update payloads, and installs update targets when present.
-- `POST /api/updates/install` installs an already-staged MusicOS binary or
+  stages musicOS update payloads, and installs update targets when present.
+- `POST /api/updates/install` installs an already-staged musicOS binary or
   system image update without requiring another USB scan.
 - `PUT /api/playlists/:id/tracks/reorder` with `{ "track_ids": [...] }`
   persists manual playlist order.
@@ -235,10 +252,11 @@ Useful runtime APIs:
   timer, and smart-mix commands and returns an acknowledged command result with
   the current player revision.
 
-GitHub Actions CI is defined in `.github/workflows/ci.yml`. The native Control
-Center checks, tests, and release-builds on macOS, Windows, and Linux; the
-temporary compatibility job continues to exercise the Electron renderer and
-legacy Node parity tests until the cutover gate is complete.
+GitHub Actions CI is defined in `.github/workflows/ci.yml`. The legacy native
+Control Center is checked, tested, and release-built on macOS, Windows, and
+Linux. React and Tauri builds and tests also run on all three platforms, with
+browser integration checks on Linux and additional Windows workspace and
+runtime performance checks.
 
 For static visual snapshots:
 
@@ -265,7 +283,7 @@ $env:MUSICOS_UPDATE_STAGING = "out\staged-update"
 cargo test --workspace --features desktop-app,desktop-audio
 ```
 
-For a USB update, put a new MusicOS image at one of these paths on the USB
+For a USB update, put a new musicOS image at one of these paths on the USB
 drive: `musicos-update/musicos-knulli-ui.squashfs`,
 `musicos-update/musicos-knulli-root.squashfs`, `MusicOS/update/knulli`, or
 `knulli`. The updater also still accepts raw `musicos-init` ELF binaries at
@@ -273,21 +291,21 @@ drive: `musicos-update/musicos-knulli-ui.squashfs`,
 On device, open Settings, choose `Get Update`, then restart after the status
 screen reports the update was installed.
 
-## QEMU Build And Run
+## QEMU build and run
 
 ```sh
 scripts/build-qemu.sh
 scripts/run-qemu.sh
 ```
 
-To run QEMU and the Electron Control Center together:
+To run QEMU and the legacy native GPUI Control Center together:
 
 ```sh
 scripts/run-qemu-sync.sh
 ```
 
 `scripts/run-qemu.sh` defaults to `MUSICOS_QEMU_NET=sync`, which forwards the
-guest MusicOS API on port `8080` to `http://127.0.0.1:18080` for the Control
+guest musicOS API on port `8080` to `http://127.0.0.1:18080` for the Control
 Center.
 Use `MUSICOS_QEMU_NET=none scripts/run-qemu.sh` for the fully offline QEMU run,
 or `MUSICOS_QEMU_HOST_PORT=18081 scripts/run-qemu-sync.sh` if port `18080` is
@@ -324,7 +342,7 @@ The container wrapper builds a cached local image named
 `musicos-buildroot:24.04` so subsequent retries do not reinstall Ubuntu build
 dependencies.
 
-To flash the current KNULLI-backed MusicOS image to an attached RG35XX SD card:
+To flash the current KNULLI-backed musicOS image to an attached RG35XX SD card:
 
 ```sh
 scripts/flash-knulli-music-os.sh /dev/diskN
