@@ -12,11 +12,11 @@ Get the [0.1.1 beta (v0.1.1)](https://github.com/HenryTheAddict/MusicOS/releases
 
 | Platform | Download |
 | --- | --- |
-| macOS 11 Big Sur or later, Apple Silicon | [DMG](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_darwin-aarch64.dmg) |
+| macOS 14 Sonoma or later, Apple Silicon | [DMG](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_darwin-aarch64.dmg) |
 | Windows x64 | [Installer](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_windows-x86_64-setup.exe) |
 | Linux x86_64 | [AppImage](https://github.com/HenryTheAddict/MusicOS/releases/download/v0.1.1/musicOS_0.1.1_linux-x86_64.AppImage) |
 
-The macOS build needs macOS 11 Big Sur or later and is Apple Silicon only for now. Intel Mac and Arch packages
+The macOS build needs macOS 14 Sonoma or later and is Apple Silicon only for now. Intel Mac and Arch packages
 are being added separately.
 
 Supported release builds offer manual update checks in **Settings → General →
