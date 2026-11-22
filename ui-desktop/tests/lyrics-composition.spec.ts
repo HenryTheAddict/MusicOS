@@ -69,7 +69,8 @@ test('timed lyrics show sung, in-progress and upcoming words without changing th
  const inProgress=line.locator('.lyric-word[data-word-active=true]');
  await expect(inProgress).toHaveText('to');
  await expect(inProgress).toHaveAttribute('data-weight-text','to');
- const style=await inProgress.evaluate(el=>{const s=getComputedStyle(el,'::after');return {fill:s.backgroundImage,weight:s.fontWeight};});
+ const style=await inProgress.evaluate(el=>{const s=getComputedStyle(el,'::after');return {fill:s.backgroundImage,weight:s.fontWeight,content:s.content};});
+ expect(style.content).toMatch(/^"to"/);
  const {fill}=style;
  expect(fill).toContain('38%');
  expect(fill).toContain('62%');
@@ -95,6 +96,7 @@ test('line timed lyrics keep fixed word geometry as the next cue becomes bold',a
  const lyrics=page.getByRole('region',{name:'Lyrics',exact:true});
  const next=lyrics.getByRole('button',{name:/Let the evening unfold/});
  const token=next.locator('.lyric-line-ink').first();
+ await expect.poll(()=>token.evaluate(el=>getComputedStyle(el,'::after').content)).toMatch(/^"Let"/);
  const weight=()=>token.evaluate(el=>getComputedStyle(el,'::after').fontWeight);
  const width=()=>token.evaluate(el=>el.getBoundingClientRect().width);
  await expect.poll(weight).toBe('300');
