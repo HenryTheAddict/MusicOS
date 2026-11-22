@@ -44,8 +44,14 @@ test('a long timed intro centers its pause and resumes normal lyric following',a
  const pane=page.getByRole('region',{name:'Lyrics',exact:true});
  await expect(pane).toHaveAttribute('data-lyric-pause','true');
  await expect(pane.locator('.lyric-pause[data-current=true]')).toBeVisible();
+ const progress=pane.getByRole('progressbar',{name:'Instrumental break progress'});
+ await expect(progress).toHaveJSProperty('value',1/6);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(progress).toHaveJSProperty('value',1/6);
  await expect.poll(()=>page.locator('.lyrics-lines').evaluate(host=>{const line=host.querySelector('.lyric-pause[data-current=true]')!.getBoundingClientRect(),box=host.getBoundingClientRect();return Math.abs((line.top+line.height/2-box.top)/box.height-.5);})).toBeLessThan(.06);
  expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((c:any)=>c.command==='playback'))).toHaveLength(0);
+ await page.getByRole('dialog',{name:'Music player'}).getByRole('button',{name:'Play',exact:true}).click();
+ await expect.poll(()=>progress.evaluate(el=>(el as HTMLProgressElement).value)).toBeGreaterThan(1/6);
  await pane.getByRole('button',{name:/Lead: A room full of color/}).evaluate(el=>(el as HTMLButtonElement).click());
  await expect(pane).not.toHaveAttribute('data-lyric-pause','true');
  await expect(pane.locator('.lyric-line[data-current=true]')).toContainText('A room full of color');

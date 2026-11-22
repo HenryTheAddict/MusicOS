@@ -19,23 +19,24 @@ for(const width of [480,1280])test(`lyrics keep their reading space when follow 
  if(width===480)expect(art.y+art.height).toBeLessThan(reading.y);
  else expect(art.x+art.width).toBeLessThan(reading.x);
  const cues=lines.locator('.lyric-line');
- const last=(await cues.last().boundingBox())!;
+ const last=(await cues.filter({visible:true}).last().boundingBox())!;
  expect(last.y+last.height).toBeLessThanOrEqual(reading.y+reading.height);
  for(const reducedMotion of ['no-preference','reduce'] as const){
   await page.emulateMedia({reducedMotion});
-  await expect(cues.nth(0)).toHaveCSS('filter','blur(0.6px)');
+  await expect(cues.nth(0)).toHaveCSS('filter','none');
   await expect(cues.nth(1)).toHaveCSS('filter','none');
-  await expect(cues.nth(2)).toHaveCSS('filter','blur(0.6px)');
-  await expect(cues.nth(3)).toHaveCSS('filter','blur(1.2px)');
-  await expect(cues.nth(0)).toHaveCSS('opacity','0.62');
-  await expect(cues.nth(2)).toHaveCSS('opacity','0.62');
-  await expect(cues.nth(3)).toHaveCSS('opacity','0.52');
+  await expect(cues.nth(2)).toBeVisible();
+  await expect(cues.nth(3)).toBeHidden();
+  await expect(lyrics.getByRole('button',{name:/Carry the sound with you/})).toHaveCount(0);
+  await expect(cues.nth(0)).toHaveCSS('opacity','0.63');
+  await expect(cues.nth(2)).toHaveCSS('opacity','0.63');
  }
  await expect(cues.nth(3)).toHaveCSS('transition-property','none');
 
  await lines.focus();
  await page.keyboard.press('ArrowDown');
  await expect(follow).toBeVisible();
+ await expect(lyrics.getByRole('button',{name:/Carry the sound with you/})).toBeVisible();
  const action=(await follow.boundingBox())!;
  expect(action.height).toBeGreaterThanOrEqual(44);
  expect(action.y).toBeGreaterThanOrEqual(reading.y+reading.height);
@@ -47,6 +48,7 @@ for(const width of [480,1280])test(`lyrics keep their reading space when follow 
  await expect(lyrics).toHaveAttribute('data-following','true');
  await expect(follow).toHaveCount(0);
  await expect(lines).toBeFocused();
+ await expect(cues.nth(3)).toBeHidden();
 });
 
 test('timed lyrics show sung, in-progress and upcoming words without changing their layout',async({page})=>{
@@ -69,11 +71,11 @@ test('timed lyrics show sung, in-progress and upcoming words without changing th
  await expect(inProgress).toHaveAttribute('data-weight-text','to');
  const style=await inProgress.evaluate(el=>{const s=getComputedStyle(el,'::after');return {fill:s.backgroundImage,weight:s.fontWeight};});
  const {fill}=style;
- expect(fill).toContain('42.5%');
- expect(fill).toContain('57.5%');
- expect(style.weight).toBe('575');
+ expect(fill).toContain('38%');
+ expect(fill).toContain('62%');
+ expect(style.weight).toBe('500');
  const weights=()=>words.evaluateAll(nodes=>nodes.map(el=>getComputedStyle(el,'::after').fontWeight));
- expect(await weights()).toEqual(['700','700','700','575','450']);
+ expect(await weights()).toEqual(['700','700','700','500','300']);
  const bounds=()=>words.evaluateAll(nodes=>nodes.map(el=>{
   const word=el.getBoundingClientRect(),cue=el.closest('.lyric-line')!.getBoundingClientRect();
   return [word.x-cue.x,word.y-cue.y,word.width,word.height];
@@ -81,8 +83,31 @@ test('timed lyrics show sung, in-progress and upcoming words without changing th
  const before=await bounds();
  await page.emulateMedia({reducedMotion:'reduce'});
  await expect(inProgress).toHaveCSS('background-image','none');
- await expect.poll(weights).toEqual(['700','700','700','700','450']);
+ await expect.poll(weights).toEqual(['700','700','700','700','300']);
  expect(await inProgress.evaluate(el=>getComputedStyle(el,'::after').backgroundImage)).toBe('none');
  expect(await bounds()).toEqual(before);
  await expect(line).toHaveAttribute('aria-current','true');
+});
+
+test('line timed lyrics keep fixed word geometry as the next cue becomes bold',async({page})=>{
+ await page.goto('/?fixture=1&lyrics=1');
+ await page.getByRole('button',{name:'Open lyrics',exact:true}).click();
+ const lyrics=page.getByRole('region',{name:'Lyrics',exact:true});
+ const next=lyrics.getByRole('button',{name:/Let the evening unfold/});
+ const token=next.locator('.lyric-line-ink').first();
+ const weight=()=>token.evaluate(el=>getComputedStyle(el,'::after').fontWeight);
+ const width=()=>token.evaluate(el=>el.getBoundingClientRect().width);
+ await expect.poll(weight).toBe('300');
+ const before=await width();
+ expect(await token.evaluate(el=>getComputedStyle(el,'::after').transitionProperty)).toBe('font-weight');
+ await next.click();
+ await expect(next).toHaveAttribute('aria-current','true');
+ await expect.poll(weight).toBe('700');
+ expect(await width()).toBe(before);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ const following=lyrics.getByRole('button',{name:/Carry the sound with you/});
+ await following.click();
+ await expect(following).toHaveAttribute('aria-current','true');
+ expect(await following.locator('.lyric-line-ink').first().evaluate(el=>getComputedStyle(el,'::after').transitionProperty)).toBe('none');
+ await expect.poll(weight).toBe('700');
 });

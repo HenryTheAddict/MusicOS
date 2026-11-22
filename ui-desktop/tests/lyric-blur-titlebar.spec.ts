@@ -9,8 +9,8 @@ test('full lyrics stay sharp and use contrast to show the current line',async({p
  await expect(lines).toHaveCount(4);
  await page.mouse.move(10,10);
  await expect(current).toHaveCSS('opacity','1');
- await expect(current).toHaveCSS('font-weight','680');
- await expect(pane.locator('.lyric-line:not([data-current=true],[data-past=true])').first()).toHaveCSS('font-weight','400');
+ const upcoming=pane.locator('.lyric-line:not([data-current=true],[data-past=true])').first();
+ expect(await upcoming.locator('.lyric-word').first().evaluate(el=>getComputedStyle(el,'::after').fontWeight)).toBe('300');
  expect(await current.evaluate(el=>getComputedStyle(el,'::before').content)).toBe('none');
  const surrounding=pane.locator('.lyric-line:not([data-current=true])');
  expect(await surrounding.evaluateAll(rows=>rows.every(row=>{
