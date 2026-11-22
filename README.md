@@ -8,14 +8,15 @@ H700, and companion mobile apps.
 
 <table>
   <tr>
-    <td width="33%"><img src="docs/images/desktop-lyrics.png" alt="musicOS Now Playing with album artwork and synchronized lyrics"><br><sub>Desktop · Lyrics</sub></td>
-    <td width="33%"><img src="docs/images/desktop-artist.png" alt="musicOS PinkPantheress artist page with albums and songs"><br><sub>Desktop · Artist page</sub></td>
-    <td width="33%"><img src="docs/images/desktop-visualizer.png" alt="musicOS full-screen visualizer with album artwork and playback controls"><br><sub>Desktop · Visualizer</sub></td>
+    <td colspan="3" width="25%"><img src="docs/images/desktop-lyrics.png" alt="musicOS Now Playing with album artwork and synchronized lyrics"><br><sub>Desktop · Lyrics</sub></td>
+    <td colspan="3" width="25%"><img src="docs/images/desktop-album.png" alt="musicOS album page for Deadbeat by Tame Impala with artwork and track listing"><br><sub>Desktop · Album page</sub></td>
+    <td colspan="3" width="25%"><img src="docs/images/desktop-artist.png" alt="musicOS PinkPantheress artist page with albums and songs"><br><sub>Desktop · Artist page</sub></td>
+    <td colspan="3" width="25%"><img src="docs/images/desktop-visualizer.png" alt="musicOS full-screen visualizer with album artwork and playback controls"><br><sub>Desktop · Visualizer</sub></td>
   </tr>
   <tr>
-    <td width="33%"><img src="docs/images/compact-albums.png" alt="musicOS album library in a compact blue window"><br><sub>Compact window · Blue</sub></td>
-    <td width="33%"><img src="docs/images/compact-tall.png" alt="musicOS in a tall compact window with red artwork-tinted colors"><br><sub>Compact window · Red</sub></td>
-    <td width="33%"><img src="docs/images/handheld-home.png" alt="musicOS handheld Home with navigation rows and an album artwork preview"><br><sub>Handheld · Home (upcoming UI, PR #42)</sub></td>
+    <td colspan="4" width="33%"><img src="docs/images/compact-albums.png" alt="musicOS album library in a compact blue window"><br><sub>Compact window · Blue</sub></td>
+    <td colspan="4" width="33%"><img src="docs/images/compact-tall.png" alt="musicOS in a tall compact window with red artwork-tinted colors"><br><sub>Compact window · Red</sub></td>
+    <td colspan="4" width="33%"><img src="docs/images/handheld-home.png" alt="musicOS handheld Home with navigation rows and an album artwork preview"><br><sub>Handheld · Home (upcoming UI, PR #42)</sub></td>
   </tr>
 </table>
 
