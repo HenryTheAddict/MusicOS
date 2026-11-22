@@ -6,6 +6,19 @@ H700, and companion mobile apps.
 
 Desktop documentation: [User guide](docs/guide/README.md) · [Architecture and verification](docs/desktop-architecture.md).
 
+### Fictional preview library
+
+Run `npm run dev` and open `http://127.0.0.1:1420/?fixture=1` for an isolated
+development preview. All demo artists, albums, songs and lyrics are fictional;
+the covers are original abstract shapes generated locally, not artist artwork
+or stock photography. Regenerate the artwork with
+`node scripts/generate-demo-artwork.mjs` (requires Playwright Chromium).
+Add `&lyrics=1` to preview the player with synchronized placeholder lyrics.
+
+![Fictional demo album library with original abstract covers](docs/images/demo-albums.png)
+
+![Now Playing with original placeholder lyrics](docs/images/demo-lyrics.png)
+
 ## Download
 
 Get the [0.1.1 beta (v0.1.1)](https://github.com/HenryTheAddict/MusicOS/releases/tag/v0.1.1):
@@ -384,4 +397,3 @@ Control Center workflow. KNULLI/RG35XX payload builds use `pid1,device-audio`,
 which enables the ALSA probing and playback path used on device. The legacy
 `audio` feature remains available as a compatibility umbrella for both audio
 backends.
-

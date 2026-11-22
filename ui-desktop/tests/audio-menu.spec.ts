@@ -7,7 +7,7 @@ test('Audio docks, preserves keyboard focus, and floating preference survives re
  await page.locator('.library-sidebar').click({position:{x:10,y:12}});await expect(panel).toHaveCount(0);
 });
 test('pointer and keyboard queue moves preserve current occurrence, and internal dragging does not import',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const rows=page.locator('.queue-row'),names=await rows.locator('strong').allTextContents();
  const handle=rows.nth(1).getByRole('button',{name:`Play ${names[1]} from queue`,exact:true});const from=await handle.boundingBox(),to=await rows.first().boundingBox();
  await page.mouse.move(from!.x+from!.width/2,from!.y+from!.height/2);await page.mouse.down();await page.mouse.move(to!.x+10,to!.y+to!.height/2,{steps:8});await page.mouse.up();await expect(rows.first().locator('strong')).toHaveText(names[1]);await expect(rows.locator('.active')).toHaveCount(0);await expect(page.locator('.now-playing-info > strong')).toHaveText('Opening');await expect(page.getByText('Drop music or folders',{exact:true})).toHaveCount(0);
@@ -18,7 +18,7 @@ test('pointer and keyboard queue moves preserve current occurrence, and internal
  const cover=await rows.first().locator('.cover').boundingBox(),copy=await rows.first().locator('.queue-track-copy').boundingBox();expect(copy!.x).toBeGreaterThan(cover!.x+cover!.width);expect(Math.abs(copy!.y-cover!.y)).toBeLessThan(12);await page.screenshot({animations:'disabled',path:'out/rebuild-qa/audio-menu-populated.png'});
 });
 test('dragging a repeated song moves only that queue entry; removing it preserves now playing',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const rows=page.locator('.queue-row');await expect(rows).toHaveCount(11);
  const duplicate=rows.filter({has:page.getByRole('button',{name:'Play Opening from queue',exact:true})});
  const source=await duplicate.locator('.cover').boundingBox(),destination=await rows.first().boundingBox();

@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 test('revision return shares progressive cover, fade and toolbar frames',async({page})=>{
  await page.addInitScript(()=>{const run=Element.prototype.animate;(window as any).motion=[];Element.prototype.animate=function(f,o){const a=run.call(this,f,o);(window as any).motion.push(a);return a;};});
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:2000});
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();await expect(page.locator('.album-cover-transfer')).toHaveCount(0,{timeout:2000});
  await page.evaluate(()=>{const run=Element.prototype.animate;Element.prototype.animate=function(f,o){const a=run.call(this,f,o);a.pause();a.currentTime=80;if(this.classList.contains('library-page-exit'))(window as any).returnExit={connected:this.isConnected,opacity:Number(getComputedStyle(this).opacity),inert:this.hasAttribute('inert')};if(this.classList.contains('album-cover-transfer'))(window as any).returnCover=this.isConnected;return a;};});
  await page.locator('.sidebar-back').click();const exit=page.locator('.library-page-exit');
  const frame=await page.evaluate(()=>(window as any).returnExit);expect(frame.connected).toBe(true);expect(frame.opacity).toBeGreaterThan(.01);expect(frame.opacity).toBeLessThan(.99);expect(frame.inert).toBe(true);

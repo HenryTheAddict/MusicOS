@@ -5,10 +5,10 @@ test("SuperCommand searches, creates playlists and supports Escape",async({page}
   await page.keyboard.press('ControlOrMeta+k');
   const dialog=page.getByRole('dialog',{name:'SuperCommand'});
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('combobox').fill('Discovery');
-  await expect(dialog.locator('.command-group[aria-label="Albums"]').getByRole('option').filter({hasText:'Discovery'})).toBeVisible();
-  await dialog.locator('.command-group[aria-label="Albums"]').getByRole('option').filter({hasText:'Discovery'}).click();
-  await expect(page.getByRole('heading',{name:'Discovery',exact:true})).toBeVisible();
+  await dialog.getByRole('combobox').fill('Clockwork Confetti');
+  await expect(dialog.locator('.command-group[aria-label="Albums"]').getByRole('option').filter({hasText:'Clockwork Confetti'})).toBeVisible();
+  await dialog.locator('.command-group[aria-label="Albums"]').getByRole('option').filter({hasText:'Clockwork Confetti'}).click();
+  await expect(page.getByRole('heading',{name:'Clockwork Confetti',exact:true})).toBeVisible();
   await page.keyboard.press('ControlOrMeta+k');
   await dialog.getByRole('combobox').fill('create playlist');
   await expect(dialog.getByRole('option',{name:/Create playlist/})).toHaveAttribute('aria-selected','true');
@@ -27,7 +27,7 @@ test("SuperCommand searches, creates playlists and supports Escape",async({page}
 });
 test('player audio tooltip escapes header clipping and stays inside compact windows',async({page})=>{
   await start(page);
-  await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+  await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();
   await page.getByRole('button',{name:'Play collection',exact:true}).click();
   for(const size of [{width:1280,height:800},{width:720,height:480}]){
     await page.setViewportSize(size);
@@ -47,7 +47,7 @@ test('player audio tooltip escapes header clipping and stays inside compact wind
 });
 test("right-click actions and quality specifications follow the album",async({page})=>{
   await start(page);
-  await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+  await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();
   const quality=page.locator('.album-copy .audio-quality');
   await quality.hover();
   await expect(quality.getByRole('tooltip')).toContainText('44.1 kHz');
@@ -71,7 +71,7 @@ async function start(page: Page, extra = "") {
   await page.goto(`/?fixture=1${extra}`);
   await openAlbums(page);
   await expect(
-    page.getByRole("button", { name: "Open Plastic Beach", exact: true }),
+    page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }),
   ).toBeVisible();
 }
 async function settings(page: Page) {await chooseSection(page,"Settings");}
@@ -83,38 +83,38 @@ test("album browsing does not play; artist link, album strip and back restore lo
   await start(page);
   await page.locator(".page-scroll").evaluate((e) => (e.scrollTop = 120));
   await page
-    .getByRole("button", { name: "Open Discovery", exact: true })
+    .getByRole("button", { name: "Open Clockwork Confetti", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Discovery", exact: true }),
+    page.getByRole("heading", { name: "Clockwork Confetti", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Nothing playing yet", { exact: true }),
   ).toBeVisible();
   await page
     .locator(".album-copy")
-    .getByRole("button", { name: "View artist Daft Punk", exact: true })
+    .getByRole("button", { name: "View artist Pixel Ferrets", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Daft Punk", exact: true }),
+    page.getByRole("heading", { name: "Pixel Ferrets", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Random Access Memories", exact: true })
+    .getByRole("button", { name: "Mechanical Marshmallows", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Random Access Memories", exact: true }),
+    page.getByRole("heading", { name: "Mechanical Marshmallows", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(
-    page.getByRole("heading", { name: "Daft Punk", exact: true }),
+    page.getByRole("heading", { name: "Pixel Ferrets", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(
-    page.getByRole("heading", { name: "Discovery", exact: true }),
+    page.getByRole("heading", { name: "Clockwork Confetti", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Alt+ArrowLeft");
   await expect(
-    page.getByRole("button", { name: "Open Discovery", exact: true }),
+    page.getByRole("button", { name: "Open Clockwork Confetti", exact: true }),
   ).toBeVisible();
   expect(
     await page.locator(".page-scroll").evaluate((e) => e.scrollTop),
@@ -123,12 +123,12 @@ test("album browsing does not play; artist link, album strip and back restore lo
 test("artists and genres open the selected collection", async ({ page }) => {
   await start(page);
   await page.getByRole("button", { name: "Artists", exact: true }).click();
-  await page.getByRole("button", { name: "Open M83", exact: true }).click();
+  await page.getByRole("button", { name: "Open Moonspindle", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "M83", exact: true }),
+    page.getByRole("heading", { name: "Moonspindle", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Fantasy", exact: true }),
+    page.getByRole("button", { name: "Marshmallow Observatory", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "More library views", exact: true }).click();
   await page.getByRole("menuitem", { name: "Genres", exact: true }).click();
@@ -139,13 +139,13 @@ test("artists and genres open the selected collection", async ({ page }) => {
     page.getByRole("heading", { name: "Electronic", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Open Plastic Beach", exact: true }),
+    page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }),
   ).toBeVisible();
 });
 test("playback follows selected sequence and queue", async ({ page }) => {
   await start(page);
   await page
-    .getByRole("button", { name: "Open Plastic Beach", exact: true })
+    .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
     .click();
   await page.locator('.track-row').filter({has:page.getByRole('button',{name:'Play Second Light',exact:true})}).first().hover();
   await page
@@ -200,9 +200,9 @@ for (const percent of [80, 100, 125, 150])
     }
     await library(page);
     await page.getByRole("button", { name: "Artists", exact: true }).click();
-    await page.getByRole("button", { name: "Open M83", exact: true }).click();
+    await page.getByRole("button", { name: "Open Moonspindle", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "M83", exact: true }),
+      page.getByRole("heading", { name: "Moonspindle", exact: true }),
     ).toBeVisible();
   });
 test("settings update name immediately and persist after reload", async ({
@@ -247,7 +247,7 @@ test("default blue, adaptive theme, and disabling colors restore blue", async ({
   await setThemeColors(page,'artwork');
   await library(page);
   await page
-    .getByRole("button", { name: "Open Plastic Beach", exact: true })
+    .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
     .click();
   await expect(page.locator(".current-theme")).toHaveCSS(
     "background-color",
@@ -263,9 +263,9 @@ test("default blue, adaptive theme, and disabling colors restore blue", async ({
 });
 test("Discover is removed and library categories stay separate from Back",async({page})=>{
  await start(page);await expect(page.getByRole("button",{name:"Discover",exact:true})).toHaveCount(0);
- await page.getByRole("button",{name:"Artists",exact:true}).click();await page.getByRole("button",{name:"Open M83",exact:true}).click();
+ await page.getByRole("button",{name:"Artists",exact:true}).click();await page.getByRole("button",{name:"Open Moonspindle",exact:true}).click();
  await expect(page.getByRole("button",{name:"Artists",exact:true})).toBeVisible();
- await page.getByRole("button",{name:"Back to Artists",exact:true}).click();await expect(page.getByRole("button",{name:"Open M83",exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"Back to Artists",exact:true}).click();await expect(page.getByRole("button",{name:"Open Moonspindle",exact:true})).toBeVisible();
 });
 test("10,000 songs remain virtualized while scrolling", async ({ page }) => {
   await start(page, "&large=1");
@@ -293,12 +293,12 @@ test("album and artist screenshots at Sketch and desktop sizes", async ({
     await page.setViewportSize(size);
     await page.getByRole("button", { name: "Albums", exact: true }).click();
     await page
-      .getByRole("button", { name: "Open Plastic Beach", exact: true })
+      .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
       .click();
     await expect.poll(() => page.locator(".page-content").evaluate(e => e.getAnimations({subtree:true}).length)).toBe(0);
     await page.screenshot({ path: `out/rebuild-qa/album-${size.width}.png` });
     await page.getByRole("button", { name: "Artists", exact: true }).click();
-    await page.getByRole("button", { name: "Open M83", exact: true }).click();
+    await page.getByRole("button", { name: "Open Moonspindle", exact: true }).click();
     await expect(page.getByText("Wikipedia ↗", { exact: true })).toBeVisible();
     await expect.poll(() => page.locator(".page-content").evaluate(e => e.getAnimations({subtree:true}).length)).toBe(0);
     await page.screenshot({ path: `out/rebuild-qa/artist-${size.width}.png` });
@@ -363,7 +363,7 @@ test("detail pages fit both window sizes at every interface size", async ({
       await page.setViewportSize({ width, height: width === 720 ? 480 : 800 });
       await page.getByRole("button", { name: "Albums", exact: true }).click();
       await page
-        .getByRole("button", { name: "Open Plastic Beach", exact: true })
+        .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
         .click();
       await expect(
         page.getByRole("button", { name: "Play collection", exact: true }),
@@ -394,10 +394,10 @@ test("detail pages fit both window sizes at every interface size", async ({
       });
       await page
         .locator(".album-copy")
-        .getByRole("button", { name: "View artist Gorillaz", exact: true })
+        .getByRole("button", { name: "View artist Velvet Static", exact: true })
         .click();
       await expect(
-        page.getByRole("heading", { name: "Gorillaz", exact: true }),
+        page.getByRole("heading", { name: "Velvet Static", exact: true }),
       ).toBeVisible();
       expect(
         await page
@@ -417,11 +417,11 @@ test("Space activates a focused album without starting playback", async ({
 }) => {
   await start(page);
   await page
-    .getByRole("button", { name: "Open Plastic Beach", exact: true })
+    .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
     .focus();
   await page.keyboard.press("Space");
   await expect(
-    page.getByRole("heading", { name: "Plastic Beach", exact: true }),
+    page.getByRole("heading", { name: "Bubblewrap Lagoon", exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Nothing playing yet", { exact: true }),
@@ -438,11 +438,11 @@ test("compact desktop preserves Sketch header and artist composition", async ({ 
   expect(selector!.width).toBeCloseTo(160, 0);
   expect(player!.x).toBeCloseTo(304, 0);
   await page.getByRole("button", {name:"Artists", exact:true}).click();
-  await page.getByRole("button", {name:"Open M83", exact:true}).click();
+  await page.getByRole("button", {name:"Open Moonspindle", exact:true}).click();
   await expect(page.locator(".artist-portrait-button > .cover")).toHaveCSS("transform", "none");
   const portrait = await page.locator(".artist-portrait-button > .cover").boundingBox();
   expect(portrait!.width).toBeCloseTo(88, 0);
-  const title = await page.getByRole("heading", {name:"M83", exact:true}).boundingBox();
+  const title = await page.getByRole("heading", {name:"Moonspindle", exact:true}).boundingBox();
   // Short names must stay readable above the portrait rather than disappear behind it.
   expect(portrait!.y).toBeGreaterThanOrEqual(title!.y + title!.height);
   const strip = await page.locator(".album-strip").boundingBox();
@@ -457,7 +457,7 @@ test("wide windows retain Sketch album sizes and sort menu works", async ({page}
   await page.getByRole("menuitemradio", {name:"Album Name", exact:true}).click();
   await page.keyboard.press("Escape");
   await expect(page.locator(".card-open strong").first()).toHaveText("AM");
-  await page.getByRole("button", {name:"Open Plastic Beach", exact:true}).click();
+  await page.getByRole("button", {name:"Open Bubblewrap Lagoon", exact:true}).click();
   await expect(page.locator(".album-hero .album-artwork .cover")).toHaveCSS("transform", "none");
   await expect(page.locator(".track-table")).toHaveCSS("transform", "none");
   const geometry = await page.evaluate(() => ({
@@ -479,7 +479,7 @@ test("wide windows retain Sketch album sizes and sort menu works", async ({page}
 test("track reveal slides labels by 1.75rem while rows stay steady and keyboard accessible", async ({ page }) => {
   await page.setViewportSize({ width: 720, height: 480 });
   await start(page);
-  await page.getByRole("button", { name: "Open Plastic Beach", exact: true }).click();
+  await page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }).click();
   const row = page.locator(".track-row").nth(1);
   const label = row.locator(".track-label");
   const play = row.locator('.row-play');
@@ -509,13 +509,13 @@ test("reduced motion keeps reveal and navigation immediate with no entrance anim
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize({ width: 720, height: 480 });
   await start(page);
-  await page.getByRole("button", { name: "Open Plastic Beach", exact: true }).click();
+  await page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }).click();
   const row = page.locator(".track-row").first();
   await row.hover();
   await expect(row.locator(".row-play")).toHaveCSS("opacity", "1");
   expect(await page.locator(".page-content").evaluate(e => e.getAnimations({subtree:true}).length)).toBe(0);
-  await page.locator(".artist-link").filter({hasText:"Gorillaz"}).click();
-  await expect(page.getByRole("heading", { name: "Gorillaz", exact: true })).toBeVisible();
+  await page.locator(".artist-link").filter({hasText:"Velvet Static"}).click();
+  await expect(page.getByRole("heading", { name: "Velvet Static", exact: true })).toBeVisible();
   expect(await page.locator(".page-content").evaluate(e => e.getAnimations({subtree:true}).length)).toBe(0);
 });
 
@@ -574,7 +574,7 @@ for (const virtualized of [false, true]) {
 
 test("selected Sketch vectors morph on playback and settle exactly after rapid changes", async ({ page }) => {
   await start(page);
-  await page.getByRole("button", { name: "Open Plastic Beach", exact: true }).click();
+  await page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }).click();
   await page.getByRole("button", { name: "Play collection", exact: true }).click();
   const glyph = page.locator('.transport [data-icon]');
   const pause = page.locator('.transport [data-icon="pause"]');
@@ -610,7 +610,7 @@ test("selected Sketch vectors morph on playback and settle exactly after rapid c
 test("SVG playback morph respects reduced motion", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await start(page);
-  await page.getByRole("button", { name: "Open Plastic Beach", exact: true }).click();
+  await page.getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true }).click();
   await page.getByRole("button", { name: "Play collection", exact: true }).click();
   const pause = page.locator('.transport [data-icon="pause"]');
   await expect(pause).toBeVisible();
@@ -671,7 +671,7 @@ test("Sketch smooth corners resize correctly and playback progress fills to seek
   const before=await page.locator(".card-open .card-artwork").first().evaluate(e=>getComputedStyle(e).clipPath);
   await page.setViewportSize({width:1280,height:800});
   await expect.poll(()=>page.locator(".card-open .card-artwork").first().evaluate(e=>getComputedStyle(e).clipPath)).not.toBe(before);
-  await page.getByRole("button",{name:"Open Plastic Beach",exact:true}).click();
+  await page.getByRole("button",{name:"Open Bubblewrap Lagoon",exact:true}).click();
   await page.getByRole("button",{name:"Play collection",exact:true}).click();
   const slider=page.getByRole("slider",{name:"Playback position",exact:true});
   await expect(slider).toBeEnabled();
@@ -684,11 +684,11 @@ test("Sketch smooth corners resize correctly and playback progress fills to seek
 });
 
 test("artist portrait stays unobscured on hover and focus and returns focus after viewing",async({page})=>{
- await start(page);await page.getByRole("button",{name:"Artists",exact:true}).click();await page.getByRole("button",{name:"Open M83",exact:true}).click();
- const portrait=page.getByRole("button",{name:"Expand M83 portrait",exact:true});
+ await start(page);await page.getByRole("button",{name:"Artists",exact:true}).click();await page.getByRole("button",{name:"Open Moonspindle",exact:true}).click();
+ const portrait=page.getByRole("button",{name:"Expand Moonspindle portrait",exact:true});
  await portrait.hover();await expect(page.locator(".portrait-fact,.portrait-notes")).toHaveCount(0);
  await expect(portrait.locator('.cover')).toHaveCSS('transform','none');
- await portrait.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog',{name:'M83 artwork'})).toBeVisible();
+ await portrait.focus();await page.keyboard.press('Enter');await expect(page.getByRole('dialog',{name:'Moonspindle artwork'})).toBeVisible();
  await page.keyboard.press('Escape');await expect(portrait).toBeFocused();
  await expect.poll(()=>page.locator(".artist-hero").evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
  await page.screenshot({path:"out/persistent-qa/artist-clean-portrait.png"});
@@ -708,7 +708,7 @@ test("management controls are intrinsic and batch edits change only chosen metad
  await settings(page);await page.getByRole('tab',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Library',exact:true})).toHaveAttribute('aria-selected','true');
  await page.getByRole('button',{name:'More metadata tools'}).click();await page.getByRole('menuitem',{name:'Bulk edit',exact:true}).click();
- await page.getByRole('searchbox',{name:'Find albums to edit',exact:true}).fill('Plastic Beach');
+ await page.getByRole('searchbox',{name:'Find albums to edit',exact:true}).fill('Bubblewrap Lagoon');
  await page.getByRole('button',{name:'Select matching albums',exact:true}).click();
  await expect(page.locator('.metadata-selection output')).toHaveText('12 selected');
  if(await page.locator('.metadata-continue').isVisible())await page.locator('.metadata-continue').click();
@@ -729,7 +729,7 @@ test("search follows artwork with finite focus motion and artist notes have no v
  const search=page.locator('.sidebar-search-slot');const input=page.locator('.command-shortcut');
  await input.focus();await expect.poll(()=>search.evaluate(e=>e.getAnimations({subtree:true}).length)).toBe(0);
  await expect(search).not.toHaveCSS('background-color','rgb(141, 159, 255)');
- await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
+ await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();
  await expect(page.getByText('Artist notes',{exact:true})).toHaveCount(0);
  await expect(page.locator('.artist-detail .track-row').first()).not.toHaveCSS('background-color','rgb(0, 154, 255)');
  const covers=await page.locator('.album-strip > button').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect()));
@@ -762,7 +762,7 @@ test("playlists persist and rule playlists follow favorite changes",async({page}
  await expect(page.locator('.sidebar-playlists .personal-collection').filter({hasText:'Night drive'})).toBeVisible();
 });
 test('queue reordering, clearing and DJmode preserve the playing song',async({page})=>{
- await start(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await start(page);await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  const rows=page.locator('.queue-row');const before=await rows.locator('strong').allTextContents();
  await rows.nth(1).getByRole('button',{name:`Play ${before[1]} from queue`,exact:true}).focus();await page.keyboard.press('Alt+ArrowUp');
@@ -774,7 +774,7 @@ test('queue reordering, clearing and DJmode preserve the playing song',async({pa
  await page.keyboard.press('Escape');await setPlayerView(page.locator('.now-playing'),'queue');await page.getByRole('button',{name:'Clear upcoming',exact:true}).click();await expect(rows).toHaveCount(0);await expect(page.locator('.now-playing-info > strong')).toHaveText('Opening');
 });
 test('standalone heart settles after rapid toggles and honors reduced motion',async({page})=>{
- await start(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+ await start(page);await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();
  const heart=page.locator('.track-favorite').first();const initial=await heart.getAttribute('aria-pressed');
  await heart.click({clickCount:3,delay:35});
  await expect(heart).toHaveAttribute('aria-pressed',initial==='true'?'false':'true');
@@ -792,7 +792,7 @@ test('playlist editing reorders without changing playback and survives restart',
  await page.reload();await expect(page.getByRole('heading',{name:'Ordered mix',exact:true})).toBeVisible();await expect(page.locator('.playlist-hero')).toContainText('4 songs');
 });
 test("biography expands and seek rail thickens without a thumb",async({page})=>{
- await start(page,'&longBiography=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();await page.getByRole('button',{name:'Read more',exact:true}).click();
+ await start(page,'&longBiography=1');await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();await page.getByRole('button',{name:'Read more',exact:true}).click();
  await expect(page.locator('.artist-biography')).toHaveCSS('max-height','none');await expect(page.locator('.artist-biography')).toContainText('Their records include');await page.getByRole('button',{name:'Read less',exact:true}).click();
  await page.getByRole('button',{name:'Play collection',exact:true}).click();const rail=page.locator('.progress-rail');const before=await rail.evaluate(el=>el.getBoundingClientRect().height);await page.locator('.playback-progress').hover();await expect.poll(()=>rail.evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThan(before);
  await expect(page.locator('.seek')).toHaveCSS('opacity','0');
@@ -823,7 +823,7 @@ test('artist selection has no card panel and volume uses custom icons and contro
  await expect(card.locator('small')).toContainText(/\d+ albums? · \d+ songs?/);
  await page.screenshot({path:'out/rebuild-qa/artist-grid-no-panel-1280.png'});
  await page.getByRole('button',{name:'Albums',exact:true}).click();
- await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+ await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();
  await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await page.getByRole('button',{name:'Open Up next',exact:true}).click();
  await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(page.getByRole('switch',{name:'DJ mode',exact:true})).toBeVisible();

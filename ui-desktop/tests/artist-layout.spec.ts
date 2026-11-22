@@ -2,7 +2,7 @@ import {test,expect,type Page} from '@playwright/test';
 async function openArtist(page:Page,query=''){
  await page.goto(`/?fixture=1&longBiography=1${query}`);
  await page.getByRole('button',{name:'Artists',exact:true}).click();
- await page.getByRole('button',{name:'Open M83',exact:true}).click();
+ await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();
  await page.evaluate(()=>document.fonts.ready);
  await expect.poll(()=>page.locator('.artist-hero').evaluate(el=>el.getAnimations({subtree:true}).length)).toBe(0);
 }

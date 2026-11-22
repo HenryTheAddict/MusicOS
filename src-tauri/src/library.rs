@@ -606,9 +606,9 @@ pub fn recover_album_artwork(database:&std::path::Path,album:&Album)->anyhow::Re
 #[cfg(test)] mod polish_tests {
  use super::*;
  #[test] fn apostrophe_variants_merge_without_merging_editions_or_verified_releases() {
-  let track=Track{id:1,artist:"M83".into(),album:"Hurry Up, We’re Dreaming".into(),..Default::default()};
-  let old=stable_id("album", &["m83", "hurry up, we’re dreaming", ""]);
-  let library=group(LibrarySnapshot{tracks:vec![track.clone(),Track{id:2,album:"Hurry Up, We're Dreaming".into(),artist:"M83 & Guest".into(),..track.clone()},Track{id:3,album:"Hurry Up, We're Dreaming (Deluxe)".into(),..track.clone()}],..Default::default()});
+  let track=Track{id:1,artist:"Moonspindle".into(),album:"Hush, We’re Dreaming in Teacups".into(),..Default::default()};
+  let old=stable_id("album", &["moonspindle", "hush, we’re dreaming in teacups", ""]);
+  let library=group(LibrarySnapshot{tracks:vec![track.clone(),Track{id:2,album:"Hush, We're Dreaming in Teacups".into(),artist:"Moonspindle & Guest".into(),..track.clone()},Track{id:3,album:"Hush, We're Dreaming in Teacups (Deluxe)".into(),..track.clone()}],..Default::default()});
   assert_eq!(library.albums.len(),2);
   let merged=library.albums.iter().find(|a|a.track_ids.len()==2).unwrap();assert!(merged.legacy_ids.contains(&old));
   let editions=group(LibrarySnapshot{tracks:vec![Track{release_id:Some("release-a".into()),..track.clone()},Track{id:2,release_id:Some("release-b".into()),..track}],..Default::default()});assert_eq!(editions.albums.len(),2);

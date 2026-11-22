@@ -4,7 +4,7 @@ test('one manager separates saved collection types, searches and preserves Smart
  await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([
  {id:'playlist/1',name:'Manual favorites',kind:'manual',spark:null,track_ids:[1,2]},
  {id:'audio/1',name:'Dream mix',kind:'audio',spark:null,track_ids:[3,4],artwork_choice:'auto/1'},
- {id:'spark/1',name:'My smart rules',kind:'rule',spark:{name:'My smart rules',match_mode:'any',limit:15,rules:[{field:'artist',op:'contains',value:'M83'},{field:'year',op:'greater_than',value:'2000'}]},track_ids:[1]}])));await page.reload();
+ {id:'spark/1',name:'My smart rules',kind:'rule',spark:{name:'My smart rules',match_mode:'any',limit:15,rules:[{field:'artist',op:'contains',value:'Moonspindle'},{field:'year',op:'greater_than',value:'2000'}]},track_ids:[1]}])));await page.reload();
  await page.getByRole('button',{name:'More library views',exact:true}).click();await page.getByRole('menuitem',{name:'Playlists',exact:true}).click();await expect(page.getByRole('heading',{name:'Collections',exact:true})).toBeVisible();await expect(page.locator('.hub-collection-open')).toHaveCount(1);await page.getByRole('tab',{name:/Sparklists/}).click();await expect(page.locator('.hub-collection-open')).toContainText('Dream mix');await expect(page.getByText('Audio mixes are not available yet.',{exact:false})).toHaveCount(0);
  await page.getByRole('tab',{name:/Smart playlists/}).click();await page.getByRole('button',{name:'Edit rules',exact:true}).click();await expect(page.getByRole('button',{name:'Rule matching'})).toHaveText('Any rule');await expect(page.getByRole('spinbutton',{name:'Song limit'})).toHaveValue('15');await page.getByRole('textbox',{name:'Name',exact:true}).fill('Renamed rules');await page.getByRole('button',{name:'Save Smart playlist'}).click();
  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-collections')!)[2].name)).toBe('Renamed rules');await page.reload();await page.getByRole('button',{name:'More library views',exact:true}).click();await page.getByRole('menuitem',{name:'Playlists',exact:true}).click();await page.getByRole('tab',{name:/Smart playlists/}).click();await expect(page.locator('.hub-collection-open')).toContainText('Renamed rules');await page.screenshot({path:'out/rebuild-qa/collection-manager.png',animations:'disabled'});await page.getByRole('searchbox',{name:'Find collections'}).fill('missing');await expect(page.getByRole('heading',{name:'No matching collections'})).toBeVisible();
@@ -111,11 +111,11 @@ test('cover review fits supported window sizes, scales, and modes',async({page})
 test('album and song menus open the matching editor',async({page})=>{
  await page.goto('/?fixture=1');
  await page.getByRole('button',{name:'Albums',exact:true}).click();
- await page.getByRole('button',{name:'Open Discovery',exact:true}).click();
+ await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();
  await page.locator('.album-detail').getByRole('button',{name:'More actions',exact:true}).first().click();
  await page.getByRole('menuitem',{name:'Edit metadata',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Details',exact:true})).toHaveAttribute('aria-selected','true');
- await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Discovery');
+ await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Clockwork Confetti');
  await page.getByRole('tab',{name:'Songs',exact:true}).click();
  await page.locator('.tag-order-song').nth(1).click();
  await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Second Light');

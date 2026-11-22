@@ -8,7 +8,7 @@ it('keeps independent detail stacks, route filters and scroll; reselecting does 
  act(()=>result.current.dispatch({type:'patch',patch:{scroll:110}}));
  act(()=>result.current.dispatch({type:'open',route:{view:'album',id:'home-album',search:'',scroll:23}}));
  act(()=>result.current.switchDestination('library'));
- act(()=>result.current.dispatch({type:'patch',patch:{search:'M83',scroll:640}}));
+ act(()=>result.current.dispatch({type:'patch',patch:{search:'Moonspindle',scroll:640}}));
  act(()=>result.current.dispatch({type:'open',route:{view:'artist',id:'library-artist',search:'',scroll:0}}));
  const library=result.current.navigation;
  act(()=>result.current.switchDestination('library'));
@@ -22,7 +22,7 @@ it('keeps independent detail stacks, route filters and scroll; reselecting does 
  act(()=>result.current.switchDestination('library'));
  expect(result.current.navigation).toBe(library);
  act(()=>result.current.dispatch({type:'back'}));
- expect(result.current.navigation.current).toMatchObject({view:'albums',search:'M83',scroll:640});
+ expect(result.current.navigation.current).toMatchObject({view:'albums',search:'Moonspindle',scroll:640});
  act(()=>result.current.switchDestination('search'));
  expect(result.current.navigation.current.id).toBe('search-album');
  act(()=>result.current.dispatch({type:'back'}));

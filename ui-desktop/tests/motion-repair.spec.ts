@@ -42,7 +42,7 @@ test('Favorites live with your collections and recent songs preview from their m
 test('DJ mode shows the current track waveform on the same playback slider',async({page})=>{
  await page.goto('/?fixture=1');
  await page.getByRole('button',{name:'Albums',exact:true}).click();
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  await page.getByRole('button',{name:'Play collection',exact:true}).click();
  const bar=page.locator('.now-playing');
  await bar.getByRole('button',{name:'Open Up next',exact:true}).click();
@@ -78,8 +78,8 @@ test('a dropped image can be reviewed and saved without a provider lookup',async
  await page.getByRole('tab',{name:'Library',exact:true}).click();
  await page.getByRole('button',{name:'Metadata & artwork',exact:true}).click();
  const browser=page.locator('.tag-albums');
- await page.getByRole('searchbox',{name:'Find albums'}).fill('Discovery');
- await browser.getByRole('button',{name:/Discovery/}).first().click();
+ await page.getByRole('searchbox',{name:'Find albums'}).fill('Clockwork Confetti');
+ await browser.getByRole('button',{name:/Clockwork Confetti/}).first().click();
  const data=await page.evaluateHandle(()=>{
   const canvas=document.createElement('canvas');
   canvas.width=160;
@@ -96,7 +96,7 @@ test('a dropped image can be reviewed and saved without a provider lookup',async
  await page.locator('[data-album-cover-drop]').dispatchEvent('drop',{dataTransfer:data});
  await expect(page.getByText(/160 × 96/).first()).toBeVisible();
  await page.getByRole('button',{name:'Review cover',exact:true}).click();
- await expect(page.getByRole('region',{name:'Review changes'})).toContainText('Discovery');
+ await expect(page.getByRole('region',{name:'Review changes'})).toContainText('Clockwork Confetti');
  await page.getByRole('button',{name:'Save cover only',exact:true}).click();
  await expect(page.getByRole('status').filter({hasText:'Cover updated'})).toBeVisible();
 });
@@ -221,7 +221,7 @@ test('matching covers clear the browser suggestion and bulk artwork lines up',as
  expect(Math.max(...covers)-Math.min(...covers)).toBeLessThan(1);
  await expect(page.getByRole('menuitem',{name:'Bulk edit',exact:true})).toHaveCount(0);
  await page.screenshot({path:'out/musicos-polish-bulk.png'});
- await editor.getByRole('searchbox',{name:'Find albums to edit'}).fill('Discovery');
+ await editor.getByRole('searchbox',{name:'Find albums to edit'}).fill('Clockwork Confetti');
  await editor.getByRole('button',{name:'Select matching albums'}).click();
  await expect(editor.locator('output').first()).not.toHaveText('0 selected');
  await editor.getByRole('button',{name:'Songs',exact:true}).click();
@@ -273,7 +273,7 @@ test('navigation icons press independently and respect Reduce Motion',async({pag
 test('the AutoMix band leaves pointer and cursor ownership with the seek slider',async({page})=>{
  await page.goto('/?fixture=1');
  await page.getByRole('button',{name:'Albums',exact:true}).click();
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  await page.getByRole('button',{name:'Play collection',exact:true}).click();
  const slider=page.locator('.now-playing').getByRole('slider',{name:'Playback position'});
  await expect(slider).toBeEnabled();

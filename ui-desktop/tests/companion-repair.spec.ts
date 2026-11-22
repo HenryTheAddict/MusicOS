@@ -17,7 +17,7 @@ test('square desktop retains navigation and stationary player across scales',asy
  }
 });
 test('standard mini artwork fills available space without stretching; queue retains footer',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
  for(const size of [{width:244,height:320},{width:334,height:480}]){
   await page.setViewportSize(size);const mini=page.locator('.mini-shell>.mini-player');await expect(mini).toHaveCSS('height',`${size.height}px`);
@@ -28,7 +28,7 @@ test('standard mini artwork fills available space without stretching; queue reta
  }
 });
 test('unknown tempo keeps its playing heart still and cached artist visits do not recheck',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();const row=page.locator('[data-track-id="1"]');await row.hover();await row.locator('.row-play').click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();const row=page.locator('[data-track-id="1"]');await row.hover();await row.locator('.row-play').click();
  const heart=row.locator('.track-favorite');await expect(heart).toHaveAttribute('data-tempo-source','unknown');await expect(heart).not.toHaveAttribute('data-pulsing','true');await expect(heart.locator('.heart-beat')).toHaveCSS('animation-name','none');
  await page.getByRole('button',{name:'Artists',exact:true}).click();await expect(page.locator('[data-artist-name]').first()).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='artist_info').length)).toBeGreaterThan(0);
  const before=await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='artist_info').length);

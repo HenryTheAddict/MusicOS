@@ -33,7 +33,7 @@ async function opaqueChoicePixel(page:Page){
 test('section choices paint above album art throughout opening, collapse and reversal',async({page})=>{
  await hold(page);
  await page.addInitScript(()=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:125,appearance:{mode:'light',source:'artwork',accent:'#b02020',saturation:100,tint:15}}));});
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  const trigger=page.getByRole('button',{name:'Choose section',exact:true}),menu=page.locator('.section-dropdown');
  await expect(page.locator('.album-artwork-stage img').first()).toBeVisible();
  await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');

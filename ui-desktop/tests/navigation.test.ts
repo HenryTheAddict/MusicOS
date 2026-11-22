@@ -90,5 +90,5 @@ it("skips collections removed by a metadata regroup while retaining the browsing
  expect(navigationReducer(detail,{type:"reconcile",albums:[],artists:["new"],genres:[]}).current).toEqual(grid.current);
 });
 it('opens personal home by default, preserves existing scopes and returns to its saved scroll',()=>{
- expect(initialNavigation.current.view).toBe('home');const home={...initialNavigation,current:{view:'home' as const,scroll:680,search:''}};const detail=navigationReducer(home,{type:'open',route:{view:'playlist',id:'audio/1',scroll:0,search:''}});expect(navigationReducer(detail,{type:'back'}).current).toEqual(home.current);expect(restoreNavigation(JSON.stringify({current:{view:'albums',scroll:19,search:'m83'},history:[]})).current.view).toBe('albums');expect(restoreNavigation(JSON.stringify(home))).toEqual(home);
+ expect(initialNavigation.current.view).toBe('home');const home={...initialNavigation,current:{view:'home' as const,scroll:680,search:''}};const detail=navigationReducer(home,{type:'open',route:{view:'playlist',id:'audio/1',scroll:0,search:''}});expect(navigationReducer(detail,{type:'back'}).current).toEqual(home.current);expect(restoreNavigation(JSON.stringify({current:{view:'albums',scroll:19,search:'moonspindle'},history:[]})).current.view).toBe('albums');expect(restoreNavigation(JSON.stringify(home))).toEqual(home);
 });

@@ -929,15 +929,15 @@ mod tests {
     use super::*;
     #[test]
     fn discord_cover_requires_exact_identity_and_public_artwork() {
-        let response = serde_json::json!({"results":[{"artistName":"M83","collectionName":"Fantasy","artworkUrl100":"https://is1-ssl.mzstatic.com/image/100x100bb.jpg"}]});
+        let response = serde_json::json!({"results":[{"artistName":"Moonspindle","collectionName":"Marshmallow Observatory","artworkUrl100":"https://is1-ssl.mzstatic.com/image/100x100bb.jpg"}]});
         assert_eq!(
-            exact_album_cover(&response, "m83", "Fantasy").unwrap(),
+            exact_album_cover(&response, "moonspindle", "Marshmallow Observatory").unwrap(),
             "https://is1-ssl.mzstatic.com/image/600x600bb.jpg"
         );
-        assert!(exact_album_cover(&response, "Other artist", "Fantasy").is_none());
-        assert!(exact_album_cover(&response, "M83", "Other album").is_none());
-        let local = serde_json::json!({"results":[{"artistName":"M83","collectionName":"Fantasy","artworkUrl100":"file:///private/artwork.png"}]});
-        assert!(exact_album_cover(&local, "M83", "Fantasy").is_none());
+        assert!(exact_album_cover(&response, "Other artist", "Marshmallow Observatory").is_none());
+        assert!(exact_album_cover(&response, "Moonspindle", "Other album").is_none());
+        let local = serde_json::json!({"results":[{"artistName":"Moonspindle","collectionName":"Marshmallow Observatory","artworkUrl100":"file:///private/artwork.png"}]});
+        assert!(exact_album_cover(&local, "Moonspindle", "Marshmallow Observatory").is_none());
     }
     #[test]fn discord_matches_punctuation_and_single_labels_without_swapping_editions(){let response=serde_json::json!({"results":[{"artistName":"Artist","collectionName":"We're Here - Single","artworkUrl100":"http://is1-ssl.mzstatic.com/image/100x100bb.jpg"}]});assert!(exact_album_cover(&response,"Artist","We’re Here").unwrap().starts_with("https://"));assert!(exact_album_cover(&response,"Artist","We're Here (Deluxe)").is_none());}
     #[test]

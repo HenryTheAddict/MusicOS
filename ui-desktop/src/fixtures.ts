@@ -18,18 +18,18 @@ const fixtureAssets = Object.fromEntries(
   ).map(([p, u]) => [p.replace("../../", ""), u as string]),
 );
 const seeds = [
-  ["Plastic Beach", "Gorillaz", "Beach"],
-  ["Demon Days", "Gorillaz", "DemonDays"],
-  ["Random Access Memories", "Daft Punk", "RAM"],
-  ["Discovery", "Daft Punk", "Discovery"],
-  ["Currents", "Tame Impala", "Currents"],
-  ["The Slow Rush", "Tame Impala", "SlowRush"],
-  ["Hurry Up, We’re Dreaming", "M83", "Clouds"],
-  ["Fantasy", "M83", "NightVisions"],
-  ["Junk", "M83", "Pier"],
-  ["AM", "Arctic Monkeys", "Overcast"],
-  ["Parachutes", "Coldplay", "Lake"],
-  ["Channel Orange", "Frank Ocean", "SaltyRoads"],
+  ["Bubblewrap Lagoon", "Velvet Static", "bubblewrap-lagoon"],
+  ["Cardboard Carnivals", "Velvet Static", "cardboard-carnivals"],
+  ["Mechanical Marshmallows", "Pixel Ferrets", "mechanical-marshmallows"],
+  ["Clockwork Confetti", "Pixel Ferrets", "clockwork-confetti"],
+  ["Teapot Tornadoes", "Tangerine Teacups", "teapot-tornadoes"],
+  ["The Sleepy Kazoo", "Tangerine Teacups", "sleepy-kazoo"],
+  ["Hush, We’re Dreaming in Teacups", "Moonspindle", "dreaming-teacups"],
+  ["Marshmallow Observatory", "Moonspindle", "marshmallow-observatory"],
+  ["Teacup Parade", "Moonspindle", "teacup-parade"],
+  ["Sock Rocket", "Blanket Comets", "Overcast"],
+  ["Umbrella Acrobatics", "Pocket Kites", "umbrella-acrobatics"],
+  ["Marmalade Meteorites", "Marmalade Robots", "marmalade-meteorites"],
 ];
 const tracks: Track[] = [];
 const albums: Album[] = [];
@@ -41,7 +41,7 @@ for (let a = 0; a < seeds.length; a++) {
     artist = {
       id: `local/artist/${artists.length}`,
       name,
-      portrait: name === "M83" ? fixtureAssets["assets/artists/m83.png"] : null,
+      portrait: name === "Moonspindle" ? fixtureAssets["assets/artists/moonspindle.png"] : null,
       album_ids: [],
       track_ids: [],
     };
@@ -64,12 +64,12 @@ for (let a = 0; a < seeds.length; a++) {
     const song =
       a === 6
         ? [
-            "Intro",
-            "Midnight City",
-            "Reunion",
-            "Where the Boats Go",
-            "Wait",
-            "Raconte-Moi Une Histoire",
+            "Prelude for a Paper Kite",
+            "The Clockwork Jellyfish Waltz",
+            "Reunion of the Sock Puppets",
+            "Where the Teacups Float",
+            "Wait for the Balloon Parade",
+            "A Story for the Moonspindle",
           ][n % 6]
         : [
             "Opening",
@@ -124,8 +124,8 @@ if (new URLSearchParams(location.search).has("large"))
       title: `Library song ${i + 1}`,
     });
 if (new URLSearchParams(location.search).has('contributors')) {
- const album=albums.find(a=>a.title==='Junk')!;
- for(let i=0;i<17;i++)artists.push({id:`local/artist/guest-${i}`,name:i===0?'A contributor with a particularly long name':`Guest artist ${i+1}`,portrait:i%2?fixtureAssets['assets/artists/m83.png']:null,album_ids:[album.id],track_ids:[album.track_ids[i%album.track_ids.length]]});
+ const album=albums.find(a=>a.title==='Teacup Parade')!;
+ for(let i=0;i<17;i++)artists.push({id:`local/artist/guest-${i}`,name:i===0?'A contributor with a particularly long name':`Guest artist ${i+1}`,portrait:i%2?fixtureAssets['assets/artists/moonspindle.png']:null,album_ids:[album.id],track_ids:[album.track_ids[i%album.track_ids.length]]});
 }
 if(new URLSearchParams(location.search).has("consistency")){albums[0].release_type="single";albums[0].release_type_source="file_tag";tracks[1].cover_art_path=albums[1].cover;}
 const library: Library = {
@@ -236,15 +236,15 @@ export async function fixtureCall(
       return preferences;
     case 'mini_player': case 'window_pin': return;
     case 'apple_enrichment': {const {appleFixture}=await import('./appleFixture');return appleFixture((a as any).request);}
-    case "album_info":return new URLSearchParams(location.search).has('contributors')?{description:'A collection of songs featuring musicians from across the world. '.repeat(20),source_url:'https://en.wikipedia.org/wiki/Junk_(M83_album)'}:{description:null,source_url:null};
+    case "album_info":return new URLSearchParams(location.search).has('contributors')?{description:'An imaginary orchestra of teacups, paper kites, and clockwork jellyfish. '.repeat(20),source_url:'https://example.com/fictional-library/teacup-parade'}:{description:null,source_url:null};
     case "artist_info":
       return {
         lookup_status: new URLSearchParams(location.search).get('profiles')==='pending'?'loading':'cached',
-        biography:new URLSearchParams(location.search).has('longBiography')?("M83 combines electronic music, ambient textures, and cinematic arrangements. Their records include Hurry Up, We’re Dreaming and Junk. ".repeat(15)+"\n\nThis final paragraph must remain readable when expanded."):
-          "M83 is a French electronic music project formed in Antibes in 1999. Initially a duo of Nicolas Fromageau and Anthony Gonzalez, it is now led by Gonzalez. The project combines electronic music, ambient textures, and cinematic arrangements. Their records include Hurry Up, We’re Dreaming and Junk.",
+        biography:new URLSearchParams(location.search).has('longBiography')?("Moonspindle combines electronic music, ambient textures, and cinematic arrangements. Their records include Hush, We’re Dreaming in Teacups and Teacup Parade. ".repeat(15)+"\n\nThis final paragraph must remain readable when expanded."):
+          "Moonspindle is an imaginary orchestra of clockwork jellyfish from the floating village of Teacup Bay. Led by Professor Puddle and Captain Confetti, the ensemble plays paper trumpets and moon-powered kazoos. Their fictional records include Hush, We’re Dreaming in Teacups and Teacup Parade.",
         portrait:
-          a.name === "M83" ? fixtureAssets["assets/artists/m83.png"] : null,
-        source_url: "https://en.wikipedia.org/wiki/M83_(band)",
+          a.name === "Moonspindle" ? fixtureAssets["assets/artists/moonspindle.png"] : null,
+        source_url: "https://example.com/fictional-library/moonspindle",
         artist_mbid: "fixture",
       };
     case "artwork_palette":

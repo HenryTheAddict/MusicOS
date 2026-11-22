@@ -17,10 +17,10 @@ test('depth quads stay aligned through scrolling without synthetic overscroll',a
  await page.locator('.page-scroll').evaluate(el=>{el.scrollTop=0;el.dispatchEvent(new WheelEvent('wheel',{deltaY:-250,bubbles:true}));});
  await expect(page.locator('.page-scroll')).toHaveCSS('scale','none');await expect(page.locator('.page-scroll')).toHaveCSS('translate','none');await expect(page.locator('.depth-compositor')).toHaveCSS('filter','none');
  await page.getByRole('button',{name:'Artists',exact:true}).click();await expect(page.locator('.depth-compositor')).toHaveCount(1);
- await page.getByRole('button',{name:'Open M83',exact:true}).click();await expect(page.locator('.depth-compositor')).toHaveCount(0);
+ await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();await expect(page.locator('.depth-compositor')).toHaveCount(0);
 });
 test('artist detail stays still while grid depth remains available with reduced motion changes',async({page})=>{
- await start(page);await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();
+ await start(page);await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();
  const portrait=page.locator('.artist-portrait-button');await portrait.hover();await expect(page.locator('.depth-compositor')).toHaveCount(0);await expect(portrait.locator('.cover')).toHaveCSS('transform','none');await expect(portrait).toHaveCSS('transform','none');
  await page.getByRole('button',{name:'Back to Artists',exact:true}).click();await expect(page.locator('.depth-compositor')).toHaveCount(1);
  await page.emulateMedia({reducedMotion:'reduce'});await expect(page.locator('.depth-compositor')).toHaveCount(0);await page.emulateMedia({reducedMotion:'no-preference'});await expect(page.locator('.depth-compositor')).toHaveCount(1);
@@ -36,20 +36,20 @@ test('album depth follows pointer while wheel edges leave content undistorted',a
 });
 
 test('open album stays normal and artwork expands with focus restored',async({page})=>{
- await start(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();const art=page.getByRole('button',{name:'Expand Discovery artwork',exact:true});await art.hover();const box=(await art.boundingBox())!;
+ await start(page);await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();const art=page.getByRole('button',{name:'Expand Clockwork Confetti artwork',exact:true});await art.hover();const box=(await art.boundingBox())!;
  await page.waitForTimeout(200);await expect(page.locator('.album-artwork-stage .depth-compositor')).toHaveCount(1);expect((await art.boundingBox())!.width).toBeCloseTo(box.width,1);
- await art.click();await expect(page.getByRole('dialog',{name:'Discovery artwork'})).toBeVisible();await expect(page.getByRole('dialog').getByRole('img',{name:'Discovery',exact:true})).toBeVisible();
+ await art.click();await expect(page.getByRole('dialog',{name:'Clockwork Confetti artwork'})).toBeVisible();await expect(page.getByRole('dialog').getByRole('img',{name:'Clockwork Confetti',exact:true})).toBeVisible();
  await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).not.toBeVisible();await expect(art).toBeFocused();
 });
 test('fresh depth never flashes and GPU loss restores the ordinary image',async({page})=>{
  await page.addInitScript(()=>{const original=Element.prototype.animate;Object.assign(window,{depthRevealCount:0});Element.prototype.animate=function(frames,options){if(this instanceof HTMLElement&&this.matches('.card-artwork,.album-artwork,.viewer-artwork')&&typeof options==='object'&&options?.duration===220)(window as any).depthRevealCount++;return original.call(this,frames,options);};});
  await page.goto('/?fixture=1&depthFixture=1&freshDepth=1');await page.evaluate(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:100,artwork_depth:true})));await page.reload();await page.getByRole('button',{name:'Albums',exact:true}).click();await page.locator('.card-artwork').first().hover();await expect(page.locator('.card-artwork[data-depth-ready=true]').first()).toBeVisible();expect(await page.evaluate(()=>(window as any).depthRevealCount)).toBe(0);
- await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.locator('.album-artwork').hover();await expect(page.locator('.album-artwork[data-depth-ready=true]')).toBeVisible();const count=await page.evaluate(()=>(window as any).depthRevealCount);await page.getByRole('button',{name:'Expand Discovery artwork'}).click();await page.locator('.viewer-artwork').hover();await expect(page.locator('.viewer-artwork[data-depth-ready=true]')).toBeVisible();expect(await page.evaluate(()=>(window as any).depthRevealCount)).toBe(count);
+ await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();await page.locator('.album-artwork').hover();await expect(page.locator('.album-artwork[data-depth-ready=true]')).toBeVisible();const count=await page.evaluate(()=>(window as any).depthRevealCount);await page.getByRole('button',{name:'Expand Clockwork Confetti artwork'}).click();await page.locator('.viewer-artwork').hover();await expect(page.locator('.viewer-artwork[data-depth-ready=true]')).toBeVisible();expect(await page.evaluate(()=>(window as any).depthRevealCount)).toBe(count);
  await page.locator('.viewer-depth-stage canvas').evaluate(el=>(el as HTMLCanvasElement).getContext('webgl2')!.getExtension('WEBGL_lose_context')!.loseContext());await expect(page.locator('.viewer-artwork > img')).toHaveCSS('opacity','1');await page.keyboard.press('Escape');
 });
 
 test('expanded depth waits for entrance animation and matches the final image bounds',async({page})=>{
- await start(page);await page.getByRole('button',{name:'Open Discovery',exact:true}).click();await page.getByRole('button',{name:'Expand Discovery artwork',exact:true}).evaluate(el=>{el.querySelector('img')!.dataset.artworkVersion='42';});await page.getByRole('button',{name:'Expand Discovery artwork',exact:true}).click();
+ await start(page);await page.getByRole('button',{name:'Open Clockwork Confetti',exact:true}).click();await page.getByRole('button',{name:'Expand Clockwork Confetti artwork',exact:true}).evaluate(el=>{el.querySelector('img')!.dataset.artworkVersion='42';});await page.getByRole('button',{name:'Expand Clockwork Confetti artwork',exact:true}).click();
  await page.locator('.viewer-artwork').hover();await expect(page.locator('.viewer-artwork[data-depth-ready=true]')).toBeVisible();await expect(page.locator('.viewer-artwork img')).toHaveAttribute('data-artwork-version','42');
  await expect.poll(()=>page.locator('.viewer-depth-stage canvas').evaluate(canvas=>{const bounds=canvas.getBoundingClientRect(),art=document.querySelector('.viewer-artwork')!.getBoundingClientRect(),g=(canvas as any).depthGeometry()[0];return g?Math.max(Math.abs(bounds.x+g.left-art.x),Math.abs(bounds.y+g.top-art.y),Math.abs(g.width-art.width),Math.abs(g.height-art.height)):999;})).toBeLessThan(1.2);
  const art=page.locator('.viewer-artwork'),box=(await art.boundingBox())!;await page.mouse.move(box.x+box.width*.9,box.y+box.height*.75);

@@ -9,7 +9,7 @@ test('launch starts with retained artwork colors and reveals the shell only once
 test('Reduced Motion shows the final theme without a launch transition',async({page})=>{
  await page.emulateMedia({reducedMotion:'reduce'});
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:100,coverflow_colors:true,appearance:{mode:"light",source:"artwork",accent:"#0064df",saturation:100,tint:15}})));
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  await expect(page.locator('.app-shell')).toHaveAttribute('data-adaptive','true');
  await expect(page.locator('html')).toHaveCSS('transition-duration','0s');
  await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');expect(await page.locator('.app-shell').evaluate(n=>n.getAnimations().filter(a=>a.id==='shell-launch').length)).toBe(0);

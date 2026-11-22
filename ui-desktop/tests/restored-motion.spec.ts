@@ -17,7 +17,7 @@ test('song and now-playing time preferences survive restart',async({page})=>{
  await page.reload();await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();await expect(songs).not.toBeChecked();await expect(playing).not.toBeChecked();
 });
 test('contributor names stay visible and the complete artist menu restores focus',async({page})=>{
- await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
  const artist=page.locator('.album-collaborator').first();await expect(artist.locator('.artist-credit-name')).toBeVisible();await artist.hover();await expect(page.locator('.artist-name-popover')).toHaveCount(0);
  const all=page.getByRole('button',{name:'15 more contributing artists'});await all.click();await expect(page.getByRole('menuitem',{name:'Guest artist 17',exact:true})).toBeVisible();await page.keyboard.press('Escape');await expect(all).toBeFocused();
 });
@@ -53,7 +53,7 @@ test('album durations stay on the song row and compact About stays beside header
  for(const size of [{width:720,height:480},{width:1280,height:800}])for(const percent of [80,100,125,150]){
   await page.setViewportSize(size);await page.goto('/?fixture=1&contributors=1');
   await page.evaluate(percent=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,show_song_durations:true}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
-  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+  await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
   const description=page.getByRole('region',{name:'About this album'});await expect(description).toBeVisible();
   const header=page.locator('.album-hero');const a=(await header.boundingBox())!,b=(await description.boundingBox())!;expect(b.y).toBeGreaterThanOrEqual(a.y);expect(b.y+b.height).toBeLessThanOrEqual(a.y+a.height+1);await expect(page.locator('.album-footer>.album-description')).toBeVisible();
   const row=page.locator('.track-row').first();await row.scrollIntoViewIfNeeded();await expect(row.locator('.time')).toBeVisible();

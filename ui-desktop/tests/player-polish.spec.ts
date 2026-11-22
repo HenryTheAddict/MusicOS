@@ -11,7 +11,7 @@ async function start(page:Page,mode='dark',percent=100){
    return {background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'};
   `)});
  });
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await expect(page.getByRole('button',{name:'Favorite playing song',exact:true})).toHaveAttribute('data-pulsing','true');
 }
@@ -20,7 +20,7 @@ for(const mode of ['light','dark'])test(`${mode}: player colors belong to the pl
  const colors=()=>bar.evaluate(el=>({surface:el.style.getPropertyValue('--surface-color'),accent:el.style.getPropertyValue('--accent'),ink:el.style.getPropertyValue('--ink'),fill:el.style.getPropertyValue('--transport-fill'),stroke:el.style.getPropertyValue('--transport-stroke')}));
  const expected=await page.evaluate(async mode=>{const path='/src/appearance.ts';const {themePalette,defaultAppearance}=await import(/* @vite-ignore */ path);return themePalette({...defaultAppearance,mode,source:'artwork'},{background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'},false);},mode);
  await expect.poll(async()=>(await colors()).accent).toBe(expected.accent);const before=await colors();
- await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).not.toBe(before.surface);
  expect(await colors()).toEqual(before);
  const tones=await bar.locator('.transport path[stroke]').first().evaluate(el=>({fill:getComputedStyle(el).fill,stroke:getComputedStyle(el).stroke}));expect(tones.fill).not.toBe(tones.stroke);
@@ -53,7 +53,7 @@ test('overflow fades, reveals on hover, and stays still with Reduced Motion; aud
  await page.screenshot({path:'out/rebuild-qa/player-audio-disclosure.png',animations:'disabled'});
 });
 test('shape morph stays inside the two-tone transport and respects Reduced Motion',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  const glyph=page.locator('.now-playing .transport .asset-icon[data-icon=play]');
  const tones=await glyph.locator('path[stroke]').evaluate(el=>({fill:getComputedStyle(el).fill,stroke:getComputedStyle(el).stroke}));expect(tones.fill).not.toBe(tones.stroke);
  await page.getByRole('button',{name:'Play collection',exact:true}).click();

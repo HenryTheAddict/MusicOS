@@ -3,7 +3,7 @@ test.use({launchOptions:{args:['--enable-webgl','--use-angle=swiftshader','--ena
 async function section(page:Page,name:string){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name,exact:true}).click();}
 test('navigation and context menus animate, while data and theme controls do not replay page entry',async({page})=>{
  await page.addInitScript(()=>{const animate=Element.prototype.animate;(window as any).navigationMotion=[];Element.prototype.animate=function(frames,options){const animation=animate.call(this,frames,options);(window as any).navigationMotion.push({animation,frames,options,target:this.className});return animation;};});
- await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await settleAnimations(page);await page.evaluate(()=>{(window as any).navigationMotion=[];});await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await settleAnimations(page);await page.evaluate(()=>{(window as any).navigationMotion=[];});await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='album-detail-reveal'))).toBe(true);
  expect(await page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='navigation-content'&&m.target==='page-content'))).toBe(false);
  await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as any).navigationMotion.some((m:any)=>m.animation.id==='menu-surface'))).toBe(true);await page.keyboard.press('Escape');
@@ -13,7 +13,7 @@ test('navigation and context menus animate, while data and theme controls do not
 });
 test('adaptive surfaces follow artwork and return after toggling color sources',async({page})=>{
  await page.emulateMedia({reducedMotion:'reduce'});await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode:'light',source:'artwork',accent:'#0064df',saturation:100,tint:15}})));
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');const artworkSurface=await page.locator('.current-theme').evaluate(el=>getComputedStyle(el).backgroundColor);
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');const artworkSurface=await page.locator('.current-theme').evaluate(el=>getComputedStyle(el).backgroundColor);
  await section(page,'Settings');await page.getByRole('button',{name:'Theme colors',exact:true}).click();await page.getByRole('menuitemradio',{name:'Original blue',exact:true}).click();await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(201, 239, 255)');
  await page.getByRole('button',{name:'Theme colors',exact:true}).click();await page.getByRole('menuitemradio',{name:'From artwork',exact:true}).click();await section(page,'Library');await expect(page.locator('.current-theme')).toHaveCSS('background-color',artworkSurface);
  await page.screenshot({path:'out/persistent-qa/adaptive-repaired.png',animations:'disabled'});

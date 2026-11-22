@@ -16,9 +16,9 @@ test('saved playlists live below More, preserve collections, and keep their own 
 for(const percent of [80,100,125,150])for(const theme of ['light','dark'])test(`named contributors and playlist box fit at ${percent}% ${theme}`,async({page})=>{
  await page.addInitScript(({percent,theme})=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:percent,appearance:{mode:theme,source:'artwork',accent:'#0064df',saturation:100,tint:15}}));localStorage.setItem('musicos-fixture-collections',JSON.stringify(Array.from({length:12},(_,i)=>({id:`playlist/${i}`,name:`Playlist ${i+1}`,track_ids:[1],kind:'manual',spark:null}))));},{percent,theme});
  for(const size of [{width:720,height:480},{width:1280,height:800}]){
-  await page.setViewportSize(size);await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+  await page.setViewportSize(size);await page.goto('/?fixture=1&contributors=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
   const credits=page.getByRole('group',{name:'Album artists',exact:true});
-  await expect(credits.getByRole('button',{name:'View artist M83',exact:true})).toBeVisible();await expect(credits.locator('.album-collaborator .artist-credit-name').first()).toBeVisible();
+  await expect(credits.getByRole('button',{name:'View artist Moonspindle',exact:true})).toBeVisible();await expect(credits.locator('.album-collaborator .artist-credit-name').first()).toBeVisible();
   expect(await credits.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThan(2);
   const contributorBottom=(await credits.boundingBox())!.y+(await credits.boundingBox())!.height;
   expect((await page.getByRole('button',{name:'Play collection',exact:true}).boundingBox())!.y).toBeGreaterThanOrEqual(contributorBottom);
@@ -29,7 +29,7 @@ for(const percent of [80,100,125,150])for(const theme of ['light','dark'])test(`
 });
 test('creation and transport morphs reverse without changing targets and respect Reduced Motion',async({page})=>{
  await page.goto('/?fixture=1');await settleAnimations(page);const create=page.locator('.sidebar-personal>.menu-trigger'),before=await create.boundingBox();await create.click();await expect(create.locator('[data-icon=menuClose]')).toBeVisible();await page.keyboard.press('Escape');await expect(create).toBeFocused();await settleAnimations(page);expect(await create.boundingBox()).toEqual(before);
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();const bar=page.getByRole('region',{name:'Now playing'});const pause=bar.getByRole('button',{name:'Pause',exact:true});await expect(pause).toBeVisible();await settleAnimations(page);const bounds=await pause.boundingBox();
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();const bar=page.getByRole('region',{name:'Now playing'});const pause=bar.getByRole('button',{name:'Pause',exact:true});await expect(pause).toBeVisible();await settleAnimations(page);const bounds=await pause.boundingBox();
  await pause.click();await page.waitForTimeout(70);await bar.getByRole('button',{name:'Play',exact:true}).click();await page.waitForTimeout(400);expect(await pause.boundingBox()).toEqual(bounds);await expect(pause.locator('[data-morphing]')).toHaveCount(0);
  await page.emulateMedia({reducedMotion:'reduce'});await pause.click();await expect(bar.locator('[data-transport-morph]')).toHaveCount(0);await create.click();await expect(create.locator('[data-cross-morph]')).toHaveCount(0);await page.keyboard.press('Escape');
 });

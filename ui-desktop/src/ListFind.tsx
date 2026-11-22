@@ -1,7 +1,7 @@
 import {useId,useLayoutEffect,useRef,useState,useEffect} from 'react';
 import {Icon} from './components';
 import usePanelPresence from './usePanelPresence';
-const examples=[['two words','Match both words'],['"exact phrase"','Keep words together'],['artist:M83','Find an artist'],['album:Discovery','Find an album'],['year:2010-2015','Choose a year range'],['is:favorite','Only favorites'],['-live','Exclude a word']];
+const examples=[['two words','Match both words'],['"exact phrase"','Keep words together'],['artist:Moonspindle','Find an artist'],['album:"Clockwork Confetti"','Find an album'],['year:2010-2015','Choose a year range'],['is:favorite','Only favorites'],['-live','Exclude a word']];
 export default function ListFind({open,focusRequest,value,context,count,total,unit,onChange,onClose}:{open:boolean;focusRequest:number;value:string;context:string;count:number;total:number;unit:string;onChange:(value:string)=>void;onClose:()=>void}){
  const present=usePanelPresence(open),input=useRef<HTMLInputElement>(null),help=useId(),tips=useRef<HTMLDivElement>(null),tipButton=useRef<HTMLButtonElement>(null);
  const [showTips,setShowTips]=useState(false);

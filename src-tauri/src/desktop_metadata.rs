@@ -235,16 +235,16 @@ mod tests {
         let connection = db(&path).unwrap();
         // Only the columns needed by the repair are significant in this isolated fixture.
         connection.execute_batch("DROP TABLE tracks; CREATE TABLE tracks(id INTEGER PRIMARY KEY,album TEXT);
-            INSERT INTO tracks VALUES(1,'CHROMAKOPIA'),(2,'Discovery');
+            INSERT INTO tracks VALUES(1,'CONFETTIPLANET'),(2,'Clockwork Confetti');
             INSERT INTO track_metadata_overrides(track_id,album,artist,origin,updated_at)
-            VALUES(1,'CHROMAKOPIA (Live at Camp Flog Gnaw)','Tyler, The Creator & Doechii','automatic',0),
-                  (2,'Discovery (Deluxe)','Daft Punk','user',0);").unwrap();
+            VALUES(1,'CONFETTIPLANET (Live at Teacup Bay)','Professor Puddle & Captain Confetti','automatic',0),
+                  (2,'Clockwork Confetti (Deluxe)','Pixel Ferrets','user',0);").unwrap();
         assert_eq!(repair_automatic_albums(&path).unwrap(), 1);
         assert_eq!(repair_automatic_albums(&path).unwrap(), 0);
         let value: (Option<String>,String) = connection.query_row("SELECT album,artist FROM track_metadata_overrides WHERE track_id=1",[],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
-        assert_eq!(value,(None,"Tyler, The Creator & Doechii".into()));
-        assert_eq!(connection.query_row("SELECT album FROM track_metadata_overrides WHERE track_id=2",[],|r|r.get::<_,String>(0)).unwrap(),"Discovery (Deluxe)");
-        assert_eq!(connection.query_row("SELECT album FROM desktop_album_override_repairs WHERE track_id=1",[],|r|r.get::<_,String>(0)).unwrap(),"CHROMAKOPIA (Live at Camp Flog Gnaw)");
+        assert_eq!(value,(None,"Professor Puddle & Captain Confetti".into()));
+        assert_eq!(connection.query_row("SELECT album FROM track_metadata_overrides WHERE track_id=2",[],|r|r.get::<_,String>(0)).unwrap(),"Clockwork Confetti (Deluxe)");
+        assert_eq!(connection.query_row("SELECT album FROM desktop_album_override_repairs WHERE track_id=1",[],|r|r.get::<_,String>(0)).unwrap(),"CONFETTIPLANET (Live at Teacup Bay)");
     }
     #[test]
     fn failed_probe_is_cached_until_file_changes() {
