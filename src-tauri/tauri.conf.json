@@ -36,6 +36,9 @@
     "active": true,
     "targets": "all",
     "category": "Music",
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    },
     "shortDescription": "Your music, in MusicOS.",
     "icon": [
       "icons/generated/32x32.png",

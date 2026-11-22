@@ -1,20 +1,25 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const {version} = JSON.parse(readFileSync(new URL('../product.config.json', import.meta.url), 'utf8'));
+const baseConfig = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 assert.match(version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
 const tag = `v${version}`;
 const output = 'out/desktop-release';
 const releasePlatforms = {
   'darwin-aarch64': {folder: 'macos', extension: '.app.tar.gz'},
+  'darwin-x86_64': {folder: 'macos', extension: '.app.tar.gz'},
   'linux-x86_64': {folder: 'appimage', extension: '.AppImage'},
   'windows-x86_64': {folder: 'nsis', extension: '-setup.exe'},
 };
 const basename = target => `musicOS_${version}_${target}`;
 const payload = target => basename(target) + releasePlatforms[target].extension;
+const macTargets = Object.keys(releasePlatforms).filter(target => target.startsWith('darwin-'));
+const archPackage = `musicos-${version}-1-x86_64.pkg.tar.zst`;
 
 function releaseRepo() {
   const repo = process.env.MUSICOS_RELEASE_REPOSITORY ?? '';
@@ -39,6 +44,10 @@ function configure(target) {
       requireSignedVersion: true,
     }},
   };
+  if (macTargets.includes(target)) config.bundle.macOS = {minimumSystemVersion: baseConfig.bundle.macOS.minimumSystemVersion};
+  if (target === 'darwin-x86_64') {
+    config.bundle.macOS.frameworks = ['resources/runtime/libonnxruntime.1.31.0.dylib'];
+  }
   if (target === 'windows-x86_64') {
     config.bundle.resources = Object.fromEntries(
       ['onnxruntime.dll', 'onnxruntime_providers_shared.dll'].map(name => [`resources/runtime/${name}`, `runtime/${name}`]),
@@ -64,19 +73,28 @@ function stage(target) {
   const dest = join(output, 'assets');
   mkdirSync(dest, {recursive: true});
   copyBundle(root, folder, extension, join(dest, payload(target)), true);
-  if (target === 'darwin-aarch64') {
+  if (macTargets.includes(target)) {
     copyBundle(root, 'dmg', '.dmg', join(dest, basename(target) + '.dmg'));
   }
 }
 
 function manifest(dir) {
   const release = `https://github.com/${releaseRepo()}/releases/download/${tag}`;
-  const dmg = basename('darwin-aarch64') + '.dmg';
+  const installers = macTargets.map(target => basename(target) + '.dmg');
   const targets = Object.keys(releasePlatforms);
   const bundles = targets.map(payload);
-  assert.deepEqual(readdirSync(dir).sort(), [dmg, ...bundles, ...bundles.map(name => name + '.sig')].sort(),
-    'Expected only the signed release bundles and the Mac installer');
-  assert.ok(statSync(join(dir, dmg)).size > 0, 'Missing Mac installer');
+  const assets = [...installers, archPackage, ...bundles, ...bundles.map(name => name + '.sig')];
+  assert.deepEqual(readdirSync(dir).sort(), assets.sort(),
+    'Expected only the signed release bundles, Mac installers and Arch package');
+  for (const name of assets) assert.ok(statSync(join(dir, name)).size > 0, `Empty release asset: ${name}`);
+  const info = execFileSync('tar', ['--zstd', '-xOf', join(dir, archPackage), '.PKGINFO'], {encoding: 'utf8'});
+  for (const field of ['pkgname = musicos', `pkgver = ${version}-1`, 'arch = x86_64']) {
+    assert.ok(info.split('\n').includes(field), `Wrong Arch package metadata: ${field}`);
+  }
+  const contents = execFileSync('tar', ['--zstd', '-tf', join(dir, archPackage)], {encoding: 'utf8'}).split('\n');
+  for (const name of ['usr/bin/musicos', 'opt/musicos/AppRun']) {
+    assert.ok(contents.includes(name), `Missing Arch package entry: ${name}`);
+  }
   const scratch = mkdtempSync(join(tmpdir(), 'musicos-signatures-'));
   const platforms = {};
   try {
@@ -95,6 +113,8 @@ function manifest(dir) {
       platforms[target] = {signature, url: `${release}/${name}`};
     }
     writeFileSync(join(dir, 'latest.json'), JSON.stringify({version, platforms}, null, 2) + '\n');
+    writeFileSync(join(dir, 'SHA256SUMS'), [...assets, 'latest.json'].sort().map(name =>
+      `${createHash('sha256').update(readFileSync(join(dir, name))).digest('hex')}  ${name}\n`).join(''));
   } finally {
     rmSync(scratch, {recursive: true, force: true});
   }

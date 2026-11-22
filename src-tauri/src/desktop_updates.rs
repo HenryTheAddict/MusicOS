@@ -48,6 +48,7 @@ fn supported_bundle(bundle: Option<BundleType>, is_appimage: bool, arch: &str) -
     matches!(
         (bundle, is_appimage, arch),
         (Some(BundleType::App), _, "aarch64")
+            | (Some(BundleType::App), _, "x86_64")
             | (Some(BundleType::Nsis), _, "x86_64")
             | (Some(BundleType::AppImage), true, "x86_64")
     )
@@ -346,7 +347,8 @@ mod tests {
         assert!(supported_bundle(Some(BundleType::App), false, "aarch64"));
         assert!(supported_bundle(Some(BundleType::Nsis), false, "x86_64"));
         assert!(supported_bundle(Some(BundleType::AppImage), true, "x86_64"));
-        assert!(!supported_bundle(Some(BundleType::App), false, "x86_64"));
+        assert!(supported_bundle(Some(BundleType::App), false, "x86_64"));
+        assert!(!supported_bundle(Some(BundleType::App), false, "arm"));
         assert!(!supported_bundle(
             Some(BundleType::AppImage),
             false,

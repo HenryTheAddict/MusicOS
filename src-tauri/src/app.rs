@@ -1037,7 +1037,7 @@ async fn sparklist(
             .path()
             .resource_dir()?
             .join(crate::platform::onnx_resource());
-        let setup = crate::spark_commands::Setup::for_library(&config.db_path, runtime,state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta);
+        let setup = crate::spark_commands::Setup::for_library(&config.db_path, runtime,app.path().resource_dir()?,state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta);
         if matches!(request,crate::spark_commands::Request::RemoveModel) {let _=state.analysis.control("cancel");}
         let mut value=crate::spark_commands::execute(&repo, &setup, request)?;let analysis=state.analysis.progress();value.analysis=crate::spark_commands::Activity{running:analysis.running,paused:analysis.paused,processed:analysis.processed,total:analysis.total};Ok(value)
     })
@@ -1059,7 +1059,7 @@ async fn audio_analysis(
         if action == "analyze_seed" && state.analysis.snapshot().running {
             let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);
             let tracks=repo.snapshot(&LibraryQuery::default())?.tracks.into_iter().filter(|t|ids.as_ref().is_some_and(|ids|ids.contains(&t.id))).map(|t|(t.id,t.path,t.duration as i64)).collect();
-            let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta);
+            let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),app.path().resource_dir()?,state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta);
             let model=setup.evaluation.then_some((setup.dir,setup.runtime,setup.evaluation));
             if state.analysis.request_seeds(tracks,model){return Ok(state.analysis.snapshot());}
         }
@@ -1082,6 +1082,7 @@ async fn audio_analysis(
                 app.path()
                     .resource_dir()?
                     .join(crate::platform::onnx_resource()),
+                app.path().resource_dir()?,
                 state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta,
             );
             let model = (setup.evaluation && setup.dir.join("manifest.json").is_file()).then_some((
@@ -1586,7 +1587,7 @@ async fn spark_recommendations(app:tauri::AppHandle,current:Option<i64>)->ApiRes
  let mut played=database.get_tracks()?.into_iter().filter(|t|t.last_played.is_some_and(|time|time>0)).collect::<Vec<_>>();played.sort_by_key(|t|(std::cmp::Reverse(t.last_played),t.id));
  let recent=played.iter().take(12).map(|t|t.id).collect::<Vec<_>>();
  let beta=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta;
- let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),beta);
+ let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),app.path().resource_dir()?,beta);
  let audio=if beta{crate::spark_engine::read_manifest(&setup.dir,setup.evaluation).ok().map(|manifest|crate::embeddings::candidates(&config.db_path,&library.tracks,&format!("{}@{}",manifest.id,manifest.revision))).unwrap_or_default()}else{vec![]};
  Ok(crate::spark_recommendations::rank(&items,&library.tracks,&audio,current,&recent))
 }).await}
@@ -1594,7 +1595,7 @@ async fn spark_recommendations(app:tauri::AppHandle,current:Option<i64>)->ApiRes
 async fn playlist_suggestions(app:tauri::AppHandle,id:String)->ApiResult<Value>{blocking(move||{
  let state=app.state::<AppState>();let config=state.config();let repo=LocalLibraryRepository::new(&config.db_path,&config.media_dir);let item=crate::collections::list(&repo)?.into_iter().find(|c|c.id==id).context("Playlist no longer exists")?;anyhow::ensure!(item.kind=="manual","Suggestions are for manual playlists");
  let beta=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).sparklist_beta;if !beta{return Ok(json!({"ids":[],"state":"setup","message":"Enable Sparklist audio suggestions in Audio settings."}));}
- let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),beta);
+ let setup=crate::spark_commands::Setup::for_library(&config.db_path,app.path().resource_dir()?.join(crate::platform::onnx_resource()),app.path().resource_dir()?,beta);
  let manifest=match crate::spark_engine::read_manifest(&setup.dir,setup.evaluation){Ok(value)=>value,Err(_)=>return Ok(json!({"ids":[],"state":"setup","message":"Set up the Sparklist audio model to get suggestions."}))};
  let library=repo.snapshot(&LibraryQuery::default())?;let existing_hashes=library.tracks.iter().filter(|t|item.track_ids.contains(&t.id)).filter_map(|t|t.content_hash.clone()).collect::<std::collections::HashSet<_>>();
  let database=musicos_init::database::Db::open(&config.db_path.to_string_lossy())?;let applied=database.metadata_enrichment_statuses("applied",100000)?;let recordings=applied.iter().filter(|r|item.track_ids.contains(&r.track_id)).filter_map(|r|r.recording_mbid.as_ref()).collect::<std::collections::HashSet<_>>();let duplicate_ids=applied.iter().filter(|r|r.recording_mbid.as_ref().is_some_and(|id|recordings.contains(id))).map(|r|r.track_id).collect::<std::collections::HashSet<_>>();

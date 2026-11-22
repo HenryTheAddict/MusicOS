@@ -51,6 +51,9 @@ jobs:
           - runner: macos-15
             platform: darwin-aarch64
             bundles: app,dmg
+          - runner: macos-15-intel
+            platform: darwin-x86_64
+            bundles: app,dmg
           - runner: ubuntu-22.04
             platform: linux-x86_64
             bundles: appimage
@@ -71,6 +74,42 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: Set Mac deployment target
+        if: runner.os == 'macOS'
+        run: echo 'MACOSX_DEPLOYMENT_TARGET=14.0' >> "$GITHUB_ENV"
+      - name: Check out pinned Intel ONNX Runtime source
+        if: matrix.platform == 'darwin-x86_64'
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/onnxruntime
+          ref: 402979ac1bef89dcd55add41eaa7277c407599eb
+          path: out/onnxruntime-source
+          submodules: recursive
+          persist-credentials: false
+      - name: Build Intel ONNX Runtime
+        if: matrix.platform == 'darwin-x86_64'
+        run: |
+          test "$(uname -m)" = x86_64
+          test "$(cat out/onnxruntime-source/VERSION_NUMBER)" = 1.31.0
+          out/onnxruntime-source/build.sh --config Release --build_shared_lib --parallel 3 \
+            --compile_no_warning_as_error \
+            --cmake_extra_defines CMAKE_OSX_ARCHITECTURES=x86_64 CMAKE_OSX_DEPLOYMENT_TARGET=14.0
+          cp out/onnxruntime-source/build/MacOS/Release/libonnxruntime.1.31.0.dylib src-tauri/resources/runtime/
+          mkdir -p third_party/licenses/onnxruntime-macos-x86_64
+          cp out/onnxruntime-source/LICENSE out/onnxruntime-source/ThirdPartyNotices.txt third_party/licenses/onnxruntime-macos-x86_64/
+      - name: Verify Mac runtime architecture and minimum OS
+        if: runner.os == 'macOS'
+        run: |
+          runtime=src-tauri/resources/runtime/libonnxruntime.1.31.0.dylib
+          test "$(lipo -archs "$runtime")" = "$(uname -m)"
+          mkdir -p out
+          otool -l "$runtime" | tee out/onnxruntime-load-commands.txt
+          python3 - <<'PY'
+          import pathlib, re
+          text = pathlib.Path('out/onnxruntime-load-commands.txt').read_text()
+          versions = re.findall(r'^\s*minos\s+(\d+\.\d+(?:\.\d+)?)$', text, re.MULTILINE)
+          assert versions and all(tuple(map(int, v.split('.'))) <= (14, 0, 0) for v in versions), versions
+          PY
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |
@@ -131,10 +170,33 @@ jobs:
             done
           fi
           npm run tauri -- build --ci --bundles "$BUNDLES" --config out/desktop-release/tauri.conf.json -- --locked
+      - name: Verify Intel application signature
+        if: matrix.platform == 'darwin-x86_64'
+        run: |
+          codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/musicOS.app
+          app=target/release/bundle/macos/musicOS.app
+          runtime="$app/Contents/Frameworks/libonnxruntime.1.31.0.dylib"
+          codesign --verify --strict --verbose=2 "$runtime"
+          app_team=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          runtime_team=$(codesign -dv --verbose=4 "$runtime" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          test -n "$app_team" && test "$app_team" = "$runtime_team"
       - name: Stage signed bundles
         env:
           PLATFORM: ${{ matrix.platform }}
         run: node scripts/desktop-release.mjs stage "$PLATFORM"
+      - name: Build and install-test Arch package
+        if: runner.os == 'Linux'
+        run: |
+          version=$(node scripts/desktop-release.mjs version)
+          mkdir -p out/arch-package
+          cp "out/desktop-release/assets/musicOS_${version}_linux-x86_64.AppImage" out/arch-package/musicOS.AppImage
+          export MUSICOS_VERSION="$version"
+          export MUSICOS_APPIMAGE_SHA256
+          MUSICOS_APPIMAGE_SHA256=$(sha256sum out/arch-package/musicOS.AppImage | cut -d ' ' -f 1)
+          docker run --rm -e MUSICOS_VERSION -e MUSICOS_APPIMAGE_SHA256 \
+            -v "$PWD/out/arch-package:/build" -v "$PWD/scripts/linux/arch:/recipe:ro" \
+            archlinux:latest bash /recipe/build.sh
+          cp out/arch-package/*.pkg.tar.zst out/desktop-release/assets/
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.platform }}
@@ -162,8 +224,9 @@ jobs:
       - name: Verify all packages and write updater manifest
         run: |
           sudo apt-get update
-          sudo apt-get install -y minisign
+          sudo apt-get install -y minisign zstd
           node scripts/desktop-release.mjs manifest release-assets
+          (cd release-assets && sha256sum --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
           name: verified-desktop-release
@@ -179,4 +242,4 @@ jobs:
           test "$visibility" = false || { echo 'The configured update repository must be public.' >&2; exit 1; }
           gh release create "v$version" release-assets/* --repo "$MUSICOS_RELEASE_REPOSITORY" \
             --target "$GITHUB_SHA" --draft --title "musicOS $version" \
-            --notes "Desktop installers for macOS (Apple Silicon), Windows (x64), and Linux (x64 AppImage)."
+            --notes "Desktop installers for macOS (Apple Silicon and Intel, macOS 14+), Windows (x64), and Linux (x64 AppImage and Arch package). Arch: install with pacman -U; update through pacman rather than the AppImage updater."

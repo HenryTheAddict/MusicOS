@@ -1,0 +1,30 @@
+pkgname=musicos
+pkgver=${MUSICOS_VERSION:?Set MUSICOS_VERSION to the release version}
+pkgrel=1
+pkgdesc='Your music, in MusicOS'
+arch=('x86_64')
+url='https://github.com/HenryTheAddict/MusicOS'
+license=('MIT')
+depends=('glibc' 'gcc-libs' 'gtk3' 'webkit2gtk-4.1' 'alsa-lib' 'libxkbcommon' 'systemd-libs')
+optdepends=('ffmpeg: Vorbis conversion for Wi-Fi sharing')
+options=('!strip' '!debug')
+source=('musicOS.AppImage')
+noextract=('musicOS.AppImage')
+sha256sums=("${MUSICOS_APPIMAGE_SHA256:?Set MUSICOS_APPIMAGE_SHA256 to the verified AppImage checksum}")
+
+prepare() {
+  chmod +x musicOS.AppImage
+  ./musicOS.AppImage --appimage-extract
+  test -x squashfs-root/AppRun
+}
+
+package() {
+  install -d "$pkgdir/opt" "$pkgdir/usr/bin" "$pkgdir/usr/share/applications"
+  cp -a squashfs-root "$pkgdir/opt/musicos"
+  printf '#!/bin/sh\nexport APPDIR=/opt/musicos\nexec /opt/musicos/AppRun "$@"\n' > "$pkgdir/usr/bin/musicos"
+  chmod 755 "$pkgdir/usr/bin/musicos"
+  local desktops=(squashfs-root/usr/share/applications/*.desktop)
+  test "${#desktops[@]}" -eq 1
+  sed 's|^Exec=.*|Exec=musicos %U|' "${desktops[0]}" > "$pkgdir/usr/share/applications/musicos.desktop"
+  cp -a squashfs-root/usr/share/icons "$pkgdir/usr/share/"
+}
