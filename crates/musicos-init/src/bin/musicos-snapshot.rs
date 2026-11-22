@@ -359,12 +359,11 @@ mod tests {
         let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
         seed_library(&mut app)?;
         let tracks = app.db.get_tracks()?;
-        assert_eq!(tracks.len(), 172);
-        assert_eq!(app.albums_list.len(), 12);
+        assert_eq!(tracks.len(), 160);
+        assert_eq!(app.albums_list.len(), 11);
         assert_eq!(
             app.artists_list,
             [
-                "Arctic Monkeys",
                 "Coldplay",
                 "Daft Punk",
                 "Frank Ocean",
