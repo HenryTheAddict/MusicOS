@@ -22,7 +22,7 @@ fn main()->Result<()>{
  let inference_seconds=start.elapsed().as_secs_f64();let request=Generation{seed:Some(candidates[0].id),mood:Some("Chilled".into()),..Default::default()};
  let preview=generate(&candidates,inputs.len(),request.clone(),&model.moods)?;ensure!(preview.track_ids==generate(&candidates,inputs.len(),request,&model.moods)?.track_ids,"Nondeterministic ranking");
  let feedback=generate(&candidates,inputs.len(),Generation{seed:Some(candidates[0].id),less_like:vec![candidates[1].id],..Default::default()},&model.moods)?;ensure!(!feedback.track_ids.contains(&candidates[1].id),"Explicit feedback ignored");
- let setup=musicos_tauri::spark_commands::Setup{dir:model_dir.clone(),runtime:args[2].clone().into(),evaluation:true};
+ let setup=musicos_tauri::spark_commands::Setup{dir:model_dir.clone(),runtime:args[2].clone().into(),resources:Path::new(&args[2]).parent().and_then(Path::parent).unwrap_or(Path::new(".")).to_owned(),evaluation:true};
  use musicos_tauri::spark_commands::{execute,Request};
  let chosen=execute(&repo,&setup,Request::Choose)?.chosen_id.unwrap();ensure!(candidates.iter().any(|c|c.id==chosen),"Choose For Me selected an unanalyzed song");
  let generation=Generation{seed:Some(chosen),mood:Some("Dreamy".into()),..Default::default()};

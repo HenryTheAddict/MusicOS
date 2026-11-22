@@ -23,20 +23,20 @@ pub enum Request {
  pub analyzed:usize,pub available:usize,pub analyzed_ids:Vec<i64>,
  pub preview:Option<Preview>,pub items:Vec<Collection>,pub chosen_id:Option<i64>,
 }
-pub struct Setup {pub dir:PathBuf,pub runtime:PathBuf,pub evaluation:bool}
+pub struct Setup {pub dir:PathBuf,pub runtime:PathBuf,pub resources:PathBuf,pub evaluation:bool}
 pub fn staged_candidate()->PathBuf{PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../out/rebuild-qa/model-evaluation-general/release-candidate/clap-general-v1")}
 impl Setup {
  /// Installed applications fetch from their signed resource bundle. Developer
  /// staging is only a fallback for unbundled builds.
  pub fn candidate_source(&self)->PathBuf {
-  let bundled=self.runtime.parent().and_then(Path::parent).unwrap_or(Path::new(".")).join("models/clap-general-v1");
+  let bundled=self.resources.join("models/clap-general-v1");
   if bundled.join("manifest.json").is_file(){bundled}else{staged_candidate()}
  }
- pub fn for_library(db:&Path,runtime:PathBuf,beta:bool)->Self {
+ pub fn for_library(db:&Path,runtime:PathBuf,resources:PathBuf,beta:bool)->Self {
   let dir=db.parent().unwrap_or(Path::new(".")).join("audio-model");
   #[cfg(debug_assertions)]
-  if let (Some(dir),Some(runtime))=(std::env::var_os("MUSICOS_SPARK_EVALUATION_DIR"),std::env::var_os("MUSICOS_SPARK_EVALUATION_RUNTIME")){return Self{dir:dir.into(),runtime:runtime.into(),evaluation:true};}
-  Self{dir,runtime,evaluation:beta}
+  if let (Some(dir),Some(runtime))=(std::env::var_os("MUSICOS_SPARK_EVALUATION_DIR"),std::env::var_os("MUSICOS_SPARK_EVALUATION_RUNTIME")){return Self{dir:dir.into(),runtime:runtime.into(),resources,evaluation:true};}
+  Self{dir,runtime,resources,evaluation:beta}
  }
 }
 pub fn execute(repo:&LocalLibraryRepository,setup:&Setup,request:Request)->Result<State>{
@@ -101,7 +101,14 @@ fn preserve_preview(preview:Option<Preview>,generation:&Generation,candidates:&[
 #[cfg(test)]mod tests{
  #[test]fn packaged_model_source_is_independent_of_build_checkout(){
   let temp=tempfile::tempdir().unwrap();let resources=temp.path().join("Resources");let bundled=resources.join("models/clap-general-v1");std::fs::create_dir_all(&bundled).unwrap();std::fs::write(bundled.join("manifest.json"),b"{}").unwrap();
-  let setup=Setup{dir:temp.path().join("installed"),runtime:resources.join("runtime/libonnxruntime.1.31.0.dylib"),evaluation:true};assert_eq!(setup.candidate_source(),bundled);
+  for runtime in [resources.join("runtime/libonnxruntime.1.31.0.dylib"),temp.path().join("Frameworks/libonnxruntime.1.31.0.dylib")] {
+   let setup=Setup::for_library(&temp.path().join("library.db"),runtime.clone(),resources.clone(),true);
+   assert_eq!(setup.runtime,runtime);assert_eq!(setup.candidate_source(),bundled);
+  }
+ }
+ #[test]fn missing_bundled_model_uses_developer_staging(){
+  let temp=tempfile::tempdir().unwrap();let setup=Setup::for_library(&temp.path().join("library.db"),temp.path().join("Frameworks/libonnxruntime.1.31.0.dylib"),temp.path().join("Resources"),true);
+  assert_eq!(setup.candidate_source(),staged_candidate());
  }
 
  use super::*;
