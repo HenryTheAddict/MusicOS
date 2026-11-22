@@ -22,19 +22,19 @@ async function touchTap(target:Locator){
 }
 test('library sorts albums naturally and album playback follows discs/tracks, not copy order',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Library',exact:true}).click();
- const albums=page.locator('.album-tile');await expect(albums.nth(0)).toContainText('Album 1');await expect(albums.nth(1)).toContainText('Album 2');await expect(albums.nth(9)).toContainText('Album 10');
+ const albums=page.locator('.album-tile');await expect(albums.nth(0)).toContainText('Imaginary Teacup Volume 1');await expect(albums.nth(1)).toContainText('Imaginary Teacup Volume 2');await expect(albums.nth(9)).toContainText('Imaginary Teacup Volume 10');
  await albums.first().click();
- await expect(page.locator('.song-open strong')).toHaveText(['Second light','Soft signal','Transit','Silver morning','Second light 5','Soft signal 6']);
+ await expect(page.locator('.song-open strong')).toHaveText(['Kazoo Sunrise','Soft signal','Transit','Silver morning','Kazoo Sunrise 5','Soft signal 6']);
  await page.getByRole('button',{name:'Play',exact:true}).click();await page.getByRole('button',{name:'Up next',exact:true}).click();
- await expect(page.locator('.queue-current')).toContainText('Second light');
- await expect(page.locator('.phone-reorder-row strong')).toHaveText(['Soft signal','Transit','Silver morning','Second light 5','Soft signal 6']);
+ await expect(page.locator('.queue-current')).toContainText('Kazoo Sunrise');
+ await expect(page.locator('.phone-reorder-row strong')).toHaveText(['Soft signal','Transit','Silver morning','Kazoo Sunrise 5','Soft signal 6']);
 });
 test('song catalogue sorts titles while saved playlist duplicates retain their exact order',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Songs',exact:true}).click();
  const titles=await page.locator('.song-open strong').allTextContents();
- expect(titles[0]).toBe('Second light');expect(titles[1]).toBe('Second light 5');expect(titles[2]).toBe('Second light 9');
+ expect(titles[0]).toBe('Kazoo Sunrise');expect(titles[1]).toBe('Kazoo Sunrise 5');expect(titles[2]).toBe('Kazoo Sunrise 9');
  await page.getByRole('button',{name:'Home',exact:true}).click();await page.getByRole('button',{name:'Weekend Playlist 4 songs',exact:true}).click();
- await expect(page.locator('.song-open strong')).toHaveText(['Second light','Transit','Second light','Transit 7']);
+ await expect(page.locator('.song-open strong')).toHaveText(['Kazoo Sunrise','Transit','Kazoo Sunrise','Transit 7']);
 });
 test('song swipe follows the finger, reveals Play next, and leaves vertical list gestures alone',async({page})=>{
  await page.goto('/?fixture=1');await page.getByRole('button',{name:'Library',exact:true}).click();await page.getByRole('button',{name:'Songs',exact:true}).click();
@@ -46,7 +46,7 @@ test('song swipe follows the finger, reveals Play next, and leaves vertical list
 });
 test('mini-player swipes skip once, expand, and header swipe dismisses',async({page})=>{
  await page.goto('/?fixture=1');const mini=page.locator('.phone-mini');await swipe(mini,-100);
- await expect(mini).toContainText('Soft signal');await swipe(mini,100);await expect(mini).toContainText('Second light');
+ await expect(mini).toContainText('Soft signal');await swipe(mini,100);await expect(mini).toContainText('Kazoo Sunrise');
  await swipe(mini,0,-95);await expect(page.getByRole('dialog',{name:'Player',exact:true})).toBeVisible();
  await swipe(page.locator('.player-top'),0,100);await expect(page.getByRole('dialog',{name:'Player',exact:true})).toHaveCount(0);
  await expect(page.locator('[data-swiping]')).toHaveCount(0);
@@ -65,7 +65,7 @@ test('pull down from the Now Playing artwork or title without changing the song'
  await page.goto('/?fixture=1');
  const mini=page.locator('.phone-mini'), player=page.getByRole('dialog',{name:'Player'});
  await mini.locator('.mini-identify').click();
- await expect(player.getByRole('heading',{name:'Second light'})).toBeVisible();
+ await expect(player.getByRole('heading',{name:'Kazoo Sunrise'})).toBeVisible();
  await swipe(player.locator('.phone-playing-art'),0,34);
  await expect(player).toBeVisible();
  await expect(player).not.toHaveAttribute('data-pulling');

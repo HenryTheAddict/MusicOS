@@ -147,13 +147,13 @@ test("playback follows selected sequence and queue", async ({ page }) => {
   await page
     .getByRole("button", { name: "Open Bubblewrap Lagoon", exact: true })
     .click();
-  await page.locator('.track-row').filter({has:page.getByRole('button',{name:'Play Second Light',exact:true})}).first().hover();
+  await page.locator('.track-row').filter({has:page.getByRole('button',{name:'Play Kazoo Sunrise',exact:true})}).first().hover();
   await page
-    .getByRole("button", { name: "Play Second Light", exact: true })
+    .getByRole("button", { name: "Play Kazoo Sunrise", exact: true })
     .first()
     .click();
   await expect(page.locator(".now-playing-info strong")).toHaveText(
-    "Second Light",
+    "Kazoo Sunrise",
   );
   await page.getByRole("button", { name: "Next track", exact: true }).click();
   await expect(page.locator(".now-playing-info strong")).toHaveText(
@@ -163,7 +163,7 @@ test("playback follows selected sequence and queue", async ({ page }) => {
     .getByRole("button", { name: "Previous track", exact: true })
     .click();
   await expect(page.locator(".now-playing-info strong")).toHaveText(
-    "Second Light",
+    "Kazoo Sunrise",
   );
   await page.getByRole("button", { name: "Open Up next", exact: true }).click();
   await expect(page.locator(".queue-row")).toHaveCount(10);
@@ -456,7 +456,7 @@ test("wide windows retain Sketch album sizes and sort menu works", async ({page}
   await page.getByRole("region",{name:"Library filters"}).getByRole("button",{name:"Sort",exact:true}).click();
   await page.getByRole("menuitemradio", {name:"Album Name", exact:true}).click();
   await page.keyboard.press("Escape");
-  await expect(page.locator(".card-open strong").first()).toHaveText("AM");
+  await expect(page.locator(".card-open strong").first()).toHaveText("Bubblewrap Lagoon");
   await page.getByRole("button", {name:"Open Bubblewrap Lagoon", exact:true}).click();
   await expect(page.locator(".album-hero .album-artwork .cover")).toHaveCSS("transform", "none");
   await expect(page.locator(".track-table")).toHaveCSS("transform", "none");
@@ -496,7 +496,7 @@ test("track reveal slides labels by 1.75rem while rows stay steady and keyboard 
   await play.focus();await page.keyboard.press("Tab");await page.keyboard.press("Shift+Tab");
   await expect(play).toHaveCSS("opacity", "1");
   await page.keyboard.press("Enter");
-  await expect(page.locator(".now-playing-info strong")).toHaveText("Second Light");
+  await expect(page.locator(".now-playing-info strong")).toHaveText("Kazoo Sunrise");
   await expect(play).toHaveCSS("opacity", "1");
   // A playback update must not re-run the whole page entrance or reset scroll.
   await page.locator(".page-scroll").evaluate(e => e.scrollTop = 100);

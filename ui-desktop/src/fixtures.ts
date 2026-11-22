@@ -73,7 +73,7 @@ for (let a = 0; a < seeds.length; a++) {
           ][n % 6]
         : [
             "Opening",
-            "Second Light",
+            "Kazoo Sunrise",
             "A Long Way Home Through the City at Night",
             "Interlude",
             "Afterglow",

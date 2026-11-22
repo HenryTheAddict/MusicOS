@@ -118,7 +118,7 @@ test('album and song menus open the matching editor',async({page})=>{
  await expect(page.getByRole('textbox',{name:'Album',exact:true})).toHaveValue('Clockwork Confetti');
  await page.getByRole('tab',{name:'Songs',exact:true}).click();
  await page.locator('.tag-order-song').nth(1).click();
- await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Second Light');
+ await expect(page.getByRole('textbox',{name:'Title',exact:true})).toHaveValue('Kazoo Sunrise');
  await page.getByRole('button',{name:'Lyrics',exact:true}).click();
  await expect(page.getByRole('region',{name:'Edit lyrics',exact:true})).toBeVisible();
  await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((call:any)=>call.command==='lyrics'&&call.args.request.action==='load').at(-1)?.args.request.trackId)).toBeTruthy();

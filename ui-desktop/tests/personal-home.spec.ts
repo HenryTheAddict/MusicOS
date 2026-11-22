@@ -39,7 +39,7 @@ test('home resumes the saved song once without replacing its queue or returning 
  await page.goto('/?fixture=1&lyrics=1');
  const player=page.locator('.now-playing'),resume=page.getByRole('button',{name:'Resume current song',exact:true});
  await expect(resume).toBeVisible();await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
- await setPlayerView(player,'queue');const rows=page.locator('.audio-panel .queue-row strong');await expect(rows).toHaveText(['Second Light']);const before=await rows.allTextContents();await setPlayerView(player,'playing');
+ await setPlayerView(player,'queue');const rows=page.locator('.audio-panel .queue-row strong');await expect(rows).toHaveText(['Kazoo Sunrise']);const before=await rows.allTextContents();await setPlayerView(player,'playing');
  await page.locator('.home-resume').hover();await resume.click();await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();await expect(resume).toHaveCount(0);
  const calls=await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='playback').map((r:any)=>r.args.action));expect(calls.map((action:any)=>action.type)).toEqual(['toggle']);
  await player.getByRole('button',{name:'Pause',exact:true}).click();await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();await expect(resume).toHaveCount(0);
