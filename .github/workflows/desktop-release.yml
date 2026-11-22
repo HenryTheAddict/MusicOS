@@ -102,6 +102,7 @@ jobs:
         run: |
           runtime=src-tauri/resources/runtime/libonnxruntime.1.31.0.dylib
           test "$(lipo -archs "$runtime")" = "$(uname -m)"
+          mkdir -p out
           otool -l "$runtime" | tee out/onnxruntime-load-commands.txt
           python3 - <<'PY'
           import pathlib, re
@@ -173,6 +174,12 @@ jobs:
         if: matrix.platform == 'darwin-x86_64'
         run: |
           codesign --verify --deep --strict --verbose=2 target/release/bundle/macos/musicOS.app
+          app=target/release/bundle/macos/musicOS.app
+          runtime="$app/Contents/Frameworks/libonnxruntime.1.31.0.dylib"
+          codesign --verify --strict --verbose=2 "$runtime"
+          app_team=$(codesign -dv --verbose=4 "$app" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          runtime_team=$(codesign -dv --verbose=4 "$runtime" 2>&1 | sed -n 's/^TeamIdentifier=//p')
+          test -n "$app_team" && test "$app_team" = "$runtime_team"
       - name: Stage signed bundles
         env:
           PLATFORM: ${{ matrix.platform }}

@@ -55,6 +55,8 @@ test('configures all four updater targets, Mac minimum OS, and Windows runtime',
     assert.equal(config.plugins.updater.requireSignedVersion, true);
     assert.equal(config.plugins.updater.pubkey, env.MUSICOS_UPDATER_PUBLIC_KEY);
     if (target.startsWith('darwin-')) assert.equal(config.bundle.macOS.minimumSystemVersion, '14.0');
+    if (target === 'darwin-x86_64') assert.deepEqual(config.bundle.macOS.frameworks,
+      ['resources/runtime/libonnxruntime.1.31.0.dylib']);
     if (target.startsWith('windows-')) assert.equal(Object.keys(config.bundle.resources).length, 2);
   }
   assert.notEqual(run(cwd, 'config', 'unknown').status, 0);

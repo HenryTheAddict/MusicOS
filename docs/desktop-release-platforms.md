@@ -35,6 +35,10 @@ Tauri's default is 10.13, but that was not a truthful effective minimum:
   package's `.nuspec` repository and release metadata. It sets
   `CMAKE_OSX_ARCHITECTURES=x86_64` and `CMAKE_OSX_DEPLOYMENT_TARGET=14.0`, and
   stages the resulting versioned dylib and upstream license notices.
+  Intel release builds load the copy in `Contents/Frameworks`, which Tauri signs
+  with the application's identity, rather than the legacy Resources copy.
+  The workflow verifies both signatures and matching Team IDs (including the
+  ad-hoc case). Development and Apple Silicon runtime paths are unchanged.
   See the upstream [native CPU build instructions](https://onnxruntime.ai/docs/build/inferencing.html).
 - The workflow checks the staged dylib's native architecture with `lipo` and its
   minimum OS with `otool` before packaging. Source checkout, compilation and the

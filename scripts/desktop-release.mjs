@@ -44,6 +44,9 @@ function configure(target) {
     }},
   };
   if (macTargets.includes(target)) config.bundle.macOS = {minimumSystemVersion: '14.0'};
+  if (target === 'darwin-x86_64') {
+    config.bundle.macOS.frameworks = ['resources/runtime/libonnxruntime.1.31.0.dylib'];
+  }
   if (target === 'windows-x86_64') {
     config.bundle.resources = Object.fromEntries(
       ['onnxruntime.dll', 'onnxruntime_providers_shared.dll'].map(name => [`resources/runtime/${name}`, `runtime/${name}`]),
