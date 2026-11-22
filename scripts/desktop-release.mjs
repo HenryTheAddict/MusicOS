@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 
 const {version} = JSON.parse(readFileSync(new URL('../product.config.json', import.meta.url), 'utf8'));
+const baseConfig = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8'));
 assert.match(version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
 const tag = `v${version}`;
 const output = 'out/desktop-release';
@@ -43,7 +44,7 @@ function configure(target) {
       requireSignedVersion: true,
     }},
   };
-  if (macTargets.includes(target)) config.bundle.macOS = {minimumSystemVersion: '14.0'};
+  if (macTargets.includes(target)) config.bundle.macOS = {minimumSystemVersion: baseConfig.bundle.macOS.minimumSystemVersion};
   if (target === 'darwin-x86_64') {
     config.bundle.macOS.frameworks = ['resources/runtime/libonnxruntime.1.31.0.dylib'];
   }

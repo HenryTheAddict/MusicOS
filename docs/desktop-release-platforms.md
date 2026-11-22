@@ -18,7 +18,8 @@ upgrade with `sudo pacman -U musicos-<version>-1-x86_64.pkg.tar.zst`.
 
 ## Native resources and Mac minimum OS
 
-Both Mac releases declare **macOS 14.0**. This is also the deployment target for
+The base Tauri configuration declares **macOS 14.0** for non-release builds too;
+both generated Mac release configurations inherit that minimum. This is also the deployment target for
 Rust, Objective-C and the Intel inference runtime build. Before this change,
 neither `src-tauri/tauri.conf.json` nor `tauri.macos.conf.json` set
 `minimumSystemVersion`, and the workflow did not set `MACOSX_DEPLOYMENT_TARGET`.

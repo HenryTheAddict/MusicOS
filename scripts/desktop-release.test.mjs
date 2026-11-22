@@ -8,6 +8,7 @@ import {after, test} from 'node:test';
 
 const script = fileURLToPath(new URL('./desktop-release.mjs', import.meta.url));
 const {version} = JSON.parse(readFileSync(new URL('../product.config.json', import.meta.url)));
+const baseConfig = JSON.parse(readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url)));
 const root = mkdtempSync(join(tmpdir(), 'musicos-release-test-'));
 after(() => rmSync(root, {recursive: true, force: true}));
 const secret = join(root, 'test.key');
@@ -46,6 +47,7 @@ function fixture() {
 }
 
 test('configures all four updater targets, Mac minimum OS, and Windows runtime', () => {
+  assert.equal(baseConfig.bundle.macOS.minimumSystemVersion, '14.0');
   const cwd = mkdtempSync(join(root, 'config-'));
   for (const target of Object.keys(extensions)) {
     const result = run(cwd, 'config', target);
@@ -54,7 +56,7 @@ test('configures all four updater targets, Mac minimum OS, and Windows runtime',
     assert.equal(config.bundle.createUpdaterArtifacts, true);
     assert.equal(config.plugins.updater.requireSignedVersion, true);
     assert.equal(config.plugins.updater.pubkey, env.MUSICOS_UPDATER_PUBLIC_KEY);
-    if (target.startsWith('darwin-')) assert.equal(config.bundle.macOS.minimumSystemVersion, '14.0');
+    if (target.startsWith('darwin-')) assert.equal(config.bundle.macOS.minimumSystemVersion, baseConfig.bundle.macOS.minimumSystemVersion);
     if (target === 'darwin-x86_64') assert.deepEqual(config.bundle.macOS.frameworks,
       ['resources/runtime/libonnxruntime.1.31.0.dylib']);
     if (target.startsWith('windows-')) assert.equal(Object.keys(config.bundle.resources).length, 2);
