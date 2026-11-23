@@ -455,14 +455,33 @@ impl MusicOs {
     }
 
     pub fn with_options(resolution: Resolution, options: MusicOsOptions) -> Self {
-        Self::initialize(resolution, options, LaunchMode::Device)
+        Self::initialize(
+            resolution,
+            options,
+            LaunchMode::Device,
+            crate::system::apply_system_volume,
+        )
     }
 
     pub fn for_snapshot(resolution: Resolution, use_fixture: bool) -> Self {
+        Self::initialize_snapshot(
+            resolution,
+            use_fixture,
+            &Self::media_db_path(),
+            crate::system::apply_system_volume,
+        )
+    }
+
+    fn initialize_snapshot(
+        resolution: Resolution,
+        use_fixture: bool,
+        media_db_path: &str,
+        apply_mixer: impl FnOnce(f32),
+    ) -> Self {
         let (db_path, mode) = if use_fixture {
-            (":memory:".into(), LaunchMode::SnapshotFixture)
+            (":memory:", LaunchMode::SnapshotFixture)
         } else {
-            (Self::media_db_path(), LaunchMode::Snapshot)
+            (media_db_path, LaunchMode::Snapshot)
         };
         Self::initialize(
             resolution,
@@ -471,10 +490,16 @@ impl MusicOs {
                 scan_policy: LibraryScanPolicy::ReadOnlyPreview,
             },
             mode,
+            apply_mixer,
         )
     }
 
-    fn initialize(resolution: Resolution, options: MusicOsOptions, mode: LaunchMode) -> Self {
+    fn initialize(
+        resolution: Resolution,
+        options: MusicOsOptions,
+        mode: LaunchMode,
+        apply_mixer: impl FnOnce(f32),
+    ) -> Self {
         let db_path = options.db_path.display().to_string();
         let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
@@ -496,7 +521,7 @@ impl MusicOs {
         } else {
             AudioPlayer::for_snapshot()
         };
-        player.set_volume(preferences.volume);
+        player.set_volume_with_mixer(preferences.volume, apply_mixer);
         player.set_eq_preset(preferences.eq_preset);
         player.set_shuffle(preferences.shuffle);
         player.set_loop_mode(preferences.loop_mode);
@@ -4651,15 +4676,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn non_fixture_snapshot_uses_simulated_audio() {
-        let app = MusicOs::initialize(
-            Resolution::VGA_4_3,
-            MusicOsOptions {
-                db_path: PathBuf::from(":memory:"),
-                scan_policy: LibraryScanPolicy::ReadOnlyPreview,
-            },
-            LaunchMode::Snapshot,
-        );
+    fn non_fixture_snapshot_does_not_write_to_the_mixer() {
+        let app = MusicOs::initialize_snapshot(Resolution::VGA_4_3, false, ":memory:", |_| {
+            panic!("initializing a non-fixture snapshot wrote the host mixer")
+        });
         assert_eq!(app.player.get_status().backend, "none");
         assert!(app.is_snapshot);
     }
