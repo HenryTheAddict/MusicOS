@@ -20,6 +20,37 @@ test('filter option menus show selection, support keyboard and stay inside the v
  }
 });
 
+test('long Genre choices remain clickable past the Filter panel edge',async({page},testInfo)=>{
+ const genres=['Electronic','Alternative','Rock','Ambient','Blues','Classical','Country','Disco','Folk','Funk','Gospel','Jazz','Metal','Pop','Reggae','Soul'];
+ await page.route('**/src/fixtures.ts*',async route=>{
+  const response=await route.fetch();
+  await route.fulfill({response,body:(await response.text()).replace(/genres:\s*\[\s*"Electronic",\s*"Alternative",\s*"Rock"\s*\]/,`genres: ${JSON.stringify(genres)}`)});
+ });
+ await page.goto('/?fixture=1');await openAlbums(page);
+ const trigger=page.getByRole('button',{name:'Filter',exact:true});
+ const panel=page.getByRole('region',{name:'Library filters'});
+ const genre=panel.getByRole('button',{name:'Genre',exact:true});
+ await trigger.click();
+ await genre.click();
+ const menu=page.getByRole('menu',{name:'Genre',exact:true});
+ const soul=menu.getByRole('menuitemradio',{name:'Soul',exact:true});
+ await expect(soul).toBeVisible();await settleAnimations(page);
+ await page.screenshot({path:testInfo.outputPath('filter-genre.png')});
+ await menu.evaluate(el=>el.scrollTop=el.scrollHeight);await settleAnimations(page);
+ const panelBox=(await panel.boundingBox())!,soulBox=(await soul.boundingBox())!;
+ expect(soulBox.y+soulBox.height/2).toBeGreaterThan(panelBox.y+panelBox.height);
+ expect(await soul.evaluate(el=>{
+  const box=el.getBoundingClientRect();
+  return el.contains(document.elementFromPoint(box.x+box.width/2,box.y+box.height/2));
+ })).toBe(true);
+ await soul.click();
+ await expect(genre).toHaveText('Soul');
+ await expect(trigger).toHaveAttribute('aria-expanded','true');
+ await genre.click();await expect(menu).toBeVisible();
+ await trigger.click();await expect(menu).toHaveCount(0);
+ await trigger.click();await expect(genre).toHaveAttribute('aria-expanded','false');
+});
+
 test('resizing a virtualized grid preserves cards until columns settle and ends without overlaps',async({page})=>{
  await page.goto('/?fixture=1&largeAlbums=1');await openAlbums(page);await expect(page.locator('.virtual-grid').first()).toBeVisible();
  await page.waitForTimeout(400);
