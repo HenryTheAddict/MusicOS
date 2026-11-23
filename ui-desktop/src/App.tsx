@@ -279,7 +279,6 @@ export default function App() {
   },[themeResolved]);
   const appliedTheme=useRef<{appearance:string;resolved:boolean;palette:Palette|null}|null>(null);
   const appearanceKey=JSON.stringify([look,look.mode==='system'?systemDark:null]);
-  const swipeAppearanceKey=look.source==='artwork'?JSON.stringify([appearanceKey,themeEpoch]):'';
   useLayoutEffect(()=>{
     const previous=appliedTheme.current;
     if(previous?.appearance!==appearanceKey||look.source!=='artwork'){
@@ -343,7 +342,6 @@ export default function App() {
   const dockedAudio=audioPanelPresent&&!compact&&preferences.audio_presentation!=='floating'&&
     (section==='Library'?shell.dockLibrary:shell.dockSection);
 
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,navigation.history.length>0,goBack,navigation.history.at(-1)?JSON.stringify({...navigation.history.at(-1),scroll:0}):'',swipeAppearanceKey);
   const playerOrigin=useRef<DOMRect|null>(null),playerOpener=useRef<HTMLElement|null>(null);
   function openPlayer(view:PlayerView='playing',preview:Track|null=null){setLyricPreview(preview);playerOpener.current=document.querySelector<HTMLElement>(view==='lyrics'?'.now-playing-title-action':view==='queue'?'.now-playing [aria-label="Open Up next"]':'.now-playing-cover');playerOrigin.current=document.querySelector('.now-playing-cover .cover')?.getBoundingClientRect()??null;setQueueOpen(false);setPlayerView(view);setExpandedOpen(true);}
   function toggleVisualizer(){if(!visualizerOpen){visualizerOpener.current=document.activeElement as HTMLElement|null;setVisualizerView((preferences.visualizer??defaultVisualizer).lyrics?'lyrics':'playing');}setVisualizerOpen(v=>!v);}
@@ -534,6 +532,13 @@ export default function App() {
     player.track?.cover_art_path;
   const [playingArtPalette,setPlayingArtPalette]=useState<Palette|null>(null);
   const playingThemeRequest=JSON.stringify([playingCover??null,playingAlbum?.track_ids[0]??player.track?.id]);
+  function swipeThemeKey(page:Route|undefined){
+    if(!page||look.source!=='artwork')return '';
+    const followsPlayback=page.view!=='album'&&page.view!=='artist';
+    return JSON.stringify([appearanceKey,themeEpoch,followsPlayback?playingThemeRequest:null]);
+  }
+  const previousRoute=navigation.history.at(-1);
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,!!previousRoute,goBack,previousRoute?JSON.stringify({...previousRoute,scroll:0}):'',swipeThemeKey(previousRoute));
   useEffect(()=>{
     let gone=false;
     if(loading||look.source!=='artwork'){setPlayingArtPalette(null);return;}
@@ -697,7 +702,7 @@ export default function App() {
   }
   function openRoute(next: Route) {
     const artwork=resolvedArtwork?.request===themeRequest?resolvedArtwork:undefined;
-    captureBackPage(scrollRef.current,JSON.stringify({...route,scroll:0}),swipeAppearanceKey,artwork);
+    captureBackPage(scrollRef.current,JSON.stringify({...route,scroll:0}),swipeThemeKey(route),artwork);
     window.dispatchEvent(new Event("musicos-navigation-start"));
     if(section==='Library'&&['album','artist'].includes(next.view))captureLibraryToolbar(scrollRef.current);
     captureScroll();

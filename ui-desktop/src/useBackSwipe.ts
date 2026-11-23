@@ -9,7 +9,7 @@ function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:$
 export type BackArtwork={request:string;result:{palette:Palette;path:string}|null};
 const swipeColors=['shell-color','page-color','surface-color','blob-color','accent'] as const;
 const pageThemeColors=[...swipeColors,'ink','secondary-ink','accent-ink','playback-tone'] as const;
-type BackTheme={appearance:string;artwork:BackArtwork;colors:Record<typeof pageThemeColors[number],string>};
+type BackTheme={key:string;artwork:BackArtwork;colors:Record<typeof pageThemeColors[number],string>};
 type Snapshot = {
  html:string;
  scroll:number;
@@ -64,7 +64,7 @@ function freezeMarkup(source:HTMLElement){
  return copy.outerHTML;
 }
 
-export function captureBackPage(root:HTMLElement|null,key:string,appearance:string,artwork?:BackArtwork){
+export function captureBackPage(root:HTMLElement|null,key:string,themeKey:string,artwork?:BackArtwork){
  const column=root?.closest<HTMLElement>('.content-column');
  const frame=root?.parentElement;
  if(!root||!column||!frame)return;
@@ -73,8 +73,8 @@ export function captureBackPage(root:HTMLElement|null,key:string,appearance:stri
  const html=freezeMarkup(root);
  // Save the resolved endpoint, even if the previous page is still tinting.
  const style=document.documentElement.style;
- const theme=appearance&&artwork?{
-  appearance,artwork,
+ const theme=themeKey&&artwork?{
+  key:themeKey,artwork,
   colors:Object.fromEntries(pageThemeColors.map(name=>[name,style.getPropertyValue(`--${name}`)])) as BackTheme['colors'],
  }:undefined;
  const size=html.length;
@@ -98,7 +98,6 @@ function preparePreview(saved:Snapshot){
  const {top,right,bottom,left}=saved.frame;
  frame.style.inset=`${top}px ${right}px ${bottom}px ${left}px`;
  frame.innerHTML=saved.html;
- if(saved.theme)for(const [name,value] of Object.entries(saved.theme.colors))frame.style.setProperty(`--${name}`,value);
  const page=frame.firstElementChild as HTMLElement;
  Object.assign(page.style,{width:'100%',height:'100%',transform:'none',margin:'0'});
  return {frame,page,scroll:saved.scroll};
@@ -108,9 +107,9 @@ export const backSwipeThreshold=110;
 export function acceptsBackAxis(x:number,y:number){return x< -10&&Math.abs(x)>Math.abs(y)*1.8;}
 export function consumesHorizontalScroll(target:Element|null,root:Element){for(let node=target;node&&node!==root;node=node.parentElement){if(node.matches('input,textarea,select,[contenteditable=true],[role=slider],dialog,[role=menu],.queue-scroll,.mini-queue-list'))return true;const style=getComputedStyle(node);if(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+2)return true;}return false;}
 export function shouldCommitSwipe(distance:number,width:number,velocity:number){return distance>=width*.25||(distance>=60&&velocity>=.55);}
-export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:(interactive:boolean,artwork?:BackArtwork)=>void,previousKey='',appearance=''){
- const latest=useRef({enabled,canBack,onBack,previousKey,appearance});
- latest.current={enabled,canBack,onBack,previousKey,appearance};
+export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:(interactive:boolean,artwork?:BackArtwork)=>void,previousKey='',themeKey=''){
+ const latest=useRef({enabled,canBack,onBack,previousKey,themeKey});
+ latest.current={enabled,canBack,onBack,previousKey,themeKey};
  const cue=useRef<HTMLDivElement>(null);
  const prepared=useRef<{saved:Snapshot;preview:ReturnType<typeof preparePreview>}|null>(null);
  useEffect(()=>{
@@ -141,25 +140,28 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  const pageColors=new Map<string,string>();
  const blocked=()=>!latest.current.enabled||!latest.current.canBack||!!document.querySelector('dialog[open],[role=menu]:not([inert]),.quick-audio:popover-open');
  const setProgress=(progress:number)=>themeRoot.style.setProperty('--back-swipe-progress',String(progress));
- const clear=()=>{
-  cancelAnimationFrame(handoffFrame);
-  cover?.release();cover=undefined;
-  animation?.cancel();animation=null;
-  preview?.frame.remove();preview=undefined;
-  themeRoot.style.removeProperty('--back-swipe-progress');
-  themeRoot.style.removeProperty('--back-swipe-duration');
+ const clearTheme=()=>{
+  if(!theme)return;
   for(const [color,value] of pageColors){
    if(value)page.style.setProperty(color,value);else page.style.removeProperty(color);
   }
   pageColors.clear();
-  if(theme){
-   delete themeRoot.dataset.backSwipeTheme;
-   for(const color of swipeColors){
-    themeRoot.style.removeProperty(`--swipe-from-${color}`);
-    themeRoot.style.removeProperty(`--swipe-to-${color}`);
-   }
-   theme=undefined;
+  for(const name of pageThemeColors)preview?.frame.style.removeProperty(`--${name}`);
+  delete themeRoot.dataset.backSwipeTheme;
+  for(const color of swipeColors){
+   themeRoot.style.removeProperty(`--swipe-from-${color}`);
+   themeRoot.style.removeProperty(`--swipe-to-${color}`);
   }
+  theme=undefined;
+ };
+ const clear=()=>{
+  cancelAnimationFrame(handoffFrame);
+  cover?.release();cover=undefined;
+  animation?.cancel();animation=null;
+  clearTheme();
+  preview?.frame.remove();preview=undefined;
+  themeRoot.style.removeProperty('--back-swipe-progress');
+  themeRoot.style.removeProperty('--back-swipe-duration');
   page.style.removeProperty('--back-swipe-offset');
   delete column.dataset.backSwipe;
   delete document.documentElement.dataset.swipeNavigation;
@@ -169,6 +171,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
  const paint=()=>{
   frame=0;
   if(!preview)return;
+  if(theme&&theme.key!==latest.current.themeKey)clearTheme();
   const progress=Math.max(0,Math.min(1,-amount/Math.max(1,width)));
   page.style.setProperty('--back-swipe-offset',`${progress*width}px`);
   cover?.seek(progress);
@@ -193,6 +196,7 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   const done=()=>{
    if(disposed||owner!==release)return;
    if(!commit){clear();return;}
+   if(theme&&theme.key!==latest.current.themeKey)clearTheme();
    setProgress(1);
    column.dataset.backSwipe='handoff';
    document.documentElement.dataset.swipeNavigation='true';
@@ -246,8 +250,9 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   cover=swipeCover(page,preview.page);
   if(!cover)window.dispatchEvent(new Event('musicos-back-gesture-start'));
   const targetTheme=saved.theme;
-  if(targetTheme&&targetTheme.appearance===latest.current.appearance){
+  if(targetTheme&&targetTheme.key===latest.current.themeKey){
    theme=targetTheme;
+   for(const [name,value] of Object.entries(targetTheme.colors))preview.frame.style.setProperty(`--${name}`,value);
    const displayed=getComputedStyle(themeRoot);
    const outgoing=getComputedStyle(page);
    for(const name of pageThemeColors){
