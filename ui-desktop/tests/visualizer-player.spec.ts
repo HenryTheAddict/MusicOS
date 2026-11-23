@@ -1,4 +1,38 @@
 import {test,expect} from '@playwright/test';
+
+test('Show cover also controls artwork in the visualizer lyrics view',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ const player=page.getByRole('dialog',{name:'Music player'}),cover=player.locator('.expanded-player-art img.cover');
+ await expect(cover).toBeInViewport();
+ await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');
+ await expect(player).toHaveAttribute('data-view','lyrics');
+ await expect(cover).toBeInViewport();
+ await expect(player.locator('.lyrics-lines')).toBeInViewport();
+ for(const shown of [false,true]){
+  await page.mouse.move(400,100);
+  await player.getByRole('button',{name:'Visualizer options'}).click();
+  const options=page.getByRole('dialog',{name:'Visualizer',exact:true});
+  await options.getByRole('switch',{name:'Show cover'}).setChecked(shown);
+  await options.getByRole('button',{name:'Close visualizer options'}).click();
+  if(shown)await expect(cover).toBeInViewport();else await expect(cover).toBeHidden();
+ }
+});
+
+test('exiting fullscreen leaves the native preset open and usable',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await expect(player).toBeVisible();
+ await expect(page.locator('html')).toHaveAttribute('data-native-visualizer','true');
+ await expect(player.getByRole('button',{name:'Choose visualizer'})).toContainText('boxes');
+ await player.getByRole('button',{name:'Play',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+ await player.getByRole('button',{name:'Full screen',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Exit full screen'})).toBeVisible();
+});
 test('presets, nested Escape, remembered lyrics and editor Paste have one owner',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');await page.getByRole('button',{name:'Open visualizer'}).click();
  const player=page.locator('.expanded-player');await expect(player).toHaveAttribute('data-chrome','hidden');

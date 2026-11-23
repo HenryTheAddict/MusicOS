@@ -3,7 +3,7 @@ import {cleanup,fireEvent,render,waitFor,within} from '@testing-library/react';
 import type {ComponentProps} from 'react';
 import VisualizerPlayer from '../src/VisualizerPlayer';
 import {defaultVisualizer} from '../src/visualizer';
-const state=vi.hoisted(()=>({native:false,full:false,browserFull:null as Element|null,override:undefined as (()=>void)|undefined,beatSync:undefined as boolean|undefined,call:vi.fn(),setFull:vi.fn()}));
+const state=vi.hoisted(()=>({native:false,full:false,browserFull:null as Element|null,beatSync:undefined as boolean|undefined,call:vi.fn(),setFull:vi.fn()}));
 vi.mock('../src/bridge',()=>({get native(){return state.native;},call:state.call,errorText:String}));
 vi.mock('@tauri-apps/api/event',()=>({listen:vi.fn(async()=>()=>{})}));
 vi.mock('@tauri-apps/api/window',()=>({getCurrentWindow:()=>({isFullscreen:async()=>state.full,setFullscreen:state.setFull})}));
@@ -11,9 +11,8 @@ vi.mock('../src/visualizerAlbumPalette',()=>({useVisualizerAlbumPalette:()=>({pe
 vi.mock('../src/VisualizerPicker',()=>({default:()=>null}));
 vi.mock('../src/VisualizerSettings',()=>({default:()=>null}));
 vi.mock('../src/BeatPulseGrid',()=>({default:({beatSync}:{beatSync:boolean})=>{state.beatSync=beatSync;return null;}}));
-vi.mock('../src/ExpandedPlayer',()=>({default:({onToggleFullscreen,visualizerStatus}:ComponentProps<typeof import('../src/ExpandedPlayer').default>)=>{
- state.override=onToggleFullscreen;
- return <><button onClick={()=>{if(onToggleFullscreen)onToggleFullscreen();else if(state.native)void state.setFull(!state.full);else if(document.fullscreenElement)void document.exitFullscreen();else void document.documentElement.requestFullscreen();}}>Fullscreen</button>{visualizerStatus}</>;
+vi.mock('../src/ExpandedPlayer',()=>({default:({visualizerStatus}:ComponentProps<typeof import('../src/ExpandedPlayer').default>)=>{
+ return <><button onClick={()=>{if(state.native)void state.setFull(!state.full);else if(document.fullscreenElement)void document.exitFullscreen();else void document.documentElement.requestFullscreen();}}>Fullscreen</button>{visualizerStatus}</>;
 }}));
 function props(preset='beat-pulse'){
  return {preferences:{visualizer:{...defaultVisualizer,preset}},onPreferences:vi.fn(),onClose:vi.fn(),onView:vi.fn(),player:{is_playing:true},theme:{},open:true,view:'playing'} as unknown as ComponentProps<typeof VisualizerPlayer>;
@@ -31,7 +30,6 @@ afterEach(async()=>{cleanup();await new Promise(resolve=>setTimeout(resolve,0));
 it.each([false,true])('uses browser fullscreen without closing and restores on unmount (initial fullscreen %s)',async initiallyFull=>{
  if(initiallyFull)state.browserFull=document.documentElement;
  const p=props(),view=render(<VisualizerPlayer {...p}/>),scope=within(view.container);
- await waitFor(()=>expect(state.override).toBeUndefined());
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(!!state.browserFull).toBe(!initiallyFull);expect(p.onClose).not.toHaveBeenCalled();
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(!!state.browserFull).toBe(initiallyFull);
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));view.unmount();
@@ -42,18 +40,18 @@ it.each([false,true])('restores desktop fullscreen before reopening native (init
  const p=props(),view=render(<VisualizerPlayer {...p}/>),scope=within(view.container);
  await waitFor(()=>expect(scope.queryByRole('status')).toBeNull());
  expect(state.full).toBe(true);
- expect(state.override).toBeUndefined();fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(false);expect(p.onClose).not.toHaveBeenCalled();
+ fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(false);expect(p.onClose).not.toHaveBeenCalled();
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));expect(state.full).toBe(true);
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));state.setFull.mockClear();
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'boxes'}}}/>);
  await waitFor(()=>expect(state.call).toHaveBeenCalledWith('visualizer',expect.objectContaining({request:expect.objectContaining({action:'open'})})));
- expect(state.setFull.mock.calls.map(call=>call[0])).toEqual([initiallyFull,true]);expect(state.override).toBe(p.onClose);
+ expect(state.setFull.mock.calls.map(call=>call[0])).toEqual([initiallyFull,true]);
  view.unmount();await waitFor(()=>expect(state.full).toBe(initiallyFull));
 });
 it('restores browser fullscreen when switching back to a native preset',async()=>{
  const p=props(),view=render(<VisualizerPlayer {...p}/>);fireEvent.click(within(view.container).getByRole('button',{name:'Fullscreen'}));expect(state.browserFull).not.toBeNull();
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'boxes'}}}/>);
- await waitFor(()=>expect(state.browserFull).toBeNull());expect(state.override).toBe(p.onClose);
+ await waitFor(()=>expect(state.browserFull).toBeNull());
 });
 it('passes changes to the saved Beat Sync setting into the web grid',()=>{
  const p=props(),view=render(<VisualizerPlayer {...p}/>);expect(state.beatSync).toBe(true);
