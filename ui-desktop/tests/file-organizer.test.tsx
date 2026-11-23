@@ -112,3 +112,22 @@ test('stopping a move reports completed work and offers the refreshed undo count
   expect(screen.getByRole('button', { name: 'Undo organization (4)' })).toBeEnabled();
   expect(screen.getByRole('button', { name: 'Move 1 file' })).toBeEnabled();
 });
+
+test('a pending recovery is reachable before any move or undo', async () => {
+  bridge.call.mockResolvedValueOnce({ ...preview, has_pending_recovery: true })
+    .mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce(preview);
+  render(<FileOrganizer onClose={vi.fn()} onRefresh={vi.fn().mockResolvedValue(undefined)} />);
+  const retry = await screen.findByRole('button', { name: 'Retry interrupted file work' });
+  expect(screen.queryByRole('button', { name: /^(Move|Undo)/ })).not.toBeInTheDocument();
+  fireEvent.click(retry);
+  expect(bridge.call).toHaveBeenLastCalledWith('organize_files', { action: 'recover', token: 'reviewed' });
+  expect(await screen.findByRole('button', { name: 'Move 2 files' })).toBeEnabled();
+  expect(screen.getByText('Interrupted file work checked.')).toBeInTheDocument();
+});
+
+test('a failed preview still allows recovery', async () => {
+  bridge.call.mockRejectedValueOnce(new Error('Unable to read preview'));
+  render(<FileOrganizer onClose={vi.fn()} onRefresh={vi.fn()} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unable to read preview');
+  expect(screen.getByRole('button', { name: 'Retry interrupted file work' })).toBeEnabled();
+});

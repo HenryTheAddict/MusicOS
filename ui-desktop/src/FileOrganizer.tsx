@@ -8,6 +8,7 @@ export interface OrganizationPreview {
   moves: { id: number; from: string; to: string }[];
   skipped: number;
   undo_available: number;
+  has_pending_recovery?: boolean;
   issues?: { path: string; message: string }[];
 }
 
@@ -73,6 +74,7 @@ export default function FileOrganizer({ onClose, onRefresh }: {
       setPreview(result);
     } catch (e) {
       setError(errorText(e));
+      setCanRecover(true);
     } finally {
       active.current = null;
       setPhase(null);
@@ -168,9 +170,11 @@ export default function FileOrganizer({ onClose, onRefresh }: {
     }
   }
 
-  const count = preview?.moves.length ?? 0;
-  const issues = preview?.issues ?? [];
-  const undoCount = preview?.undo_available ?? 0;
+  const recoveryNeeded = preview?.has_pending_recovery;
+  const review = recoveryNeeded ? null : preview;
+  const count = review?.moves.length ?? 0;
+  const issues = review?.issues ?? [];
+  const undoCount = review?.undo_available ?? 0;
   const canStop = phase === 'preview' || phase === 'apply';
   const progressLabel = phase ? phaseLabel[phase] : '';
 
@@ -187,10 +191,10 @@ export default function FileOrganizer({ onClose, onRefresh }: {
           <AssetIcon name="controlClose" />
         </button>
       </header>
-      {!busy && preview && (
+      {!busy && review && (
         <header className="organization-review">
           <h3>{count ? `${files(count)} to move` : 'No files to move'}</h3>
-          {preview.skipped > 0 && <p>{files(preview.skipped)} left in place · managed or unavailable</p>}
+          {review.skipped > 0 && <p>{files(review.skipped)} left in place · managed or unavailable</p>}
         </header>
       )}
       <div className="organization-body" role={count && !busy ? 'region' : undefined}
@@ -210,6 +214,9 @@ export default function FileOrganizer({ onClose, onRefresh }: {
         {error && <p className="organization-notice" role="alert">{error}</p>}
         {!busy && message && <p className="organization-notice" role="status">{message}</p>}
         {!busy && !preview && !error && <p role="status">Preview stopped. No files were moved by the preview.</p>}
+        {!busy && recoveryNeeded && (
+          <p role="status">File organization was interrupted. Finish recovery before moving or restoring more files.</p>
+        )}
         {!busy && issues.length > 0 && (
           <details className="organization-issues">
             <summary>{files(issues.length)} could not be moved</summary>
@@ -218,9 +225,9 @@ export default function FileOrganizer({ onClose, onRefresh }: {
             </ul>
           </details>
         )}
-        {!busy && count > 0 && (
+        {!busy && review && count > 0 && (
           <ul className="organization-moves" role="list" aria-label="Proposed moves">
-            {preview!.moves.map(move => {
+            {review.moves.map(move => {
               const from = splitPath(move.from);
               const to = splitPath(move.to);
               return (
@@ -237,13 +244,17 @@ export default function FileOrganizer({ onClose, onRefresh }: {
         )}
       </div>
       <footer className="organization-footer">
-        {!busy && preview && count > 0 && (
+        {!busy && count > 0 && (
           <p>Pause playback before moving. Tags, companion files and empty folders stay unchanged; existing files aren’t replaced.</p>
         )}
         <div className="organization-actions">
           {busy ? (
             canStop && <button type="button" disabled={stopping} onClick={() => void stop()}>
               {phase === 'preview' ? 'Stop preview' : 'Stop after this file'}
+            </button>
+          ) : recoveryNeeded ? (
+            <button type="button" className="organization-primary" onClick={() => void runChange('recover')}>
+              Retry interrupted file work
             </button>
           ) : (
             <>

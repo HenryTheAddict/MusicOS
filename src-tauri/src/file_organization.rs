@@ -19,6 +19,8 @@ pub struct Preview {
     pub moves: Vec<Move>,
     pub skipped: usize,
     pub undo_available: usize,
+    #[serde(default)]
+    pub has_pending_recovery: bool,
     #[serde(default)]pub issues:Vec<PreflightIssue>,
 }
 #[derive(Clone,Serialize,Deserialize)]pub struct PreflightIssue{pub path:String,pub message:String}
@@ -59,6 +61,7 @@ pub fn preview_with_progress(db_path: &Path, library: &crate::library::Library,c
     let db = connection(db_path)?;
     let mut result = Preview {
         undo_available: undo_count(&db)?,
+        has_pending_recovery: has_pending_recovery(&db)?,
         ..Default::default()
     };
     let mut reserved = std::collections::HashSet::new();
@@ -245,7 +248,12 @@ pub fn apply_with_progress(db_path: &Path, token: &str,cancel:&std::sync::atomic
 }
 /// Recover only journaled links whose byte identity and database path agree.
 pub fn recover(db_path:&Path)->Result<()> {let db=connection(db_path)?;let rows=db.prepare("SELECT id,track_id,old_path,new_path,hash,state FROM desktop_organization_history WHERE state IN ('planned','cleanup','undoing','undo_cleanup')")?.query_map([],|r|Ok((r.get::<_,i64>(0)?,r.get::<_,i64>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,r.get::<_,String>(5)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;for(id,track,old,new,digest,state)in rows{let current:String=db.query_row("SELECT path FROM tracks WHERE id=?",[track],|r|r.get(0))?;if state=="undo_cleanup"{ensure!(current==old&&hash(Path::new(&old))?==digest,"Restored file changed; cleanup needs review");if Path::new(&new).exists(){ensure!(hash(Path::new(&new))?==digest,"Cleanup location changed; files retained");std::fs::remove_file(&new)?;}db.execute("UPDATE desktop_organization_history SET state='undone' WHERE id=?",[id])?;}else if state=="undoing"{ensure!(hash(Path::new(&new))?==digest,"A moved song changed; Undo needs review");if !Path::new(&old).exists(){std::fs::hard_link(&new,&old)?;}ensure!(hash(Path::new(&old))?==digest,"The original location is occupied; both files retained");let tx=db.unchecked_transaction()?;tx.execute("UPDATE tracks SET path=?,revision=revision+1 WHERE id=? AND path IN (?,?)",params![old,track,old,new])?;tx.execute("UPDATE desktop_organization_history SET state='undo_cleanup' WHERE id=?",[id])?;tx.commit()?;std::fs::remove_file(&new)?;db.execute("UPDATE desktop_organization_history SET state='undone' WHERE id=?",[id])?;}else if state=="planned"&&current==old {if Path::new(&new).exists(){ensure!(hash(Path::new(&new))?==digest&&hash(Path::new(&old))?==digest,"An interrupted move needs review; both files were retained");std::fs::remove_file(&new)?;}db.execute("UPDATE desktop_organization_history SET state='aborted' WHERE id=?",[id])?;}else if current==new&&hash(Path::new(&new))?==digest {if Path::new(&old).exists(){ensure!(hash(Path::new(&old))?==digest,"The old location changed; both files were retained");std::fs::remove_file(&old)?;}db.execute("UPDATE desktop_organization_history SET state='moved' WHERE id=?",[id])?;}}Ok(())}
-pub fn pending(db_path:&Path)->Result<bool>{let db=connection(db_path)?;Ok(db.query_row("SELECT EXISTS(SELECT 1 FROM desktop_organization_history WHERE state IN ('planned','cleanup','undoing','undo_cleanup'))",[],|r|r.get(0))?)}
+fn has_pending_recovery(db: &Connection) -> Result<bool> {
+    Ok(db.query_row("SELECT EXISTS(SELECT 1 FROM desktop_organization_history WHERE state IN ('planned','cleanup','undoing','undo_cleanup'))", [], |row| row.get(0))?)
+}
+pub fn pending(db_path: &Path) -> Result<bool> {
+    has_pending_recovery(&connection(db_path)?)
+}
 pub fn undo(db_path: &Path) -> Result<usize> {
     let db = connection(db_path)?;
     let mut query=db.prepare("SELECT id,track_id,old_path,new_path,hash FROM desktop_organization_history WHERE state IN ('moved','cleanup','undoing','undo_cleanup') ORDER BY id DESC")?;
@@ -356,7 +364,37 @@ mod tests {
         };
         (temp, path, library)
     }
-    #[test]fn canceled_organization_stops_between_files_and_interrupted_links_recover(){let(_temp,path,library)=fixture();let plan=preview(&path,&library).unwrap();assert_eq!(apply_with_progress(&path,&plan.token,&std::sync::atomic::AtomicBool::new(true),|_,_|{}).unwrap(),0);assert!(Path::new(&plan.moves[0].from).exists());let plan=preview(&path,&library).unwrap();let item=&plan.moves[0];safe_parent(Path::new(&item.to),&library.sources[0].path).unwrap();let db=connection(&path).unwrap();db.execute("INSERT INTO desktop_organization_history(track_id,old_path,new_path,hash,state) VALUES(?,?,?,?,'planned')",params![item.id,item.from,item.to,item.hash]).unwrap();std::fs::hard_link(&item.from,&item.to).unwrap();recover(&path).unwrap();assert!(Path::new(&item.from).exists());assert!(!Path::new(&item.to).exists());}
+    #[test]
+    fn canceled_organization_stops_between_files_and_interrupted_links_recover() {
+        let (_temp, path, library) = fixture();
+        let plan = preview(&path, &library).unwrap();
+        assert!(!plan.has_pending_recovery);
+        assert_eq!(
+            apply_with_progress(
+                &path,
+                &plan.token,
+                &std::sync::atomic::AtomicBool::new(true),
+                |_, _| {}
+            )
+            .unwrap(),
+            0
+        );
+        assert!(Path::new(&plan.moves[0].from).exists());
+        let plan = preview(&path, &library).unwrap();
+        let item = &plan.moves[0];
+        safe_parent(Path::new(&item.to), &library.sources[0].path).unwrap();
+        let db = connection(&path).unwrap();
+        db.execute(
+            "INSERT INTO desktop_organization_history(track_id,old_path,new_path,hash,state) VALUES(?,?,?,?,'planned')",
+            params![item.id, item.from, item.to, item.hash],
+        ).unwrap();
+        std::fs::hard_link(&item.from, &item.to).unwrap();
+        assert!(preview(&path, &library).unwrap().has_pending_recovery);
+        recover(&path).unwrap();
+        assert!(Path::new(&item.from).exists());
+        assert!(!Path::new(&item.to).exists());
+        assert!(!preview(&path, &library).unwrap().has_pending_recovery);
+    }
     #[test]
     fn reviewed_move_and_undo_preserve_bytes_ids_favorites_and_membership() {
         let (_temp, path, library) = fixture();
