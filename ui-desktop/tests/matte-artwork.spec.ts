@@ -8,7 +8,7 @@ test('bright artwork keeps restored color while original covers remain standard 
   const response=await route.fetch(),body=await response.text(),marker='case "artwork_palette":';expect(body).toContain(marker);
   await route.fulfill({response,body:body.replace(marker,`${marker} return {background:'#ff0000',blob:'#ff0000',accent:'#ff0000',text:'#12202a'};`)});
  });
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  const expected=themePalette({...defaultAppearance,mode:'light',source:'artwork',saturation:150,tint:40},{background:'#ff0000',blob:'#ff0000',accent:'#ff0000',text:'#12202a'},false)!;
  await expect.poll(()=>page.locator('html').evaluate(el=>el.style.getPropertyValue('--surface-color'))).toBe(expected.background);
  await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');await page.locator('html').evaluate(el=>el.getAnimations().forEach(a=>a.finish()));

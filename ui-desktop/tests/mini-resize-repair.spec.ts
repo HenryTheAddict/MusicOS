@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 test('resized queue uses available height and actions preserve its footprint',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.locator('[data-track-id="1"]').hover();await page.locator('[data-track-id="1"] .row-play').click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.locator('[data-track-id="1"]').hover();await page.locator('[data-track-id="1"] .row-play').click();
  await page.getByRole('button',{name:'musicOS actions',exact:true}).click();await expect(page.getByRole('menuitem',{name:'Mini Player',exact:true}).locator('[data-icon=openMiniplayer]')).toHaveCount(1);await page.getByRole('menuitem',{name:'Mini Player',exact:true}).click();
  await page.setViewportSize({width:450,height:320});const mini=page.locator('.mini-player');await expect(mini).toHaveCSS('width','450px');await page.getByRole('button',{name:'Open Up next',exact:true}).click();await page.setViewportSize({width:330,height:420});
  await expect(mini).toHaveCSS('height','420px');const queueBox=await mini.locator('.mini-queue-list').boundingBox(),controls=await mini.locator('.mini-player-footer').boundingBox();expect(queueBox!.height).toBeGreaterThan(240);expect(queueBox!.y+queueBox!.height).toBeLessThanOrEqual(controls!.y+1);

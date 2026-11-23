@@ -6,7 +6,7 @@ import {SmartEditor} from '../src/SmartEditor';
 import {collectionKind,filterCollections} from '../src/CollectionManager';
 import MetadataWorkspace from '../src/MetadataWorkspace';
 import {sparkSetupStatus} from '../src/SparkSetup';
-const smart={id:'spark/1',name:'Rules',track_ids:[1],spark:{name:'Rules',match_mode:'any',limit:40,rules:[{field:'artist',op:'contains',value:'M83'},{field:'year',op:'greater_than',value:'2000'}]}} as SavedCollection;
+const smart={id:'spark/1',name:'Rules',track_ids:[1],spark:{name:'Rules',match_mode:'any',limit:40,rules:[{field:'artist',op:'contains',value:'Moonspindle'},{field:'year',op:'greater_than',value:'2000'}]}} as SavedCollection;
 afterEach(()=>{cleanup();bridge.call.mockReset();});
 test('collection tabs distinguish audio and rules, preserve identities and sort recent changes',()=>{
  const manual={id:'playlist/1',name:'Zed',spark:null,track_ids:[],updated_at:5} as SavedCollection,audio={id:'audio/1',name:'Mix',spark:null,kind:'audio',track_ids:[],updated_at:10} as SavedCollection;

@@ -25,7 +25,7 @@ test('view and track changes animate independently and keep the transport statio
  await expect.poll(async()=>((await next.boundingBox())?.y)).toBe(transport?.y);
  await player.getByRole('button',{name:'Show Lyrics'}).click();
  await player.getByRole('button',{name:'Show Now playing'}).click();
- await expect(player.getByRole('heading',{name:'Second light'})).toBeVisible();
+ await expect(player.getByRole('heading',{name:'Kazoo Sunrise'})).toBeVisible();
  await expect.poll(()=>player.evaluate(node=>node.getAnimations({subtree:true}).filter(a=>a.id==='phone-player-view').length)).toBe(0);
  const viewCount=(await calls()).filter(id=>id==='phone-player-view').length;
  await next.click();

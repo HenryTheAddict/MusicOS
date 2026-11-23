@@ -19,7 +19,7 @@ async function recordMotion(page:Page){
 test('Filter leaves without reserving space or retaining its open panel, and Back restores it',async({page})=>{
  await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);
  await page.getByRole('button',{name:'Filter',exact:true}).click();await expect(page.getByRole('region',{name:'Library filters'})).toBeVisible();
- await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
  const ghost=page.locator('.library-toolbar-exit');
  const departing=await page.evaluate(()=>(window as any).departingToolbar);
  expect(departing).toMatchObject({connected:true,inert:true,hidden:'true',pointerEvents:'none'});
@@ -32,10 +32,10 @@ test('Filter leaves without reserving space or retaining its open panel, and Bac
 });
 
 test('album details arrive independently and artist names reveal only on navigation',async({page})=>{
- await recordMotion(page);await page.goto('/?fixture=1&contributors=1');await openAlbums(page);await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await recordMotion(page);await page.goto('/?fixture=1&contributors=1');await openAlbums(page);await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
  const credits=await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.id==='album-detail-reveal'));
  expect(credits.length).toBeGreaterThan(0);expect(credits.length).toBeLessThanOrEqual(8);
- await page.getByRole('button',{name:'View artist M83',exact:true}).click();await expect(page.getByRole('heading',{name:'M83',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'View artist Moonspindle',exact:true}).click();await expect(page.getByRole('heading',{name:'Moonspindle',exact:true})).toBeVisible();
  await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>/artist-(name|portrait|detail)-reveal/.test(item.animation.id)&&item.animation.playState==='running').forEach((item:any)=>{item.animation.pause();item.animation.currentTime=120;}));
  await page.screenshot({path:'out/persistent-qa/navigation-artist-mid-reveal.png'});
  await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>item.animation.playState==='paused').forEach((item:any)=>item.animation.finish()));
@@ -48,9 +48,9 @@ test('album details arrive independently and artist names reveal only on navigat
 });
 
 test('Reduced Motion opens immediately with no exit copies or portrait motion',async({page})=>{
- await page.emulateMedia({reducedMotion:'reduce'});await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Junk',exact:true}).click();
- await expect(page.locator('.library-toolbar')).toHaveCount(0);await page.getByRole('button',{name:'View artist M83',exact:true}).click();
- await expect(page.getByRole('heading',{name:'M83',exact:true})).toBeVisible();
+ await page.emulateMedia({reducedMotion:'reduce'});await recordMotion(page);await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
+ await expect(page.locator('.library-toolbar')).toHaveCount(0);await page.getByRole('button',{name:'View artist Moonspindle',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'Moonspindle',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>(window as any).navigationMotion.filter((item:any)=>/artist-name|artist-portrait|library-toolbar/.test(item.animation.id)).length)).toBe(0);
 });
 
@@ -59,7 +59,7 @@ for(const mode of ['light','dark'])test(`${mode} Settings navigation surfaces fo
  // This deliberately mismatched provider palette models the reported screenshot.
  await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('case "artwork_palette":','case "artwork_palette": return {background:"#c5d7c9",blob:"#91ad98",accent:"#0055ff",text:"#12202a"};')});});
  await page.goto('/?fixture=1');await openAlbums(page);await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
- await page.getByRole('button',{name:'Open Junk',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  await expect(page.getByRole('tab',{name:'Appearance',exact:true})).toBeVisible();
  const surfaces=await page.evaluate(()=>{const root=getComputedStyle(document.documentElement),header=getComputedStyle(document.querySelector('.section-control>.menu-trigger')!),nav=getComputedStyle(document.querySelector('.settings-tabs')!);return {header:header.backgroundColor,control:root.getPropertyValue('--control-surface').trim(),nav:nav.backgroundColor,ink:root.getPropertyValue('--ink').trim(),text:header.color};});

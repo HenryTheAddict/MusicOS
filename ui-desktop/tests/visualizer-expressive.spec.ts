@@ -23,7 +23,7 @@ test('visualizer options stay compact in a short window',async({page})=>{
 });
 
 test('description-free album controls align with the artwork bottom',async({page})=>{
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Junk',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();
  const hero=page.locator('.album-hero');await expect(hero).toBeVisible();await expect(hero.locator('.album-description')).toHaveCount(0);
  await expect.poll(async()=>{const art=await hero.locator('.album-artwork-stage').boundingBox(),actions=await hero.locator('.album-footer').boundingBox();return Math.abs(art!.y+art!.height-actions!.y-actions!.height);}).toBeLessThan(2);await page.screenshot({path:'out/expressive-album-footer.png'});
 });

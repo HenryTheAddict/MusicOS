@@ -927,17 +927,17 @@ mod tests {
     #[test]
     fn exact_candidate_scores_above_auto_apply_threshold() {
         let candidate = candidate_from_recording(
-            &track("Digital Love", "Daft Punk", "Discovery", 301),
+            &track("Clockwork Hugs", "Pixel Ferrets", "Clockwork Confetti", 301),
             RecordingResult {
                 id: "recording".to_string(),
-                title: "Digital Love".to_string(),
+                title: "Clockwork Hugs".to_string(),
                 length: Some(301_000),
                 artist_credit: vec![ArtistCredit {
-                    name: "Daft Punk".to_string(),
+                    name: "Pixel Ferrets".to_string(),
                 }],
                 releases: vec![ReleaseResult {
                     id: "release".to_string(),
-                    title: "Discovery".to_string(),
+                    title: "Clockwork Confetti".to_string(),
                     date: Some("2001-03-12".to_string()),
                     release_group: Some(ReleaseGroupResult {
                         id: "group".to_string(),
@@ -953,13 +953,13 @@ mod tests {
     #[test]
     fn unrelated_candidate_stays_below_review_threshold() {
         let candidate = candidate_from_recording(
-            &track("Digital Love", "Daft Punk", "Discovery", 301),
+            &track("Clockwork Hugs", "Pixel Ferrets", "Clockwork Confetti", 301),
             RecordingResult {
                 id: "recording".to_string(),
-                title: "Blue Monday".to_string(),
+                title: "Purple Teapot Tuesday".to_string(),
                 length: Some(450_000),
                 artist_credit: vec![ArtistCredit {
-                    name: "New Order".to_string(),
+                    name: "The Paper Kazoos".to_string(),
                 }],
                 releases: vec![ReleaseResult {
                     id: "release".to_string(),
@@ -975,10 +975,10 @@ mod tests {
 
     #[test]
     fn recording_match_cannot_replace_tagged_album_edition() {
-        assert!(same_tagged_album(" CHROMAKOPIA ","chromakopia"));
-        assert!(!same_tagged_album("CHROMAKOPIA","CHROMAKOPIA (Live at Camp Flog Gnaw)"));
-        assert!(!same_tagged_album("Discovery (Deluxe)","Discovery"));
-        assert!(same_tagged_album("", "Discovery"));
+        assert!(same_tagged_album(" CONFETTIPLANET ","confettiplanet"));
+        assert!(!same_tagged_album("CONFETTIPLANET","CONFETTIPLANET (Live at Teacup Bay)"));
+        assert!(!same_tagged_album("Clockwork Confetti (Deluxe)","Clockwork Confetti"));
+        assert!(same_tagged_album("", "Clockwork Confetti"));
     }
 
     #[test]
@@ -991,11 +991,11 @@ mod tests {
 #[cfg(test)] mod suggestion_policy_tests {
  use super::*;
  #[test] fn high_confidence_matches_wait_for_review_and_dismissals_require_explicit_retry(){
-  let dir=tempfile::tempdir().unwrap();let path=dir.path().join("library.db");let db=Db::open(path.to_str().unwrap()).unwrap();let id=db.insert_track("/song.flac","digital love","Daft Punk","Discovery",301,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();
-  let response=serde_json::json!({"recordings":[{"id":"recording","title":"Digital Love","length":301000,"artist-credit":[{"name":"Daft Punk"}],"releases":[{"id":"release","title":"Discovery","date":"2001-03-12","release-group":{"id":"group"}}]}]});
+  let dir=tempfile::tempdir().unwrap();let path=dir.path().join("library.db");let db=Db::open(path.to_str().unwrap()).unwrap();let id=db.insert_track("/song.flac","clockwork hugs","Pixel Ferrets","Clockwork Confetti",301,1,1).unwrap();let track=db.get_track_by_id(id).unwrap().unwrap();
+  let response=serde_json::json!({"recordings":[{"id":"recording","title":"Clockwork Hugs","length":301000,"artist-credit":[{"name":"Pixel Ferrets"}],"releases":[{"id":"release","title":"Clockwork Confetti","date":"2001-03-12","release-group":{"id":"group"}}]}]});
   db.cache_provider_response(&format!("musicbrainz:{}",sha256(&musicbrainz_query(&track))),"musicbrainz",&response.to_string()).unwrap();
   let prefs=EnrichmentPreferences{download_artwork:false,..Default::default()};let cancel=AtomicBool::new(false);
-  let report=find_metadata_suggestions(&path,&[id],&prefs,&ArtworkPreferences::default(),&cancel,false,|_|{}).unwrap();assert_eq!(report.review,1);assert_eq!(report.applied,0);assert_eq!(db.get_track_by_id(id).unwrap().unwrap().title,"digital love");assert!(db.metadata_override_origin(id).unwrap().is_none());
+  let report=find_metadata_suggestions(&path,&[id],&prefs,&ArtworkPreferences::default(),&cancel,false,|_|{}).unwrap();assert_eq!(report.review,1);assert_eq!(report.applied,0);assert_eq!(db.get_track_by_id(id).unwrap().unwrap().title,"clockwork hugs");assert!(db.metadata_override_origin(id).unwrap().is_none());
   db.set_metadata_enrichment_state(id,"kept").unwrap();assert_eq!(find_metadata_suggestions(&path,&[id],&prefs,&ArtworkPreferences::default(),&cancel,false,|_|{}).unwrap().review,0);
   assert_eq!(find_metadata_suggestions(&path,&[id],&prefs,&ArtworkPreferences::default(),&cancel,true,|_|{}).unwrap().review,1);
   let candidate:MetadataCandidate=serde_json::from_str(db.metadata_enrichment_statuses("review",10).unwrap()[0].candidate_json.as_deref().unwrap()).unwrap();let identity=candidate_fingerprint(&candidate);let conn=musicos_init::database::Connection::open(&path).unwrap();conn.execute("INSERT INTO metadata_ignored_candidates VALUES(?,?,?,1)",rusqlite::params![id,identity,serde_json::to_string(&candidate).unwrap()]).unwrap();

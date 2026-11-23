@@ -36,7 +36,7 @@ test('resizing a virtualized grid preserves cards until columns settle and ends 
 });
 
 test('transport uses rounded finite contours and settles after rapid reversals',async({page})=>{
- await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.goto('/?fixture=1');await openAlbums(page);await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
  const glyph=page.locator('.transport [data-icon=pause]');await expect(glyph).not.toHaveAttribute('data-morphing','true');const endpoint=await glyph.locator('svg').innerHTML();
  await page.getByRole('button',{name:'Pause',exact:true}).click();
  await expect(page.locator('.transport [data-transport-morph] > path').first()).toHaveAttribute('d',/C/);

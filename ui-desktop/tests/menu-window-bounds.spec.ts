@@ -21,7 +21,7 @@ for(const percent of [100,150])for(const mode of ['light','dark'] as const)test(
  await expect(page.locator('html')).toHaveAttribute('data-theme-mode',mode);
  for(const route of ['songs','album']){
   if(route==='songs')await page.getByRole('button',{name:'Songs',exact:true}).click();
-  else{await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();}
+  else{await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();}
   const rows=page.locator('.track-body > .track-row');await expect(rows.first()).toBeVisible();await rows.first().scrollIntoViewIfNeeded();await page.waitForTimeout(300);
   const scroll=(await page.locator('.page-scroll').first().boundingBox())!;
   const visible=await rows.evaluateAll((els,bounds)=>els.map((el,index)=>({index,r:el.getBoundingClientRect()})).filter(({r})=>r.top>=bounds.y&&r.bottom<=bounds.y+bounds.height).map(({index})=>index),scroll);expect(visible.length).toBeGreaterThan(0);

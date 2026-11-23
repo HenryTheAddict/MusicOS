@@ -8,7 +8,7 @@ test('song actions occupy one line in Songs, albums and playlists at every scale
   await page.evaluate(value=>{localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,display_name:'Henry',interface_percent:value,coverflow_colors:false}));sessionStorage.removeItem('musicos-navigation-v1');},percent);await page.reload();
   for(const route of ['songs','album','playlist']){
    if(route==='songs')await page.getByRole('button',{name:'Songs',exact:true}).click();
-   if(route==='album'){await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();}
+   if(route==='album'){await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();}
    if(route==='playlist')await page.locator('.collection-open').filter({hasText:'Layout mix'}).click();
    const row=page.locator('.track-body > .track-row').first();await expect(row).toBeVisible();
    const actions=row.locator('.track-actions');await expect(actions.locator('.track-quality')).toBeVisible();

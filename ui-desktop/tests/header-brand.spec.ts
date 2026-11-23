@@ -30,5 +30,5 @@ test('header reserves fixed icon targets and gives remaining width to the player
   expect(r.actions.width).toBeGreaterThanOrEqual(44);expect(r.actions.height).toBeGreaterThanOrEqual(44);expect(r.actions.right).toBeLessThanOrEqual(r.label.x+1);expect(r.overflow).toBeLessThan(2);
   if(r.layout==='wide'){expect(r.player.x-r.section.right).toBeLessThanOrEqual(8*scale/100+1);expect(r.player.width).toBeGreaterThan(width-460*scale/100);}
  }
- await page.setViewportSize({width:1280,height:800});await page.goto('/?fixture=1&scale=100');await page.getByRole('button',{name:'Albums',exact:true}).click();await expect(page.getByRole('button',{name:'Open Plastic Beach',exact:true})).toBeVisible();await expect(page.locator('.now-playing-cover img')).toBeVisible();await page.screenshot({path:'out/persistent-qa/header-musicos-1280.png'});
+ await page.setViewportSize({width:1280,height:800});await page.goto('/?fixture=1&scale=100');await page.getByRole('button',{name:'Albums',exact:true}).click();await expect(page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true})).toBeVisible();await expect(page.locator('.now-playing-cover img')).toBeVisible();await page.screenshot({path:'out/persistent-qa/header-musicos-1280.png'});
 });

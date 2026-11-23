@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {openPlaylistCreator,settleAnimations} from './support/ui';
 for(const scale of [80,100,125,150])test(`heart layers share the button and row center at ${scale}%`,async({page})=>{
- await page.addInitScript(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:scale,appearance:{mode:'dark',source:'artwork',accent:'#ff0088',saturation:100,tint:15}})),scale);await page.goto('/?fixture=1');await settleAnimations(page);await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.addInitScript(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({interface_percent:scale,appearance:{mode:'dark',source:'artwork',accent:'#ff0088',saturation:100,tint:15}})),scale);await page.goto('/?fixture=1');await settleAnimations(page);await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  const positions=await page.locator('.track-row').evaluateAll(rows=>rows.slice(0,5).map(row=>{const button=row.querySelector('.track-favorite')!,b=button.getBoundingClientRect(),menu=row.querySelector('.track-actions>.menu-trigger')!.getBoundingClientRect();return {button:(b.top+b.bottom)/2,menu:(menu.top+menu.bottom)/2,layers:[...button.querySelectorAll('svg')].map(svg=>{const r=svg.getBoundingClientRect();return {x:(r.left+r.right-b.left-b.right)/2,y:(r.top+r.bottom-b.top-b.bottom)/2};})};}));
  console.log(JSON.stringify({scale,positions:positions.slice(0,1)}));for(const p of positions){expect(Math.abs(p.button-p.menu)).toBeLessThan(.8);for(const layer of p.layers){expect(Math.abs(layer.x)).toBeLessThan(.8);expect(Math.abs(layer.y)).toBeLessThan(.8);}}
 });

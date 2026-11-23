@@ -1,13 +1,13 @@
 import {expect,test} from 'vitest';
 import {compileListFind} from '../src/findQuery';
-const song={title:'Déjà Vu (feat. Guest)',artist:'M83; Another Artist',album:'Hurry Up, We’re Dreaming',genre:'Dream Pop',year:2011,favorited:true,available:true};
+const song={title:'Déjà Teacup (feat. Guest)',artist:'Moonspindle; Another Artist',album:'Hush, We’re Dreaming in Teacups',genre:'Dream Pop',year:2011,favorited:true,available:true};
 test('unqualified terms combine across fields with accent and punctuation normalization',()=>{
- expect(compileListFind('deja m83 dreaming')(song)).toBe(true);expect(compileListFind('dreaming missing')(song)).toBe(false);expect(compileListFind('')(song)).toBe(true);
+ expect(compileListFind('deja moonspindle dreaming')(song)).toBe(true);expect(compileListFind('dreaming missing')(song)).toBe(false);expect(compileListFind('')(song)).toBe(true);
 });
 test('quoted phrases, qualified fields, negative terms and year ranges stay local',()=>{
- expect(compileListFind('artist:M83 album:"were dreaming" year:2010-2012 -title:live')(song)).toBe(true);
- expect(compileListFind('title:M83')(song)).toBe(false);expect(compileListFind('"pop dream"')(song)).toBe(false);expect(compileListFind('-artist:M83')(song)).toBe(false);expect(compileListFind('year:2012')(song)).toBe(false);
- expect(compileListFind('album:"hurry up')(song)).toBe(true);
+ expect(compileListFind('artist:Moonspindle album:"were dreaming" year:2010-2012 -title:live')(song)).toBe(true);
+ expect(compileListFind('title:Moonspindle')(song)).toBe(false);expect(compileListFind('"pop dream"')(song)).toBe(false);expect(compileListFind('-artist:Moonspindle')(song)).toBe(false);expect(compileListFind('year:2012')(song)).toBe(false);
+ expect(compileListFind('album:"hush')(song)).toBe(true);
 });
 test('favorites and availability predicates do not use missing fields as evidence',()=>{
  expect(compileListFind('is:favorite is:AVAILABLE')(song)).toBe(true);expect(compileListFind('-is:liked')(song)).toBe(false);expect(compileListFind('is:unavailable')(song)).toBe(false);expect(compileListFind('is:favorite')({title:'favorite'})).toBe(false);

@@ -3,7 +3,7 @@ import {expect, test, type Page} from '@playwright/test';
 async function openUpdates(page: Page, startPlayback = false) {
   await page.goto('/?fixture=1');
   if (startPlayback) {
-    await page.getByRole('button', {name: 'Open Discovery', exact: true}).click();
+    await page.getByRole('button', {name: 'Open Clockwork Confetti', exact: true}).click();
     await page.getByRole('button', {name: 'Play collection', exact: true}).click();
   }
   await page.getByRole('button', {name: 'Choose section', exact: true}).click();

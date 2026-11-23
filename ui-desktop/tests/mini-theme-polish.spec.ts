@@ -1,7 +1,7 @@
 import {test,expect,type Page} from '@playwright/test'; import {setPlayerView,settleAnimations} from './support/ui';
 async function start(page:Page){
  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-analysis',JSON.stringify([{track_id:1,bpm:120}])));
- await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.goto('/?fixture=1');await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
  await page.locator('[data-track-id="1"]').hover();await page.locator('[data-track-id="1"] .row-play').click();
 }
 test('mini heart follows playing BPM, and queue retains rows/scroll across animated show/hide',async({page})=>{

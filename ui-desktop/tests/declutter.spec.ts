@@ -1,6 +1,6 @@
 import {test,expect,type Page} from '@playwright/test';
 async function settings(page:Page){await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();}
-async function artist(page:Page){await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open M83',exact:true}).click();}
+async function artist(page:Page){await page.getByRole('button',{name:'Artists',exact:true}).click();await page.getByRole('button',{name:'Open Moonspindle',exact:true}).click();}
 test('one still preview follows the selected size and view, retaining settings without playback',async({page})=>{
  await page.goto('/?fixture=1');await settings(page);
  const picker=page.locator('.mini-presets'),preview=picker.locator('.mini-preview'),sizes=picker.getByRole('group',{name:'Mini Player size'});
@@ -17,13 +17,13 @@ test('one still preview follows the selected size and view, retaining settings w
  await page.reload();await settings(page);await expect(sizes.getByRole('button',{name:'Wide',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 test('portrait remains clear and photo attribution is a separate keyboard-accessible disclosure',async({page})=>{
- await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch(),body=await response.text();await route.fulfill({response,body:body.replace('artist_mbid: "fixture"','artist_mbid: "fixture", portrait_source_url:"https://commons.wikimedia.org/wiki/File:M83.jpg", portrait_credit:"Example photographer", portrait_license:"CC BY-SA 4.0"')});});
+ await page.route('**/src/fixtures.ts*',async route=>{const response=await route.fetch(),body=await response.text();await route.fulfill({response,body:body.replace('artist_mbid: "fixture"','artist_mbid: "fixture", portrait_source_url:"https://commons.wikimedia.org/wiki/File:Moonspindle.jpg", portrait_credit:"Example photographer", portrait_license:"CC BY-SA 4.0"')});});
  await page.goto('/?fixture=1');await artist(page);
- const portrait=page.getByRole('button',{name:'Expand M83 portrait',exact:true}),credit=page.locator('.artist-photo-credit');
+ const portrait=page.getByRole('button',{name:'Expand Moonspindle portrait',exact:true}),credit=page.locator('.artist-photo-credit');
  await portrait.hover();await portrait.focus();await expect(page.locator('.portrait-fact,.portrait-notes')).toHaveCount(0);await expect(portrait.locator('.cover')).toHaveCSS('transform','none');await expect(credit).not.toHaveAttribute('open','');await expect(credit.getByRole('button',{name:'CC BY-SA 4.0 ↗'})).not.toBeVisible();
  await credit.locator('summary').focus();await page.keyboard.press('Enter');await expect(credit).toHaveAttribute('open','');await expect(credit.getByText('Example photographer')).toBeVisible();await expect(credit.getByRole('button',{name:'CC BY-SA 4.0 ↗'})).toBeVisible();
  const photo=(await portrait.boundingBox())!,caption=(await credit.boundingBox())!;expect(caption.y).toBeGreaterThanOrEqual(photo.y+photo.height);await page.screenshot({path:'out/persistent-qa/artist-separate-photo-credit.png'});
- await credit.locator('summary').press('Enter');await portrait.click();await expect(page.getByRole('dialog',{name:'M83 artwork'})).toBeVisible();await page.keyboard.press('Escape');await expect(portrait).toBeFocused();await expect(credit).not.toHaveAttribute('open','');
+ await credit.locator('summary').press('Enter');await portrait.click();await expect(page.getByRole('dialog',{name:'Moonspindle artwork'})).toBeVisible();await page.keyboard.press('Escape');await expect(portrait).toBeFocused();await expect(credit).not.toHaveAttribute('open','');
 });
 test('size picker and single preview fit every desktop scale and theme without enlarging the player',async({page})=>{
  test.setTimeout(180000);

@@ -3,14 +3,14 @@ import {chooseSection,openAlbums} from './support/ui';
 async function settings(page:Page){await chooseSection(page,'Settings');}
 test('Albums search animates both directions, reverses in place, and restores focus',async({page})=>{
  await page.goto('/?fixture=1');await openAlbums(page);const opener=page.getByRole('button',{name:'Search music and commands',exact:true});await opener.click();const dialog=page.getByRole('dialog',{name:'SuperCommand',exact:true});await expect(dialog).toHaveAttribute('data-open','true');
- const box=page.getByRole('combobox',{name:'SuperCommand search'});await box.fill('Plastic Beach');await expect(page.locator('.command-results [role=option]').first()).toContainText('Plastic Beach');
+ const box=page.getByRole('combobox',{name:'SuperCommand search'});await box.fill('Bubblewrap Lagoon');await expect(page.locator('.command-results [role=option]').first()).toContainText('Bubblewrap Lagoon');
  await expect.poll(()=>dialog.evaluate(el=>+getComputedStyle(el).opacity)).toBe(1);
  // Freeze a real closing animation partway through to check reversal without a remount.
  await page.keyboard.press('ControlOrMeta+k');await dialog.evaluate(el=>{const a=el.getAnimations().find(a=>a.id==='command-presence')!;a.pause();a.currentTime=60;el.setAttribute('data-reversal-marker','same-dialog');});
  const closing=await dialog.evaluate(el=>+getComputedStyle(el).opacity);expect(closing).toBeGreaterThan(0);expect(closing).toBeLessThan(1);
- await page.keyboard.press('ControlOrMeta+k');await expect(dialog).toHaveAttribute('data-open','true');await expect(dialog).toHaveAttribute('data-reversal-marker','same-dialog');await expect(box).toHaveValue('Plastic Beach');await expect.poll(()=>dialog.evaluate(el=>+getComputedStyle(el).opacity)).toBe(1);
+ await page.keyboard.press('ControlOrMeta+k');await expect(dialog).toHaveAttribute('data-open','true');await expect(dialog).toHaveAttribute('data-reversal-marker','same-dialog');await expect(box).toHaveValue('Bubblewrap Lagoon');await expect.poll(()=>dialog.evaluate(el=>+getComputedStyle(el).opacity)).toBe(1);
  await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(opener).toBeFocused();
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();await expect(page.getByRole('button',{name:'Open SuperCommand',exact:true}).locator('svg')).toHaveCount(1);
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await expect(page.getByRole('button',{name:'Open SuperCommand',exact:true}).locator('svg')).toHaveCount(1);
 });
 test('Reduced Motion switches search states without movement',async({page})=>{
  await page.emulateMedia({reducedMotion:'reduce'});await page.goto('/?fixture=1');await page.getByRole('button',{name:'Search music and commands',exact:true}).click();const dialog=page.locator('.supercommand');await expect(dialog).toHaveCSS('transform','none');expect(await dialog.evaluate(el=>el.getAnimations().filter(a=>a.playState==='running').length)).toBe(0);await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);

@@ -5,7 +5,7 @@ async function start(page:Page){
   localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'playlist/heart-qa',kind:'manual',name:'Heart tempo QA',track_ids:[1,2,3]}]));
  });
  await page.goto('/?fixture=1');
- await page.getByRole('button',{name:'Open Plastic Beach',exact:true}).click();
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
 }
 const heart=(page:Page,id:number)=>page.locator(`[data-track-id="${id}"] .track-favorite`);
 async function playRow(page:Page,id:number){const row=page.locator(`[data-track-id="${id}"]`);await row.hover();await row.locator('.row-play').click();}
