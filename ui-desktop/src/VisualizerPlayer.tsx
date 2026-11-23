@@ -199,6 +199,8 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
         save({ ...prefs, lyrics: next === 'lyrics' });
       }}
       visualizerMode
+      visualizerCover={prefs.show_cover !== false}
+      coverPulse={prefs.beat_sync}
       fullscreenManaged
       onToggleFullscreen={beatPulse ? undefined : props.onClose}
       visualizerControls={(

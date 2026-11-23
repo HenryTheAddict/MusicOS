@@ -20,6 +20,7 @@ pub struct Preferences {
     pub beat_sync: bool,
     pub album_colors: bool,
     pub lyrics: bool,
+    pub show_cover: bool,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -31,6 +32,7 @@ impl Default for Preferences {
             beat_sync: true,
             album_colors: false,
             lyrics: false,
+            show_cover: true,
         }
     }
 }

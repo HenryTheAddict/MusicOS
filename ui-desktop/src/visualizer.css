@@ -32,6 +32,9 @@
 .expanded-player[data-visualizer=true] .expanded-header-actions{margin-left:auto;}
 .expanded-player[data-visualizer=true] .expanded-player-header button{color:#fff;background:var(--visualizer-control);border-color:var(--control-border);}
 .expanded-player[data-visualizer=true] .expanded-song-column{display:none!important;}
+.expanded-player[data-visualizer=true][data-view=playing] .expanded-song-column{display:flex!important;visibility:visible;}
+.expanded-player[data-visualizer=true][data-view=playing] .expanded-player-art{pointer-events:auto;}
+.expanded-player[data-visualizer=true] .expanded-player-art .cover{box-shadow:0 18px 48px rgb(0 0 0/.35);}
 .expanded-player[data-visualizer=true] .expanded-player-content{display:flex!important;align-items:center;justify-content:center;padding:76px 20px 12px!important;bottom:140px;}
 .expanded-player[data-visualizer=true] .expanded-side-view{width:min(54rem,100%);height:100%;}
 .expanded-player[data-visualizer=true] .expanded-lyrics-view{width:min(43rem,100%);}
@@ -141,3 +144,7 @@
 .lyrics-pane[data-variant=visualizer] .lyric-line[data-current=true]:dir(rtl) .lyric-word{--lyric-fill-direction:to left;}
 .lyrics-pane[data-variant=visualizer] .lyric-glow-clone .lyric-word{text-shadow:0 0 .17em #fff6,0 0 .27em color-mix(in srgb,var(--visualizer-ink) 32%,transparent)!important;}
 .lyrics-pane[data-variant=visualizer][data-following=true] .lyric-line[data-in-window=true]:not([data-current=true]){opacity:.66;filter:none!important;}
+.expanded-player[data-visualizer=true][data-visualizer-cover=hidden][data-view=playing] .expanded-player-art{display:none;}
+.expanded-player-art.cover-beat[data-pulsing=true]{animation:cover-tempo var(--heart-period) ease-out infinite;transform-origin:center;}
+@keyframes cover-tempo{0%,100%{transform:scale(1)}9%{transform:scale(1.035)}45%{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.expanded-player-art.cover-beat{animation:none!important;}}

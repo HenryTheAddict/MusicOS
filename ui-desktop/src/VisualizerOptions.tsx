@@ -14,6 +14,7 @@ export default function VisualizerOptions({value,onChange,fallback=false,picker=
    <ThemedSwitch label="Album colors" checked={!!value.album_colors} onChange={album_colors=>update({album_colors})}/>
    <ThemedSwitch label="Beat Sync" checked={value.beat_sync} onChange={beat_sync=>update({beat_sync})}/>
    <ThemedSwitch label="Visualizer lyrics" checked={value.lyrics} onChange={lyrics=>update({lyrics})}/>
+   <ThemedSwitch label="Show cover" checked={value.show_cover!==false} onChange={show_cover=>update({show_cover})}/>
   </div>
  </section>;
 }
