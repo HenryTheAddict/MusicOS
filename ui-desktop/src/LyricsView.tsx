@@ -86,7 +86,8 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
      if(variant==='full'){
       const sung=progress/100;
       const eased=sung*sung*(3-2*sung);
-      word.node.style.setProperty('--word-weight',String(Math.round(400+eased*300)));
+      word.node.style.setProperty('--word-weight',String(Math.round(300+eased*400)));
+      word.node.style.setProperty('--word-ink',String(.82+eased*.18));
      }
      if(word.progress<0||previous!==feather)word.node.style.setProperty('--word-feather',feather?'8%':'0%');
      word.progress=progress;
@@ -108,6 +109,7 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  },[active,current,player.is_playing,track?.id,doc,pauses,variant]);
 
  const index=doc&&current?lyricIndex(doc,position):-1,activeLines=doc&&current&&!pause?activeLyricIndices(doc,position):[],activeKey=activeLines.join(','),activeSet=new Set(activeLines),focusLines=activeLines.length?activeLines:[Math.max(0,index)];
+ const nextCue=doc?.lines.findIndex((_,i)=>i>index&&visibleLyricLine(doc,i));
  const lineStyle=(i:number)=>{
   const distance=Math.min(...focusLines.map(n=>Math.abs(i-n)));
   if(variant==='full'){
@@ -126,20 +128,20 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  useLayoutEffect(()=>{updateClock.current?.();},[activeKey]);
  useLayoutEffect(()=>{
   if(!active||variant!=='full')return;
-  const words=Array.from(scroll.current?.querySelectorAll<HTMLElement>('.lyric-line[data-current=true] .lyric-word')??[]);
+  const words=Array.from(scroll.current?.querySelectorAll<HTMLElement>('.lyric-word,.lyric-line-ink')??[]);
   const singleRun=words.map(word=>word.getClientRects().length===1);
   for(const [i,word] of words.entries()){
    if(singleRun[i])word.dataset.weightText=word.textContent??'';
    else delete word.dataset.weightText;
   }
   return()=>{for(const word of words)delete word.dataset.weightText;};
- },[active,variant,doc,activeKey,layoutEpoch]);
+ },[active,variant,doc,layoutEpoch]);
  const pauseMarker=(before:number)=>{
   const item=pausesByLine.get(before);
   if(!item)return null;
   const shown=pause===item;
   return <div className="lyric-pause" data-line={`pause-${before}`} data-current={shown||undefined} aria-hidden={!shown}>
-   {shown&&<LyricActivity progressBar={variant==='visualizer'} active={active} playing={player.is_playing} start={item.start} end={item.end}/>}
+   {shown&&(variant==='full'?<div className="lyric-break"><span aria-hidden="true">Instrumental break</span><LyricActivity progressBar active={active} playing={player.is_playing} start={item.start} end={item.end}/></div>:<LyricActivity progressBar={variant==='visualizer'} active={active} playing={player.is_playing} start={item.start} end={item.end}/>)}
   </div>;
  };
  const state=doc?.metadata.instrumental?'Instrumental':doc&&!doc.lines.length?(doc.plain.trim()?'Plain lyrics':'No lyrics yet'):({offline:'You’re offline',not_found:'No lyrics found',missing:'No lyrics yet',choose:'Choose the right version',retry_later:'Lyrics provider is temporarily unavailable',provider_error:'Couldn’t load lyrics'} as Record<string,string>)[result?.state??''];
@@ -151,7 +153,7 @@ export default function LyricsView({track,player,active,onSeek,onPlay,onEdit,var
  {!current&&<div className="lyrics-preview-notice"><strong>{track?.title}</strong><button disabled={starting||!track?.available} onClick={()=>{setStarting(true);setPlayError('');void onPlay().catch(e=>setPlayError(errorText(e))).finally(()=>setStarting(false));}}><Icon name="play"/>{starting?'Starting…':'Play this song'}</button></div>}
  {appleBusy&&<div className="apple-lyric-preview" role="status"><LyricActivity loading active={active}/>Checking Apple Music…</div>}{appleError&&<p className="inline-error" role="alert">{appleError}</p>}{appleCandidate&&<div className="apple-lyric-preview"><span><strong>Apple Music version</strong><small>{appleCandidate.doc.lines.length} timed lines · {appleCandidate.doc.lines.some(l=>l.words?.length)?'Word synced':'Line synced'}</small></span><button disabled={appleBusy} onClick={()=>void selectApple()}>Use this version</button><button onClick={()=>setAppleCandidate(null)}>Cancel</button></div>}
  {busy&&!doc&&(!result||result.track_id!==track?.id)?<div className="lyrics-empty" role="status"><LyricActivity loading active={active}/><h2>Finding your words…</h2><p>Checking saved lyrics, connected Apple Music, and LRCLIB.</p></div>:doc&&!doc.metadata.instrumental&&(doc.lines.length>0||!!doc.plain.trim())?<div ref={scroll} className="lyrics-lines" tabIndex={0} aria-label="Song lyrics" onWheel={stopFollowing} onTouchStart={stopFollowing} onKeyDown={e=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key))stopFollowing();}}>
- {doc.lines.length?<>{doc.lines.map((line,i)=><Fragment key={`${line.start_ms}-${i}`}>{pauseMarker(i)}{visibleLyricLine(doc,i)&&<button data-line={i} data-in-window={activeSet.has(i)||i===(pause?.before??(index<0?0:Math.max(index,...activeLines)+1))||undefined} style={lineStyle(i)} tabIndex={activeSet.has(i)||i===focus?0:-1} aria-label={`${lyricSpeaker(doc,line)}: ${line.text}`} data-voice={lyricVoice(line)} data-past={i<=index&&!activeSet.has(i)||undefined} data-current={activeSet.has(i)||undefined} dir="auto" className="lyric-line" disabled={!current} aria-current={activeSet.has(i)?'true':undefined} onClick={()=>{setFollowing(true);void onSeek(Math.max(0,(line.start_ms+doc.metadata.offset_ms)/1000));}}>{wordSegments[i]?wordSegments[i]!.map((segment,n)=>segment.word===undefined?segment.text:<span key={`word-${n}`} className="lyric-word" data-word-start={line.words![segment.word].start_ms} data-word-end={lyricWordEnd(line,segment.word)} style={{'--word-progress':`${wordProgress(line.words![segment.word].start_ms,lyricWordEnd(line,segment.word),position*1000-doc.metadata.offset_ms)*100}%`,'--word-feather':lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)?'8%':'0%'} as import('react').CSSProperties} data-word-active={current&&activeSet.has(i)&&lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)||undefined} data-sung={current&&position*1000-doc.metadata.offset_ms>=line.words![segment.word].start_ms||undefined}>{segment.text}</span>):line.text.trim()&&!/^[\s♪♫♬♩]+$/.test(line.text)?line.text:<LyricActivity active={active&&i===index} playing={player.is_playing} start={line.start_ms+doc.metadata.offset_ms} end={(doc.lines[i+1]?.start_ms??track!.duration*1000)+doc.metadata.offset_ms}/>}</button>}</Fragment>)}{pauseMarker(doc.lines.length)}</>:<div className="lyrics-plain" dir="auto">{doc.plain}</div>}
+ {doc.lines.length?<>{doc.lines.map((line,i)=>{const concealed=variant==='full'&&current&&following&&i>index&&i!==nextCue;return <Fragment key={`${line.start_ms}-${i}`}>{pauseMarker(i)}{visibleLyricLine(doc,i)&&<button data-line={i} data-concealed={concealed||undefined} aria-hidden={concealed||undefined} data-in-window={activeSet.has(i)||i===(pause?.before??(index<0?0:Math.max(index,...activeLines)+1))||undefined} style={lineStyle(i)} tabIndex={activeSet.has(i)||i===focus?0:-1} aria-label={`${lyricSpeaker(doc,line)}: ${line.text}`} data-voice={lyricVoice(line)} data-past={current&&i<=index&&!activeSet.has(i)||undefined} data-current={activeSet.has(i)||undefined} dir="auto" className="lyric-line" disabled={!current} aria-current={activeSet.has(i)?'true':undefined} onClick={()=>{setFollowing(true);void onSeek(Math.max(0,(line.start_ms+doc.metadata.offset_ms)/1000));}}>{wordSegments[i]?wordSegments[i]!.map((segment,n)=>segment.word===undefined?segment.text:<span key={`word-${n}`} className="lyric-word" data-word-start={line.words![segment.word].start_ms} data-word-end={lyricWordEnd(line,segment.word)} style={{'--word-progress':`${wordProgress(line.words![segment.word].start_ms,lyricWordEnd(line,segment.word),position*1000-doc.metadata.offset_ms)*100}%`,'--word-feather':lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)?'8%':'0%'} as import('react').CSSProperties} data-word-active={current&&activeSet.has(i)&&lyricWordActive(line,segment.word,position*1000-doc.metadata.offset_ms)||undefined} data-sung={current&&position*1000-doc.metadata.offset_ms>=line.words![segment.word].start_ms||undefined}>{segment.text}</span>):line.text.trim()&&!/^[\s♪♫♬♩]+$/.test(line.text)?(variant==='full'?line.text.split(/(\s+)/u).map((text,j)=>text.trim()?<span className="lyric-line-ink" key={j}>{text}</span>:text):line.text):<LyricActivity active={active&&i===index} playing={player.is_playing} start={line.start_ms+doc.metadata.offset_ms} end={(doc.lines[i+1]?.start_ms??track!.duration*1000)+doc.metadata.offset_ms}/>}</button>}</Fragment>;})}{pauseMarker(doc.lines.length)}</>:<div className="lyrics-plain" dir="auto">{doc.plain}</div>}
  </div>:<div className="lyrics-empty"><Icon name="Lyrics"/><h2>{track?(state||'Lyrics'):'Nothing playing yet'}</h2><p>{!track?'Choose a song in Library.':retryIn?`Retry available in ${retryIn}s.`:result?.state==='retry_later'?'LRCLIB is busy. This doesn’t mean the song has no lyrics.':result?.message??(doc?.metadata.instrumental?'Let the music speak.':'Find another version, or add your own lyrics.')}</p>{variant!=='mini'&&track&&['retry_later','offline','provider_error'].includes(result?.state??'')&&<button className="lyrics-retry" disabled={busy||retryIn>0} onClick={()=>void find()}><Icon name="sync"/>{busy?'Finding…':retryIn?`Retry in ${retryIn}s`:'Retry lyrics'}</button>}</div>}
  {state&&doc&&<small className="lyrics-kind">{state}</small>}
  {(error||playError)&&<p className="inline-error" role="alert">{error||playError}</p>}
