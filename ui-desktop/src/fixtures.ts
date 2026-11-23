@@ -27,7 +27,7 @@ const seeds = [
   ["Hush, We’re Dreaming in Teacups", "Moonspindle", "dreaming-teacups"],
   ["Marshmallow Observatory", "Moonspindle", "marshmallow-observatory"],
   ["Teacup Parade", "Moonspindle", "teacup-parade"],
-  ["Sock Rocket", "Blanket Comets", "Overcast"],
+  ["Sock Rocket", "Blanket Comets", "sock-rocket"],
   ["Umbrella Acrobatics", "Pocket Kites", "umbrella-acrobatics"],
   ["Marmalade Meteorites", "Marmalade Robots", "marmalade-meteorites"],
 ];
