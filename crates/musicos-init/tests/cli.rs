@@ -70,6 +70,39 @@ fn snapshot_now_playing_aliases_render_the_fixture_to_distinct_paths() {
 }
 
 #[test]
+fn snapshot_without_screen_renders_saved_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let settings = root.path().join("settings.json");
+    let media_db = root.path().join("library.sqlite3");
+    let capture = || {
+        let output = Command::new(env!("CARGO_BIN_EXE_musicos-snapshot"))
+            .current_dir(root.path())
+            .env_remove("MUSICOS_SNAPSHOT_SCREEN")
+            .env("MUSICOS_SETTINGS_PATH", &settings)
+            .env("MUSICOS_MEDIA_DB", &media_db)
+            .env("MUSICOS_RESOLUTION", "640x480")
+            .env("MUSICOS_TIME_TEXT", "6:48 PM")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        std::fs::read(root.path().join("out/musicos-snapshot.bmp")).unwrap()
+    };
+
+    let settings_json = br#"{"setup_complete":true,"time_configured":true,"volume":0.2}"#;
+    std::fs::write(&settings, settings_json).unwrap();
+    let saved = capture();
+    assert!(saved.starts_with(b"BM"));
+    assert_eq!(std::fs::read(&settings).unwrap(), settings_json);
+    assert!(media_db.is_file());
+
+    std::fs::remove_file(&settings).unwrap();
+    assert!(
+        saved != capture(),
+        "snapshot did not render the saved setup state"
+    );
+}
+
+#[test]
 fn settings_get_json_returns_valid_json() {
     let root = temp_root("settings-json");
     let output = command(&root)

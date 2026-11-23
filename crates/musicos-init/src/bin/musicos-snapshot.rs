@@ -16,11 +16,7 @@ fn main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| default_output(snapshot_screen.as_deref().ok()));
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
-    let mut app = if snapshot_screen.is_ok() {
-        MusicOs::for_snapshot(resolution)
-    } else {
-        MusicOs::new(resolution)
-    };
+    let mut app = MusicOs::for_snapshot(resolution, snapshot_screen.is_ok());
     if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
         app.active_theme = ThemeName::from_str(&theme);
     }
