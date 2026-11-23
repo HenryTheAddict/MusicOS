@@ -10,7 +10,7 @@ import PlayerViewCycle from './PlayerViewCycle';
 import {setFeedbackSettings,installInteractionFeedback} from './haptics';
 import{usePlayerHandoff}from'./usePlayerHandoff';
 import type {MetadataEntry} from './MetadataWorkspace';
-import {captureBackPage,useBackSwipe,type BackArtwork} from './useBackSwipe';
+import {captureBackPage,useBackSwipe,type BackArtwork,type BackTheme} from './useBackSwipe';
 import Onboarding from './Onboarding';
 import {product} from './product';
 import {dropImportSource} from './importDestination';
@@ -149,6 +149,14 @@ function contrastInk(hex:string){
  const linear=rgb.map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4);
  return linear[0]*.2126+linear[1]*.7152+linear[2]*.0722>.179?'#111820':'#fff';
 }
+function shellThemeColors(palette:Palette|null,library:boolean,artwork:boolean,dark:boolean){
+ const surface=palette?.background??'#cbf1ff',blob=palette?.blob??'#54b9ff',ink=palette?.text??'#111820',accent=palette?.accent??'#0064df';
+ return {'page-color':palette?.background??(library?'#00aeff':'#c9efff'),'shell-color':palette?.blob??'#00baff','surface-color':surface,'blob-color':blob,accent,ink,
+  'accent-ink':artwork?(dark?'#000000':'#ffffff'):readableInk(accent),'secondary-ink':secondaryInk(ink,surface,blob,dark),'playback-tone':ink};
+}
+function followsPlaybackTheme(page:Route){
+ return page.view!=='album'&&page.view!=='artist'&&!(page.view==='catalog'&&page.catalog?.kind==='album');
+}
 export default function App() {
   usePlayfulControls();
   const [activityOpen,setActivityOpen]=useState(false);
@@ -259,6 +267,7 @@ export default function App() {
   const [systemDark,setSystemDark]=useState(()=>matchMedia('(prefers-color-scheme: dark)').matches);
   useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)');const change=()=>setSystemDark(media.matches);media.addEventListener('change',change);return()=>media.removeEventListener('change',change);},[]);
   const look=appearance(preferences);
+  const dark=look.mode==='dark'||(look.mode==='system'&&systemDark);
   useEffect(()=>{if(!loading)rememberLaunchAppearance(look);},[loading,look.mode,look.source,look.accent,look.saturation,look.tint]);
   useEffect(()=>{document.documentElement.dataset.themeMode=look.mode==='system'?(systemDark?'dark':'light'):look.mode;},[look.mode,systemDark]);
   // Keep the launch fallback stable when no artwork is available. The launch
@@ -286,12 +295,10 @@ export default function App() {
       if(previous?.resolved&&previous.appearance!==appearanceKey){launchThemeSettled.current=true;document.documentElement.dataset.themePhase='ready';}
     }
     else if(previous.resolved&&themeResolved&&previous.palette!==palette)document.documentElement.dataset.themeMotion='artwork';
-    const tokens={'--page-color':palette?.background??(section==='Library'?'#00aeff':'#c9efff'),'--shell-color':palette?.blob??'#00baff','--accent':palette?.accent??'#0064df','--surface-color':palette?.background??'#cbf1ff','--blob-color':palette?.blob??'#54b9ff','--ink':palette?.text??'#111820','--accent-ink':look.source==='artwork'?(look.mode==='dark'||(look.mode==='system'&&systemDark)?'#000000':'#ffffff'):readableInk(palette?.accent??'#0064df')};
-    document.documentElement.style.setProperty('--secondary-ink',secondaryInk(tokens['--ink'],tokens['--surface-color'],tokens['--blob-color'],look.mode==='dark'||(look.mode==='system'&&systemDark)));
-    document.documentElement.style.setProperty('--playback-tone',tokens['--ink']);
-    for(const [name,value] of Object.entries(tokens))document.documentElement.style.setProperty(name,value);
+    const tokens=shellThemeColors(palette,section==='Library',look.source==='artwork',dark);
+    for(const [name,value] of Object.entries(tokens))document.documentElement.style.setProperty(`--${name}`,value);
     appliedTheme.current={appearance:appearanceKey,resolved:themeResolved,palette};
-  },[palette,section,themeResolved,appearanceKey]);
+  },[palette,section,themeResolved,appearanceKey,look.source,dark]);
   const {navigation,dispatch,destination,switchDestination,scope:navigateScope}=useDestinationNavigation();
   const previousDestination=useRef<Destination>('home');
   const [searchFocus,setSearchFocus]=useState(0);
@@ -530,24 +537,31 @@ export default function App() {
   const playingCover = playingAlbum?.cover ??
     library.tracks.find(t=>t.id===player.track?.id)?.cover_art_path ??
     player.track?.cover_art_path;
-  const [playingArtPalette,setPlayingArtPalette]=useState<Palette|null>(null);
-  const playingThemeRequest=JSON.stringify([playingCover??null,playingAlbum?.track_ids[0]??player.track?.id]);
+  const [playingArtwork,setPlayingArtwork]=useState<(BackArtwork&{epoch:number})|null>(null);
+  const playingArtPalette=playingArtwork?.result?.palette??null;
+  const playingThemeRequest=JSON.stringify([[playingCover??null,null],playingAlbum?.track_ids[0]??player.track?.id]);
   function swipeThemeKey(page:Route|undefined){
     if(!page||look.source!=='artwork')return '';
-    const followsPlayback=page.view!=='album'&&page.view!=='artist';
-    return JSON.stringify([appearanceKey,themeEpoch,followsPlayback?playingThemeRequest:null]);
+    return JSON.stringify([appearanceKey,themeEpoch,followsPlaybackTheme(page)?playingThemeRequest:null]);
   }
   const previousRoute=navigation.history.at(-1);
-  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,!!previousRoute,goBack,previousRoute?JSON.stringify({...previousRoute,scroll:0}):'',swipeThemeKey(previousRoute));
   useEffect(()=>{
     let gone=false;
-    if(loading||look.source!=='artwork'){setPlayingArtPalette(null);return;}
-    const [cover,id]=JSON.parse(playingThemeRequest) as [string|null,number|undefined];
-    void resolveArtworkTheme([cover],id).then(result=>{if(!gone&&(result||id===undefined))setPlayingArtPalette(result?.palette??null);});
+    if(loading||look.source!=='artwork'){setPlayingArtwork(null);return;}
+    const [paths,id]=JSON.parse(playingThemeRequest) as [(string|null)[],number|null];
+    void resolveArtworkTheme(paths,id??undefined).then(result=>{
+      if(!gone&&(result||id===null))setPlayingArtwork(result?{result,request:playingThemeRequest,epoch:themeEpoch}:null);
+    });
     return()=>{gone=true;};
   },[loading,look.source,playingThemeRequest,themeEpoch]);
   const playingPalette=useMemo(()=>themePalette(look,playingArtPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,playingArtPalette,systemDark]);
   const playingStyle=useMemo(()=>playerTheme(playingPalette),[playingPalette]);
+  const previousThemeKey=swipeThemeKey(previousRoute);
+  function playbackBackTheme():BackTheme|undefined{
+    if(!previousThemeKey||!previousRoute||!followsPlaybackTheme(previousRoute)||playingArtwork?.request!==playingThemeRequest||playingArtwork.epoch!==themeEpoch)return;
+    return {key:previousThemeKey,artwork:playingArtwork,colors:shellThemeColors(playingPalette,true,true,dark)};
+  }
+  const backSwipeCue=useBackSwipe(shell.root,section==='Library'&&miniMode==='normal'&&!onboardingOpen&&!commandOpen&&!expandedOpen&&!visualizerOpen,!!previousRoute,goBack,previousRoute?JSON.stringify({...previousRoute,scroll:0}):'',previousThemeKey,playbackBackTheme);
   const source = themeSource(
     section === "Library"
       ? route.view === "catalog" && route.catalog?.kind === "album"

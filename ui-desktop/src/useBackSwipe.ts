@@ -9,7 +9,7 @@ function locationKey(raw:string){try{const r=JSON.parse(raw);return `${r.view}:$
 export type BackArtwork={request:string;result:{palette:Palette;path:string}|null};
 const swipeColors=['shell-color','page-color','surface-color','blob-color','accent'] as const;
 const pageThemeColors=[...swipeColors,'ink','secondary-ink','accent-ink','playback-tone'] as const;
-type BackTheme={key:string;artwork:BackArtwork;colors:Record<typeof pageThemeColors[number],string>};
+export type BackTheme={key:string;artwork:BackArtwork;colors:Record<typeof pageThemeColors[number],string>};
 type Snapshot = {
  html:string;
  scroll:number;
@@ -107,9 +107,9 @@ export const backSwipeThreshold=110;
 export function acceptsBackAxis(x:number,y:number){return x< -10&&Math.abs(x)>Math.abs(y)*1.8;}
 export function consumesHorizontalScroll(target:Element|null,root:Element){for(let node=target;node&&node!==root;node=node.parentElement){if(node.matches('input,textarea,select,[contenteditable=true],[role=slider],dialog,[role=menu],.queue-scroll,.mini-queue-list'))return true;const style=getComputedStyle(node);if(/auto|scroll/.test(style.overflowX)&&node.scrollWidth>node.clientWidth+2)return true;}return false;}
 export function shouldCommitSwipe(distance:number,width:number,velocity:number){return distance>=width*.25||(distance>=60&&velocity>=.55);}
-export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:(interactive:boolean,artwork?:BackArtwork)=>void,previousKey='',themeKey=''){
- const latest=useRef({enabled,canBack,onBack,previousKey,themeKey});
- latest.current={enabled,canBack,onBack,previousKey,themeKey};
+export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,canBack:boolean,onBack:(interactive:boolean,artwork?:BackArtwork)=>void,previousKey='',themeKey='',playbackTheme?:()=>BackTheme|undefined){
+ const latest=useRef({enabled,canBack,onBack,previousKey,themeKey,playbackTheme});
+ latest.current={enabled,canBack,onBack,previousKey,themeKey,playbackTheme};
  const cue=useRef<HTMLDivElement>(null);
  const prepared=useRef<{saved:Snapshot;preview:ReturnType<typeof preparePreview>}|null>(null);
  useEffect(()=>{
@@ -249,8 +249,9 @@ export function useBackSwipe(root:RefObject<HTMLElement|null>,enabled:boolean,ca
   preview.page.scrollTop=preview.scroll;
   cover=swipeCover(page,preview.page);
   if(!cover)window.dispatchEvent(new Event('musicos-back-gesture-start'));
-  const targetTheme=saved.theme;
-  if(targetTheme&&targetTheme.key===latest.current.themeKey){
+  const cachedTheme=saved.theme?.key===latest.current.themeKey?saved.theme:undefined;
+  const targetTheme=cachedTheme??latest.current.playbackTheme?.();
+  if(targetTheme&&(cachedTheme||swipeColors.some(name=>themeRoot.style.getPropertyValue(`--${name}`)!==targetTheme.colors[name]))){
    theme=targetTheme;
    for(const [name,value] of Object.entries(targetTheme.colors))preview.frame.style.setProperty(`--${name}`,value);
    const displayed=getComputedStyle(themeRoot);
