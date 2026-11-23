@@ -74,3 +74,22 @@ test('the compact bar fits one control row and keeps the full truncated title ac
   }
   await expect(bar.getByRole('button', { name: 'Shuffle', exact: true })).toHaveCSS('opacity', '1');
 });
+
+test('at 375 px the secondary row leaves room for the title and artist', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 480 });
+  await page.goto('/?fixture=1');
+  const bar = page.getByRole('region', { name: 'Now playing', exact: true });
+  const lyrics = bar.getByRole('button', { name: 'Open lyrics', exact: true });
+  const artist = bar.getByRole('button', { name: 'Velvet Static', exact: true });
+  await expect(lyrics).toHaveAccessibleDescription(title);
+  expect((await lyrics.boundingBox())!.width).toBeGreaterThanOrEqual(120);
+  expect((await artist.boundingBox())!.width).toBeGreaterThan(0);
+
+  const transport = (await bar.getByRole('button', { name: 'Pause', exact: true }).boundingBox())!;
+  for (const button of await bar.locator('.mini-controls button').all()) {
+    const bounds = (await button.boundingBox())!;
+    expect(bounds.y).toBeGreaterThanOrEqual(transport.y + transport.height);
+    expect(bounds.width).toBeGreaterThanOrEqual(44);
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  }
+});
