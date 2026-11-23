@@ -141,3 +141,4 @@
 .expanded-player-art>.depth-compositor[data-hero=true]{border-radius:1.125rem;}
 .expanded-player[data-composition=single] .expanded-player-copy{justify-items:center;text-align:center;padding-inline:44px;}
 @container(max-width:48rem){.expanded-player[data-composition=split]:not([data-visualizer=true]) .expanded-player-art>.depth-compositor[data-hero=true]{border-radius:.75rem;}}
+.expanded-player-art:has(.motion-artwork video)>.depth-compositor{display:none;}
