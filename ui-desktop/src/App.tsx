@@ -543,6 +543,14 @@ export default function App() {
   },[loading,look.source,playingThemeRequest,themeEpoch]);
   const playingPalette=useMemo(()=>themePalette(look,playingArtPalette,systemDark),[look.mode,look.source,look.accent,look.saturation,look.tint,playingArtPalette,systemDark]);
   const playingStyle=useMemo(()=>playerTheme(playingPalette),[playingPalette]);
+  const appliedPlayerTheme=useRef<{appearance:string;palette:Palette|null}|null>(null);
+  useLayoutEffect(()=>{
+    const previous=appliedPlayerTheme.current,root=document.documentElement;
+    if(previous?.appearance!==appearanceKey)delete root.dataset.playerMotion;
+    else if(previous.palette&&playingArtPalette&&previous.palette!==playingArtPalette)root.dataset.playerMotion='artwork';
+    appliedPlayerTheme.current={appearance:appearanceKey,palette:playingArtPalette};
+  },[playingArtPalette,appearanceKey]);
+  useLayoutEffect(()=>()=>{delete document.documentElement.dataset.playerMotion;},[]);
   const source = themeSource(
     section === "Library"
       ? route.view === "catalog" && route.catalog?.kind === "album"

@@ -25,7 +25,7 @@ export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving
     return channels?.length===3?'#'+channels.map(v=>Math.round(Math.max(0,Math.min(255,v*(srgb?255:1)))).toString(16).padStart(2,'0')).join(''):sceneColors.current[i];
    });if(!painted.current||media.matches){from=[...colors];sceneColors.current=[...colors];painted.current=true;}if(from.every((color,i)=>color===colors[i]))colorStarted=-Infinity;};
   const paint=()=>{
-   const elapsed=media.matches?1:Math.min(1,(performance.now()-colorStarted)/320),mix=elapsed*elapsed*(3-2*elapsed);
+   const elapsed=media.matches?1:Math.min(1,(performance.now()-colorStarted)/420),mix=elapsed*elapsed*(3-2*elapsed);
    sceneColors.current=elapsed===1?colors:colors.map((color,i)=>'#'+[1,3,5].map(j=>Math.round(parseInt(from[i].slice(j,j+2),16)*(1-mix)+parseInt(color.slice(j,j+2),16)*mix).toString(16).padStart(2,'0')).join(''));
    const {phase,energy}=state.current;ctx.clearRect(0,0,640,480);
    for(let i=0;i<3;i++){

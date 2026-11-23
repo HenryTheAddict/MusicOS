@@ -28,6 +28,6 @@ export function playerTheme(palette:Palette|null):CSSProperties{
   '--control-surface':'color-mix(in srgb,var(--surface-color) 78%,var(--blob-color))',
   '--control-border':'color-mix(in srgb,var(--ink) 18%,transparent)',
   '--secondary-ink':secondaryInk(ink,surface,blob,dark),
-  color:ink,background:surface,
+  color:ink,background:'var(--surface-color)',
  } as CSSProperties;
 }
