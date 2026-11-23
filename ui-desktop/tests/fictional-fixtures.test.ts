@@ -12,6 +12,7 @@ test('demo library retains its identities and complete abstract artwork',async()
   expect(library.albums[0]).toMatchObject({id:'local/album/0',title:'Bubblewrap Lagoon',artist:'Velvet Static',track_ids:Array.from({length:12},(_,i)=>i+1)});
   expect(library.artists[3]).toMatchObject({id:'local/artist/3',name:'Moonspindle'});
   expect(library.artists[3].portrait).toContain('moonspindle.png');
+  expect(library.albums[9].cover).toContain('sock-rocket.png');
   for(const album of library.albums)expect(album.cover).toMatch(/\.png/);
   for(const track of library.tracks){
     expect(track.stable_id).toBe(`fixture-${track.id}`);

@@ -4,8 +4,9 @@
 and locally generated abstract artwork. It does not represent a real artist's
 catalogue. The iOS browser fixture uses the same fictional artist names.
 
-Run `node scripts/generate-demo-artwork.mjs` to regenerate the album, artist,
-legacy preview and playlist-picker artwork, including playlist previews.
+Run `node scripts/generate-demo-artwork.mjs` to regenerate only fictional demo
+album and artist artwork. Product playlist presets, their thumbnails, and native
+preview artwork are app content and are never written by this generator.
 This replaces the former network cover scraper; no external image service is
 used. Unused stock covers and the checked-in real-artwork cache were removed.
 
