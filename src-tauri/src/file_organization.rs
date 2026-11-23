@@ -51,7 +51,7 @@ fn segment(value: &str, fallback: &str) -> String {
 }
 fn undo_count(db: &Connection) -> Result<usize> {
     Ok(db.query_row(
-        "SELECT count(*) FROM desktop_organization_history WHERE state IN ('moved','cleanup','undoing','undo_cleanup')",
+        "SELECT count(*) FROM desktop_organization_history WHERE state IN ('moved','cleanup','undoing')",
         [],
         |r| r.get::<_, i64>(0),
     )? as usize)
@@ -256,7 +256,7 @@ pub fn pending(db_path: &Path) -> Result<bool> {
 }
 pub fn undo(db_path: &Path) -> Result<usize> {
     let db = connection(db_path)?;
-    let mut query=db.prepare("SELECT id,track_id,old_path,new_path,hash FROM desktop_organization_history WHERE state IN ('moved','cleanup','undoing','undo_cleanup') ORDER BY id DESC")?;
+    let mut query=db.prepare("SELECT id,track_id,old_path,new_path,hash FROM desktop_organization_history WHERE state IN ('moved','cleanup','undoing') ORDER BY id DESC")?;
     let rows = query
         .query_map([], |r| {
             Ok((
@@ -394,6 +394,27 @@ mod tests {
         assert!(Path::new(&item.from).exists());
         assert!(!Path::new(&item.to).exists());
         assert!(!preview(&path, &library).unwrap().has_pending_recovery);
+    }
+    #[test]
+    fn undo_restores_the_original_when_move_cleanup_is_pending() {
+        let (_temp, path, library) = fixture();
+        let plan = preview(&path, &library).unwrap();
+        let item = &plan.moves[0];
+        apply(&path, &plan.token).unwrap();
+        std::fs::hard_link(&item.to, &item.from).unwrap();
+        let db = connection(&path).unwrap();
+        db.execute(
+            "UPDATE desktop_organization_history SET state='cleanup' WHERE track_id=?",
+            [item.id],
+        ).unwrap();
+
+        let pending = preview(&path, &library).unwrap();
+        assert!(pending.has_pending_recovery);
+        assert_eq!(pending.undo_available, 1);
+        assert_eq!(undo(&path).unwrap(), 1);
+        assert_eq!(hash(Path::new(&item.from)).unwrap(), item.hash);
+        assert!(!Path::new(&item.to).exists());
+        assert!(!super::pending(&path).unwrap());
     }
     #[test]
     fn reviewed_move_and_undo_preserve_bytes_ids_favorites_and_membership() {

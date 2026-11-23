@@ -174,7 +174,7 @@ export default function FileOrganizer({ onClose, onRefresh }: {
   const review = recoveryNeeded ? null : preview;
   const count = review?.moves.length ?? 0;
   const issues = review?.issues ?? [];
-  const undoCount = review?.undo_available ?? 0;
+  const undoCount = preview?.undo_available ?? 0;
   const canStop = phase === 'preview' || phase === 'apply';
   const progressLabel = phase ? phaseLabel[phase] : '';
 
@@ -202,7 +202,7 @@ export default function FileOrganizer({ onClose, onRefresh }: {
         {busy && (
           <div className="organization-progress">
             <div className="organization-progress-heading">
-              <p role="status">{stopping ? 'Stopping after the current file…' : `${progressLabel}…`}</p>
+              <p role="status">{stopping ? (phase === 'preview' ? 'Stopping preview…' : 'Stopping after the current file…') : `${progressLabel}…`}</p>
               {progress && <span aria-hidden="true">{progress.processed} / {progress.total}</span>}
             </div>
             <div className="organization-rail" role="progressbar" aria-label={progressLabel}
@@ -215,7 +215,7 @@ export default function FileOrganizer({ onClose, onRefresh }: {
         {!busy && message && <p className="organization-notice" role="status">{message}</p>}
         {!busy && !preview && !error && <p role="status">Preview stopped. No files were moved by the preview.</p>}
         {!busy && recoveryNeeded && (
-          <p role="status">File organization was interrupted. Finish recovery before moving or restoring more files.</p>
+          <p role="status">File organization was interrupted. Retry recovery{undoCount > 0 ? ' or undo organization' : ''} before moving more files.</p>
         )}
         {!busy && issues.length > 0 && (
           <details className="organization-issues">
@@ -248,6 +248,9 @@ export default function FileOrganizer({ onClose, onRefresh }: {
           <p>Pause playback before moving. Tags, companion files and empty folders stay unchanged; existing files aren’t replaced.</p>
         )}
         <div className="organization-actions">
+          {!busy && undoCount > 0 && (
+            <button type="button" onClick={() => void runChange('undo')}>Undo organization ({undoCount})</button>
+          )}
           {busy ? (
             canStop && <button type="button" disabled={stopping} onClick={() => void stop()}>
               {phase === 'preview' ? 'Stop preview' : 'Stop after this file'}
@@ -259,7 +262,6 @@ export default function FileOrganizer({ onClose, onRefresh }: {
           ) : (
             <>
               {canRecover && <button type="button" onClick={() => void runChange('recover')}>Retry interrupted file work</button>}
-              {undoCount > 0 && <button type="button" onClick={() => void runChange('undo')}>Undo organization ({undoCount})</button>}
               {!preview ? (
                 <button type="button" className="organization-primary" onClick={() => void loadPreview()}>Preview again</button>
               ) : count > 0 ? (
