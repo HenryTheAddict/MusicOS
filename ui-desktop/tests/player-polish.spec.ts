@@ -7,7 +7,7 @@ async function start(page:Page,mode='dark',percent=100){
  await page.route('**/src/fixtures.ts*',async route=>{
   const response=await route.fetch(),body=await response.text(),marker='case "artwork_palette":';
   await route.fulfill({response,body:body.replace(marker,`${marker}
-   if(String(a.path).includes('Pier'))return {background:'#ecc4c4',blob:'#bc7777',accent:'#802525',text:'#12202a'};
+   if(String(a.path).includes('teacup-parade'))return {background:'#ecc4c4',blob:'#bc7777',accent:'#802525',text:'#12202a'};
    return {background:'#c8ded9',blob:'#55937a',accent:'#20574d',text:'#12202a'};
   `)});
  });
