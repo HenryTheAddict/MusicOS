@@ -35,6 +35,24 @@ for (const [width, height] of [[480, 480], [1280, 800]]) {
     const review = dialog.getByRole('region', { name: 'File move preview' });
     await expect(move).toBeEnabled();
     await expect(move).toBeInViewport();
+    const contrast = await move.evaluate(button => {
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 1;
+      const context = canvas.getContext('2d')!;
+      const luminance = (color: string) => {
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        const [r, g, b] = Array.from(context.getImageData(0, 0, 1, 1).data).map(v => {
+          const channel = v / 255;
+          return channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4;
+        });
+        return r * .2126 + g * .7152 + b * .0722;
+      };
+      const { color, backgroundColor } = getComputedStyle(button);
+      const foreground = luminance(color), background = luminance(backgroundColor);
+      return (Math.max(foreground, background) + .05) / (Math.min(foreground, background) + .05);
+    });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);
     await expect(dialog.getByText('24 files organized.', { exact: true })).toHaveCount(0);
     const box = (await dialog.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
