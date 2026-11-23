@@ -47,6 +47,11 @@ test('long Genre choices remain clickable past the Filter panel edge',async({pag
  await expect(genre).toHaveText('Soul');
  await expect(trigger).toHaveAttribute('aria-expanded','true');
  await genre.click();await expect(menu).toBeVisible();
+ const sort=panel.getByRole('button',{name:'Sort',exact:true});
+ await sort.click();
+ await page.getByRole('menu',{name:'Sort',exact:true}).getByRole('menuitemradio',{name:'Album Name',exact:true}).click();
+ await expect(sort).toHaveText('Album Name');
+ await genre.click();await expect(menu).toBeVisible();
  await trigger.click();await expect(menu).toHaveCount(0);
  await trigger.click();await expect(genre).toHaveAttribute('aria-expanded','false');
 });

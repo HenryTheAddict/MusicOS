@@ -15,7 +15,9 @@ function FilterChoice({label,container,open,onOpenChange,value,choices,onChange}
    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round"/></svg>
   </Dropdown.Trigger>
   {/* Stay in the top layer but outside the clipped, scrollable panel items. */}
-  {container&&<Dropdown.Portal container={container}><Dropdown.Content className="filter-options" sideOffset={5} align="start" collisionPadding={8} aria-label={`${label} options`} onEscapeKeyDown={e=>e.stopPropagation()} onCloseAutoFocus={e=>{if(container.inert||!container.isConnected)e.preventDefault();}}>
+  {container&&<Dropdown.Portal container={container}><Dropdown.Content className="filter-options" sideOffset={5} align="start" collisionPadding={8} aria-label={`${label} options`} onEscapeKeyDown={e=>e.stopPropagation()} onCloseAutoFocus={e=>{
+   if(container.inert||!container.isConnected||container.querySelector('.filter-choice[aria-expanded="true"]'))e.preventDefault();
+  }}>
    <Dropdown.RadioGroup value={value} onValueChange={onChange}>
     {choices.map(choice=><Dropdown.RadioItem className="filter-option" key={choice.value} value={choice.value}>
      <span>{choice.label}</span><Dropdown.ItemIndicator><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m3 8 3 3 7-7" strokeLinecap="round" strokeLinejoin="round"/></svg></Dropdown.ItemIndicator>
