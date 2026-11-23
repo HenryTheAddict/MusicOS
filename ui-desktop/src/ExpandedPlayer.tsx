@@ -25,7 +25,7 @@ export default function ExpandedPlayer({background="flowing",layout="compact",on
  const chrome=usePlayerChrome(dialog,open);
  const showCover=!visualizerMode||visualizerCover,pulse=visualizerMode&&showCover&&coverPulse&&open&&player.is_playing&&view==='playing'&&bpm!==undefined&&Number.isFinite(bpm)&&bpm>=20&&bpm<=400;
  useDepthArtwork(art,art,depth&&open&&showCover);
- const tiltArtwork=(e:React.PointerEvent<HTMLDivElement>)=>{const el=e.currentTarget,r=el.getBoundingClientRect();if(!r.width||!r.height)return;const x=Math.max(-.5,Math.min(.5,(e.clientX-r.left)/r.width-.5)),y=Math.max(-.5,Math.min(.5,(e.clientY-r.top)/r.height-.5));el.style.setProperty('--tilt-x',`${(x*12).toFixed(2)}deg`);el.style.setProperty('--tilt-y',`${(-y*12).toFixed(2)}deg`);el.style.setProperty('--tilt-scale','1.03');};
+ const tiltArtwork=(e:React.PointerEvent<HTMLDivElement>)=>{if(e.pointerType==='touch')return;const el=e.currentTarget,r=el.getBoundingClientRect();if(!r.width||!r.height)return;const x=Math.max(-.5,Math.min(.5,(e.clientX-r.left)/r.width-.5)),y=Math.max(-.5,Math.min(.5,(e.clientY-r.top)/r.height-.5));el.style.setProperty('--tilt-x',`${(x*12).toFixed(2)}deg`);el.style.setProperty('--tilt-y',`${(-y*12).toFixed(2)}deg`);el.style.setProperty('--tilt-scale','1.03');};
  const resetTilt=(e:React.PointerEvent<HTMLDivElement>)=>{for(const p of ['--tilt-x','--tilt-y','--tilt-scale'])e.currentTarget.style.removeProperty(p);};
  useEffect(()=>{const node=art.current;if(!pulse||!node)return;return watchHeart(node);},[pulse]);
  const handoff=usePlayerHandoff(dialog,player.track?.id,view,player.queue_entry_ids?.[player.queue_index??-1]);
