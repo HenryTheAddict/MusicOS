@@ -663,7 +663,7 @@ impl AudioPlayer {
         self.set_volume_with_mixer(volume, crate::system::apply_system_volume);
     }
 
-    fn set_volume_with_mixer(&mut self, volume: f32, apply_mixer: impl FnOnce(f32)) {
+    pub(crate) fn set_volume_with_mixer(&mut self, volume: f32, apply_mixer: impl FnOnce(f32)) {
         self.volume = volume.clamp(0.0, 1.0);
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         if let Some(ref sink) = self.sink {

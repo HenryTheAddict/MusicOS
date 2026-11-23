@@ -176,7 +176,7 @@ struct NavigationState {
 
 pub struct MusicOs {
     controls_seen: bool,
-    snapshot_fixture: bool,
+    is_snapshot: bool,
     pub screen: Screen,
     pub focus: Focus,
     pub previous_screen: Screen,
@@ -427,11 +427,21 @@ const SEARCH_KEYS: [&str; 30] = [
     "T", "U", "V", "W", "X", "Y", "Z", "SPACE", "DELETE", "CLEAR", "RESULTS",
 ];
 
+enum LaunchMode {
+    Device,
+    Snapshot,
+    SnapshotFixture,
+}
+
 impl MusicOs {
     pub fn new(resolution: Resolution) -> Self {
-        let db_path = std::env::var("MUSICOS_MEDIA_DB")
-            .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string());
+        let db_path = Self::media_db_path();
         Self::with_db_path(resolution, &db_path)
+    }
+
+    fn media_db_path() -> String {
+        std::env::var("MUSICOS_MEDIA_DB")
+            .unwrap_or_else(|_| "/var/lib/musicos/media.sqlite3".to_string())
     }
 
     pub fn with_db_path(resolution: Resolution, db_path: &str) -> Self {
@@ -445,21 +455,51 @@ impl MusicOs {
     }
 
     pub fn with_options(resolution: Resolution, options: MusicOsOptions) -> Self {
-        Self::initialize(resolution, options, false)
-    }
-
-    pub fn for_snapshot(resolution: Resolution) -> Self {
         Self::initialize(
             resolution,
-            MusicOsOptions {
-                db_path: PathBuf::from(":memory:"),
-                scan_policy: LibraryScanPolicy::ReadOnlyPreview,
-            },
-            true,
+            options,
+            LaunchMode::Device,
+            crate::system::apply_system_volume,
         )
     }
 
-    fn initialize(resolution: Resolution, options: MusicOsOptions, snapshot_fixture: bool) -> Self {
+    pub fn for_snapshot(resolution: Resolution, use_fixture: bool) -> Self {
+        Self::initialize_snapshot(
+            resolution,
+            use_fixture,
+            &Self::media_db_path(),
+            crate::system::apply_system_volume,
+        )
+    }
+
+    fn initialize_snapshot(
+        resolution: Resolution,
+        use_fixture: bool,
+        media_db_path: &str,
+        apply_mixer: impl FnOnce(f32),
+    ) -> Self {
+        let (db_path, mode) = if use_fixture {
+            (":memory:", LaunchMode::SnapshotFixture)
+        } else {
+            (media_db_path, LaunchMode::Snapshot)
+        };
+        Self::initialize(
+            resolution,
+            MusicOsOptions {
+                db_path: PathBuf::from(db_path),
+                scan_policy: LibraryScanPolicy::ReadOnlyPreview,
+            },
+            mode,
+            apply_mixer,
+        )
+    }
+
+    fn initialize(
+        resolution: Resolution,
+        options: MusicOsOptions,
+        mode: LaunchMode,
+        apply_mixer: impl FnOnce(f32),
+    ) -> Self {
         let db_path = options.db_path.display().to_string();
         let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
@@ -470,14 +510,18 @@ impl MusicOs {
             })
         });
 
-        let (preferences, mut player) = if snapshot_fixture {
-            (Preferences::default(), AudioPlayer::for_snapshot())
+        let preferences = if matches!(mode, LaunchMode::SnapshotFixture) {
+            Preferences::default()
         } else {
-            let preferences = crate::preferences::load();
-            apply_audio_runtime_preferences(&preferences);
-            (preferences, AudioPlayer::new())
+            crate::preferences::load()
         };
-        player.set_volume(preferences.volume);
+        let mut player = if matches!(mode, LaunchMode::Device) {
+            apply_audio_runtime_preferences(&preferences);
+            AudioPlayer::new()
+        } else {
+            AudioPlayer::for_snapshot()
+        };
+        player.set_volume_with_mixer(preferences.volume, apply_mixer);
         player.set_eq_preset(preferences.eq_preset);
         player.set_shuffle(preferences.shuffle);
         player.set_loop_mode(preferences.loop_mode);
@@ -488,13 +532,13 @@ impl MusicOs {
                 .min(restore_tracks.len().saturating_sub(1));
             player.restore_queue_paused(restore_tracks, index, preferences.resume_position_seconds);
         }
-        if !snapshot_fixture {
+        if matches!(mode, LaunchMode::Device) {
             crate::system::apply_brightness(preferences.brightness);
         }
 
         let mut app = Self {
             controls_seen: preferences.controls_seen,
-            snapshot_fixture,
+            is_snapshot: !matches!(mode, LaunchMode::Device),
             screen: if !preferences.setup_complete {
                 Screen::First
             } else if !preferences.time_configured {
@@ -629,7 +673,7 @@ impl MusicOs {
         if self.scan_rx.is_some() || self.cover_art_rx.is_some() {
             deadline = deadline.min(now + Duration::from_millis(20));
         }
-        if !self.snapshot_fixture && self.current_track_id.is_some() {
+        if !self.is_snapshot && self.current_track_id.is_some() {
             deadline = deadline.min(self.last_session_save + Duration::from_secs(5));
         }
         if !self.is_asleep {
@@ -739,7 +783,7 @@ impl MusicOs {
             self.hud_t = (self.hud_t - dt * 4.0).max(0.0);
         }
 
-        if !self.snapshot_fixture
+        if !self.is_snapshot
             && current_id.is_some()
             && self.last_session_save.elapsed() >= Duration::from_secs(5)
         {
@@ -2919,7 +2963,7 @@ impl MusicOs {
     }
 
     pub fn save_preferences(&self, setup_complete: bool) {
-        if self.snapshot_fixture {
+        if self.is_snapshot {
             return;
         }
         let preferences = self.current_preferences(setup_complete);
@@ -4632,8 +4676,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn non_fixture_snapshot_does_not_write_to_the_mixer() {
+        let app = MusicOs::initialize_snapshot(Resolution::VGA_4_3, false, ":memory:", |_| {
+            panic!("initializing a non-fixture snapshot wrote the host mixer")
+        });
+        assert_eq!(app.player.get_status().backend, "none");
+        assert!(app.is_snapshot);
+    }
+
+    #[test]
     fn snapshot_playback_does_not_save_an_elapsed_session() {
-        let mut app = MusicOs::for_snapshot(Resolution::VGA_4_3);
+        let mut app = MusicOs::for_snapshot(Resolution::VGA_4_3, true);
         app.db
             .insert_track("/fixture/no-audio.flac", "Song", "Artist", "Album", 120, 1, 1)
             .unwrap();

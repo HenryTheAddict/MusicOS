@@ -16,11 +16,7 @@ fn main() -> Result<()> {
         .map(PathBuf::from)
         .unwrap_or_else(|| default_output(snapshot_screen.as_deref().ok()));
     let mut bgra = vec![0_u8; resolution.width as usize * resolution.height as usize * 4];
-    let mut app = if snapshot_screen.is_ok() {
-        MusicOs::for_snapshot(resolution)
-    } else {
-        MusicOs::new(resolution)
-    };
+    let mut app = MusicOs::for_snapshot(resolution, snapshot_screen.is_ok());
     if let Ok(theme) = std::env::var("MUSICOS_SNAPSHOT_THEME") {
         app.active_theme = ThemeName::from_str(&theme);
     }
@@ -389,7 +385,7 @@ mod tests {
 
     #[test]
     fn snapshot_library_uses_the_real_desktop_album_catalog() -> Result<()> {
-        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+        let mut app = MusicOs::for_snapshot(Resolution::VGA_4_3, true);
         seed_library(&mut app)?;
         let tracks = app.db.get_tracks()?;
         assert_eq!(tracks.len(), 150);
@@ -404,6 +400,7 @@ mod tests {
             && track.cover_art_path.is_some()));
         if std::env::var_os("MUSICOS_SNAPSHOT_ART_DIR").is_some() {
             assert!(tracks.iter().all(|track| track.cover_art_path.is_some()));
+            assert!(app.current_cover_art.is_some());
         }
         let queue = app.player.queue_tracks();
         assert_eq!(
@@ -411,7 +408,6 @@ mod tests {
             ("One More Year", 322)
         );
         assert_eq!(queue[1].title, "Instant Destiny");
-        assert!(app.current_cover_art.is_some());
         Ok(())
     }
 }
