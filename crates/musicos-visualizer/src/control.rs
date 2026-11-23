@@ -38,7 +38,7 @@ impl Default for Preferences {
 }
 impl Preferences {
     pub fn normalize(mut self) -> Self {
-        if self.preset != "beat-pulse"
+        if !matches!(self.preset.as_str(), "beat-pulse" | "moving-icons")
             && !crate::catalog::catalog()
                 .iter()
                 .any(|p| p.id == self.preset)
@@ -196,15 +196,17 @@ mod tests {
     use super::*;
     #[test]
     fn web_preset_survives_normalization_without_entering_native_catalog() {
-        let prefs = Preferences {
-            preset: "beat-pulse".into(),
-            ..Default::default()
+        for preset in ["beat-pulse", "moving-icons"] {
+            let prefs = Preferences {
+                preset: preset.into(),
+                ..Default::default()
+            }
+            .normalize();
+            assert_eq!(prefs.preset, preset);
+            assert!(!crate::catalog::catalog()
+                .iter()
+                .any(|p| p.id == prefs.preset));
         }
-        .normalize();
-        assert_eq!(prefs.preset, "beat-pulse");
-        assert!(!crate::catalog::catalog()
-            .iter()
-            .any(|p| p.id == prefs.preset));
     }
     fn clock(p: f64) -> Clock {
         Clock {

@@ -24,6 +24,17 @@ test('collection play reveals beside the menu without covering the art',async({p
  await play.hover();
  await expect.poll(()=>play.evaluate(button=>getComputedStyle(button).backgroundColor)).not.toBe(base);
 });
+test('Home action glyphs lift without moving the control and respect Reduced Motion',async({page})=>{
+ await page.goto('/?fixture=1');
+ const favorites=page.getByRole('region',{name:'Your collections'}).getByRole('button',{name:/Favorites/});
+ const glyph=favorites.locator('.asset-icon');
+ const box=await favorites.boundingBox();
+ await favorites.hover();
+ await expect(glyph).toHaveCSS('translate','0px -1px');
+ expect(await favorites.boundingBox()).toEqual(box);
+ await page.emulateMedia({reducedMotion:'reduce'});
+ await expect(glyph).toHaveCSS('translate','none');
+});
 test('listening summary reuses cached visits and refreshes when listening changes',async({page})=>{
  await seed(page);await page.goto('/?fixture=1');await expect(page.locator('.personal-home')).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='home_activity').length)).toBe(1);await page.waitForTimeout(1000);expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='home_activity').length)).toBe(1);
  await page.getByRole('navigation',{name:'Library',exact:true}).getByRole('button',{name:'Albums',exact:true}).click();await page.evaluate(()=>localStorage.setItem('musicos-fixture-home-activity',JSON.stringify({frequent:[{id:1,plays:100}],recent:[1]})));await page.waitForTimeout(1000);expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='home_activity').length)).toBe(1);await page.locator('.sidebar-home').click();expect(await page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='home_activity').length)).toBe(1);await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();await page.locator('.sidebar-home').click();await expect.poll(()=>page.evaluate(()=>(window as any).__musicosCalls.filter((r:any)=>r.command==='home_activity').length)).toBe(2);await expect(page.getByRole('region',{name:'Frequently played albums'}).getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true})).toBeVisible();await expect(page.getByRole('region',{name:'Recently played'}).getByRole('button',{name:/Play/})).toHaveCount(1);

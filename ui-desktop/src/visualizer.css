@@ -23,6 +23,14 @@
  .beat-pulse-cell [data-icon=Playlist] :is(path:nth-of-type(1),line:nth-of-type(3)){transform:translateY(calc(6px * var(--glyph-drive,0)));}
 }
 .beat-pulse-cell .icon svg{width:100%;height:100%;}
+.moving-icons-scene{position:absolute;inset:0;overflow:hidden;pointer-events:none;background:#141724;}
+.moving-icons-grid{position:absolute;inset:12% 7%;display:grid;grid-template:repeat(3,minmax(0,1fr))/repeat(5,minmax(0,1fr));place-items:center;}
+.moving-icons-cell{display:grid;place-items:center;width:clamp(1.5rem,5.5vmin,3.75rem);aspect-ratio:1;color:var(--moving-color);opacity:calc(.46 + .44 * var(--moving-level));}
+.moving-icons-cell>.asset-icon{width:100%;height:100%;translate:0 calc(var(--moving-lift) * var(--moving-level));scale:calc(.9 + .46 * var(--moving-level));rotate:calc(var(--moving-tilt) * var(--moving-level));}
+.moving-icons-cell>.asset-icon>svg{width:100%;height:100%;overflow:visible;}
+.expanded-player[data-view=playing]:not([data-visualizer-cover=hidden]) .moving-icons-cell:nth-child(5n+3){visibility:hidden;}
+.expanded-player[data-view="lyrics"] .moving-icons-grid{opacity:.14;}
+@media(prefers-reduced-motion:reduce){.moving-icons-cell{--moving-level:0!important;}}
 .expanded-player[data-visualizer=true] .expanded-player-header,.expanded-player[data-visualizer=true] .expanded-player-dock{z-index:2;}
 :root[data-native-visualizer=true],:root[data-native-visualizer=true] body,:root[data-native-visualizer=true] #root{background:transparent!important;}
 :root[data-native-visualizer=true] .app-shell{visibility:hidden;opacity:0!important;pointer-events:none;}
@@ -58,7 +66,11 @@
 .visualizer-picker{width:min(38rem,calc(100vw - 24px));max-height:min(34rem,var(--radix-dropdown-menu-content-available-height));overflow:hidden;}
 .visualizer-picker .menu-panel-items>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px;}
 .visualizer-preset{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:6px;border-radius:12px;outline:0;font-size:.875rem;cursor:pointer;}
-.visualizer-preset img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;}
+.visualizer-preset img,.moving-icons-preview{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:8px;}
+.moving-icons-preview{display:flex;align-items:center;justify-content:center;gap:5%;background:#141724;color:#93dddc;}
+.moving-icons-preview>.asset-icon{width:22%;height:auto;aspect-ratio:1;}
+.moving-icons-preview>.asset-icon:first-child{color:#eea7c1;}
+.moving-icons-preview>.asset-icon:last-child{color:#b4b9fa;}
 .visualizer-preset[data-state=checked],.visualizer-preset[data-highlighted]{background:var(--control-surface);outline:1px solid var(--accent);outline-offset:-1px;}
 .visualizer-options { display:grid;gap:.25rem;font-size:.8125rem; }
 .visualizer-option {

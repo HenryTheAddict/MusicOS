@@ -10,6 +10,7 @@ import {PlaylistArtwork} from './PlaylistLibrary';
 import {displayData,peekDisplayData} from './displayData';
 import {trackCredits} from './credits';
 import {homeMusic,homeMixIdeas} from './homeData';
+import './homeIconMotion.css';
 import type {Track,Album,HomeActivity,Library,Playback,Route,SavedCollection,SparkRecommendation} from './types';
 type Kind='all'|'manual'|'audio'|'rule';
 function MixIdea({track,reason,enabled,onOpen}:{track:Track;reason:string;enabled:boolean;onOpen:()=>void}){const tone=useCollectionTone(true,String(track.id));return <button data-collection-tone="true" onClick={onOpen} aria-label={`Preview a new mix from ${track.title}`}><span ref={tone} className="home-mix-cover"><Cover src={track.cover_art_path} trackId={track.id} title={track.album}/></span><span><small>{reason}</small><strong>{track.title}</strong><small className="home-mix-preview">{enabled?'Preview mix':'Set up Sparklists'}</small></span><Icon name="Sparklist"/></button>;}
@@ -32,7 +33,7 @@ export default function PersonalHome({name,library,collections,recommendations,p
  const shown=[...saved].sort((a,b)=>(b.updated_at??0)-(a.updated_at??0)||a.name.localeCompare(b.name)).slice(0,8);
  const labels:Record<Kind,string>={all:'All',manual:'Playlists',audio:'Sparklists',rule:'Smart playlists'};
  return <article className="personal-home">
-  <header className="home-heading"><div><p className="home-eyebrow">Your library</p><h1>{personalName(name)}</h1></div><small>{library.tracks.length} {library.tracks.length===1?'song':'songs'} · {library.albums.length} {library.albums.length===1?'album':'albums'}</small></header>
+  <header className="home-heading"><h1>{personalName(name)}</h1><small>{library.tracks.length} {library.tracks.length===1?'song':'songs'} · {library.albums.length} {library.albums.length===1?'album':'albums'}</small></header>
   {canResume&&player.track?.available&&<section className="home-resume" data-collection-tone="true" aria-label="Continue listening">
    <span ref={resumeTone} className="home-resume-art"><Cover src={player.track.cover_art_path} trackId={player.track.id} title={player.track.album}/></span>
    <div className="home-resume-copy"><small>Continue listening</small><strong>{player.track.title}</strong><span>{trackCredits(player.track).join(' + ')} · {player.track.album}</span>

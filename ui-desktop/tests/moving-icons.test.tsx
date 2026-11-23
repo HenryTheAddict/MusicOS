@@ -1,0 +1,51 @@
+import {act,cleanup,render,renderHook} from '@testing-library/react';
+import {afterEach,expect,it,vi} from 'vitest';
+import {emptyPlayback} from '../src/bridge';
+import MovingIcons from '../src/MovingIcons';
+import {usePlaybackFeed} from '../src/playbackFeed';
+import type {Track} from '../src/types';
+
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();});
+
+it('responds separately to live energy bands and goes still on pause or Reduced Motion',()=>{
+ const frames=new Map<number,FrameRequestCallback>();
+ let frameId=0,now=0;
+ vi.stubGlobal('requestAnimationFrame',(callback:FrameRequestCallback)=>{frames.set(++frameId,callback);return frameId;});
+ vi.stubGlobal('cancelAnimationFrame',(id:number)=>frames.delete(id));
+ vi.spyOn(document,'hidden','get').mockReturnValue(false);
+ const tick=()=>{
+  const pending=[...frames.values()];
+  frames.clear();
+  now+=16;
+  pending.forEach(paint=>paint(now));
+ };
+ const feed=renderHook(()=>usePlaybackFeed(emptyPlayback));
+ const update=feed.result.current[1];
+ act(()=>update({...emptyPlayback,track:{id:1} as Track,is_playing:true,audio_levels:[0,0,0]}));
+ const view=render(<MovingIcons trackId={1} active playing reduced={false}/>);
+ const scene=view.container.querySelector<HTMLElement>('.moving-icons-scene')!;
+ const energy=(band:number)=>Number(scene.style.getPropertyValue(`--moving-level-${band}`));
+ expect(frames.size).toBe(0);
+ act(()=>update({audio_levels:[1,0,.25]}));
+ tick();
+ expect(energy(0)).toBeGreaterThan(energy(2));
+ expect(energy(2)).toBeGreaterThan(0);
+ expect(energy(1)).toBe(0);
+ for(let i=0;i<24;i++)tick();
+ expect(frames.size).toBe(0);
+ act(()=>update({audio_levels:[0,1,0]}));
+ tick();
+ expect(energy(0)).toBeLessThan(1);
+ expect(energy(1)).toBeGreaterThan(0);
+ act(()=>update({is_playing:false}));
+ expect(energy(1)).toBe(0);
+ expect(frames.size).toBe(0);
+ act(()=>update({is_playing:true}));
+ tick();
+ expect(energy(1)).toBeGreaterThan(0);
+ view.rerender(<MovingIcons trackId={1} active playing reduced/>);
+ expect(energy(1)).toBe(0);
+ act(()=>update({audio_levels:[1,1,1]}));
+ expect(frames.size).toBe(0);
+ act(()=>update(emptyPlayback));
+});
