@@ -20,16 +20,20 @@ fn home_navigation_cycles_all_main_rows_and_keeps_detail_focus_deterministic() {
     app.focus = Focus::HomeMusic;
 
     for expected in [
-        Focus::HomeNowPlaying,
-        Focus::HomeApps,
+        Focus::Artists,
+        Focus::Songs,
+        Focus::Playlists,
+        Focus::Search,
         Focus::HomeSettings,
+        Focus::HomeApps,
+        Focus::HomeNowPlaying,
         Focus::HomeMusic,
     ] {
         app.handle_input(InputEvent::Button(Button::Down));
         assert_eq!(app.focus, expected);
     }
     app.handle_input(InputEvent::Button(Button::Up));
-    assert_eq!(app.focus, Focus::HomeSettings);
+    assert_eq!(app.focus, Focus::HomeNowPlaying);
 
     app.focus = Focus::HomeNowPlaying;
     app.tracks_queue.push(musicos_init::database::Track {
@@ -61,6 +65,27 @@ fn home_navigation_cycles_all_main_rows_and_keeps_detail_focus_deterministic() {
     assert_eq!(app.focus, Focus::HomeNowPlaying);
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn home_library_rows_open_directly_and_back_restores_focus() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    for (focus, screen) in [
+        (Focus::HomeMusic, Screen::AlbumsList),
+        (Focus::Artists, Screen::ArtistsList),
+        (Focus::Songs, Screen::SongsList),
+        (Focus::Playlists, Screen::PlaylistsList),
+        (Focus::Search, Screen::Search),
+    ] {
+        app.force_screen_for_snapshot(Screen::Home);
+        app.focus = focus;
+        app.handle_input(InputEvent::Button(Button::Confirm));
+        assert_eq!(app.screen, screen);
+        app.handle_input(InputEvent::Button(Button::Back));
+        assert_eq!(app.screen, Screen::Home);
+        assert_eq!(app.focus, focus);
+    }
 }
 
 #[test]
@@ -253,8 +278,8 @@ fn apps_launcher_and_usb_sync_have_real_destinations() {
 
     let mut app = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
     app.force_screen_for_snapshot(Screen::Home);
-    app.handle_input(InputEvent::Button(Button::Down));
-    app.handle_input(InputEvent::Button(Button::Down));
+    app.handle_input(InputEvent::Button(Button::Up));
+    app.handle_input(InputEvent::Button(Button::Up));
     assert_eq!(app.focus, Focus::HomeApps);
 
     app.handle_input(InputEvent::Button(Button::Confirm));
@@ -381,7 +406,14 @@ fn completed_setup_saves_theme_and_skips_setup_next_boot() {
     assert_eq!(app.screen, Screen::First);
 
     app.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(app.screen, Screen::Welcome);
+    assert!(!musicos_init::preferences::load().controls_seen);
     app.handle_input(InputEvent::Button(Button::Confirm));
+    let mut interrupted = MusicOs::with_db_path(Resolution::HD_4_3, db_path.to_str().unwrap());
+    assert_eq!(interrupted.screen, Screen::First);
+    assert!(musicos_init::preferences::load().controls_seen);
+    interrupted.handle_input(InputEvent::Button(Button::Confirm));
+    assert_eq!(interrupted.screen, Screen::Theme);
     app.handle_input(InputEvent::Button(Button::Right));
     assert_eq!(app.active_theme, musicos_init::ui::theme::ThemeName::Red);
     app.handle_input(InputEvent::Button(Button::Confirm));
@@ -568,6 +600,27 @@ fn context_menu_only_opens_for_real_targets() {
     assert_eq!(app.previous_screen, Screen::SongsList);
 
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn home_now_playing_does_not_focus_hidden_controls_after_import() {
+    let _guard = ENV_LOCK.lock().unwrap();
+    let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+    app.db
+        .insert_track("/music/real.ogg", "Real", "Tanger", "Works", 120, 1, 1)
+        .unwrap();
+    app.refresh_library();
+    app.force_screen_for_snapshot(Screen::Home);
+    app.handle_input(InputEvent::Button(Button::Up));
+    assert_eq!(app.focus, Focus::HomeNowPlaying);
+    for button in [Button::Right, Button::Context] {
+        app.handle_input(InputEvent::Button(button));
+        assert_eq!(app.focus, Focus::HomeNowPlaying);
+    }
+    app.player
+        .restore_queue_paused(app.db.get_tracks().unwrap(), 0, 0.0);
+    app.handle_input(InputEvent::Button(Button::Right));
+    assert_eq!(app.focus, Focus::HomePlaylist1);
 }
 
 #[test]

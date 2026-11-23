@@ -406,6 +406,21 @@ The RG35XX defconfig is a mainline-kernel starting point. Real hardware display
 and input bring-up may need the smallest available H700/RG35XX device-tree and
 driver patch set.
 
+### RG35XX 2024 first boot
+
+1. Back up the microSD card: flashing erases it. On macOS, with the KNULLI
+   donor image and the RG35XX build payload available, use
+   `scripts/flash-knulli-music-os.sh /dev/diskN`. Use `diskutil list` to
+   identify the **whole removable card** and double-check the disk number.
+2. Eject the card, insert it into the handheld's TF1/OS slot, and power on.
+   On the welcome screen, use the D-pad to move and **A** to choose **Get Started**.
+   The control guide also explains **B** (back) and **X** or **R1** (more options).
+   Press **A** to continue; musicOS remembers that you've seen the guide.
+3. Pick a theme with **Left/Right**, press **A** to confirm, and follow any date
+   and time prompt. Open **Music** from Home. Music isn't bundled: optionally set
+   `MUSICOS_SAMPLE_DIR` when flashing to include your own tracks, or use
+   **Settings → USB Import** to add them later.
+
 ## Audio Features
 
 Desktop builds use `desktop-audio`, which enables Rodio for the emulator and

@@ -399,6 +399,9 @@ pub struct Canvas<'a> {
     pub selected_box: Option<(f32, f32, f32, f32, f32, f32)>, // x, y, w, h, r, thick
     pub theme_top_color: Option<Color>,
     pub theme_bottom_color: Option<Color>,
+    pub dark_theme: bool,
+    pub(crate) legend_press: Option<(&'static str, f32)>,
+    pub(crate) focus_origin: Option<(f32, f32)>,
 }
 
 impl<'a> Canvas<'a> {
@@ -419,6 +422,9 @@ impl<'a> Canvas<'a> {
             selected_box: None,
             theme_top_color: None,
             theme_bottom_color: None,
+            dark_theme: false,
+            legend_press: None,
+            focus_origin: None,
         })
     }
 
@@ -428,6 +434,39 @@ impl<'a> Canvas<'a> {
 
     pub fn resolution(&self) -> Resolution {
         self.resolution
+    }
+
+    pub(crate) fn slide_content(&mut self, x: i32, top: f32, bottom: f32, wash: Color, fade: u8) {
+        let top = self.resolution.scale_y(top).round() as usize;
+        let bottom =
+            (self.resolution.scale_y(bottom).round() as usize).min(self.resolution.height as usize);
+        let offset = (x.unsigned_abs() as usize * 4).min(self.stride);
+        let background = [wash.b, wash.g, wash.r, 255];
+        let weight = u16::from(fade);
+        for y in top..bottom {
+            let row = &mut self.buffer[y * self.stride..(y + 1) * self.stride];
+            let split = self.stride - offset;
+            if x > 0 {
+                row.copy_within(..split, offset);
+                for pixel in row[..offset].chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&background);
+                }
+            } else if x < 0 {
+                row.copy_within(offset.., 0);
+                for pixel in row[split..].chunks_exact_mut(4) {
+                    pixel.copy_from_slice(&background);
+                }
+            }
+            if weight > 0 {
+                for pixel in row.chunks_exact_mut(4) {
+                    for channel in 0..3 {
+                        pixel[channel] = ((u16::from(pixel[channel]) * (256 - weight)
+                            + u16::from(background[channel]) * weight)
+                            >> 8) as u8;
+                    }
+                }
+            }
+        }
     }
 
     pub fn clear(&mut self, color: Color) {
@@ -456,6 +495,22 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn draw_svg(&mut self, path: &str, x: f32, y: f32, w: f32, h: f32) {
+        self.draw_svg_with_tint(path, x, y, w, h, None);
+    }
+
+    pub fn draw_svg_tinted(&mut self, path: &str, x: f32, y: f32, w: f32, h: f32, tint: Color) {
+        self.draw_svg_with_tint(path, x, y, w, h, Some(tint));
+    }
+
+    fn draw_svg_with_tint(
+        &mut self,
+        path: &str,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        tint: Option<Color>,
+    ) {
         let res = self.resolution();
         let scaled_w = (w * res.scale()).round() as u32;
         let scaled_h = (h * res.scale()).round() as u32;
@@ -473,6 +528,14 @@ impl<'a> Canvas<'a> {
                     let pixel = pixels[(py * scaled_w + px) as usize];
                     let a = pixel.alpha();
                     if a > 0 {
+                        if let Some(tint) = tint {
+                            self.put_pixel(
+                                x0 + px as i32,
+                                y0 + py as i32,
+                                Color::rgba(tint.r, tint.g, tint.b, a),
+                            );
+                            continue;
+                        }
                         let r = pixel.red();
                         let g = pixel.green();
                         let b = pixel.blue();
@@ -611,44 +674,25 @@ impl<'a> Canvas<'a> {
                 let src_x = ((src_x_accum >> 16) as u32).min(image.width - 1);
                 src_x_accum += step_x;
 
-                let mut is_inside = true;
-                if in_top_corner_zone {
-                    if (px as f32) < sr {
-                        let dx = (px as f32 + 0.5) - sr;
-                        let dy = (py as f32 + 0.5) - sr;
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
+                let x = px as f32 + 0.5;
+                let coverage =
+                    if (in_top_corner_zone || in_bottom_corner_zone) && (x < sr || x > sw - sr) {
+                        let dx = x - x.clamp(sr, sw - sr);
+                        let y = py as f32 + 0.5;
+                        let dy = y - y.clamp(sr, sh - sr);
+                        let distance_sq = dx * dx + dy * dy;
+                        if sr >= 0.5 && distance_sq <= (sr - 0.5) * (sr - 0.5) {
+                            1.0
+                        } else {
+                            (sr + 0.5 - distance_sq.sqrt()).clamp(0.0, 1.0)
                         }
-                    } else if (px as f32) >= sw - sr {
-                        let dx = (px as f32 + 0.5) - (sw - sr);
-                        let dy = (py as f32 + 0.5) - sr;
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    }
-                } else if in_bottom_corner_zone {
-                    if (px as f32) < sr {
-                        let dx = (px as f32 + 0.5) - sr;
-                        let dy = (py as f32 + 0.5) - (sh - sr);
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    } else if (px as f32) >= sw - sr {
-                        let dx = (px as f32 + 0.5) - (sw - sr);
-                        let dy = (py as f32 + 0.5) - (sh - sr);
-                        if dx * dx + dy * dy > sr * sr {
-                            is_inside = false;
-                        }
-                    }
-                }
-
-                if !is_inside {
-                    continue;
-                }
+                    } else {
+                        1.0
+                    };
 
                 let idx = (src_y * image.width + src_x) as usize;
                 let color = image.pixels[idx];
-                let alpha = (color.a as f32 * opacity).round() as u8;
+                let alpha = (color.a as f32 * opacity * coverage).round() as u8;
                 if alpha > 0 {
                     let mut faded_color = color;
                     faded_color.a = alpha;

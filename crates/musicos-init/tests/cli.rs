@@ -39,6 +39,37 @@ fn help_commands_print_usage() {
 }
 
 #[test]
+fn snapshot_now_playing_aliases_render_the_fixture_to_distinct_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let settings = root.path().join("settings.json");
+    std::fs::write(&settings, b"not a settings file").unwrap();
+    let mut previous = None;
+    for screen in ["now", "nowplaying", "nowplaying-track"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_musicos-snapshot"))
+            .current_dir(root.path())
+            .env("MUSICOS_SNAPSHOT_SCREEN", screen)
+            .env("MUSICOS_SETTINGS_PATH", &settings)
+            .env("MUSICOS_RESOLUTION", "640x480")
+            .env("MUSICOS_TIME_TEXT", "6:48 PM")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{:?}", output);
+        let frame = std::fs::read(
+            root.path()
+                .join(format!("out/musicos-snapshot-{screen}.bmp")),
+        )
+        .unwrap();
+        assert!(frame.starts_with(b"BM"));
+        if let Some(expected) = previous {
+            assert!(frame == expected, "{screen} differs from the other aliases");
+        }
+        previous = Some(frame);
+    }
+    assert_eq!(std::fs::read(&settings).unwrap(), b"not a settings file");
+    assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 2);
+}
+
+#[test]
 fn settings_get_json_returns_valid_json() {
     let root = temp_root("settings-json");
     let output = command(&root)

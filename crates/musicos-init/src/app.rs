@@ -5,6 +5,7 @@ use crate::preferences::{LibraryGroup, LibrarySort, MotionMode, Preferences};
 use crate::renderer::{Canvas, Color, Resolution};
 use crate::server::{RuntimeSnapshot, ScanInfo, ServerEvent, SettingsUpdate};
 use crate::ui;
+use crate::ui::library::{Grid, LibraryView, COLUMNS};
 use crate::ui::localization::Language;
 use crate::ui::theme::ThemeName;
 use crate::usb::UsbStatus;
@@ -123,21 +124,32 @@ pub enum HomePane {
     Detail,
 }
 
+const HOME_ROWS: [Focus; 8] = [
+    Focus::HomeNowPlaying,
+    Focus::HomeMusic,
+    Focus::Artists,
+    Focus::Songs,
+    Focus::Playlists,
+    Focus::Search,
+    Focus::HomeSettings,
+    Focus::HomeApps,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HomeNavigation {
     pub pane: HomePane,
     pub main_index: usize,
     pub detail_index: usize,
-    pub remembered_detail_index: [usize; 4],
+    pub remembered_detail_index: [usize; HOME_ROWS.len()],
 }
 
 impl Default for HomeNavigation {
     fn default() -> Self {
         Self {
             pane: HomePane::Main,
-            main_index: 0,
+            main_index: 1,
             detail_index: 0,
-            remembered_detail_index: [0; 4],
+            remembered_detail_index: [0; HOME_ROWS.len()],
         }
     }
 }
@@ -163,6 +175,8 @@ struct NavigationState {
 }
 
 pub struct MusicOs {
+    controls_seen: bool,
+    snapshot_fixture: bool,
     pub screen: Screen,
     pub focus: Focus,
     pub previous_screen: Screen,
@@ -203,6 +217,11 @@ pub struct MusicOs {
     pub home_navigation: HomeNavigation,
     pub tracks_queue: Vec<Track>,
     library_tracks: Vec<Track>,
+    album_previews: Vec<ui::home::AlbumPreview>,
+    recent_albums: usize,
+    home_album_mosaic: Option<crate::renderer::CoverArt>,
+    home_artist_portrait: Option<crate::renderer::CoverArt>,
+    library_view: LibraryView,
     cached_library_counts: LibraryCounts,
     pub albums_list: Vec<String>,
     pub artists_list: Vec<String>,
@@ -222,6 +241,7 @@ pub struct MusicOs {
     pub scroll_offset: f32,
     pub target_scroll_offset: f32,
     pub current_cover_art: Option<crate::renderer::CoverArt>,
+    previous_cover_art: Option<crate::renderer::CoverArt>,
     pub current_track_id: Option<i64>,
     pub cover_art_rx: Option<std::sync::mpsc::Receiver<Option<crate::renderer::CoverArt>>>,
     pub usb_status: UsbStatus,
@@ -238,6 +258,10 @@ pub struct MusicOs {
     pub outline_active: bool,
     pub outline_animating: bool,
     pub screen_transition: f32,
+    transition_direction: f32,
+    button_feedback: Option<(&'static str, f32)>,
+    edge_feedback: Option<(f32, f32)>,
+    progress_sample: Option<(i64, f32)>,
     pub theme_colors_initialized: bool,
     pub cur_top_r: f32,
     pub cur_top_g: f32,
@@ -421,6 +445,21 @@ impl MusicOs {
     }
 
     pub fn with_options(resolution: Resolution, options: MusicOsOptions) -> Self {
+        Self::initialize(resolution, options, false)
+    }
+
+    pub fn for_snapshot(resolution: Resolution) -> Self {
+        Self::initialize(
+            resolution,
+            MusicOsOptions {
+                db_path: PathBuf::from(":memory:"),
+                scan_policy: LibraryScanPolicy::ReadOnlyPreview,
+            },
+            true,
+        )
+    }
+
+    fn initialize(resolution: Resolution, options: MusicOsOptions, snapshot_fixture: bool) -> Self {
         let db_path = options.db_path.display().to_string();
         let db = Db::open(&db_path).unwrap_or_else(|err| {
             log::error!("failed to open sqlite DB at {db_path}: {err}");
@@ -431,9 +470,13 @@ impl MusicOs {
             })
         });
 
-        let preferences = crate::preferences::load();
-        apply_audio_runtime_preferences(&preferences);
-        let mut player = AudioPlayer::new();
+        let (preferences, mut player) = if snapshot_fixture {
+            (Preferences::default(), AudioPlayer::for_snapshot())
+        } else {
+            let preferences = crate::preferences::load();
+            apply_audio_runtime_preferences(&preferences);
+            (preferences, AudioPlayer::new())
+        };
         player.set_volume(preferences.volume);
         player.set_eq_preset(preferences.eq_preset);
         player.set_shuffle(preferences.shuffle);
@@ -445,9 +488,13 @@ impl MusicOs {
                 .min(restore_tracks.len().saturating_sub(1));
             player.restore_queue_paused(restore_tracks, index, preferences.resume_position_seconds);
         }
-        crate::system::apply_brightness(preferences.brightness);
+        if !snapshot_fixture {
+            crate::system::apply_brightness(preferences.brightness);
+        }
 
         let mut app = Self {
+            controls_seen: preferences.controls_seen,
+            snapshot_fixture,
             screen: if !preferences.setup_complete {
                 Screen::First
             } else if !preferences.time_configured {
@@ -500,6 +547,11 @@ impl MusicOs {
             home_navigation: HomeNavigation::default(),
             tracks_queue: Vec::new(),
             library_tracks: Vec::new(),
+            album_previews: Vec::new(),
+            recent_albums: 0,
+            home_album_mosaic: None,
+            home_artist_portrait: None,
+            library_view: LibraryView::default(),
             cached_library_counts: LibraryCounts::default(),
             albums_list: Vec::new(),
             artists_list: Vec::new(),
@@ -519,6 +571,7 @@ impl MusicOs {
             scroll_offset: 0.0,
             target_scroll_offset: 0.0,
             current_cover_art: None,
+            previous_cover_art: None,
             current_track_id: None,
             cover_art_rx: None,
             usb_status: UsbStatus::default(),
@@ -535,6 +588,10 @@ impl MusicOs {
             outline_active: false,
             outline_animating: false,
             screen_transition: 1.0,
+            transition_direction: 1.0,
+            button_feedback: None,
+            edge_feedback: None,
+            progress_sample: None,
             theme_colors_initialized: false,
             cur_top_r: 0.0,
             cur_top_g: 0.0,
@@ -572,7 +629,7 @@ impl MusicOs {
         if self.scan_rx.is_some() || self.cover_art_rx.is_some() {
             deadline = deadline.min(now + Duration::from_millis(20));
         }
-        if self.current_track_id.is_some() {
+        if !self.snapshot_fixture && self.current_track_id.is_some() {
             deadline = deadline.min(self.last_session_save + Duration::from_secs(5));
         }
         if !self.is_asleep {
@@ -602,7 +659,12 @@ impl MusicOs {
         let current_id = status.track.as_ref().map(|t| t.id);
         if current_id != self.current_track_id {
             self.current_track_id = current_id;
-            self.current_cover_art = None;
+            if current_id.is_none() || self.motion_mode == MotionMode::Reduced {
+                self.current_cover_art = None;
+                self.previous_cover_art = None;
+            } else if let Some(art) = self.current_cover_art.take() {
+                self.previous_cover_art = Some(art);
+            }
             self.cover_art_opacity = 0.0;
 
             if let Some(ref track) = status.track {
@@ -636,6 +698,16 @@ impl MusicOs {
         if self.current_list_len() > 0 {
             let (item_h, row_h, content_top, content_bottom, list_origin) = match self.screen {
                 Screen::Language => (144.0, 124.0, 92.0, 700.0, 112.0),
+                Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue
+                | Screen::Search => (
+                    ui::music::COLLECTION_ROW_STEP,
+                    ui::music::COLLECTION_ROW_HEIGHT,
+                    204.0,
+                    864.0,
+                    220.0,
+                ),
                 _ => (144.0, 128.0, 252.0, 862.0, 260.0),
             };
             let sel = self.selected_index as f32;
@@ -667,7 +739,10 @@ impl MusicOs {
             self.hud_t = (self.hud_t - dt * 4.0).max(0.0);
         }
 
-        if current_id.is_some() && self.last_session_save.elapsed() >= Duration::from_secs(5) {
+        if !self.snapshot_fixture
+            && current_id.is_some()
+            && self.last_session_save.elapsed() >= Duration::from_secs(5)
+        {
             self.save_preferences(false);
             self.last_session_save = Instant::now();
         }
@@ -730,6 +805,7 @@ impl MusicOs {
         let old_screen = self.screen;
         let old_focus = self.focus;
         let old_idx = self.selected_index;
+        let mut feedback = false;
         if self.screen == Screen::Home {
             self.sync_home_navigation_from_focus();
         }
@@ -814,21 +890,9 @@ impl MusicOs {
                 }
             }
             InputEvent::Button(Button::Context) => {
-                if self.screen == Screen::Home {
-                    if self.home_navigation.pane == HomePane::Main {
-                        if matches!(self.home_navigation.main_index, 0 | 1) {
-                            self.enter_home_detail();
-                        }
-                    } else if self.home_navigation.main_index == 0 && self.can_open_context_menu() {
-                        self.previous_screen = self.screen;
-                        self.previous_focus = self.focus;
-                        self.screen = Screen::ContextMenu;
-                        self.focus = Focus::ContextPlay;
-                    }
-                } else if self.screen == Screen::Search
-                    && self.focus == Focus::SearchKeyboard
-                    && !self.search_query.trim().is_empty()
-                {
+                if self.can_open_home_preview_with_context() {
+                    self.enter_home_detail();
+                } else if self.can_open_search_results_with_context() {
                     self.focus = Focus::SearchResults;
                     self.selected_index = 0;
                     self.scroll_offset = 0.0;
@@ -860,18 +924,72 @@ impl MusicOs {
             InputEvent::Power => self.enter_sleep(),
             InputEvent::ButtonRelease(_) => {}
         }
+        let moved =
+            self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx;
         if self.screen != old_screen
             && self.screen != Screen::ContextMenu
             && old_screen != Screen::ContextMenu
-            && !self.navigation_restored
         {
-            self.screen_transition = 0.0;
-            self.target_scroll_offset = 0.0;
-            self.scroll_offset = 0.0;
+            if !self.navigation_restored {
+                self.target_scroll_offset = 0.0;
+                self.scroll_offset = 0.0;
+            }
+            self.screen_transition = if self.motion_mode == MotionMode::Reduced {
+                1.0
+            } else {
+                0.0
+            };
+            self.transition_direction = if event == InputEvent::Button(Button::Back) {
+                -1.0
+            } else {
+                1.0
+            };
+        }
+        if self.motion_mode != MotionMode::Reduced {
+            let key = match event {
+                InputEvent::Button(Button::Confirm) | InputEvent::Tap => Some("A"),
+                InputEvent::Button(Button::Back) if moved => Some("B"),
+                InputEvent::Button(Button::Context) if moved => Some("X"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                self.button_feedback = Some((key, 0.0));
+                feedback = true;
+            }
+            let list_len = self.current_list_len();
+            if !moved && list_len > 0 {
+                let columns = if matches!(
+                    self.screen,
+                    Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList
+                ) {
+                    COLUMNS
+                } else {
+                    1
+                };
+                let direction = match event {
+                    InputEvent::Button(Button::Up) | InputEvent::Swipe(SwipeDirection::Up)
+                        if self.selected_index < columns =>
+                    {
+                        Some(-1.0)
+                    }
+                    InputEvent::Button(Button::Down) | InputEvent::Swipe(SwipeDirection::Down)
+                        if self.selected_index / columns == (list_len - 1) / columns =>
+                    {
+                        Some(1.0)
+                    }
+                    _ => None,
+                };
+                if let Some(direction) = direction {
+                    self.edge_feedback = Some((direction, 0.0));
+                    feedback = true;
+                }
+            } else if moved {
+                self.edge_feedback = None;
+            }
         }
         self.navigation_restored = false;
 
-        self.screen != old_screen || self.focus != old_focus || self.selected_index != old_idx
+        moved || feedback
     }
 
     pub fn set_last_frame_ms(&mut self, frame_ms: f32) {
@@ -1351,9 +1469,31 @@ impl MusicOs {
         canvas.language = self.active_language;
         let (tt_color, tb_color) = self.active_theme.gradient_colors();
         let dt = (seconds - self.last_draw_seconds).max(0.0).min(0.1);
+        let feedback_dt = dt.min(1.0 / 30.0);
         self.last_draw_seconds = seconds;
         let motion = self.motion_mode.profile();
         let motion_seconds = seconds * motion.ambient_time_scale;
+
+        self.progress_sample = if self.screen == Screen::NowPlaying {
+            self.player.get_current_track().map(|track| {
+                let position = self.player.get_position();
+                let displayed = match self.progress_sample {
+                    Some((id, last))
+                        if id == track.id
+                            && self.motion_mode != MotionMode::Reduced
+                            && self.player.is_playing()
+                            && (position - last).abs() < 1.0 =>
+                    {
+                        (last + (position - last) * (1.0 - (-20.0 * dt).exp()))
+                            .clamp(0.0, track.duration.max(0) as f32)
+                    }
+                    _ => position,
+                };
+                (track.id, displayed)
+            })
+        } else {
+            None
+        };
 
         if self.current_cover_art.is_some() || self.cover_art_rx.is_none() {
             self.cover_art_opacity = if motion.artwork_seconds <= f32::EPSILON {
@@ -1361,7 +1501,24 @@ impl MusicOs {
             } else {
                 (self.cover_art_opacity + dt / motion.artwork_seconds).min(1.0)
             };
+            if self.cover_art_opacity >= 1.0 {
+                self.previous_cover_art = None;
+            }
         }
+        if self.motion_mode == MotionMode::Reduced {
+            self.button_feedback = None;
+            self.edge_feedback = None;
+            self.previous_cover_art = None;
+        }
+        let press = self
+            .button_feedback
+            .map(|(key, t)| (key, 1.0 - crate::ui::transitions::ease_out_cubic(t)));
+        canvas.legend_press = press;
+        canvas.focus_origin = (self.outline_active
+            && self.last_drawn_screen == Some(self.screen)
+            && self.motion_mode != MotionMode::Reduced)
+            .then_some((self.outline_x, self.outline_y));
+        canvas.selected_box = None;
 
         if !self.theme_colors_initialized {
             self.cur_top_r = tt_color.r as f32;
@@ -1393,6 +1550,7 @@ impl MusicOs {
         );
         canvas.theme_top_color = Some(animated_top);
         canvas.theme_bottom_color = Some(animated_bottom);
+        canvas.dark_theme = self.active_theme == ThemeName::Dark;
 
         let transition_t = if self.motion_mode == MotionMode::Reduced {
             1.0
@@ -1420,23 +1578,57 @@ impl MusicOs {
                 motion_seconds,
             );
         } else {
-            self.draw_screen(
-                self.screen,
-                self.focus,
-                canvas,
-                motion_seconds,
-                transition_t,
-            );
+            self.draw_screen(self.screen, self.focus, canvas, motion_seconds, 1.0);
         }
 
-        ui::ipod_status_bar(
+        ui::status_bar(
             canvas,
-            self.screen_title(),
+            if matches!(
+                self.screen,
+                Screen::Home
+                    | Screen::AlbumsList
+                    | Screen::ArtistsList
+                    | Screen::SongsList
+                    | Screen::ArtistAlbumsList
+                    | Screen::AlbumTracksList
+            ) {
+                ""
+            } else {
+                self.screen_title()
+            },
             &self.format_clock(),
             &crate::system::battery_summary(),
             self.active_theme,
             self.player.is_playing(),
         );
+
+        let legend = self.button_legend();
+        let home_legend = matches!(
+            self.screen,
+            Screen::Home
+                | Screen::MusicApp
+                | Screen::Settings
+                | Screen::SettingsDetail
+                | Screen::NowPlaying
+                | Screen::First
+                | Screen::Welcome
+                | Screen::TestComplete
+                | Screen::Theme
+                | Screen::DateTimeSetup
+                | Screen::Language
+                | Screen::Apps
+                | Screen::About
+                | Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue
+                | Screen::Search
+                | Screen::RatingPicker
+        );
+        if home_legend {
+            ui::home_legend_bar(canvas, legend);
+        } else if !legend.is_empty() {
+            ui::legend_bar(canvas, legend);
+        }
 
         let screen_changed = Some(self.screen) != self.last_drawn_screen;
         self.last_drawn_screen = Some(self.screen);
@@ -1452,7 +1644,7 @@ impl MusicOs {
                 self.outline_active = true;
             } else {
                 let factor = if motion.selection_response.is_finite() {
-                    (motion.selection_response * dt).min(1.0)
+                    1.0 - (-motion.selection_response * feedback_dt).exp()
                 } else {
                     1.0
                 };
@@ -1469,26 +1661,41 @@ impl MusicOs {
             } else {
                 crate::ui::transitions::pulse01(motion_seconds, 4.0, 0.0)
             };
-            let outline_color = canvas
-                .theme_top_color
-                .unwrap_or(Color::rgb(35, 108, 220))
-                .mix(Color::BLACK, 0.42)
-                .with_alpha((174.0 + outline_pulse * 30.0).round() as u8);
-            crate::ui::rr_stroke(
-                canvas,
-                self.outline_x,
-                self.outline_y,
-                self.outline_w,
-                self.outline_h,
-                self.outline_r,
-                (self.outline_thick * 0.62).max(2.5) + outline_pulse * 0.6,
-                outline_color,
-            );
-
+            let outline_color = ui::accent(canvas);
+            let edge_y = self.edge_feedback.map_or(0.0, |(direction, t)| {
+                direction * 8.0 * (t * std::f32::consts::PI).sin()
+            });
+            let press_scale = press
+                .filter(|(key, _)| *key == "A")
+                .map_or(0.0, |(_, value)| value);
+            let inset = 3.0 * press_scale;
+            let outline_y = self.outline_y + edge_y + inset;
             let dist = (tx - self.outline_x).abs()
                 + (ty - self.outline_y).abs()
                 + (tw - self.outline_w).abs()
                 + (th - self.outline_h).abs();
+            if dist > 0.5 || press_scale > 0.0 {
+                crate::ui::rr(
+                    canvas,
+                    self.outline_x + inset,
+                    outline_y,
+                    self.outline_w - 2.0 * inset,
+                    self.outline_h - 2.0 * inset,
+                    self.outline_r,
+                    outline_color.with_alpha((14.0 + 22.0 * press_scale) as u8),
+                );
+            }
+            crate::ui::rr_stroke(
+                canvas,
+                self.outline_x + inset,
+                outline_y,
+                self.outline_w - 2.0 * inset,
+                self.outline_h - 2.0 * inset,
+                self.outline_r,
+                self.outline_thick + outline_pulse * 0.6,
+                outline_color,
+            );
+
             self.outline_animating = dist > 0.5;
         } else {
             self.outline_active = false;
@@ -1496,12 +1703,32 @@ impl MusicOs {
         }
 
         if self.screen_transition < 1.0 {
+            if transition_t < 1.0 && self.screen != Screen::ContextMenu {
+                let remaining = 1.0 - transition_t;
+                let offset =
+                    (44.0 * remaining * self.transition_direction * canvas.resolution().scale())
+                        .round() as i32;
+                let wash = ui::shell(canvas);
+                let bottom = if home_legend { 878.0 } else { 918.0 };
+                canvas.slide_content(offset, 64.0, bottom, wash, (70.0 * remaining) as u8);
+            }
             self.screen_transition = if motion.screen_seconds <= f32::EPSILON {
                 1.0
             } else {
-                (self.screen_transition + dt / motion.screen_seconds).min(1.0)
+                let next = self.screen_transition + dt / motion.screen_seconds;
+                if self.screen_transition == 0.0 {
+                    next.clamp(0.01, 0.16)
+                } else {
+                    next.min(1.0)
+                }
             };
         }
+        self.button_feedback = self.button_feedback.and_then(|(key, t)| {
+            (t + feedback_dt / 0.14 < 1.0).then_some((key, t + feedback_dt / 0.14))
+        });
+        self.edge_feedback = self.edge_feedback.and_then(|(direction, t)| {
+            (t + feedback_dt / 0.16 < 1.0).then_some((direction, t + feedback_dt / 0.16))
+        });
 
         if self.hud_t > 0.0 {
             self.draw_hud(canvas, motion_seconds);
@@ -1548,19 +1775,16 @@ impl MusicOs {
             card_w,
             card_h,
             card_r,
-            Color::rgba(255, 255, 255, 240),
+            ui::surface(canvas),
         );
-        crate::ui::liquid_glass(canvas, card_x, card_y, card_w, card_h, card_r, 48);
-
-        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-        crate::ui::rr_stroke(canvas, card_x, card_y, card_w, card_h, card_r, 3.0, accent);
+        let accent = ui::accent(canvas);
 
         canvas.text_centered(
             "Wi-Fi Sync Diagnostics",
             card_x + card_w / 2.0,
             card_y + 40.0,
             38.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
 
@@ -1568,8 +1792,8 @@ impl MusicOs {
             "Connect companion app to:",
             card_x + card_w / 2.0,
             card_y + 110.0,
-            28.0,
-            Color::rgb(80, 80, 80),
+            36.0,
+            ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
 
@@ -1579,7 +1803,7 @@ impl MusicOs {
             card_x + card_w / 2.0,
             card_y + 170.0,
             42.0,
-            accent.mix(Color::BLACK, 0.2),
+            accent,
             crate::ui::FontWeight::Bold,
         );
 
@@ -1587,8 +1811,8 @@ impl MusicOs {
             "Press any key to dismiss",
             card_x + card_w / 2.0,
             card_y + 250.0,
-            24.0,
-            Color::rgb(120, 120, 120),
+            30.0,
+            ui::ink_secondary(canvas),
             crate::ui::FontWeight::Regular,
         );
     }
@@ -1615,21 +1839,9 @@ impl MusicOs {
             hud_w,
             hud_h,
             hud_r,
-            Color::rgba(255, 255, 255, 225),
+            ui::surface(canvas),
         );
-        crate::ui::liquid_glass(canvas, hud_x, hud_y, hud_w, hud_h, hud_r, 36);
-
-        let accent = canvas.theme_top_color.unwrap_or(Color::rgb(63, 143, 229));
-        crate::ui::rr_stroke(
-            canvas,
-            hud_x,
-            hud_y,
-            hud_w,
-            hud_h,
-            hud_r,
-            3.0,
-            accent.with_alpha(128),
-        );
+        let accent = ui::accent(canvas);
 
         let (label, val_str, ratio) = match self.hud_type {
             HudType::Volume => {
@@ -1647,7 +1859,7 @@ impl MusicOs {
             hud_x + 48.0,
             hud_y + 30.0,
             36.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
 
@@ -1664,7 +1876,7 @@ impl MusicOs {
             track_w,
             track_h,
             track_r,
-            Color::rgb(220, 220, 220),
+            ui::control(canvas),
         );
 
         let fill_w = track_w * ratio;
@@ -1694,13 +1906,19 @@ impl MusicOs {
             hud_x + hud_w - 48.0,
             hud_y + 30.0,
             36.0,
-            Color::BLACK,
+            ui::ink(canvas),
             crate::ui::FontWeight::Bold,
         );
     }
 
     pub fn animation_in_progress(&self) -> bool {
         self.outline_animating
+            || self.button_feedback.is_some()
+            || self.edge_feedback.is_some()
+            || (self.screen == Screen::NowPlaying
+                && (self.current_cover_art.is_some() || self.previous_cover_art.is_some())
+                && (self.current_cover_art.is_some() || self.cover_art_rx.is_none())
+                && self.cover_art_opacity < 1.0)
             || self.screen_transition < 1.0
             || self.hud_t > 0.0
             || (self.target_scroll_offset - self.scroll_offset).abs() > 0.5
@@ -1720,7 +1938,6 @@ impl MusicOs {
         transition_t: f32,
     ) {
         log::debug!("draw_screen: screen={:?}, focus={:?}", screen, focus);
-        let time_str = self.format_clock();
 
         match screen {
             Screen::First => ui::screens::draw_first(
@@ -1777,16 +1994,15 @@ impl MusicOs {
                 focus,
                 self.home_navigation.pane,
                 self.home_navigation.main_index,
-                seconds,
-                self.active_language,
-                self.active_theme,
+                self.cached_library_counts,
+                &self.album_previews,
+                self.recent_albums,
+                self.home_album_mosaic.as_ref(),
+                self.home_artist_portrait.as_ref(),
                 &self.playlists_list,
-                &self.library_tracks,
                 &self.player.get_status(),
+                self.home_now_playing_controls_available(),
                 self.current_cover_art.as_ref(),
-                &crate::system::battery_summary(),
-                &time_str,
-                transition_t,
             ),
             Screen::MusicApp => ui::music::draw_music_menu(
                 canvas,
@@ -1799,55 +2015,40 @@ impl MusicOs {
                 self.player.queue_tracks().len(),
                 transition_t,
             ),
-            Screen::SongsList => ui::music::draw_tracks_list(
+            Screen::SongsList => self.library_view.tracks(
                 canvas,
                 self.active_language.translate("songs"),
                 &self.tracks_queue,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                false,
             ),
-            Screen::AlbumsList => ui::music::draw_items_list(
+            Screen::AlbumsList => self.library_view.grid(
                 canvas,
                 self.active_language.translate("albums"),
                 &self.albums_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::Albums,
             ),
-            Screen::ArtistsList => ui::music::draw_items_list(
+            Screen::ArtistsList => self.library_view.grid(
                 canvas,
                 self.active_language.translate("artists"),
                 &self.artists_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::Artists,
             ),
-            Screen::ArtistAlbumsList => ui::music::draw_items_list(
+            Screen::ArtistAlbumsList => self.library_view.grid(
                 canvas,
-                self.active_artist.as_deref().unwrap_or("Artist Albums"),
+                self.active_artist.as_deref().unwrap_or("Artist"),
                 &self.artist_albums_list,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                Grid::ArtistAlbums,
             ),
-            Screen::AlbumTracksList => ui::music::draw_tracks_list(
+            Screen::AlbumTracksList => self.library_view.tracks(
                 canvas,
                 self.active_album.as_deref().unwrap_or("Album"),
                 &self.tracks_queue,
                 self.selected_index,
-                self.active_theme,
-                self.scroll_offset,
-                transition_t,
-                seconds,
+                true,
             ),
             Screen::PlaylistsList => {
                 let names: Vec<String> =
@@ -1871,6 +2072,7 @@ impl MusicOs {
                     .unwrap_or("Playlist Tracks");
                 ui::music::draw_tracks_list(
                     canvas,
+                    &self.library_view,
                     title,
                     &self.tracks_queue,
                     self.selected_index,
@@ -1882,6 +2084,7 @@ impl MusicOs {
             }
             Screen::Queue => ui::music::draw_tracks_list(
                 canvas,
+                &self.library_view,
                 self.active_language.translate("queue"),
                 &self.tracks_queue,
                 self.selected_index,
@@ -1892,6 +2095,7 @@ impl MusicOs {
             ),
             Screen::Search => ui::music::draw_search(
                 canvas,
+                &self.library_view,
                 &self.search_query,
                 &self.search_results,
                 self.search_key_index,
@@ -1927,8 +2131,10 @@ impl MusicOs {
                     &status,
                     &self.player.queue_tracks(),
                     self.current_cover_art.as_ref(),
+                    self.previous_cover_art.as_ref(),
                     self.cover_art_opacity,
-                    transition_t,
+                    self.progress_sample
+                        .map_or(status.position, |(_, value)| value),
                 )
             }
             Screen::Settings => ui::settings::draw_settings(
@@ -2139,30 +2345,6 @@ impl MusicOs {
                     .collect::<Vec<_>>();
                 self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
             }
-            Screen::AlbumsList => {
-                let labels = self
-                    .albums_list
-                    .iter()
-                    .map(|item| item.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
-            Screen::ArtistsList => {
-                let labels = self
-                    .artists_list
-                    .iter()
-                    .map(|item| item.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
-            Screen::ArtistAlbumsList => {
-                let labels = self
-                    .artist_albums_list
-                    .iter()
-                    .map(|item| item.as_str())
-                    .collect::<Vec<_>>();
-                self.selected_index = jump_index_by_letter(&labels, self.selected_index, direction);
-            }
             Screen::Search if self.focus == Focus::SearchResults => {
                 let labels = self
                     .search_results
@@ -2191,8 +2373,14 @@ impl MusicOs {
                 self.screen = Screen::Language;
                 self.init_language_screen();
             }
+            (Screen::First, _) if self.controls_seen => {
+                self.screen = Screen::Theme;
+                self.focus = Focus::ThemeSelect;
+            }
             (Screen::First, _) => self.screen = Screen::Welcome,
             (Screen::Welcome, _) => {
+                self.controls_seen = true;
+                self.save_preferences(false);
                 self.screen = Screen::Theme;
                 self.focus = Focus::ThemeSelect;
             }
@@ -2231,13 +2419,6 @@ impl MusicOs {
             (Screen::Home, focus) if Self::home_detail_focus_index(focus).is_some() => {
                 self.activate_home_detail()
             }
-            (Screen::Home, Focus::HomeMusic) => {
-                self.push_navigation();
-                self.previous_screen = Screen::Home;
-                self.previous_focus = self.focus;
-                self.screen = Screen::MusicApp;
-                self.focus = Focus::Albums;
-            }
             (Screen::Home, Focus::HomeNowPlaying) => {
                 self.push_navigation();
                 self.previous_screen = Screen::Home;
@@ -2257,7 +2438,6 @@ impl MusicOs {
                 self.screen = Screen::Apps;
                 self.focus = Focus::AppsMusic;
             }
-            (Screen::Home, _) => {}
             (Screen::Apps, Focus::AppsMusic) => {
                 self.push_navigation();
                 self.previous_screen = Screen::Apps;
@@ -2285,7 +2465,7 @@ impl MusicOs {
                 self.screen = Screen::About;
                 self.focus = Focus::SettingsAbout;
             }
-            (Screen::MusicApp, Focus::Songs) => {
+            (Screen::MusicApp | Screen::Home, Focus::Songs) => {
                 if let Ok(mut tracks) = self.db.get_tracks() {
                     sort_tracks(&mut tracks, self.library_sort);
                     self.push_navigation();
@@ -2294,7 +2474,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Albums) => {
+            (Screen::MusicApp, Focus::Albums) | (Screen::Home, Focus::HomeMusic) => {
                 if let Ok(albums) = self.db.get_albums() {
                     self.push_navigation();
                     self.albums_list = albums;
@@ -2302,7 +2482,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Search) => {
+            (Screen::MusicApp | Screen::Home, Focus::Search) => {
                 self.push_navigation();
                 self.search_query.clear();
                 self.search_results.clear();
@@ -2380,7 +2560,7 @@ impl MusicOs {
                 self.screen = self.previous_screen;
                 self.focus = self.previous_focus;
             }
-            (Screen::MusicApp, Focus::Artists) => {
+            (Screen::MusicApp | Screen::Home, Focus::Artists) => {
                 if let Ok(artists) = self.db.get_artists() {
                     self.push_navigation();
                     self.artists_list = artists;
@@ -2388,7 +2568,7 @@ impl MusicOs {
                     self.reset_list_state();
                 }
             }
-            (Screen::MusicApp, Focus::Playlists) => {
+            (Screen::MusicApp | Screen::Home, Focus::Playlists) => {
                 if let Ok(playlists) = self.db.get_playlists() {
                     self.push_navigation();
                     self.playlists_list = playlists;
@@ -2604,12 +2784,7 @@ impl MusicOs {
                 Focus::SettingsVolume => self.adjust_volume(0.10),
                 Focus::SettingsEq => self.cycle_eq(1),
                 Focus::SettingsSwitchObject => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(1);
                     self.save_preferences(false);
                 }
                 _ => {}
@@ -2709,6 +2884,7 @@ impl MusicOs {
         preferences.theme = self.active_theme;
         preferences.language = self.active_language;
         preferences.setup_complete |= setup_complete;
+        preferences.controls_seen |= self.controls_seen;
         preferences.time_configured = self.time_configured;
         preferences.clock_hour = self.clock_hour;
         preferences.clock_minute = self.clock_minute;
@@ -2743,6 +2919,9 @@ impl MusicOs {
     }
 
     pub fn save_preferences(&self, setup_complete: bool) {
+        if self.snapshot_fixture {
+            return;
+        }
         let preferences = self.current_preferences(setup_complete);
         if let Err(err) = crate::preferences::save(&preferences) {
             log::warn!("failed to save MusicOS preferences: {err:#}");
@@ -2913,7 +3092,11 @@ impl MusicOs {
 
     pub fn refresh_library(&mut self) {
         if let Ok(tracks) = self.db.get_tracks() {
-            self.library_tracks = tracks.clone();
+            (self.album_previews, self.recent_albums) = ui::home::album_previews(&tracks);
+            self.home_album_mosaic = ui::home::album_mosaic(&self.album_previews);
+            self.home_artist_portrait = ui::home::artist_preview(&tracks);
+            self.library_view.update(&tracks);
+            self.library_tracks = tracks;
         }
         if let Ok(albums) = self.db.get_albums() {
             self.albums_list = albums;
@@ -2960,6 +3143,79 @@ impl MusicOs {
         };
     }
 
+    fn button_legend(&self) -> &'static str {
+        match (self.screen, self.focus) {
+            (Screen::First, _) => "D-pad  Move     A  Select",
+            (Screen::Theme, _) => "D-pad  Change theme     A  Select     B  Back",
+            (Screen::DateTimeSetup, _) => "D-pad  Adjust     A  Next     B  Back",
+            (Screen::RatingPicker, _) => "Left / Right  Rate     A  Save     B  Back",
+            (Screen::Welcome | Screen::TestComplete, _) => "A  Continue     B  Back",
+            (Screen::About, _) => "B  Back",
+            (Screen::ContextMenu | Screen::SettingsDetail, _) => "A  Select     B  Back",
+            (Screen::NowPlaying, _) if self.can_open_context_menu() => {
+                "A  Select     B  Back     X  More"
+            }
+            (Screen::NowPlaying, _) => "B  Back",
+            (Screen::Search, Focus::SearchKeyboard)
+                if self.can_open_search_results_with_context() =>
+            {
+                "D-pad  Move     A  Type     B  Back     X  Results"
+            }
+            (Screen::Search, Focus::SearchKeyboard) => "D-pad  Move     A  Type     B  Back",
+            (Screen::Search, Focus::SearchResults) if self.can_open_context_menu() => {
+                "A  Play     B  Keyboard     X  More"
+            }
+            (Screen::Search, Focus::SearchResults) => "B  Keyboard",
+            (Screen::Home, _) if self.can_open_home_preview_with_context() => {
+                "A  Select     B  Back     X  More"
+            }
+            (Screen::Home, _) => "A  Select     B  Back",
+            (Screen::Language | Screen::Apps | Screen::Settings, _) => {
+                "D-pad  Move     A  Select     B  Back"
+            }
+            (Screen::MusicApp, _) => "A  Select     B  Back",
+            (Screen::ArtistAlbumsList, _) => "D-pad  Move     A  Open     B  Back",
+            (Screen::AlbumsList | Screen::ArtistsList, _) => {
+                if self.can_open_context_menu() {
+                    "D-pad  Move     A  Open     B  Back     X  More"
+                } else {
+                    "D-pad  Move     A  Open     B  Back"
+                }
+            }
+            (
+                Screen::AlbumTracksList
+                | Screen::SongsList
+                | Screen::PlaylistsList
+                | Screen::PlaylistTracksList
+                | Screen::Queue,
+                _,
+            ) => {
+                if self.can_open_context_menu() {
+                    "A  Select     B  Back     X  More"
+                } else {
+                    "A  Select     B  Back"
+                }
+            }
+            _ => "",
+        }
+    }
+
+    fn can_open_home_preview_with_context(&self) -> bool {
+        self.screen == Screen::Home
+            && self.home_navigation.pane == HomePane::Main
+            && matches!(
+                HOME_ROWS[self.home_navigation.main_index],
+                Focus::HomeMusic | Focus::HomeNowPlaying | Focus::Artists | Focus::Playlists
+            )
+            && self.home_detail_item_count() > 0
+    }
+
+    fn can_open_search_results_with_context(&self) -> bool {
+        self.screen == Screen::Search
+            && self.focus == Focus::SearchKeyboard
+            && !self.search_query.trim().is_empty()
+    }
+
     fn can_open_context_menu(&self) -> bool {
         match self.screen {
             Screen::SongsList
@@ -2972,13 +3228,20 @@ impl MusicOs {
             Screen::AlbumsList => self
                 .albums_list
                 .get(self.selected_index)
-                .and_then(|album| self.filtered_tracks(|track| track.album == *album))
-                .is_some(),
-            Screen::ArtistsList => self
-                .artists_list
-                .get(self.selected_index)
-                .and_then(|artist| self.filtered_tracks(|track| track.artist == *artist))
-                .is_some(),
+                .is_some_and(|album| {
+                    self.db
+                        .has_tracks_in_collection(Some(album), None)
+                        .unwrap_or(false)
+                }),
+            Screen::ArtistsList => {
+                self.artists_list
+                    .get(self.selected_index)
+                    .is_some_and(|artist| {
+                        self.db
+                            .has_tracks_in_collection(None, Some(artist))
+                            .unwrap_or(false)
+                    })
+            }
             Screen::PlaylistsList => self.playlists_list.get(self.selected_index).is_some(),
             Screen::Home => false,
             Screen::NowPlaying => self.player.get_current_track().is_some(),
@@ -3149,21 +3412,16 @@ impl MusicOs {
         self.close_context();
     }
 
+    fn home_now_playing_controls_available(&self) -> bool {
+        self.player.get_current_track().is_some() || !self.tracks_queue.is_empty()
+    }
+
     fn home_detail_item_count(&self) -> usize {
-        match self.home_navigation.main_index {
-            0 => self
-                .playlists_list
-                .len()
-                .max(self.library_tracks.len())
-                .min(4),
-            1 => {
-                usize::from(
-                    self.player.get_status().track.is_some()
-                        || !self.library_tracks.is_empty()
-                        || !self.tracks_queue.is_empty(),
-                ) * 4
-            }
-            2 | 3 => 4,
+        match HOME_ROWS[self.home_navigation.main_index] {
+            Focus::HomeMusic | Focus::Artists => usize::from(!self.library_tracks.is_empty()),
+            Focus::Playlists => self.playlists_list.len().min(4),
+            Focus::HomeNowPlaying => usize::from(self.home_now_playing_controls_available()) * 4,
+            Focus::HomeApps | Focus::HomeSettings => 4,
             _ => 0,
         }
     }
@@ -3187,23 +3445,8 @@ impl MusicOs {
         }
     }
 
-    fn home_main_focus_for_index(index: usize) -> Focus {
-        match index.min(3) {
-            0 => Focus::HomeMusic,
-            1 => Focus::HomeNowPlaying,
-            2 => Focus::HomeApps,
-            _ => Focus::HomeSettings,
-        }
-    }
-
     fn sync_home_navigation_from_focus(&mut self) {
-        let main_index = match self.focus {
-            Focus::HomeMusic => Some(0),
-            Focus::HomeNowPlaying => Some(1),
-            Focus::HomeApps => Some(2),
-            Focus::HomeSettings => Some(3),
-            _ => None,
-        };
+        let main_index = HOME_ROWS.iter().position(|&focus| focus == self.focus);
         if let Some(main_index) = main_index {
             self.home_navigation.pane = HomePane::Main;
             self.home_navigation.main_index = main_index;
@@ -3215,9 +3458,10 @@ impl MusicOs {
 
     fn move_home_main(&mut self, delta: isize) {
         self.home_navigation.pane = HomePane::Main;
-        self.home_navigation.main_index =
-            (self.home_navigation.main_index as isize + delta).rem_euclid(4) as usize;
-        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+        self.home_navigation.main_index = (self.home_navigation.main_index as isize + delta)
+            .rem_euclid(HOME_ROWS.len() as isize)
+            as usize;
+        self.focus = HOME_ROWS[self.home_navigation.main_index];
     }
 
     fn move_home_detail(&mut self, delta: isize) {
@@ -3255,14 +3499,22 @@ impl MusicOs {
         self.home_navigation.remembered_detail_index[self.home_navigation.main_index] =
             self.home_navigation.detail_index;
         self.home_navigation.pane = HomePane::Main;
-        self.focus = Self::home_main_focus_for_index(self.home_navigation.main_index);
+        self.focus = HOME_ROWS[self.home_navigation.main_index];
     }
 
     fn activate_home_detail(&mut self) {
         let index = self.home_navigation.detail_index;
-        match self.home_navigation.main_index {
-            0 => self.play_home_playlist(index),
-            1 => match index {
+        match HOME_ROWS[self.home_navigation.main_index] {
+            Focus::HomeMusic | Focus::Artists => {
+                if let Some((tracks, start)) = self.all_tracks_queue() {
+                    self.push_navigation();
+                    self.player.set_queue(tracks, start);
+                    self.player.set_shuffle(true);
+                    self.screen = Screen::NowPlaying;
+                    self.focus = Focus::Albums;
+                }
+            }
+            Focus::HomeNowPlaying => match index {
                 0 => self.player.play_pause(),
                 1 => self.player.prev(),
                 2 => self.player.next(),
@@ -3275,7 +3527,8 @@ impl MusicOs {
                     self.selected_index = self.player.current_index().unwrap_or(0);
                 }
             },
-            2 => match index {
+            Focus::Playlists => self.play_home_playlist(index),
+            Focus::HomeApps => match index {
                 0 => {
                     self.push_navigation();
                     self.screen = Screen::MusicApp;
@@ -3294,7 +3547,7 @@ impl MusicOs {
                     self.focus = Focus::AppsUsbSync;
                 }
             },
-            3 => {
+            Focus::HomeSettings => {
                 self.previous_screen = Screen::Home;
                 self.screen = if index == 3 {
                     Screen::Settings
@@ -3665,7 +3918,8 @@ impl MusicOs {
                     self.screen = Screen::Settings;
                     self.focus = Focus::SettingsLooks;
                 } else {
-                    self.screen = Screen::Welcome;
+                    self.screen = Screen::First;
+                    self.focus = Focus::GetStarted;
                 }
             }
             Screen::DateTimeSetup => {
@@ -3806,6 +4060,22 @@ impl MusicOs {
         }
     }
 
+    fn move_library_grid(&mut self, row: isize, col: isize) {
+        let len = self.current_list_len();
+        if len == 0 {
+            return;
+        }
+        let selected = self.selected_index.min(len - 1);
+        let current_row = selected / COLUMNS;
+        let current_col = selected % COLUMNS;
+        let next_row = current_row
+            .saturating_add_signed(row)
+            .min((len - 1) / COLUMNS);
+        let first = next_row * COLUMNS;
+        let last_col = (len - 1 - first).min(COLUMNS - 1);
+        self.selected_index = first + current_col.saturating_add_signed(col).min(last_col);
+    }
+
     fn move_down(&mut self) {
         match self.screen {
             Screen::Theme => {
@@ -3864,20 +4134,8 @@ impl MusicOs {
                     self.selected_index = (self.selected_index + 1) % self.tracks_queue.len();
                 }
             }
-            Screen::AlbumsList => {
-                if !self.albums_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.albums_list.len();
-                }
-            }
-            Screen::ArtistsList => {
-                if !self.artists_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.artists_list.len();
-                }
-            }
-            Screen::ArtistAlbumsList => {
-                if !self.artist_albums_list.is_empty() {
-                    self.selected_index = (self.selected_index + 1) % self.artist_albums_list.len();
-                }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(1, 0);
             }
             Screen::PlaylistsList => {
                 if !self.playlists_list.is_empty() {
@@ -4005,32 +4263,8 @@ impl MusicOs {
                     };
                 }
             }
-            Screen::AlbumsList => {
-                if !self.albums_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.albums_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
-            }
-            Screen::ArtistsList => {
-                if !self.artists_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.artists_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
-            }
-            Screen::ArtistAlbumsList => {
-                if !self.artist_albums_list.is_empty() {
-                    self.selected_index = if self.selected_index == 0 {
-                        self.artist_albums_list.len() - 1
-                    } else {
-                        self.selected_index - 1
-                    };
-                }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(-1, 0);
             }
             Screen::PlaylistsList => {
                 if !self.playlists_list.is_empty() {
@@ -4117,12 +4351,7 @@ impl MusicOs {
         match self.screen {
             Screen::Theme => match self.focus {
                 Focus::ThemeSelect => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(1);
                     self.save_preferences(false);
                 }
                 Focus::Custom => {
@@ -4142,10 +4371,10 @@ impl MusicOs {
                     _ => self.focus,
                 };
             }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(0, 1);
+            }
             Screen::SongsList
-            | Screen::AlbumsList
-            | Screen::ArtistsList
-            | Screen::ArtistAlbumsList
             | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
@@ -4182,12 +4411,7 @@ impl MusicOs {
         match self.screen {
             Screen::Theme => match self.focus {
                 Focus::ThemeSelect => {
-                    self.active_theme = match self.active_theme {
-                        ThemeName::Blue => ThemeName::Purple,
-                        ThemeName::Purple => ThemeName::Green,
-                        ThemeName::Green => ThemeName::Red,
-                        ThemeName::Red => ThemeName::Blue,
-                    };
+                    self.active_theme = self.active_theme.cycle(-1);
                     self.save_preferences(false);
                 }
                 Focus::Yeah => {
@@ -4207,10 +4431,10 @@ impl MusicOs {
                     _ => self.focus,
                 };
             }
+            Screen::AlbumsList | Screen::ArtistsList | Screen::ArtistAlbumsList => {
+                self.move_library_grid(0, -1);
+            }
             Screen::SongsList
-            | Screen::AlbumsList
-            | Screen::ArtistsList
-            | Screen::ArtistAlbumsList
             | Screen::AlbumTracksList
             | Screen::PlaylistsList
             | Screen::PlaylistTracksList
@@ -4360,11 +4584,11 @@ impl MusicOs {
 
     fn screen_title(&self) -> &'static str {
         match self.screen {
-            Screen::First => "MusicOS",
-            Screen::Welcome => "Welcome",
+            Screen::First => "musicOS",
+            Screen::Welcome => "First boot",
             Screen::Theme => "Appearance",
             Screen::DateTimeSetup => "Date & Time",
-            Screen::Home => "MusicOS",
+            Screen::Home => "musicOS",
             Screen::MusicApp => "Music",
             Screen::Language => "Language",
             Screen::TestComplete => "Ready",
@@ -4376,13 +4600,13 @@ impl MusicOs {
             Screen::AlbumTracksList => "Album",
             Screen::PlaylistsList => "Playlists",
             Screen::PlaylistTracksList => "Playlist",
-            Screen::Queue => "On-The-Go",
+            Screen::Queue => "Queue",
             Screen::Search => "Search",
             Screen::RatingPicker => "Rating",
             Screen::ContextMenu => "Options",
             Screen::Settings => "Settings",
             Screen::SettingsDetail => "Settings",
-            Screen::Apps => "Extras",
+            Screen::Apps => "Apps",
             Screen::About => "About",
         }
     }
@@ -4404,8 +4628,97 @@ impl MusicOs {
 }
 
 #[cfg(test)]
-mod deadline_tests {
+mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_playback_does_not_save_an_elapsed_session() {
+        let mut app = MusicOs::for_snapshot(Resolution::VGA_4_3);
+        app.db
+            .insert_track("/fixture/no-audio.flac", "Song", "Artist", "Album", 120, 1, 1)
+            .unwrap();
+        app.player.set_queue(app.db.get_tracks().unwrap(), 0);
+        let elapsed = Instant::now() - Duration::from_secs(6);
+        app.last_session_save = elapsed;
+        app.tick();
+        let status = app.player.get_status();
+        assert!(status.is_playing);
+        assert_eq!(status.last_error, None);
+        assert_eq!(app.last_session_save, elapsed);
+    }
+
+    #[test]
+    fn library_grids_keep_dpad_focus_on_real_cells() {
+        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, ":memory:");
+        let items: Vec<String> = (0..5).map(|i| format!("Item {i}")).collect();
+        app.albums_list = items.clone();
+        app.artists_list = items.clone();
+        app.artist_albums_list = items;
+        for screen in [
+            Screen::AlbumsList,
+            Screen::ArtistsList,
+            Screen::ArtistAlbumsList,
+        ] {
+            app.force_screen_for_snapshot(screen);
+            app.selected_index = 0;
+            for (button, expected) in [
+                (Button::Right, 1),
+                (Button::Right, 2),
+                (Button::Down, 4),
+                (Button::Right, 4),
+                (Button::Left, 3),
+                (Button::Up, 0),
+            ] {
+                app.handle_input(InputEvent::Button(button));
+                assert_eq!(app.selected_index, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn context_legend_matches_the_available_x_action() {
+        let root = tempfile::tempdir().unwrap();
+        let db_path = root.path().join("media.sqlite3");
+        let mut app = MusicOs::with_db_path(Resolution::VGA_4_3, db_path.to_str().unwrap());
+
+        for screen in [
+            Screen::MusicApp,
+            Screen::ArtistAlbumsList,
+            Screen::SongsList,
+        ] {
+            app.force_screen_for_snapshot(screen);
+            assert!(!app.button_legend().contains("X  More"));
+            app.handle_input(InputEvent::Button(Button::Context));
+            assert_eq!(app.screen, screen);
+        }
+
+        app.db
+            .insert_track("/music/demo.ogg", "Demo", "Artist", "Album", 120, 1, 1)
+            .unwrap();
+        app.refresh_library();
+
+        for screen in [Screen::AlbumsList, Screen::ArtistsList] {
+            app.force_screen_for_snapshot(screen);
+            assert!(app.button_legend().contains("X  More"));
+            app.handle_input(InputEvent::Button(Button::Context));
+            assert_eq!(app.screen, Screen::ContextMenu);
+        }
+
+        app.force_screen_for_snapshot(Screen::Home);
+        assert!(app.button_legend().contains("X  More"));
+        app.handle_input(InputEvent::Button(Button::Context));
+        assert_eq!(app.home_navigation.pane, HomePane::Detail);
+        assert!(!app.button_legend().contains("X  "));
+
+        app.force_screen_for_snapshot(Screen::Search);
+        assert!(!app.button_legend().contains("X  Results"));
+        app.search_query = "Demo".into();
+        app.refresh_search_results();
+        assert!(app.button_legend().contains("X  Results"));
+        app.handle_input(InputEvent::Button(Button::Context));
+        assert_eq!(app.focus, Focus::SearchResults);
+        assert!(app.button_legend().contains("X  More"));
+    }
 
     #[test]
     fn deadlines_preserve_snapshots_animation_and_timers() {

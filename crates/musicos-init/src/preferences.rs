@@ -116,7 +116,7 @@ impl MotionMode {
     pub fn profile(self) -> MotionProfile {
         match self {
             Self::Visuals => MotionProfile {
-                screen_seconds: 0.28,
+                screen_seconds: 0.20,
                 artwork_seconds: 0.42,
                 selection_response: 15.0,
                 ambient_time_scale: 1.0,
@@ -124,7 +124,7 @@ impl MotionMode {
                 overshoot: 0.04,
             },
             Self::Balanced => MotionProfile {
-                screen_seconds: 0.21,
+                screen_seconds: 0.18,
                 artwork_seconds: 0.32,
                 selection_response: 17.0,
                 ambient_time_scale: 0.8,
@@ -170,6 +170,7 @@ pub struct Preferences {
     pub theme: ThemeName,
     pub language: Language,
     pub setup_complete: bool,
+    pub controls_seen: bool,
     pub time_configured: bool,
     pub clock_hour: u8,
     pub clock_minute: u8,
@@ -208,9 +209,10 @@ impl Default for Preferences {
             schema_version: CURRENT_SCHEMA_VERSION,
             user_name: "MusicOS User".to_string(),
             device_name: "MusicOS".to_string(),
-            theme: ThemeName::Blue,
+            theme: ThemeName::Seaglass,
             language: Language::En,
             setup_complete: false,
+            controls_seen: false,
             // The RG35XX boot chain initializes the system clock. Keep manual date/time
             // available in Settings without forcing a six-step wizard on first boot.
             time_configured: true,

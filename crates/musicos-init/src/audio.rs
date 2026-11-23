@@ -165,6 +165,7 @@ pub struct AudioPlayer {
     play_start: Option<Instant>,
     accumulated_time: Duration,
     current_loaded: bool,
+    simulate_output: bool,
     last_backend: String,
     selected_pcm: Option<String>,
     last_error: Option<String>,
@@ -273,6 +274,7 @@ impl AudioPlayer {
                 play_start: None,
                 accumulated_time: Duration::ZERO,
                 current_loaded: false,
+                simulate_output: false,
                 last_backend,
                 selected_pcm: None,
                 last_error,
@@ -298,6 +300,7 @@ impl AudioPlayer {
                 play_start: None,
                 accumulated_time: Duration::ZERO,
                 current_loaded: false,
+                simulate_output: false,
                 last_backend: "silent".to_string(),
                 selected_pcm: None,
                 last_error: None,
@@ -358,7 +361,7 @@ impl AudioPlayer {
 
         self.stop();
 
-        if prefers_silent_backend() {
+        if self.simulate_output || prefers_silent_backend() {
             self.is_paused = false;
             self.last_backend = "none".to_string();
             self.selected_pcm = None;
@@ -471,6 +474,12 @@ impl AudioPlayer {
         }
     }
 
+    pub(crate) fn for_snapshot() -> Self {
+        let mut player = Self::silent("none");
+        player.simulate_output = true;
+        player
+    }
+
     fn silent(backend: &str) -> Self {
         let shuffle_seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -495,6 +504,7 @@ impl AudioPlayer {
             play_start: None,
             accumulated_time: Duration::ZERO,
             current_loaded: false,
+            simulate_output: false,
             last_backend: backend.to_string(),
             selected_pcm: None,
             last_error: None,
@@ -650,6 +660,10 @@ impl AudioPlayer {
     }
 
     pub fn set_volume(&mut self, volume: f32) {
+        self.set_volume_with_mixer(volume, crate::system::apply_system_volume);
+    }
+
+    fn set_volume_with_mixer(&mut self, volume: f32, apply_mixer: impl FnOnce(f32)) {
         self.volume = volume.clamp(0.0, 1.0);
         #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
         if let Some(ref sink) = self.sink {
@@ -659,7 +673,9 @@ impl AudioPlayer {
         if let Some(ref playback) = self.alsa_playback {
             playback.set_volume(self.volume);
         }
-        crate::system::apply_system_volume(self.volume);
+        if !self.simulate_output {
+            apply_mixer(self.volume);
+        }
     }
 
     pub fn set_eq_preset(&mut self, preset: EqPreset) {
@@ -1457,6 +1473,19 @@ mod tests {
     #[cfg(any(feature = "desktop-audio", feature = "device-audio"))]
     use super::{Decoder, EqPreset, EqSource, Source};
     use crate::database::Track;
+
+    #[test]
+    fn snapshot_volume_changes_do_not_write_the_system_mixer() {
+        let mut snapshot = AudioPlayer::for_snapshot();
+        snapshot.set_volume_with_mixer(0.85, |_| panic!("snapshot wrote the system mixer"));
+        assert_eq!(snapshot.get_status().volume, 0.85);
+
+        let mut normal = AudioPlayer::silent("none");
+        let mut mixer_volume = None;
+        normal.set_volume_with_mixer(1.5, |volume| mixer_volume = Some(volume));
+        assert_eq!(mixer_volume, Some(1.0));
+        assert_eq!(normal.get_status().volume, 1.0);
+    }
 
     fn track(id: i64) -> Track {
         Track {
