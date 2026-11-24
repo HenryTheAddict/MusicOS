@@ -110,7 +110,7 @@
  .expanded-player[data-visualizer=true][data-native-titlebar=true] .expanded-player-header{
   display:grid;grid-template-columns:repeat(4,44px);grid-template-rows:repeat(2,44px);
   grid-template-areas:'. . fullscreen close' 'view preset settings actions';gap:4px;
-  justify-content:space-between;left:8px!important;right:8px!important;top:8px!important;
+  justify-content:space-between;left:8px!important;right:8px!important;top:8px!important;z-index:4;
  }
  .expanded-player[data-visualizer=true] .expanded-header-actions{display:contents;}
  .expanded-player[data-visualizer=true] .player-view-cycle{grid-area:view;}
