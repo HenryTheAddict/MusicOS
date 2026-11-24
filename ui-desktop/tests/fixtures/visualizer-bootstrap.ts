@@ -13,7 +13,7 @@ if(!(window as any).isTauri){
   if(command==='plugin:window|set_fullscreen'){full=args.value;await emit('tauri://resize',{width:innerWidth,height:innerHeight});return;}
   if(command==='visualizer'){
    if(args.request.action==='close')return status;
-   if(args.request.action==='open'&&failRenderer){failRenderer=false;throw Error('Renderer failed');}
+   if(args.request.action==='open'&&failRenderer){failRenderer=false;throw Error('The native visualizer is currently available on macOS desktop.');}
    if(args.request.settings){const s=args.request.settings;status={requestId:s.requestId,phase:'frozen',preset:s.preferences.preset,frames:0,width:0,height:0,missedFrames:0,submissionMs:0,beatFallback:s.preferences.rotation==='beats'&&s.beat.offset===undefined};
     if(args.request.action==='refresh')await emit('musicos-visualizer-status',status);
    }

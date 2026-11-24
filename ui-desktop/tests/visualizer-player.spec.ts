@@ -70,18 +70,21 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await page.getByRole('button',{name:'Open visualizer'}).click();
  await page.mouse.move(400,100);
  const player=page.getByRole('dialog',{name:'Music player'});
- const error=player.getByRole('alert').filter({hasText:'Renderer failed'});
+ const message='The native visualizer is currently available on macOS desktop.';
+ const error=player.getByRole('alert',{name:message});
  await expect(error).toBeVisible();
+ await expect(error).toHaveAttribute('title',message);
  await player.getByRole('button',{name:'Exit full screen'}).click();
  await page.setViewportSize({width:220,height:120});
  await page.mouse.move(110,60);
- await expect.poll(()=>error.evaluate(card=>{
+ const withinStage=()=>error.evaluate(card=>{
   const player=card.closest('.expanded-player')!;
   const header=player.querySelector('.expanded-player-header')!.getBoundingClientRect();
   const dock=player.querySelector('.expanded-player-dock')!.getBoundingClientRect();
   const strip=card.getBoundingClientRect();
   return strip.top>=header.bottom&&strip.bottom<=dock.top;
- })).toBe(true);
+ });
+ await expect.poll(withinStage).toBe(true);
  const headerButtons=player.locator('.expanded-player-header button');
  await expect(headerButtons).toHaveCount(6);
  for(const button of await headerButtons.all()){
@@ -93,10 +96,32 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await expect(menu).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(menu).toBeHidden();
+ const details=error.getByRole('button',{name:'Details'});
+ const close=player.getByRole('button',{name:'Close player'});
+ const fullMessage=error.getByRole('region',{name:'Visualizer error details'});
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await expect(fullMessage).toBeHidden();
+ await close.focus();
+ await page.keyboard.press('Tab');
+ await expect(details).toBeFocused();
+ await page.keyboard.press('Enter');
+ await expect(details).toHaveAttribute('aria-expanded','true');
+ await expect(fullMessage).toBeVisible();
+ await expect(fullMessage).toHaveText(message);
+ await expect.poll(withinStage).toBe(true);
+ await page.keyboard.press('Tab');
+ await expect(fullMessage).toBeFocused();
+ await page.keyboard.press('End');
+ await expect.poll(()=>fullMessage.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
+ await details.click();
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await details.click();
+ await expect(details).toHaveAttribute('aria-expanded','true');
  await player.getByRole('button',{name:'Play',exact:true}).click();
  await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
  await player.getByRole('slider',{name:'Playback position'}).click();
  await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ await close.click({trial:true});
  await expect(error).toBeVisible();
  await error.getByRole('button',{name:'Retry'}).click();
  await expect(error).toHaveCount(0);

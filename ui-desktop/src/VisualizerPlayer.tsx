@@ -52,6 +52,21 @@ function VisualizerStill({ preset, palette }: { preset: string; palette?: AlbumP
   );
 }
 
+function VisualizerError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const details = useId();
+  return (
+    <div className="visualizer-unavailable" role="alert" aria-label={message} title={message} data-details={expanded || undefined}>
+      <strong>Visualizer unavailable</strong>
+      <button className="soft-action visualizer-error-toggle" aria-expanded={expanded} aria-controls={details}
+        onClick={() => setExpanded(value => !value)}>Details</button>
+      <p id={details} role={expanded ? 'region' : undefined} aria-label={expanded ? 'Visualizer error details' : undefined}
+        tabIndex={expanded ? 0 : undefined}>{message}</p>
+      <button className="soft-action" onClick={onRetry}>Retry</button>
+    </div>
+  );
+}
+
 type VisualizerPlayerProps = ComponentProps<typeof ExpandedPlayer> & {
   preferences: Preferences;
   onPreferences: (preferences: Preferences) => void;
@@ -243,13 +258,9 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
           )}
           {!webPreset && reduced && <VisualizerStill preset={preset} palette={albumPalette} />}
           {error ? (
-            <div className="visualizer-unavailable" role="alert">
-              <strong>Visualizer unavailable</strong>
-              <p>{error}</p>
-              <button className="soft-action" onClick={() => {
-                void call('visualizer', { request: { action: 'close' } }).finally(() => setAttempt(value => value + 1));
-              }}>Retry</button>
-            </div>
+            <VisualizerError message={error} onRetry={() => {
+              void call('visualizer', { request: { action: 'close' } }).finally(() => setAttempt(value => value + 1));
+            }} />
           ) : (!ready || status?.phase === 'starting') && (
             <div className="visualizer-starting" role="status">Preparing visualizer…</div>
           )}
