@@ -93,3 +93,19 @@ test('at 375 px the secondary row leaves room for the title and artist', async (
     expect(bounds.height).toBeGreaterThanOrEqual(44);
   }
 });
+
+test('compact credits prioritize the artist at 150% interface size', async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 480 });
+  await page.addInitScript(() => {
+    localStorage.setItem('musicos-fixture-preferences', JSON.stringify({ interface_percent: 150 }));
+  });
+  await page.goto('/?fixture=1');
+  await expect(page.locator('.adaptive-shell')).toHaveAttribute('data-size', '150');
+  const bar = page.getByRole('region', { name: 'Now playing', exact: true });
+  const artist = bar.getByRole('button', { name: 'Velvet Static', exact: true });
+  const album = bar.getByRole('button', { name: 'Bubblewrap Lagoon', exact: true });
+  await expect(artist).toBeVisible();
+  const artistWidth = (await artist.boundingBox())!.width;
+  expect(artistWidth).toBeGreaterThan(45);
+  expect(artistWidth).toBeGreaterThan((await album.boundingBox())!.width);
+});
