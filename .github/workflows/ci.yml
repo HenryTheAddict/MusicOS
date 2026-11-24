@@ -130,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-blob-${{ matrix.shard }}
-          path: blob-report
+          path: ui-desktop/blob-report
           if-no-files-found: error
           overwrite: true
 
