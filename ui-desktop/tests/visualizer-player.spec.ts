@@ -56,6 +56,28 @@ test('windowed visualizer controls fit and work at the Compact Mini Player minim
  await expect(player).toHaveCount(0);
 });
 
+test('compact renderer errors leave the preset picker and Retry clickable',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
+ await page.goto('/visualizer-proof.html?lyrics=timed&failRenderer');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ const error=player.getByRole('alert').filter({hasText:'Renderer failed'});
+ await expect(error).toBeVisible();
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await page.setViewportSize({width:220,height:120});
+ await page.mouse.move(110,60);
+ await player.getByRole('button',{name:'Choose visualizer'}).click();
+ const menu=player.getByRole('menu');
+ await expect(menu).toBeVisible();
+ await page.keyboard.press('Escape');
+ await expect(menu).toBeHidden();
+ await error.getByRole('button',{name:'Retry'}).click();
+ await expect(error).toHaveCount(0);
+ await expect(player).toBeVisible();
+ await expect(player.getByRole('button',{name:'Full screen',exact:true})).toBeVisible();
+});
+
 test('presets, nested Escape, remembered lyrics and editor Paste have one owner',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');await page.getByRole('button',{name:'Open visualizer'}).click();
  const player=page.locator('.expanded-player');await expect(player).toHaveAttribute('data-chrome','hidden');
