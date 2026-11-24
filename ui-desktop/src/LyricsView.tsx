@@ -12,6 +12,7 @@ import {clockPosition,currentPlaybackClock,subscribePlaybackClock} from './playb
 import {useViewActive} from './ViewScope';
 import {activeLyricIndices,lyricSpeaker,lyricVoice,lyricIndex,lyricPauses,lyricPauseAt,visibleLyricLine,useLyrics,lyricCall,type LyricDocument} from './lyrics';
 import type {Playback,Track} from './types';
+const sceneFadeMs=420;
 export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving:boolean;playing:boolean;cover?:string|null}){
  const host=useRef<HTMLDivElement>(null),[artColors,setArtColors]=useState<string[]|null>(null),state=useRef({phase:0,energy:[0,0,0]}),sceneColors=useRef(['#0064df','#54b9ff','#0064df']),painted=useRef(false);
  useEffect(()=>{let alive=true;if(active&&!cover)setArtColors(null);if(active&&cover)void resolveArtworkTheme([cover]).then(value=>{if(alive)setArtColors(value?(value.palette.swatches?.length===3?value.palette.swatches:[value.palette.accent,value.palette.blob,value.palette.background]):null);});return()=>{alive=false;};},[active,cover]);
@@ -25,7 +26,7 @@ export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving
     return channels?.length===3?'#'+channels.map(v=>Math.round(Math.max(0,Math.min(255,v*(srgb?255:1)))).toString(16).padStart(2,'0')).join(''):sceneColors.current[i];
    });if(!painted.current||media.matches){from=[...colors];sceneColors.current=[...colors];painted.current=true;}if(from.every((color,i)=>color===colors[i]))colorStarted=-Infinity;};
   const paint=()=>{
-   const elapsed=media.matches?1:Math.min(1,(performance.now()-colorStarted)/420),mix=elapsed*elapsed*(3-2*elapsed);
+   const elapsed=media.matches?1:Math.min(1,(performance.now()-colorStarted)/sceneFadeMs),mix=elapsed*elapsed*(3-2*elapsed);
    sceneColors.current=elapsed===1?colors:colors.map((color,i)=>'#'+[1,3,5].map(j=>Math.round(parseInt(from[i].slice(j,j+2),16)*(1-mix)+parseInt(color.slice(j,j+2),16)*mix).toString(16).padStart(2,'0')).join(''));
    const {phase,energy}=state.current;ctx.clearRect(0,0,640,480);
    for(let i=0;i<3;i++){
@@ -36,7 +37,7 @@ export function LiquidScene({active,moving,playing,cover}:{active:boolean;moving
    }
    ctx.globalAlpha=1;
   };
-  const draw=(at:number)=>{frame=0;if(document.hidden)return;const clock=currentPlaybackClock(),live=playing&&clock.playing&&moving&&!media.matches;if(at<nextPaint){frame=requestAnimationFrame(draw);return;}nextPaint=at+30;const dt=Math.min(75,at-(last||at));last=at;for(let i=0;i<3;i++){const target=Math.max(0,Math.min(1,live?(clock.levels[i]??0):0)),previous=state.current.energy[i];state.current.energy[i]+=(target-previous)*(1-Math.exp(-dt/(target>previous?90:220)));}if(moving&&!media.matches)state.current.phase+=dt*.00024*(.4+state.current.energy[0]*2);paint();if(!media.matches&&(at<colorStarted+320||live||(moving&&state.current.energy.some(e=>e>.001)&&at<settleUntil)))frame=requestAnimationFrame(draw);};
+  const draw=(at:number)=>{frame=0;if(document.hidden)return;const clock=currentPlaybackClock(),live=playing&&clock.playing&&moving&&!media.matches;if(at<nextPaint){frame=requestAnimationFrame(draw);return;}nextPaint=at+30;const dt=Math.min(75,at-(last||at));last=at;for(let i=0;i<3;i++){const target=Math.max(0,Math.min(1,live?(clock.levels[i]??0):0)),previous=state.current.energy[i];state.current.energy[i]+=(target-previous)*(1-Math.exp(-dt/(target>previous?90:220)));}if(moving&&!media.matches)state.current.phase+=dt*.00024*(.4+state.current.energy[0]*2);paint();if(!media.matches&&(at<colorStarted+sceneFadeMs||live||(moving&&state.current.energy.some(e=>e>.001)&&at<settleUntil)))frame=requestAnimationFrame(draw);};
   const start=()=>{cancelAnimationFrame(frame);clearTimeout(settleTimer);last=0;nextPaint=0;settleUntil=performance.now()+180;palette();if(!document.hidden){paint();if(!media.matches)frame=requestAnimationFrame(draw);if(!playing)settleTimer=window.setTimeout(()=>{state.current.energy.fill(0);if(!document.hidden)paint();},180);}};
   const off=subscribePlaybackClock(()=>{if(!frame&&playing&&moving&&!media.matches&&!document.hidden&&currentPlaybackClock().playing)start();});
   const observer=new MutationObserver(start);const dialog=node.closest('dialog');if(dialog)observer.observe(dialog,{attributes:true,attributeFilter:['style']});document.addEventListener('visibilitychange',start);media.addEventListener('change',start);start();return()=>{off();cancelAnimationFrame(frame);clearTimeout(settleTimer);observer.disconnect();document.removeEventListener('visibilitychange',start);media.removeEventListener('change',start);};
