@@ -44,15 +44,21 @@ test('final WebKit sample can arrive after phase end and resized pages still pre
  await page.goto('/?fixture=1');
  await page.getByRole('button',{name:'Albums',exact:true}).click();
  await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
+ await page.evaluate(()=>window.addEventListener('resize',()=>{
+  document.documentElement.dataset.testViewport=`${window.innerWidth}x${window.innerHeight}`;
+ },{once:true}));
  await page.setViewportSize({width:840,height:530});
+ await expect(page.locator('html')).toHaveAttribute('data-test-viewport','840x530');
  const target=page.locator('#library-content');
- await phase(page,1);
- await target.evaluate(node=>node.dispatchEvent(new WheelEvent('wheel',{deltaX:-35,bubbles:true,cancelable:true})));
- await expect(page.locator('.back-page-preview')).toHaveCount(1);
- await target.evaluate(node=>{
+ const previewCount=await target.evaluate(node=>{
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:1}));
+  node.dispatchEvent(new WheelEvent('wheel',{deltaX:-35,bubbles:true,cancelable:true}));
+  const previewCount=document.querySelectorAll('.back-page-preview').length;
   window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2}));
   node.dispatchEvent(new WheelEvent('wheel',{deltaX:-440,bubbles:true,cancelable:true}));
+  return previewCount;
  });
+ expect(previewCount).toBe(1);
  await expect(target.locator('.collection-grid')).toBeVisible();
  await expect(page.locator('.back-page-preview')).toHaveCount(0);
 });
