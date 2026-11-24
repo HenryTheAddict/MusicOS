@@ -96,7 +96,8 @@
   background:color-mix(in srgb,var(--ink) 16%,var(--surface-color));
   transform:none;
 }
-.adaptive-shell .now-playing :is(button,.seek):focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.adaptive-shell .now-playing button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;}
+.adaptive-shell .now-playing .playback-rail-slot:has(>.seek:focus-visible)>.progress-rail{outline:2px solid var(--accent);outline-offset:1px;}
 @media(hover:hover) and (pointer:fine){
   .adaptive-shell[data-layout=wide] .now-playing:not(:hover,:focus-within) .mini-controls>.icon-button[aria-pressed=false]{
     opacity:0;

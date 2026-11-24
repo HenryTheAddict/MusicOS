@@ -124,3 +124,18 @@ test('keyboard focus reveals the truncated title without losing the accessible d
   await expect(label).toHaveCSS('mask-image', 'none');
   await expect(content).not.toHaveCSS('transform', position);
 });
+
+test('keyboard focus on playback position draws a ring on the visible rail', async ({ page }) => {
+  await page.goto('/?fixture=1');
+  const bar = page.getByRole('region', { name: 'Now playing', exact: true });
+  const seek = bar.getByRole('slider', { name: 'Playback position', exact: true });
+  const rail = bar.locator('.progress-rail');
+  await expect(rail).toHaveCSS('outline-style', 'none');
+  await bar.getByRole('button', { name: 'Bubblewrap Lagoon', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(seek).toBeFocused();
+  await expect(rail).toHaveCSS('outline-style', 'solid');
+  await expect(rail).toHaveCSS('outline-width', '2px');
+  await page.keyboard.press('Tab');
+  await expect(rail).toHaveCSS('outline-style', 'none');
+});
