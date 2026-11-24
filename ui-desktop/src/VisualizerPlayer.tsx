@@ -56,7 +56,7 @@ function VisualizerError({ message, onRetry }: { message: string; onRetry: () =>
   const [expanded, setExpanded] = useState(false);
   const details = useId();
   return (
-    <div className="visualizer-unavailable" role="alert" aria-label={message} title={message} data-details={expanded || undefined}>
+    <div className="visualizer-unavailable" role="alert" aria-label={message} title={message} data-details={expanded || undefined} data-native-space>
       <strong>Visualizer unavailable</strong>
       <button className="soft-action visualizer-error-toggle" aria-expanded={expanded} aria-controls={details}
         onClick={() => setExpanded(value => !value)}>Details</button>

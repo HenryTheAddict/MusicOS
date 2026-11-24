@@ -64,6 +64,31 @@ test('windowed visualizer controls fit and work at the Compact Mini Player minim
  await expect(player).toHaveCount(0);
 });
 
+test('Space pauses after a pointer click on Next but activates keyboard-focused Next',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ const play=player.getByRole('button',{name:'Play',exact:true});
+ const pause=player.getByRole('button',{name:'Pause',exact:true});
+ const next=player.getByRole('button',{name:'Next track',exact:true});
+ const action=page.locator('#shortcut-result');
+ await play.click();
+ await expect(pause).toBeVisible();
+ await next.click();
+ await expect(action).toHaveText('next');
+ await expect(next).toBeFocused();
+ await page.keyboard.press('Space');
+ await expect(action).toHaveText('toggle');
+ await expect(play).toBeVisible();
+ await play.focus();
+ await page.keyboard.press('Tab');
+ await expect(next).toBeFocused();
+ await page.keyboard.press('Space');
+ await expect(action).toHaveText('next');
+ await expect(play).toBeVisible();
+});
+
 test('compact renderer errors leave the header, playback and Retry clickable',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
  await page.goto('/visualizer-proof.html?lyrics=timed&failRenderer');
@@ -117,7 +142,10 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
  await page.keyboard.press('Tab');
  await expect(fullMessage).toBeFocused();
+ const messageScroll=()=>fullMessage.evaluate(node=>node.scrollTop);
+ const beforeSpace=await messageScroll();
  await page.keyboard.press('Space');
+ await expect.poll(messageScroll).toBeGreaterThan(beforeSpace);
  await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
  await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
  await page.keyboard.press('End');
@@ -126,6 +154,11 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await expect(details).toHaveAttribute('aria-expanded','false');
  await details.click();
  await expect(details).toHaveAttribute('aria-expanded','true');
+ await details.focus();
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+ await details.click();
  await player.getByRole('button',{name:'Play',exact:true}).click();
  await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
  await player.getByRole('slider',{name:'Playback position'}).click();
