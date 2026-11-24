@@ -1,4 +1,191 @@
 import {test,expect} from '@playwright/test';
+
+test('Show cover also controls artwork in the visualizer lyrics view',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ const player=page.getByRole('dialog',{name:'Music player'}),cover=player.locator('.expanded-player-art img.cover');
+ await expect(cover).toBeInViewport();
+ await page.keyboard.press('Meta+b');await page.keyboard.press('Meta+b');
+ await expect(player).toHaveAttribute('data-view','lyrics');
+ await expect(cover).toBeInViewport();
+ await expect(player.locator('.lyrics-lines')).toBeInViewport();
+ for(const shown of [false,true]){
+  await page.mouse.move(400,100);
+  await player.getByRole('button',{name:'Visualizer options'}).click();
+  const options=page.getByRole('dialog',{name:'Visualizer',exact:true});
+  await options.getByRole('switch',{name:'Show cover'}).setChecked(shown);
+  await options.getByRole('button',{name:'Close visualizer options'}).click();
+  if(shown)await expect(cover).toBeInViewport();else await expect(cover).toBeHidden();
+ }
+});
+
+test('exiting fullscreen leaves the native preset open and usable',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await expect(player).toBeVisible();
+ await expect(page.locator('html')).toHaveAttribute('data-native-visualizer','true');
+ await expect(player.getByRole('button',{name:'Choose visualizer'})).toContainText('boxes');
+ await player.getByRole('button',{name:'Play',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+ await player.getByRole('button',{name:'Full screen',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Exit full screen'})).toBeVisible();
+});
+
+test('windowed visualizer controls fit and work at the Compact Mini Player minimum',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await page.setViewportSize({width:220,height:120});
+ await page.mouse.move(110,60);
+ await expect(player).toHaveAttribute('data-native-titlebar','true');
+ const headerButtons=player.locator('.expanded-player-header button');
+ for(const view of ['playing','lyrics']){
+  if(view==='lyrics'){
+   await player.getByRole('button',{name:'Pause',exact:true}).click();
+   await player.getByRole('button',{name:'Open Up next'}).click();
+   await player.getByRole('button',{name:'Show Lyrics'}).click();
+  }
+  await expect(player).toHaveAttribute('data-view',view);
+  await expect(headerButtons).toHaveCount(6);
+  for(const button of await headerButtons.all())await expect(button).toBeInViewport({ratio:1});
+  for(const button of await headerButtons.all())await button.click({trial:true});
+  await player.getByRole('button',{name:'Play',exact:true}).click();
+  await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+  await player.getByRole('slider',{name:'Playback position'}).click();
+  await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ }
+ await player.getByRole('button',{name:'Close player'}).click();
+ await expect(player).toHaveCount(0);
+});
+
+test('Space pauses after a pointer click on Next but activates keyboard-focused Next',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ const play=player.getByRole('button',{name:'Play',exact:true});
+ const pause=player.getByRole('button',{name:'Pause',exact:true});
+ const next=player.getByRole('button',{name:'Next track',exact:true});
+ const action=page.locator('#shortcut-result');
+ await play.click();
+ await expect(pause).toBeVisible();
+ await next.click();
+ await expect(action).toHaveText('next');
+ await expect(next).toBeFocused();
+ await page.keyboard.press('Space');
+ await expect(action).toHaveText('toggle');
+ await expect(play).toBeVisible();
+ await play.focus();
+ await page.keyboard.press('Tab');
+ await expect(next).toBeFocused();
+ await page.keyboard.press('Space');
+ await expect(action).toHaveText('next');
+ await expect(play).toBeVisible();
+});
+
+test('Space closes pointer-opened visualizer options without toggling playback',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Visualizer options'}).click();
+ const options=page.getByRole('dialog',{name:'Visualizer',exact:true});
+ await expect(options.getByRole('button',{name:'Close visualizer options'})).toBeFocused();
+ await expect(page.locator('html')).toHaveAttribute('data-input-modality','pointer');
+ await page.keyboard.press('Space');
+ await expect(options).toHaveCount(0);
+ await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+});
+
+test('compact renderer errors leave the header, playback and Retry clickable',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
+ await page.goto('/visualizer-proof.html?lyrics=timed&failRenderer');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ const message='The native visualizer is currently available on macOS desktop.';
+ const error=player.getByRole('alert',{name:message});
+ await expect(error).toBeVisible();
+ await expect(error).toHaveAttribute('title',message);
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await page.setViewportSize({width:220,height:120});
+ await page.mouse.move(110,60);
+ const withinStage=()=>error.evaluate(card=>{
+  const player=card.closest('.expanded-player')!;
+  const header=player.querySelector('.expanded-player-header')!.getBoundingClientRect();
+  const dock=player.querySelector('.expanded-player-dock')!.getBoundingClientRect();
+  const strip=card.getBoundingClientRect();
+  return strip.top>=header.bottom&&strip.bottom<=dock.top;
+ });
+ await expect.poll(withinStage).toBe(true);
+ const headerButtons=player.locator('.expanded-player-header button');
+ await expect(headerButtons).toHaveCount(6);
+ for(const button of await headerButtons.all()){
+  await expect(button).toBeInViewport({ratio:1});
+  await button.click({trial:true});
+ }
+ await player.getByRole('button',{name:'Choose visualizer'}).click();
+ const menu=player.getByRole('menu');
+ await expect(menu).toBeVisible();
+ await page.keyboard.press('Escape');
+ await expect(menu).toBeHidden();
+ await expect(player.getByRole('button',{name:'Choose visualizer'})).toBeFocused();
+ const details=error.getByRole('button',{name:'Details'});
+ const close=player.getByRole('button',{name:'Close player'});
+ const fullMessage=error.getByRole('region',{name:'Visualizer error details'});
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await expect(fullMessage).toBeHidden();
+ await close.focus();
+ await page.keyboard.press('Tab');
+ await expect(details).toBeFocused();
+ await page.keyboard.press('Enter');
+ await expect(details).toHaveAttribute('aria-expanded','true');
+ await expect(fullMessage).toBeVisible();
+ await expect(fullMessage).toHaveText(message);
+ await expect.poll(withinStage).toBe(true);
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','true');
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+ await page.keyboard.press('Tab');
+ await expect(fullMessage).toBeFocused();
+ const messageScroll=()=>fullMessage.evaluate(node=>node.scrollTop);
+ const beforeSpace=await messageScroll();
+ await page.keyboard.press('Space');
+ await expect.poll(messageScroll).toBeGreaterThan(beforeSpace);
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+ await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
+ await page.keyboard.press('End');
+ await expect.poll(()=>fullMessage.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
+ await details.click();
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await details.click();
+ await expect(details).toHaveAttribute('aria-expanded','true');
+ await details.focus();
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+ await details.click();
+ await player.getByRole('button',{name:'Play',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+ await player.getByRole('slider',{name:'Playback position'}).click();
+ await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ await close.click({trial:true});
+ await expect(error).toBeVisible();
+ await error.getByRole('button',{name:'Retry'}).click();
+ await expect(error).toHaveCount(0);
+ await expect(player).toBeVisible();
+ await expect(player.getByRole('button',{name:'Full screen',exact:true})).toBeVisible();
+});
+
 test('presets, nested Escape, remembered lyrics and editor Paste have one owner',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');await page.getByRole('button',{name:'Open visualizer'}).click();
  const player=page.locator('.expanded-player');await expect(player).toHaveAttribute('data-chrome','hidden');

@@ -52,6 +52,21 @@ function VisualizerStill({ preset, palette }: { preset: string; palette?: AlbumP
   );
 }
 
+function VisualizerError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const details = useId();
+  return (
+    <div className="visualizer-unavailable" role="alert" aria-label={message} title={message} data-details={expanded || undefined}>
+      <strong>Visualizer unavailable</strong>
+      <button className="soft-action visualizer-error-toggle" aria-expanded={expanded} aria-controls={details} data-native-space
+        onClick={() => setExpanded(value => !value)}>Details</button>
+      <p id={details} role={expanded ? 'region' : undefined} aria-label={expanded ? 'Visualizer error details' : undefined}
+        tabIndex={expanded ? 0 : undefined} data-native-space={expanded || undefined}>{message}</p>
+      <button className="soft-action" onClick={onRetry}>Retry</button>
+    </div>
+  );
+}
+
 type VisualizerPlayerProps = ComponentProps<typeof ExpandedPlayer> & {
   preferences: Preferences;
   onPreferences: (preferences: Preferences) => void;
@@ -98,19 +113,17 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
   const requestId = revision.current.id;
   const settings = useRef<VisualizerSettings>(null!);
   settings.current = { requestId, preferences: prefs, albumPalette, albumPalettePending, beat, reduced };
+  const restoreNativeWindow = useRef<(() => Promise<void>) | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
     let unsubscribe: (() => void) | undefined;
-    let restoreWindow: (() => Promise<void>) | undefined;
     let openedNativeSurface = false;
     const previousBrowserFull = document.fullscreenElement;
 
     async function restore() {
       if (openedNativeSurface) await call('visualizer', { request: { action: 'close' } }).catch(() => {});
-      if (restoreWindow) {
-        await restoreWindow().catch(() => {});
-      } else if (!native && document.fullscreenElement !== previousBrowserFull) {
+      if (!native && document.fullscreenElement !== previousBrowserFull) {
         if (previousBrowserFull) await previousBrowserFull.requestFullscreen().catch(() => {});
         else if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
       }
@@ -120,13 +133,13 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
     async function open() {
       if (!alive) return;
       try {
-        if (native) {
+        if (native && !restoreNativeWindow.current) {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
           const window = getCurrentWindow();
           const wasFullscreen = await window.isFullscreen();
-          restoreWindow = () => window.setFullscreen(wasFullscreen);
           if (!alive) return;
-          if (!wasFullscreen || !webPreset) await window.setFullscreen(true);
+          if (!wasFullscreen) await window.setFullscreen(true);
+          restoreNativeWindow.current = () => window.setFullscreen(wasFullscreen);
           if (!alive) return;
         }
 
@@ -173,6 +186,15 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
     };
   }, [attempt, webPreset]);
 
+  useEffect(() => () => {
+    if (!native) return;
+    serializeWindow(async () => {
+      const restore = restoreNativeWindow.current;
+      restoreNativeWindow.current = undefined;
+      await restore?.();
+    });
+  }, []);
+
   useEffect(() => {
     if (webPreset || !native || !ready || document.documentElement.dataset.nativeVisualizer !== 'true') return;
     let alive = true;
@@ -204,7 +226,6 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
       visualizerCover={prefs.show_cover !== false}
       coverPulse={prefs.beat_sync}
       fullscreenManaged
-      onToggleFullscreen={webPreset ? undefined : props.onClose}
       visualizerControls={(
         <>
           <VisualizerPicker value={preset} onChange={preset => save({ ...prefs, preset })} />
@@ -237,13 +258,9 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
           )}
           {!webPreset && reduced && <VisualizerStill preset={preset} palette={albumPalette} />}
           {error ? (
-            <div className="visualizer-unavailable" role="alert">
-              <strong>Visualizer unavailable</strong>
-              <p>{error}</p>
-              <button className="soft-action" onClick={() => {
-                void call('visualizer', { request: { action: 'close' } }).finally(() => setAttempt(value => value + 1));
-              }}>Retry</button>
-            </div>
+            <VisualizerError message={error} onRetry={() => {
+              void call('visualizer', { request: { action: 'close' } }).finally(() => setAttempt(value => value + 1));
+            }} />
           ) : (!ready || status?.phase === 'starting') && (
             <div className="visualizer-starting" role="status">Preparing visualizer…</div>
           )}
