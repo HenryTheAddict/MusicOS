@@ -154,3 +154,63 @@ test('a song change fades every player surface with the page and appearance edit
  await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Next track',exact:true}).click();
  await expect(page.locator('html')).toHaveAttribute('data-player-motion','artwork');expect(await bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).length)).toBe(0);
 });
+
+for(const back of ['button','swipe'] as const)test(`Back by ${back} keeps the new playing album's palette`,async({page})=>{
+ await coloredArtwork(page);
+ const root=page.locator('html'),scroller=page.locator('#library-content');
+ const surface=()=>root.evaluate(el=>el.style.getPropertyValue('--page-color'));
+ const previous=await surface();
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
+ await expect.poll(surface).not.toBe(previous);
+ await finishColors(page);
+ const playing=await surface();
+ await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await expect(page.locator('.now-playing-info')).toContainText('Velvet Static');
+ await expect(page.locator('.album-cover-transfer')).toHaveCount(0);
+ const displayed=await page.locator('.current-theme').evaluate(el=>getComputedStyle(el).backgroundColor);
+ if(back==='swipe'){
+  await scroller.evaluate(node=>{
+   window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:1}));
+   node.dispatchEvent(new WheelEvent('wheel',{deltaX:-node.clientWidth*.48,bubbles:true,cancelable:true}));
+  });
+  const preview=page.locator('.back-page-preview');
+  await expect(preview).toHaveCSS('background-color',displayed);
+  await expect(root).not.toHaveAttribute('data-back-swipe-theme',/./);
+  await scroller.evaluate(()=>window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2})));
+ }else await page.locator('.sidebar-back').click();
+ await expect(scroller.locator('.collection-grid')).toBeVisible();
+ await expect(page.locator('.library-page-exit,.back-page-preview,.swipe-cover-transfer,.album-cover-transfer')).toHaveCount(0);
+ expect(await surface()).toBe(playing);
+ expect(await transitions(page)).toEqual([]);
+ await expect(page.locator('.now-playing-info')).toContainText('Velvet Static');
+});
+
+test('Back swipe uses the playing album palette even when a different album is open',async({page})=>{
+ await coloredArtwork(page);
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();
+ await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await expect(page.locator('.now-playing-info')).toContainText('Bubblewrap Lagoon');
+ await page.evaluate(async()=>{
+  const fixturePath='/src/fixtures.ts';
+  const {fixtureCall}=await import(fixturePath);
+  const {library}=await fixtureCall('bootstrap',{});
+  const next=library.albums.find((album:{title:string})=>album.title==='Marshmallow Observatory');
+  await fixtureCall('playback',{action:{type:'play_next',id:next.track_ids[0]}});
+ });
+ await page.getByRole('button',{name:'Next track',exact:true}).click();
+ const player=page.getByRole('region',{name:'Now playing',exact:true});
+ await expect(player).toContainText('Marshmallow Observatory');
+ await expect(player).toHaveCSS('background-color','rgb(184, 203, 232)');
+ await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(200, 222, 217)');
+ const scroller=page.locator('#library-content');
+ await scroller.evaluate(node=>{
+  window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:1}));
+  node.dispatchEvent(new WheelEvent('wheel',{deltaX:-node.clientWidth*.48,bubbles:true,cancelable:true}));
+ });
+ await expect(page.locator('.back-page-preview')).toHaveCSS('background-color','rgb(184, 203, 232)');
+ await scroller.evaluate(()=>window.dispatchEvent(new CustomEvent('musicos-trackpad-phase',{detail:2})));
+ await expect(scroller.locator('.collection-grid')).toBeVisible();
+ await expect(page.locator('.back-page-preview')).toHaveCount(0);
+ await expect(page.locator('.current-theme')).toHaveCSS('background-color','rgb(184, 203, 232)');
+ expect(await transitions(page)).toEqual([]);
+});

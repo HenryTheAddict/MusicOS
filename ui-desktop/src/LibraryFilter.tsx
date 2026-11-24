@@ -1,4 +1,4 @@
-import {useEffect,useLayoutEffect,useRef} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {useMenuPresentation} from './menuPresentation';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import {Icon} from './components';
@@ -7,26 +7,31 @@ import type {Library,LibraryFilters} from './types';
 export const defaultFilters:LibraryFilters={sort:'recent',genre:'',quality:'all',favorites:false,availability:'all',separate_singles:false};
 
 type Choice = {value:string;label:string};
-function FilterChoice({label,value,choices,onChange}:{label:string;value:string;choices:Choice[];onChange:(value:string)=>void}) {
- return <div className="filter-field"><span>{label}</span><Dropdown.Root modal={false}>
+type ChoiceLayer = {label:string;container:HTMLDivElement|null;open:boolean;onOpenChange:(open:boolean)=>void};
+function FilterChoice({label,container,open,onOpenChange,value,choices,onChange}:ChoiceLayer&{value:string;choices:Choice[];onChange:(value:string)=>void}) {
+ return <div className="filter-field"><span>{label}</span><Dropdown.Root modal={false} open={open} onOpenChange={onOpenChange}>
   <Dropdown.Trigger className="filter-choice" aria-label={label}>
    <span>{choices.find(choice=>choice.value===value)?.label ?? value}</span>
    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round"/></svg>
   </Dropdown.Trigger>
-  {/* Keep the option menu inside the native popover's top layer. */}
-  <Dropdown.Content className="filter-options" sideOffset={5} align="start" collisionPadding={8} aria-label={`${label} options`} onEscapeKeyDown={e=>e.stopPropagation()}>
+  {/* Stay in the top layer but outside the clipped, scrollable panel items. */}
+  {container&&<Dropdown.Portal container={container}><Dropdown.Content className="filter-options" sideOffset={5} align="start" collisionPadding={8} aria-label={`${label} options`} onEscapeKeyDown={e=>e.stopPropagation()} onCloseAutoFocus={e=>{
+   if(container.inert||!container.isConnected||container.querySelector('.filter-choice[aria-expanded="true"]'))e.preventDefault();
+  }}>
    <Dropdown.RadioGroup value={value} onValueChange={onChange}>
     {choices.map(choice=><Dropdown.RadioItem className="filter-option" key={choice.value} value={choice.value}>
      <span>{choice.label}</span><Dropdown.ItemIndicator><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m3 8 3 3 7-7" strokeLinecap="round" strokeLinejoin="round"/></svg></Dropdown.ItemIndicator>
     </Dropdown.RadioItem>)}
    </Dropdown.RadioGroup>
-  </Dropdown.Content>
+  </Dropdown.Content></Dropdown.Portal>}
  </Dropdown.Root></div>;
 }
 
 export default function LibraryFilter({library,value,onChange}:{library:Library;value:LibraryFilters;onChange:(value:LibraryFilters)=>void}){
  const root=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null);
  const menu=useMenuPresentation(trigger),{open,present,setOpen}=menu;
+ const [activeChoice,setActiveChoice]=useState<string|null>(null);
+ useLayoutEffect(()=>{if(!open)setActiveChoice(null);},[open]);
  useLayoutEffect(()=>{
   if(!present||!menu.content.current||!trigger.current)return;
   const node=menu.content.current;node.showPopover();
@@ -46,13 +51,17 @@ export default function LibraryFilter({library,value,onChange}:{library:Library;
   return()=>{window.removeEventListener('pointerdown',close);window.removeEventListener('keydown',escape);};
  },[open]);
  function set<K extends keyof LibraryFilters>(key:K,next:LibraryFilters[K]){onChange({...value,[key]:next});}
+ const choice=(label:string):ChoiceLayer=>({
+  label,container:menu.element,open:open&&activeChoice===label,
+  onOpenChange:next=>setActiveChoice(current=>next?label:current===label?null:current),
+ });
  return <div className="library-filter" ref={root}>
   <button className="library-filter-trigger" ref={trigger} aria-expanded={open} aria-controls="library-filter-panel" onClick={()=>setOpen(!open)}><Icon name="filter"/><span>Filter</span></button>
   {present&&<div ref={menu.ref} popover="manual" inert={!open} data-state={open?'open':'closed'} onToggle={e=>{if(e.newState==='closed')setOpen(false);}} id="library-filter-panel" className="library-filter-panel menu-panel" role="region" aria-label="Library filters"><div className="menu-panel-surface"/><div className="menu-panel-items">
-   <FilterChoice label="Sort" value={value.sort} onChange={v=>set('sort',v as LibraryFilters['sort'])} choices={[{value:'recent',label:'Recently Added'},{value:'title',label:'Album Name'}]}/>
-   <FilterChoice label="Genre" value={value.genre} onChange={v=>set('genre',v)} choices={[{value:'',label:'All genres'},...library.genres.map(g=>({value:g.name,label:g.name}))]}/>
-   <FilterChoice label="Quality" value={value.quality} onChange={v=>set('quality',v as LibraryFilters['quality'])} choices={['all','lossless','lossy','mixed'].map(v=>({value:v,label:v==='all'?'All qualities':v[0].toUpperCase()+v.slice(1)}))}/>
-   <FilterChoice label="Availability" value={value.availability} onChange={v=>set('availability',v as LibraryFilters['availability'])} choices={[{value:'all',label:'All songs'},{value:'available',label:'Available'},{value:'unavailable',label:'Includes unavailable songs'}]}/>
+   <FilterChoice {...choice('Sort')} value={value.sort} onChange={v=>set('sort',v as LibraryFilters['sort'])} choices={[{value:'recent',label:'Recently Added'},{value:'title',label:'Album Name'}]}/>
+   <FilterChoice {...choice('Genre')} value={value.genre} onChange={v=>set('genre',v)} choices={[{value:'',label:'All genres'},...library.genres.map(g=>({value:g.name,label:g.name}))]}/>
+   <FilterChoice {...choice('Quality')} value={value.quality} onChange={v=>set('quality',v as LibraryFilters['quality'])} choices={['all','lossless','lossy','mixed'].map(v=>({value:v,label:v==='all'?'All qualities':v[0].toUpperCase()+v.slice(1)}))}/>
+   <FilterChoice {...choice('Availability')} value={value.availability} onChange={v=>set('availability',v as LibraryFilters['availability'])} choices={[{value:'all',label:'All songs'},{value:'available',label:'Available'},{value:'unavailable',label:'Includes unavailable songs'}]}/>
    <div className="filter-toggles"><ThemedSwitch label="Favorites only" checked={value.favorites} onChange={v=>set('favorites',v)}/><ThemedSwitch label="Separate Singles & EPs" checked={value.separate_singles} onChange={v=>set('separate_singles',v)}/></div>
    <div className="filter-footer"><button className="filter-reset" onClick={()=>onChange(defaultFilters)}>Reset filters</button></div>
   </div></div>}
