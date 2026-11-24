@@ -34,9 +34,9 @@ test('exiting fullscreen leaves the native preset open and usable',async({page})
  await expect(player.getByRole('button',{name:'Exit full screen'})).toBeVisible();
 });
 
-test('windowed visualizer controls fit and close at the Compact Mini Player minimum',async({page})=>{
+test('windowed visualizer controls fit and work at the Compact Mini Player minimum',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
- await page.goto('/visualizer-proof.html');
+ await page.goto('/visualizer-proof.html?lyrics=timed');
  await page.getByRole('button',{name:'Open visualizer'}).click();
  await page.mouse.move(400,100);
  const player=page.getByRole('dialog',{name:'Music player'});
@@ -47,6 +47,11 @@ test('windowed visualizer controls fit and close at the Compact Mini Player mini
  const headerButtons=player.locator('.expanded-player-header button');
  await expect(headerButtons).toHaveCount(6);
  for(const button of await headerButtons.all())await expect(button).toBeInViewport({ratio:1});
+ for(const button of await headerButtons.all())await button.click({trial:true});
+ await player.getByRole('button',{name:'Play',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+ await player.getByRole('slider',{name:'Playback position'}).click();
+ await expect(page.locator('#shortcut-result')).toHaveText('seek');
  await player.getByRole('button',{name:'Close player'}).click();
  await expect(player).toHaveCount(0);
 });
