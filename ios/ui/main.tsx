@@ -21,6 +21,7 @@ import {themePalette,defaultAppearance} from '../../ui-desktop/src/appearance';
 import {native,request,artwork,emptyPlayback,errorText} from './bridge';
 import type {Playback,Track as DesktopTrack,Palette} from '../../ui-desktop/src/types';
 import './phone.css';
+import '../../ui-desktop/src/homeIconMotion.css';
 import PhoneSettings,{phoneDefaults,type PhonePreferences} from './PhoneSettings';
 
 type Track=DesktopTrack&{album_id?:string};

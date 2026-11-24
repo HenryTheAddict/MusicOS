@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState, type ComponentProps, type CSSProperties } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import BeatPulseGrid from './BeatPulseGrid';
+import MovingIcons from './MovingIcons';
 import ExpandedPlayer from './ExpandedPlayer';
 import { call, native, errorText } from './bridge';
 import { beatOffsets } from './heartVisibility';
-import { defaultVisualizer, type AlbumPalette, type VisualizerSettings, type VisualizerStatus } from './visualizer';
+import { defaultVisualizer, isWebVisualizer, movingIconsPreset, type AlbumPalette, type VisualizerSettings, type VisualizerStatus } from './visualizer';
 import { useVisualizerAlbumPalette } from './visualizerAlbumPalette';
 import VisualizerPicker from './VisualizerPicker';
 import VisualizerSettingsPanel from './VisualizerSettings';
@@ -64,6 +65,7 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
   const [attempt, setAttempt] = useState(0);
   const prefs = preferences.visualizer ?? defaultVisualizer;
   const beatPulse = prefs.preset === 'beat-pulse';
+  const webPreset = isWebVisualizer(prefs.preset);
   const latest = useRef({ preferences, onPreferences });
   latest.current = { preferences, onPreferences };
 
@@ -126,7 +128,7 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
           if (!alive) return;
         }
 
-        if (beatPulse) {
+        if (webPreset) {
           setStatus(null);
         } else {
           if (!native) throw Error('Native Metal visualizers are available in the macOS desktop app.');
@@ -167,7 +169,7 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
       unsubscribe?.();
       serializeWindow(restore);
     };
-  }, [attempt, beatPulse]);
+  }, [attempt, webPreset]);
 
   useEffect(() => () => {
     if (!native) return;
@@ -179,13 +181,13 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
   }, []);
 
   useEffect(() => {
-    if (beatPulse || !native || !ready || document.documentElement.dataset.nativeVisualizer !== 'true') return;
+    if (webPreset || !native || !ready || document.documentElement.dataset.nativeVisualizer !== 'true') return;
     let alive = true;
     void call('visualizer', { request: { action: 'refresh', settings: settings.current } }).catch(failure => {
       if (alive && requestId === settings.current.requestId) setError(errorText(failure));
     });
     return () => { alive = false; };
-  }, [beatPulse, ready, requestId]);
+  }, [webPreset, ready, requestId]);
 
   useEffect(() => {
     const media = matchMedia(reducedMotion);
@@ -196,7 +198,7 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
   }, []);
 
   const save = (visualizer: typeof prefs) => onPreferences({ ...preferences, visualizer });
-  const preset = beatPulse ? prefs.preset : status?.preset || prefs.preset;
+  const preset = webPreset ? prefs.preset : status?.preset || prefs.preset;
   return (
     <ExpandedPlayer
       {...props}
@@ -236,7 +238,10 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
               palette={webPalette.current}
             />
           )}
-          {!beatPulse && reduced && <VisualizerStill preset={preset} palette={albumPalette} />}
+          {prefs.preset === movingIconsPreset && (
+            <MovingIcons trackId={trackId} playing={player.is_playing} active={props.open} reduced={reduced} palette={webPalette.current} />
+          )}
+          {!webPreset && reduced && <VisualizerStill preset={preset} palette={albumPalette} />}
           {error ? (
             <div className="visualizer-unavailable" role="alert">
               <strong>Visualizer unavailable</strong>

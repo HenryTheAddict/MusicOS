@@ -1,0 +1,17 @@
+@media (prefers-reduced-motion: no-preference) {
+  :is(.personal-home,.phone-home):not([data-reduced-motion] *) button:not(:disabled) > .asset-icon {
+    transition: translate 160ms ease-out, scale 160ms ease-out;
+  }
+  :is(.personal-home,.phone-home):not([data-reduced-motion] *) button:focus-visible:not(:disabled) > .asset-icon {
+    translate: 0 -1px;
+  }
+  @media (hover: hover) {
+    :is(.personal-home,.phone-home):not([data-reduced-motion] *) button:hover:not(:disabled) > .asset-icon {
+      translate: 0 -1px;
+    }
+  }
+  :is(.personal-home,.phone-home):not([data-reduced-motion] *) button:active:not(:disabled) > .asset-icon {
+    translate: none;
+    scale: .9;
+  }
+}

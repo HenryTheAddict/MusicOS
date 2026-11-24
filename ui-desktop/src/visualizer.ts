@@ -1,5 +1,8 @@
 import catalog from '../../assets/visualizers/manifest.json';
-export const visualizerCatalog=[...catalog.presets,{id:'beat-pulse',name:'beat pulse'}];
+export const movingIconsPreset='moving-icons';
+const webPresets=[{id:'beat-pulse',name:'beat pulse'},{id:movingIconsPreset,name:'moving icons'}];
+export const visualizerCatalog=[...catalog.presets,...webPresets];
+export const isWebVisualizer=(preset:string)=>webPresets.some(entry=>entry.id===preset);
 export type VisualizerPreferences={preset:string;rotation:'manual'|'each_song'|'timed'|'beats';timed_seconds:15|30|60;beat_interval:16|32|64;beat_sync:boolean;album_colors?:boolean;lyrics:boolean;show_cover?:boolean};
 export const defaultVisualizer:VisualizerPreferences={preset:'boxes',rotation:'manual',timed_seconds:30,beat_interval:32,beat_sync:true,album_colors:false,lyrics:false,show_cover:true};
 export type VisualizerStatus={requestId:number;phase:string;preset:string;error?:string|null;frames:number;width:number;height:number;missedFrames:number;submissionMs:number;beatFallback:boolean};
