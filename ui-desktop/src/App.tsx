@@ -1209,6 +1209,7 @@ export default function App() {
           <button
             className="now-playing-cover"
             aria-label={compact?"Open player":preferences.now_playing_artwork_action==='artwork'?"Show playing artwork":preferences.now_playing_artwork_action==='mini_player'?"Open Mini Player":"Show playing album"}
+            aria-description={compact&&player.track?.album?`Album: ${player.track.album}`:undefined}
             onClick={event => {
               if(compact){openPlayer();return;}
               if(preferences.now_playing_artwork_action==='artwork'){openArtwork(event.currentTarget,player.track?.album??'Artwork');return;}
@@ -1229,13 +1230,33 @@ export default function App() {
           </button>
           <div className="now-playing-info">
             <strong className="now-playing-title" title={player.track?.title}>
-              <button className="now-playing-title-action" disabled={!player.track} aria-label="Open lyrics" onClick={()=>openPlayer('lyrics')}><OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/></button>
+              <button className="now-playing-title-action" disabled={!player.track} aria-label="Open lyrics" aria-description={player.track?.title} onClick={()=>openPlayer('lyrics')}><OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/></button>
               {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:""}</span>
             <PlaybackProgress djMode={!!player.dj_mode} revealTime showTime={!loading&&preferences.show_now_playing_time!==false} transition={player.dj_transition} plannedMix={queuedMixForCurrent(player)} trackId={player.track?.id} entryId={player.queue_entry_ids?.[player.queue_index??-1]} position={player.position}
               duration={player.track?.duration ?? 0}
               seek={async position => { setPlayer(await call("playback", {action:{type:"seek",position}}));window.dispatchEvent(new Event("musicos-playback-discontinuity")); }} />
+          </div>
+          <div className="transport">
+            <IconButton
+              name="prev"
+              label="Previous track"
+              disabled={!player.track}
+              onClick={() => void run({ type: "previous" })}
+            />
+            <IconButton
+              name={player.is_playing ? "pause" : "play"}
+              label={player.is_playing ? "Pause" : "Play"}
+              disabled={!player.track}
+              onClick={() => void run({ type: "toggle" })}
+            />
+            <IconButton
+              name="next"
+              label="Next track"
+              disabled={!player.track}
+              onClick={() => void run({ type: "next" })}
+            />
           </div>
           <div className="mini-controls">
             <PlayerViewCycle value={queueOpen?queueView:'playing'} onChange={next=>{if(compact){openPlayer(next);}else{if(next!=='playing')setQueueView(next);setQueueOpen(next!=='playing');}}}/>
@@ -1256,28 +1277,9 @@ export default function App() {
                     : "RepeatOFF"
               }
               label="Repeat"
+              pressed={player.repeat === "one" || player.repeat === "all"}
               onClick={() => void run({ type: "repeat" })}
               disabled={!player.track}
-            />
-          </div>
-          <div className="transport">
-            <IconButton
-              name="prev"
-              label="Previous track"
-              disabled={!player.track}
-              onClick={() => void run({ type: "previous" })}
-            />
-            <IconButton
-              name={player.is_playing ? "pause" : "play"}
-              label={player.is_playing ? "Pause" : "Play"}
-              disabled={!player.track}
-              onClick={() => void run({ type: "toggle" })}
-            />
-            <IconButton
-              name="next"
-              label="Next track"
-              disabled={!player.track}
-              onClick={() => void run({ type: "next" })}
             />
           </div>
 
