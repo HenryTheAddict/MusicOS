@@ -135,6 +135,7 @@
  .expanded-player[data-visualizer=true] .expanded-player-close{grid-area:close;}
 }
 @media(max-width:420px) and (max-height:224px){
+ .expanded-player[data-visualizer=true]{overflow:clip;}
  .expanded-player[data-visualizer=true] .expanded-player-header,
  .expanded-player[data-visualizer=true][data-native-titlebar=true] .expanded-player-header{
   top:2px!important;grid-template-rows:repeat(2,34px);row-gap:2px;

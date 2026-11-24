@@ -45,13 +45,21 @@ test('windowed visualizer controls fit and work at the Compact Mini Player minim
  await page.mouse.move(110,60);
  await expect(player).toHaveAttribute('data-native-titlebar','true');
  const headerButtons=player.locator('.expanded-player-header button');
- await expect(headerButtons).toHaveCount(6);
- for(const button of await headerButtons.all())await expect(button).toBeInViewport({ratio:1});
- for(const button of await headerButtons.all())await button.click({trial:true});
- await player.getByRole('button',{name:'Play',exact:true}).click();
- await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
- await player.getByRole('slider',{name:'Playback position'}).click();
- await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ for(const view of ['playing','lyrics']){
+  if(view==='lyrics'){
+   await player.getByRole('button',{name:'Pause',exact:true}).click();
+   await player.getByRole('button',{name:'Open Up next'}).click();
+   await player.getByRole('button',{name:'Show Lyrics'}).click();
+  }
+  await expect(player).toHaveAttribute('data-view',view);
+  await expect(headerButtons).toHaveCount(6);
+  for(const button of await headerButtons.all())await expect(button).toBeInViewport({ratio:1});
+  for(const button of await headerButtons.all())await button.click({trial:true});
+  await player.getByRole('button',{name:'Play',exact:true}).click();
+  await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+  await player.getByRole('slider',{name:'Playback position'}).click();
+  await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ }
  await player.getByRole('button',{name:'Close player'}).click();
  await expect(player).toHaveCount(0);
 });
