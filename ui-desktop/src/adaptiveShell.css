@@ -122,8 +122,13 @@
 .adaptive-shell[data-layout=compact] .page-content{padding:.75rem;}
 .adaptive-shell[data-layout=compact] .now-playing{--player-control-size:44px;height:auto;min-height:3rem;margin:.25rem .375rem 0;gap:4px;}
 .adaptive-shell[data-layout=compact] .now-playing-info{position:relative;padding-inline-end:44px;}
-.adaptive-shell[data-layout=compact] .now-playing-credits>.now-playing-artists{flex-shrink:0;max-width:calc(100% - .75rem);}
-.adaptive-shell[data-layout=compact] .now-playing-credits>.now-playing-album{min-width:0;}
+.adaptive-shell[data-layout=compact] .now-playing-credits{container:now-playing-credits/inline-size;}
+.adaptive-shell[data-layout=compact] .now-playing-credits>.now-playing-artists{flex-shrink:0;max-width:calc(100% - max(32px,4ch) - .5rem);}
+.adaptive-shell[data-layout=compact] .now-playing-credits>.now-playing-album{min-width:max(32px,4ch);}
+@container now-playing-credits (width < calc(6ch + max(32px,4ch) + .5rem)){
+  .adaptive-shell[data-layout=compact] .now-playing-credits>.now-playing-artists{max-width:100%;}
+  .adaptive-shell[data-layout=compact] .now-playing-credits>:is(i,.now-playing-album){display:none;}
+}
 .adaptive-shell[data-layout=compact] .now-playing-title>.now-playing-heart{position:absolute;inset-inline-end:0;top:50%;transform:translateY(-50%);width:44px;height:44px;}
 .adaptive-shell[data-layout=compact] .now-playing-title>.now-playing-heart:active:not(:disabled){transform:translateY(-50%);}
 .adaptive-shell[data-layout=compact] .now-playing .playback-time{display:none;}

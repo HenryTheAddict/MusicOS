@@ -1190,6 +1190,7 @@ export default function App() {
           <button
             className="now-playing-cover"
             aria-label={compact?"Open player":preferences.now_playing_artwork_action==='artwork'?"Show playing artwork":preferences.now_playing_artwork_action==='mini_player'?"Open Mini Player":"Show playing album"}
+            aria-description={compact&&player.track?.album?`Album: ${player.track.album}`:undefined}
             onClick={event => {
               if(compact){openPlayer();return;}
               if(preferences.now_playing_artwork_action==='artwork'){openArtwork(event.currentTarget,player.track?.album??'Artwork');return;}

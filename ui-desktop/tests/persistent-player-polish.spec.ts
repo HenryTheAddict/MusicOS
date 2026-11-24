@@ -101,11 +101,27 @@ test('compact credits prioritize the artist at 150% interface size', async ({ pa
   await expect(page.locator('.adaptive-shell')).toHaveAttribute('data-size', '150');
   const bar = page.getByRole('region', { name: 'Now playing', exact: true });
   const artist = bar.getByRole('button', { name: 'Velvet Static', exact: true });
-  const album = bar.getByRole('button', { name: 'Bubblewrap Lagoon', exact: true });
+  const album = bar.locator('.now-playing-album');
+  const separator = bar.locator('.now-playing-credits > i');
   await expect(artist).toBeVisible();
   const artistWidth = (await artist.boundingBox())!.width;
   expect(artistWidth).toBeGreaterThan(45);
-  expect(artistWidth).toBeGreaterThan((await album.boundingBox())!.width);
+  await expect(album).toBeHidden();
+  await expect(separator).toBeHidden();
+  await expect(bar.getByRole('button', { name: 'Open player', exact: true })).toHaveAccessibleDescription('Album: Bubblewrap Lagoon');
+  await settleAnimations(page);
+  const controls = await bar.locator('.transport > button:visible, .mini-controls button').evaluateAll(
+    buttons => buttons.map(button => button.getBoundingClientRect().y),
+  );
+  expect(controls).toHaveLength(6);
+  expect(new Set(controls).size).toBe(1);
+
+  await page.setViewportSize({ width: 560, height: 480 });
+  await expect(page.locator('.adaptive-shell')).toHaveAttribute('data-layout', 'compact');
+  await expect(album).toBeVisible();
+  await expect(separator).toBeVisible();
+  expect((await album.boundingBox())!.width).toBeGreaterThanOrEqual(32);
+  expect((await artist.boundingBox())!.width).toBeGreaterThan((await album.boundingBox())!.width);
 });
 
 test('keyboard focus reveals the truncated title without losing the accessible description', async ({ page }) => {
