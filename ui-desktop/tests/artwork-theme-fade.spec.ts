@@ -146,6 +146,8 @@ test('a song change fades every player surface with the page and appearance edit
  expect(halfway[0][0]).not.toBe('rgb(236, 196, 196)');
  await page.evaluate(()=>document.querySelectorAll<HTMLElement>('.now-playing,.audio-panel').forEach(el=>el.getAnimations().forEach(a=>a.finish())));
  await expect(bar).toHaveCSS('background-color','rgb(236, 196, 196)');await expect(queue).toHaveCSS('background-color','rgb(236, 196, 196)');
+ const after=await surfaces();
+ for(const [i,value] of halfway[0].entries())expect(value,`token ${i} has not reached its final color mid-fade`).not.toBe(after[0][i]);
  await page.getByRole('button',{name:'Close Up next',exact:true}).click();
  await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
  await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:'Dark',exact:true}).click();
