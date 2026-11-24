@@ -120,6 +120,43 @@ test('a full-distance swipe releases with one palette transition and an opaque p
  expect(await transitions(page)).toEqual([]);
 });
 
+test('a song change fades every player surface with the page and appearance edits stay immediate',async({page})=>{
+ await page.addInitScript(()=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({appearance:{mode:'light',source:'artwork',accent:'#0064df',saturation:100,tint:15}})));
+ await page.route('**/src/fixtures.ts*',async route=>{
+  const response=await route.fetch(),marker='case "artwork_palette":',play='case "playback": {';let body=await response.text();expect(body).toContain(marker);expect(body).toContain(play);
+  body=body.replace(marker,`${marker}
+    if(String(a.path).includes('bubblewrap-lagoon'))return {background:'#c4dfec',blob:'#6fa7c4',accent:'#1d4f6b',text:'#12202a'};
+    if(String(a.path).includes('cardboard-carnivals'))return {background:'#ecc4c4',blob:'#bc7777',accent:'#802525',text:'#12202a'};
+  `).replace(play,`${play}if(a.action.type==='play')a.action={...a.action,ids:albums.slice(0,2).map(album=>album.track_ids[0]),start_index:0};`);
+  await route.fulfill({response,body});
+ });
+ await page.goto('/?fixture=1');await expect(page.locator('html')).toHaveAttribute('data-theme-phase','ready');
+ await page.getByRole('button',{name:'Open Bubblewrap Lagoon',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.getByRole('button',{name:'Open Up next',exact:true}).click();
+ const bar=page.locator('.now-playing'),queue=page.locator('.audio-panel');
+ await expect(bar).toHaveCSS('background-color','rgb(196, 223, 236)');await expect(queue).toHaveCSS('background-color','rgb(196, 223, 236)');
+ const surfaces=()=>page.evaluate(()=>[...document.querySelectorAll<HTMLElement>('.now-playing,.audio-panel')].map(el=>{const s=getComputedStyle(el);return [s.backgroundColor,s.getPropertyValue('--transport-fill').trim(),s.getPropertyValue('--secondary-ink').trim()];}));
+ const before=await surfaces();
+ await page.getByRole('button',{name:'Next track',exact:true}).click();
+ await expect(page.locator('html')).toHaveAttribute('data-player-motion','artwork');
+ await expect.poll(()=>bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).map(a=>(a as CSSTransition).transitionProperty))).toEqual(expect.arrayContaining(['--surface-color','--accent','--fade-transport-fill','--fade-secondary-ink']));
+ const halfway=await page.evaluate(()=>{const nodes=[...document.querySelectorAll<HTMLElement>('.now-playing,.audio-panel')];nodes.forEach(el=>el.getAnimations().forEach(a=>{a.pause();a.currentTime=210;}));return nodes.map(el=>{const s=getComputedStyle(el);return [s.backgroundColor,s.getPropertyValue('--transport-fill').trim(),s.getPropertyValue('--secondary-ink').trim()];});});
+ expect(halfway[0]).toEqual(halfway[1]);
+ for(const [i,value] of halfway[0].entries())expect(value,`token ${i} is mid-fade`).not.toBe(before[0][i]);
+ expect(halfway[0][0]).not.toBe('rgb(236, 196, 196)');
+ await page.evaluate(()=>document.querySelectorAll<HTMLElement>('.now-playing,.audio-panel').forEach(el=>el.getAnimations().forEach(a=>a.finish())));
+ await expect(bar).toHaveCSS('background-color','rgb(236, 196, 196)');await expect(queue).toHaveCSS('background-color','rgb(236, 196, 196)');
+ const after=await surfaces();
+ for(const [i,value] of halfway[0].entries())expect(value,`token ${i} has not reached its final color mid-fade`).not.toBe(after[0][i]);
+ await page.getByRole('button',{name:'Close Up next',exact:true}).click();
+ await page.getByRole('button',{name:'Choose section',exact:true}).click();await page.getByRole('menuitem',{name:'Settings',exact:true}).click();
+ await page.getByRole('button',{name:'Appearance mode',exact:true}).click();await page.getByRole('menuitemradio',{name:'Dark',exact:true}).click();
+ await expect(page.locator('html')).not.toHaveAttribute('data-player-motion','artwork');
+ expect(await bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).length)).toBe(0);
+ await page.emulateMedia({reducedMotion:'reduce'});await page.getByRole('button',{name:'Next track',exact:true}).click();
+ await expect(page.locator('html')).toHaveAttribute('data-player-motion','artwork');expect(await bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).length)).toBe(0);
+});
+
 for(const back of ['button','swipe'] as const)test(`Back by ${back} keeps the new playing album's palette`,async({page})=>{
  await coloredArtwork(page);
  const root=page.locator('html'),scroller=page.locator('#library-content');

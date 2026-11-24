@@ -479,14 +479,17 @@
 .themed-choice-menu{z-index:1500;min-width:var(--radix-dropdown-menu-trigger-width);max-width:calc(100vw - 1rem);max-height:min(18rem,var(--radix-dropdown-menu-content-available-height));overflow:auto;padding:.25rem;border:1px solid var(--control-border);border-radius:.75rem;background:var(--surface-color);color:var(--ink);box-shadow:0 .5rem 1.5rem #0002;font-size:.8125rem;}
 .themed-choice-option{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.5rem .625rem;border-radius:.5rem;outline:none;cursor:pointer;}.themed-choice-option[data-highlighted]{background:var(--control-surface);}.themed-choice-option[data-state=checked]{font-weight:600;}
 
-/* A launch blends solid colors together; artwork keeps its own image colors. */@property --shell-color{ syntax:'<color>';inherits:true;initial-value:#00baff; }@property --page-color{ syntax:'<color>';inherits:true;initial-value:#00aeff; }@property --surface-color{ syntax:'<color>';inherits:true;initial-value:#cbf1ff; }@property --blob-color{ syntax:'<color>';inherits:true;initial-value:#54b9ff; }@property --accent{ syntax:'<color>';inherits:true;initial-value:#0064df; }@property --ink{ syntax:'<color>';inherits:true;initial-value:#111820; }@property --accent-ink{ syntax:'<color>';inherits:true;initial-value:#ffffff; }
+/* A launch blends solid colors together; artwork keeps its own image colors. */@property --shell-color{ syntax:'<color>';inherits:true;initial-value:#00baff; }@property --page-color{ syntax:'<color>';inherits:true;initial-value:#00aeff; }@property --surface-color{ syntax:'<color>';inherits:true;initial-value:#cbf1ff; }@property --blob-color{ syntax:'<color>';inherits:true;initial-value:#54b9ff; }@property --accent{ syntax:'<color>';inherits:true;initial-value:#0064df; }@property --ink{ syntax:'<color>';inherits:true;initial-value:#111820; }@property --accent-ink{ syntax:'<color>';inherits:true;initial-value:#ffffff; }@property --fade-secondary-ink{ syntax:'<color>';inherits:true;initial-value:#3b4852; }@property --fade-transport-fill{ syntax:'<color>';inherits:true;initial-value:#12202a; }@property --fade-transport-stroke{ syntax:'<color>';inherits:true;initial-value:#12202a; }@property --fade-transport-top{ syntax:'<color>';inherits:true;initial-value:#12202a; }@property --fade-transport-bottom{ syntax:'<color>';inherits:true;initial-value:#12202a; }
 html {transition:none;}
 html[data-theme-phase=launch] {transition:none;}
 /* Artwork changes continue from their current displayed colors, including
    interrupted fades. Explicit appearance edits remove this intent in layout. */
 html[data-theme-motion=artwork] {transition:--shell-color 420ms ease-out,--page-color 420ms ease-out,--surface-color 420ms ease-out,--blob-color 420ms ease-out,--accent 420ms ease-out;}
+/* A song change fades every player surface with the page, from its displayed colors. */
+html[data-player-motion=artwork] :is(.now-playing,.mini-shell,.audio-panel,.quick-audio,.mini-preview) {transition:--surface-color 420ms ease-out,--blob-color 420ms ease-out,--accent 420ms ease-out,--fade-secondary-ink 420ms ease-out,--fade-transport-fill 420ms ease-out,--fade-transport-stroke 420ms ease-out,--fade-transport-top 420ms ease-out,--fade-transport-bottom 420ms ease-out;}
+html[data-player-motion=artwork] .expanded-player:not([data-visualizer=true]) {transition:--player-scene-surface 420ms ease-out,--surface-color 420ms ease-out,--blob-color 420ms ease-out,--accent 420ms ease-out,--fade-secondary-ink 420ms ease-out,--fade-transport-fill 420ms ease-out,--fade-transport-stroke 420ms ease-out,--fade-transport-top 420ms ease-out,--fade-transport-bottom 420ms ease-out;}
 .page-frame .theme-layer { background:var(--page-color);animation:none;transition:none; }
-.search::after { display:none; }@media(prefers-reduced-motion:reduce){ html,html[data-theme-phase=launch],html[data-theme-motion=artwork] { transition:none; } }
+.search::after { display:none; }@media(prefers-reduced-motion:reduce){ html,html[data-theme-phase=launch],html[data-theme-motion=artwork],html[data-player-motion=artwork] :is(.now-playing,.mini-shell,.audio-panel,.quick-audio,.mini-preview),html[data-player-motion=artwork] .expanded-player:not([data-visualizer=true]) { transition:none; } }
 /* Native scroll is untransformed regardless of the depth preference. */
 .collection-grid-container .card-artwork > .cover{translate:none!important;transform:none!important;scale:1!important;}
 .collections-heading .collections-heading-link{width:auto;height:auto;padding:0;background:transparent;text-align:left;font:inherit;}
@@ -752,7 +755,7 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 .audio-application-details dl>div{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;}
 .audio-application-details dt{color:var(--secondary-ink,var(--ink));}.audio-application-details dd{margin:0;text-align:right;font-variant-numeric:tabular-nums;}@media(prefers-reduced-motion:reduce){.overflow-label>span{transition:none!important;transform:none!important;}.disclosure-chevron{transition:none;}}
 
-.now-playing{transition:background-color 180ms ease-out,color 180ms ease-out,--accent 180ms ease-out,--surface-color 180ms ease-out,--blob-color 180ms ease-out;}@media(prefers-reduced-motion:reduce){.now-playing{transition:none;}}
+
 
 /* Keep the supplied two-tone transport: readable fill, distinct soft outline. */
 :is(.now-playing .transport,.mini-player .mini-player-transport) .asset-icon{
