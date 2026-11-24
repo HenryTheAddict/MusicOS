@@ -33,6 +33,24 @@ test('exiting fullscreen leaves the native preset open and usable',async({page})
  await player.getByRole('button',{name:'Full screen',exact:true}).click();
  await expect(player.getByRole('button',{name:'Exit full screen'})).toBeVisible();
 });
+
+test('windowed visualizer controls fit and close at the Compact Mini Player minimum',async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
+ await page.goto('/visualizer-proof.html');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Exit full screen'}).click();
+ await page.setViewportSize({width:220,height:120});
+ await page.mouse.move(110,60);
+ await expect(player).toHaveAttribute('data-native-titlebar','true');
+ const headerButtons=player.locator('.expanded-player-header button');
+ await expect(headerButtons).toHaveCount(6);
+ for(const button of await headerButtons.all())await expect(button).toBeInViewport({ratio:1});
+ await player.getByRole('button',{name:'Close player'}).click();
+ await expect(player).toHaveCount(0);
+});
+
 test('presets, nested Escape, remembered lyrics and editor Paste have one owner',async({page})=>{
  await page.goto('/visualizer-proof.html?lyrics=timed');await page.getByRole('button',{name:'Open visualizer'}).click();
  const player=page.locator('.expanded-player');await expect(player).toHaveAttribute('data-chrome','hidden');
