@@ -64,7 +64,7 @@ test('windowed visualizer controls fit and work at the Compact Mini Player minim
  await expect(player).toHaveCount(0);
 });
 
-test('compact renderer errors leave the preset picker and Retry clickable',async({page})=>{
+test('compact renderer errors leave the header, playback and Retry clickable',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
  await page.goto('/visualizer-proof.html?lyrics=timed&failRenderer');
  await page.getByRole('button',{name:'Open visualizer'}).click();
@@ -75,11 +75,29 @@ test('compact renderer errors leave the preset picker and Retry clickable',async
  await player.getByRole('button',{name:'Exit full screen'}).click();
  await page.setViewportSize({width:220,height:120});
  await page.mouse.move(110,60);
+ await expect.poll(()=>error.evaluate(card=>{
+  const player=card.closest('.expanded-player')!;
+  const header=player.querySelector('.expanded-player-header')!.getBoundingClientRect();
+  const dock=player.querySelector('.expanded-player-dock')!.getBoundingClientRect();
+  const strip=card.getBoundingClientRect();
+  return strip.top>=header.bottom&&strip.bottom<=dock.top;
+ })).toBe(true);
+ const headerButtons=player.locator('.expanded-player-header button');
+ await expect(headerButtons).toHaveCount(6);
+ for(const button of await headerButtons.all()){
+  await expect(button).toBeInViewport({ratio:1});
+  await button.click({trial:true});
+ }
  await player.getByRole('button',{name:'Choose visualizer'}).click();
  const menu=player.getByRole('menu');
  await expect(menu).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(menu).toBeHidden();
+ await player.getByRole('button',{name:'Play',exact:true}).click();
+ await expect(player.getByRole('button',{name:'Pause',exact:true})).toBeVisible();
+ await player.getByRole('slider',{name:'Playback position'}).click();
+ await expect(page.locator('#shortcut-result')).toHaveText('seek');
+ await expect(error).toBeVisible();
  await error.getByRole('button',{name:'Retry'}).click();
  await expect(error).toHaveCount(0);
  await expect(player).toBeVisible();
