@@ -23,11 +23,13 @@ export function playerTheme(palette:Palette|null):CSSProperties{
   '--blob-color':blob,
   '--accent':accent,'--accent-ink':readableInk(accent),'--ink':ink,
   '--playback-tone':accent,'--icon-fill':ink,'--icon-stroke':ink,
-  '--transport-fill':tones.fill,'--transport-stroke':tones.stroke,
-  '--transport-top':mix(tones.fill,ink,.08),'--transport-bottom':tones.fill,
+  '--fade-transport-fill':tones.fill,'--fade-transport-stroke':tones.stroke,
+  '--fade-transport-top':mix(tones.fill,ink,.08),'--fade-transport-bottom':tones.fill,
+  '--transport-fill':'var(--fade-transport-fill)','--transport-stroke':'var(--fade-transport-stroke)',
+  '--transport-top':'var(--fade-transport-top)','--transport-bottom':'var(--fade-transport-bottom)',
   '--control-surface':'color-mix(in srgb,var(--surface-color) 78%,var(--blob-color))',
   '--control-border':'color-mix(in srgb,var(--ink) 18%,transparent)',
-  '--secondary-ink':secondaryInk(ink,surface,blob,dark),
+  '--fade-secondary-ink':secondaryInk(ink,surface,blob,dark),'--secondary-ink':'var(--fade-secondary-ink)',
   color:ink,background:'var(--surface-color)',
  } as CSSProperties;
 }

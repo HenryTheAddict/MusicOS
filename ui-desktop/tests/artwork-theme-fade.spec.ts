@@ -139,7 +139,7 @@ test('a song change fades every player surface with the page and appearance edit
  const before=await surfaces();
  await page.getByRole('button',{name:'Next track',exact:true}).click();
  await expect(page.locator('html')).toHaveAttribute('data-player-motion','artwork');
- await expect.poll(()=>bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).map(a=>(a as CSSTransition).transitionProperty))).toEqual(expect.arrayContaining(['--surface-color','--accent','--transport-fill','--secondary-ink']));
+ await expect.poll(()=>bar.evaluate(el=>el.getAnimations().filter(a=>a instanceof CSSTransition).map(a=>(a as CSSTransition).transitionProperty))).toEqual(expect.arrayContaining(['--surface-color','--accent','--fade-transport-fill','--fade-secondary-ink']));
  const halfway=await page.evaluate(()=>{const nodes=[...document.querySelectorAll<HTMLElement>('.now-playing,.audio-panel')];nodes.forEach(el=>el.getAnimations().forEach(a=>{a.pause();a.currentTime=210;}));return nodes.map(el=>{const s=getComputedStyle(el);return [s.backgroundColor,s.getPropertyValue('--transport-fill').trim(),s.getPropertyValue('--secondary-ink').trim()];});});
  expect(halfway[0]).toEqual(halfway[1]);
  for(const [i,value] of halfway[0].entries())expect(value,`token ${i} is mid-fade`).not.toBe(before[0][i]);
