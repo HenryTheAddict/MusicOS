@@ -96,19 +96,17 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
   const requestId = revision.current.id;
   const settings = useRef<VisualizerSettings>(null!);
   settings.current = { requestId, preferences: prefs, albumPalette, albumPalettePending, beat, reduced };
+  const restoreNativeWindow = useRef<(() => Promise<void>) | undefined>(undefined);
 
   useEffect(() => {
     let alive = true;
     let unsubscribe: (() => void) | undefined;
-    let restoreWindow: (() => Promise<void>) | undefined;
     let openedNativeSurface = false;
     const previousBrowserFull = document.fullscreenElement;
 
     async function restore() {
       if (openedNativeSurface) await call('visualizer', { request: { action: 'close' } }).catch(() => {});
-      if (restoreWindow) {
-        await restoreWindow().catch(() => {});
-      } else if (!native && document.fullscreenElement !== previousBrowserFull) {
+      if (!native && document.fullscreenElement !== previousBrowserFull) {
         if (previousBrowserFull) await previousBrowserFull.requestFullscreen().catch(() => {});
         else if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
       }
@@ -118,13 +116,13 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
     async function open() {
       if (!alive) return;
       try {
-        if (native) {
+        if (native && !restoreNativeWindow.current) {
           const { getCurrentWindow } = await import('@tauri-apps/api/window');
           const window = getCurrentWindow();
           const wasFullscreen = await window.isFullscreen();
-          restoreWindow = () => window.setFullscreen(wasFullscreen);
           if (!alive) return;
-          if (!wasFullscreen || !beatPulse) await window.setFullscreen(true);
+          restoreNativeWindow.current = () => window.setFullscreen(wasFullscreen);
+          if (!wasFullscreen) await window.setFullscreen(true);
           if (!alive) return;
         }
 
@@ -170,6 +168,15 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
       serializeWindow(restore);
     };
   }, [attempt, beatPulse]);
+
+  useEffect(() => () => {
+    if (!native) return;
+    serializeWindow(async () => {
+      const restore = restoreNativeWindow.current;
+      restoreNativeWindow.current = undefined;
+      await restore?.();
+    });
+  }, []);
 
   useEffect(() => {
     if (beatPulse || !native || !ready || document.documentElement.dataset.nativeVisualizer !== 'true') return;

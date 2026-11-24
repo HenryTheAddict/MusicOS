@@ -35,7 +35,7 @@ it.each([false,true])('uses browser fullscreen without closing and restores on u
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));view.unmount();
  await waitFor(()=>expect(!!state.browserFull).toBe(initiallyFull));
 });
-it.each([false,true])('restores desktop fullscreen before reopening native (initial fullscreen %s)',async initiallyFull=>{
+it.each([false,true])('keeps preset changes windowed and restores desktop fullscreen on close (initial fullscreen %s)',async initiallyFull=>{
  state.native=true;state.full=initiallyFull;
  const p=props(),view=render(<VisualizerPlayer {...p}/>),scope=within(view.container);
  await waitFor(()=>expect(scope.queryByRole('status')).toBeNull());
@@ -45,8 +45,13 @@ it.each([false,true])('restores desktop fullscreen before reopening native (init
  fireEvent.click(scope.getByRole('button',{name:'Fullscreen'}));state.setFull.mockClear();
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'boxes'}}}/>);
  await waitFor(()=>expect(state.call).toHaveBeenCalledWith('visualizer',expect.objectContaining({request:expect.objectContaining({action:'open'})})));
- expect(state.setFull.mock.calls.map(call=>call[0])).toEqual([initiallyFull,true]);
- view.unmount();await waitFor(()=>expect(state.full).toBe(initiallyFull));
+ expect(state.full).toBe(false);
+ view.rerender(<VisualizerPlayer {...p}/>);
+ await waitFor(()=>expect(state.call).toHaveBeenCalledWith('visualizer',{request:{action:'close'}}));
+ await waitFor(()=>expect(scope.queryByRole('status')).toBeNull());
+ expect(state.full).toBe(false);expect(state.setFull).not.toHaveBeenCalled();
+ view.unmount();await waitFor(()=>expect(state.setFull).toHaveBeenCalledExactlyOnceWith(initiallyFull));
+ expect(state.full).toBe(initiallyFull);
 });
 it('restores browser fullscreen when switching back to a native preset',async()=>{
  const p=props(),view=render(<VisualizerPlayer {...p}/>);fireEvent.click(within(view.container).getByRole('button',{name:'Fullscreen'}));expect(state.browserFull).not.toBeNull();
