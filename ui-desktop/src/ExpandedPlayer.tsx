@@ -8,7 +8,7 @@ import LyricsView,{LiquidScene} from './LyricsView';
 import {usePlayerChrome} from './usePlayerChrome';
 import './lyrics.css';
 import './playerPolish.css';
-import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState,type CSSProperties,type KeyboardEvent as ReactKeyboardEvent} from 'react';
 import {Cover,Icon,IconButton,Overflow,type MenuItem} from './components';
 import AudioPanel from './AudioPanel';
 import FavoriteButton from './FavoriteButton';
@@ -18,6 +18,7 @@ import {KeepView} from './ViewScope';
 import {animateOwned,cancelOwned} from './presentationMotion';
 import {native,errorText} from './bridge';
 import {dragWindow} from './windowDrag';
+import {ownsSpaceKey} from './inputModality';
 import type {Playback,PlaybackAction} from './types';
 export type PlayerView='playing'|'lyrics'|'queue';
 export default function ExpandedPlayer({background="flowing",layout="compact",onWindowError=()=>{},open,view,onView,onClose,player,cover,bpm,scale,theme,onAction:performAction,onFavorite,items,origin,returnFocus,visualizerMode=false,visualizerCover=true,coverPulse=false,depth=false,visualizerControls,visualizerStatus,fullscreenManaged=false,previewTrack,onPreviewPlay,onEditLyrics}:{visualizerMode?:boolean;depth?:boolean;visualizerCover?:boolean;coverPulse?:boolean;visualizerControls?:import("react").ReactNode;visualizerStatus?:import("react").ReactNode;fullscreenManaged?:boolean;previewTrack?:import("./types").Track|null;onPreviewPlay:()=>Promise<void>;onEditLyrics:(id:number)=>void;background?:"solid"|"flowing";layout?:"wide"|"compact";onWindowError?:(message:string)=>void;returnFocus:HTMLElement|null;open:boolean;view:PlayerView;onView:(view:PlayerView)=>void;onClose:()=>void;player:Playback;cover:string|null;bpm?:number;scale:number;theme:CSSProperties;onAction:(action:PlaybackAction)=>Promise<void>;onFavorite:()=>void;items:MenuItem[];origin:DOMRect|null}){
@@ -70,7 +71,12 @@ export default function ExpandedPlayer({background="flowing",layout="compact",on
  async function toggleFull(){if(!native){if(!document.fullscreenElement)await document.documentElement.requestFullscreen();else await document.exitFullscreen();setFull(!!document.fullscreenElement);return;}try{const {getCurrentWindow}=await import('@tauri-apps/api/window');const w=getCurrentWindow(),value=!(await w.isFullscreen());changedFull.current=true;await w.setFullscreen(value);setFull(value);}catch(e){onWindowError(String(e));}}
 
  const sceneTheme={...theme,'--player-scene-surface':(theme as Record<string,string>)['--surface-color']??'#17222a'} as CSSProperties;
- return <dialog ref={dialog} style={sceneTheme} className="expanded-player" data-background={background} data-visualizer={visualizerMode||undefined} data-visualizer-cover={visualizerMode&&!visualizerCover?'hidden':undefined} data-fullscreen={full||undefined} data-layout={layout} data-view={view} data-composition={view==='playing'?'single':'split'} data-chrome={chrome} data-native-titlebar={native&&!full&&/Mac/.test(navigator.platform)||undefined} aria-label="Music player" inert={!open} aria-hidden={!open||undefined} onCancel={event=>{if(event.target!==event.currentTarget||event.defaultPrevented)return;event.preventDefault();if(!menuEscape.current&&!document.querySelector('[role=menu]:not([inert])'))dismiss.current();}} onKeyDown={event=>{const target=event.target as Element;if(event.code==='Space'&&!event.defaultPrevented&&!event.metaKey&&!event.ctrlKey&&!event.altKey&&!target.closest('input,textarea,select,[role=menu]')&&(!target.closest('button')||document.documentElement.dataset.inputModality==='pointer')){event.preventDefault();event.stopPropagation();if(!event.repeat&&track)void onAction({type:'toggle'});}}}>
+ const playbackKeyDown=(event:ReactKeyboardEvent<HTMLDialogElement>)=>{
+  if(event.code!=='Space'||event.defaultPrevented||event.metaKey||event.ctrlKey||event.altKey||ownsSpaceKey(event.target))return;
+  event.preventDefault();event.stopPropagation();
+  if(!event.repeat&&track)void onAction({type:'toggle'});
+ };
+ return <dialog ref={dialog} style={sceneTheme} className="expanded-player" data-background={background} data-visualizer={visualizerMode||undefined} data-visualizer-cover={visualizerMode&&!visualizerCover?'hidden':undefined} data-fullscreen={full||undefined} data-layout={layout} data-view={view} data-composition={view==='playing'?'single':'split'} data-chrome={chrome} data-native-titlebar={native&&!full&&/Mac/.test(navigator.platform)||undefined} aria-label="Music player" inert={!open} aria-hidden={!open||undefined} onCancel={event=>{if(event.target!==event.currentTarget||event.defaultPrevented)return;event.preventDefault();if(!menuEscape.current&&!document.querySelector('[role=menu]:not([inert])'))dismiss.current();}} onKeyDown={playbackKeyDown}>
   <div className="expanded-player-windowbar" aria-hidden="true" onMouseDown={event=>dragWindow(event,onWindowError)}/>
   {!visualizerMode&&background==='flowing'&&<LiquidScene active={open} moving playing={player.is_playing} cover={view==='lyrics'&&previewTrack?previewTrack.cover_art_path:cover}/>}<header className="expanded-player-header" inert={chrome==='hidden'} aria-hidden={chrome==='hidden'||undefined}><PlayerViewCycle value={view} onChange={changeView}/>{visualizerControls}<div className="expanded-header-actions"><button className="lyrics-fullscreen" aria-label={full?'Exit full screen':'Full screen'} title={full?'Exit full screen':'Full screen'} onClick={()=>void toggleFull()}><Icon name={full?'exitFullscreen':'fullscreen'}/></button><Overflow items={artworkActions}/><button className="expanded-player-close" aria-label="Close player" onClick={onClose} autoFocus><Icon name="controlClose"/></button></div></header>
   {visualizerStatus}{actionError&&<p className="inline-error" role="alert">{actionError}</p>}<div className="expanded-player-content"><div className="expanded-song-column">

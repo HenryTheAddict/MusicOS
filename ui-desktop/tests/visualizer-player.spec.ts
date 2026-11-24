@@ -96,6 +96,7 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await expect(menu).toBeVisible();
  await page.keyboard.press('Escape');
  await expect(menu).toBeHidden();
+ await expect(player.getByRole('button',{name:'Choose visualizer'})).toBeFocused();
  const details=error.getByRole('button',{name:'Details'});
  const close=player.getByRole('button',{name:'Close player'});
  const fullMessage=error.getByRole('region',{name:'Visualizer error details'});
@@ -109,8 +110,16 @@ test('compact renderer errors leave the header, playback and Retry clickable',as
  await expect(fullMessage).toBeVisible();
  await expect(fullMessage).toHaveText(message);
  await expect.poll(withinStage).toBe(true);
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','false');
+ await page.keyboard.press('Space');
+ await expect(details).toHaveAttribute('aria-expanded','true');
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
  await page.keyboard.press('Tab');
  await expect(fullMessage).toBeFocused();
+ await page.keyboard.press('Space');
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+ await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
  await page.keyboard.press('End');
  await expect.poll(()=>fullMessage.evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
  await details.click();
