@@ -73,7 +73,10 @@ export default function ExpandedPlayer({background="flowing",layout="compact",on
  const sceneTheme={...theme,'--player-scene-surface':(theme as Record<string,string>)['--surface-color']??'#17222a'} as CSSProperties;
  const playbackKeyDown=(event:ReactKeyboardEvent<HTMLDialogElement>)=>{
   if(event.code!=='Space'||event.defaultPrevented||event.metaKey||event.ctrlKey||event.altKey)return;
-  if(ownsSpaceKey(event.target,document.documentElement.dataset.inputModality==='pointer'))return;
+  const target=event.target;
+  if(!(target instanceof Element)||target.closest('dialog,[role=dialog],[role=alertdialog],[role=menu],[popover]')!==event.currentTarget)return;
+  const pointerOnPlayerControls=document.documentElement.dataset.inputModality==='pointer'&&!!target.closest('.expanded-player-header,.expanded-transport');
+  if(ownsSpaceKey(target,pointerOnPlayerControls))return;
   event.preventDefault();event.stopPropagation();
   if(!event.repeat&&track)void onAction({type:'toggle'});
  };

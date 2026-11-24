@@ -89,6 +89,21 @@ test('Space pauses after a pointer click on Next but activates keyboard-focused 
  await expect(play).toBeVisible();
 });
 
+test('Space closes pointer-opened visualizer options without toggling playback',async({page})=>{
+ await page.goto('/visualizer-proof.html?lyrics=timed');
+ await page.getByRole('button',{name:'Open visualizer'}).click();
+ await page.mouse.move(400,100);
+ const player=page.getByRole('dialog',{name:'Music player'});
+ await player.getByRole('button',{name:'Visualizer options'}).click();
+ const options=page.getByRole('dialog',{name:'Visualizer',exact:true});
+ await expect(options.getByRole('button',{name:'Close visualizer options'})).toBeFocused();
+ await expect(page.locator('html')).toHaveAttribute('data-input-modality','pointer');
+ await page.keyboard.press('Space');
+ await expect(options).toHaveCount(0);
+ await expect(player.getByRole('button',{name:'Play',exact:true})).toBeVisible();
+ await expect(page.locator('#shortcut-result')).toHaveText('No playback commands');
+});
+
 test('compact renderer errors leave the header, playback and Retry clickable',async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(navigator,'platform',{value:'MacIntel'}));
  await page.goto('/visualizer-proof.html?lyrics=timed&failRenderer');
