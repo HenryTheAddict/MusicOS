@@ -53,6 +53,20 @@ it.each([false,true])('keeps preset changes windowed and restores desktop fullsc
  view.unmount();await waitFor(()=>expect(state.setFull).toHaveBeenCalledExactlyOnceWith(initiallyFull));
  expect(state.full).toBe(initiallyFull);
 });
+it('retries native fullscreen entry before opening the renderer',async()=>{
+ state.native=true;
+ state.setFull.mockRejectedValueOnce(new Error('Fullscreen failed'));
+ const view=render(<VisualizerPlayer {...props('boxes')}/>),scope=within(view.container);
+ expect(await scope.findByRole('alert')).toHaveTextContent('Fullscreen failed');
+ expect(state.setFull).toHaveBeenCalledExactlyOnceWith(true);
+ expect(state.call).not.toHaveBeenCalled();
+ fireEvent.click(scope.getByRole('button',{name:'Retry'}));
+ await waitFor(()=>expect(state.call).toHaveBeenCalledWith('visualizer',expect.objectContaining({request:expect.objectContaining({action:'open'})})));
+ expect(state.setFull.mock.calls).toEqual([[true],[true]]);
+ expect(state.full).toBe(true);
+ view.unmount();
+ await waitFor(()=>expect(state.setFull).toHaveBeenLastCalledWith(false));
+});
 it('restores browser fullscreen when switching back to a native preset',async()=>{
  const p=props(),view=render(<VisualizerPlayer {...p}/>);fireEvent.click(within(view.container).getByRole('button',{name:'Fullscreen'}));expect(state.browserFull).not.toBeNull();
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'boxes'}}}/>);

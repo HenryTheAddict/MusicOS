@@ -123,8 +123,8 @@ export default function VisualizerPlayer({ preferences, onPreferences, ...props 
           const window = getCurrentWindow();
           const wasFullscreen = await window.isFullscreen();
           if (!alive) return;
-          restoreNativeWindow.current = () => window.setFullscreen(wasFullscreen);
           if (!wasFullscreen) await window.setFullscreen(true);
+          restoreNativeWindow.current = () => window.setFullscreen(wasFullscreen);
           if (!alive) return;
         }
 
