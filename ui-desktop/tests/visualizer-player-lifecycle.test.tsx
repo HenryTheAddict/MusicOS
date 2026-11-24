@@ -59,3 +59,10 @@ it('passes changes to the saved Beat Sync setting into the web grid',()=>{
  const p=props(),view=render(<VisualizerPlayer {...p}/>);expect(state.beatSync).toBe(true);
  view.rerender(<VisualizerPlayer {...p} preferences={{...p.preferences,visualizer:{...defaultVisualizer,preset:'beat-pulse',beat_sync:false}}}/>);expect(state.beatSync).toBe(false);
 });
+it('renders moving icons without invoking the native renderer',async()=>{
+ state.native=true;
+ const view=render(<VisualizerPlayer {...props('moving-icons')}/>);
+ await waitFor(()=>expect(within(view.container).queryByRole('status')).toBeNull());
+ expect(state.call).not.toHaveBeenCalled();
+ expect(view.container.querySelectorAll('.moving-icons-cell')).toHaveLength(15);
+});
