@@ -116,6 +116,7 @@ test('keyboard focus reveals the truncated title without losing the accessible d
   const label = lyrics.locator('.overflow-label');
   const content = label.locator('span');
   await expect(label).toHaveAttribute('data-overflow', 'true');
+  await expect(content).toHaveCSS('text-overflow', 'ellipsis');
   const position = await content.evaluate(el => getComputedStyle(el).transform);
   await bar.getByRole('button', { name: 'Open player', exact: true }).focus();
   await page.keyboard.press('Tab');
@@ -123,6 +124,8 @@ test('keyboard focus reveals the truncated title without losing the accessible d
   await expect(lyrics).toHaveAccessibleDescription(title);
   await expect(label).toHaveCSS('mask-image', 'none');
   await expect(content).not.toHaveCSS('transform', position);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(content).toHaveCSS('transform', 'none');
 });
 
 test('keyboard focus on playback position draws a ring on the visible rail', async ({ page }) => {

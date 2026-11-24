@@ -47,6 +47,12 @@
 .now-playing-title-action{display:block;min-width:0;max-width:100%;padding:0;margin:0;border:0;border-radius:.25rem;background:transparent;color:inherit;font:inherit;text-align:left;line-height:inherit;}
 .now-playing-title-action:disabled{opacity:1;color:inherit;cursor:default;}
 .adaptive-shell .now-playing-title>.now-playing-title-action{flex:0 1 auto;}
+.now-playing-title-action:not(:hover,:focus-visible)>.overflow-label{mask-image:none;}
+.now-playing-title-action:not(:hover,:focus-visible)>.overflow-label>span{
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .adaptive-shell .now-playing-title>.now-playing-heart{
   flex:0 0 1.25rem;
   height:100%;
