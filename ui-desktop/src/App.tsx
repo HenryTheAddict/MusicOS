@@ -18,7 +18,7 @@ import {usePlayfulControls} from './playfulControls';
 import {useShellLayout} from './useShellLayout';
 import {useDestinationNavigation,type Destination} from './useDestinationNavigation';
 import ExpandedPlayer,{type PlayerView} from './ExpandedPlayer';
-import {observeInputModality,ownsSpaceKey} from './inputModality';
+import {observeInputModality} from './inputModality';
 import {launchPreferences,rememberLaunchAppearance,rememberLaunchPalette,savedLaunchPalette} from './launchTheme';
 import {usePlaylistDrop} from './usePlaylistDrop';
 import {clockPosition,currentPlaybackClock,usePlaybackFeed} from './playbackFeed';
@@ -649,7 +649,12 @@ export default function App() {
         setQueueOpen(false);
         return;
       }
-      if (target.closest("dialog") || ownsSpaceKey(target)) return;
+      if (
+        target.closest(
+          "input,textarea,select,button,a,summary,dialog,[contenteditable=true],[role=menu],[role=button]",
+        )
+      )
+        return;
       if (e.code === "Space" && player.track) {
         e.preventDefault();
         void run({ type: "toggle" });

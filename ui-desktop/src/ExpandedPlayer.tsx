@@ -18,7 +18,6 @@ import {KeepView} from './ViewScope';
 import {animateOwned,cancelOwned} from './presentationMotion';
 import {native,errorText} from './bridge';
 import {dragWindow} from './windowDrag';
-import {ownsSpaceKey} from './inputModality';
 import type {Playback,PlaybackAction} from './types';
 export type PlayerView='playing'|'lyrics'|'queue';
 export default function ExpandedPlayer({background="flowing",layout="compact",onWindowError=()=>{},open,view,onView,onClose,player,cover,bpm,scale,theme,onAction:performAction,onFavorite,items,origin,returnFocus,visualizerMode=false,visualizerCover=true,coverPulse=false,depth=false,visualizerControls,visualizerStatus,fullscreenManaged=false,previewTrack,onPreviewPlay,onEditLyrics}:{visualizerMode?:boolean;depth?:boolean;visualizerCover?:boolean;coverPulse?:boolean;visualizerControls?:import("react").ReactNode;visualizerStatus?:import("react").ReactNode;fullscreenManaged?:boolean;previewTrack?:import("./types").Track|null;onPreviewPlay:()=>Promise<void>;onEditLyrics:(id:number)=>void;background?:"solid"|"flowing";layout?:"wide"|"compact";onWindowError?:(message:string)=>void;returnFocus:HTMLElement|null;open:boolean;view:PlayerView;onView:(view:PlayerView)=>void;onClose:()=>void;player:Playback;cover:string|null;bpm?:number;scale:number;theme:CSSProperties;onAction:(action:PlaybackAction)=>Promise<void>;onFavorite:()=>void;items:MenuItem[];origin:DOMRect|null}){
@@ -73,10 +72,11 @@ export default function ExpandedPlayer({background="flowing",layout="compact",on
  const sceneTheme={...theme,'--player-scene-surface':(theme as Record<string,string>)['--surface-color']??'#17222a'} as CSSProperties;
  const playbackKeyDown=(event:ReactKeyboardEvent<HTMLDialogElement>)=>{
   if(event.code!=='Space'||event.defaultPrevented||event.metaKey||event.ctrlKey||event.altKey)return;
-  const target=event.target;
-  if(!(target instanceof Element)||target.closest('dialog,[role=dialog],[role=alertdialog],[role=menu],[popover]')!==event.currentTarget)return;
-  const pointerOnPlayerControls=document.documentElement.dataset.inputModality==='pointer'&&!!target.closest('.expanded-player-header,.expanded-transport');
-  if(ownsSpaceKey(target,pointerOnPlayerControls))return;
+  const target=event.target as Element;
+  const surface=target.closest('dialog,[role=dialog],[role=alertdialog],[popover]');
+  if(surface&&surface!==event.currentTarget)return;
+  if(target.closest('input,textarea,select,[role=menu],[data-native-space]'))return;
+  if(target.closest('button')&&document.documentElement.dataset.inputModality!=='pointer')return;
   event.preventDefault();event.stopPropagation();
   if(!event.repeat&&track)void onAction({type:'toggle'});
  };

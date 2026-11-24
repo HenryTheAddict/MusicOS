@@ -1,9 +1,3 @@
-export function ownsSpaceKey(target:EventTarget|null,pointerButtonPlayback=false){
- if(!(target instanceof Element))return false;
- if(target.closest('input,textarea,select,a,summary,[contenteditable]:not([contenteditable=false]),[role=menu],[role=region][tabindex],[data-native-space]'))return true;
- return !pointerButtonPlayback&&!!target.closest('button,[role=button]');
-}
-
 /** Pointer interaction keeps Space available for playback. Tab/arrow navigation
  * deliberately hands keys and visible focus back to the focused control. */
 export function observeInputModality(){
