@@ -3,10 +3,9 @@
   container-type:inline-size; display:flex; flex-direction:column;
   gap:.875rem; min-width:0; padding:.25rem .25rem 1rem; text-align:left;
 }
-.home-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; }
+.home-heading { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:.25rem 1rem; }
 .home-heading h1 { margin:0; font-size:1.5rem; line-height:1.1; font-weight:750; letter-spacing:-.035em; overflow-wrap:anywhere; }
-.home-eyebrow { margin:0 0 .25rem; color:var(--secondary-ink); font-size:.6875rem; }
-.home-heading>small { flex:none; padding-bottom:.125rem; color:var(--secondary-ink); font-size:.75rem; font-variant-numeric:tabular-nums; }
+.home-heading>small { flex:none; color:var(--secondary-ink); font-size:.75rem; font-variant-numeric:tabular-nums; }
 
 /* One deliberate action, with the retained position visible before resuming. */
 .home-resume { display:flex; align-items:center; gap:.875rem; min-width:0; padding:.625rem; border:1px solid var(--control-border); border-radius:1rem; background:var(--collection-control-surface,var(--control-surface)); }
@@ -65,7 +64,7 @@
 .home-collection-open .home-collection-kind { grid-row:3; align-self:center; font-size:.6875rem; }
 .home-collection-open .playlist-collage.multiple { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); grid-template-rows:repeat(2,minmax(0,1fr)); overflow:hidden; }
 .home-collection-open .playlist-collage.multiple>.cover { min-width:0; min-height:0; aspect-ratio:auto; border-radius:0; }
-.home-collection-empty { margin:.5rem 0; padding:.75rem 0; color:var(--secondary-ink); font-size:.8125rem; }
+.home-collection-empty { margin:.5rem 0 0; color:var(--secondary-ink); font-size:.8125rem; }
 .home-view-all { margin-top:.75rem; }
 
 /* Library and listening shelves retain the same compact, artwork-led vocabulary. */
@@ -121,9 +120,7 @@
 @container(max-width:48rem) { .home-albums,.home-loading-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .home-recommendations { grid-template-columns:1fr; } }
 @container(max-width:36rem) {
   .personal-home { gap:.875rem; }
-  .home-heading { align-items:center; gap:.5rem; }
   .home-heading h1 { font-size:1.375rem; }
-  .home-eyebrow { display:none; }
   .home-heading>small { font-size:.6875rem; }
   .home-resume { gap:.625rem; padding:.625rem; border-radius:.875rem; }
   .home-resume-art { width:3rem; height:3rem; flex-basis:3rem; }
