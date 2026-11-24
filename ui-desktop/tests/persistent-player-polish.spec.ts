@@ -55,9 +55,7 @@ test('the compact bar fits one control row and keeps the full truncated title ac
   const bar = page.getByRole('region', { name: 'Now playing', exact: true });
   const lyrics = bar.getByRole('button', { name: 'Open lyrics', exact: true });
   await expect(lyrics).toHaveAccessibleDescription(title);
-  expect(await lyrics.locator('.overflow-label').evaluate(label => {
-    return label.scrollWidth > label.clientWidth && getComputedStyle(label).textOverflow === 'ellipsis';
-  })).toBe(true);
+  await expect(lyrics.locator('.overflow-label')).toHaveAttribute('data-overflow', 'true');
 
   const controls = bar.locator('.transport > button:visible, .mini-controls button');
   const rects = await controls.evaluateAll(buttons => buttons.map(button => {
@@ -108,4 +106,21 @@ test('compact credits prioritize the artist at 150% interface size', async ({ pa
   const artistWidth = (await artist.boundingBox())!.width;
   expect(artistWidth).toBeGreaterThan(45);
   expect(artistWidth).toBeGreaterThan((await album.boundingBox())!.width);
+});
+
+test('keyboard focus reveals the truncated title without losing the accessible description', async ({ page }) => {
+  await page.setViewportSize({ width: 480, height: 480 });
+  await page.goto('/?fixture=1');
+  const bar = page.getByRole('region', { name: 'Now playing', exact: true });
+  const lyrics = bar.getByRole('button', { name: 'Open lyrics', exact: true });
+  const label = lyrics.locator('.overflow-label');
+  const content = label.locator('span');
+  await expect(label).toHaveAttribute('data-overflow', 'true');
+  const position = await content.evaluate(el => getComputedStyle(el).transform);
+  await bar.getByRole('button', { name: 'Open player', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(lyrics).toBeFocused();
+  await expect(lyrics).toHaveAccessibleDescription(title);
+  await expect(label).toHaveCSS('mask-image', 'none');
+  await expect(content).not.toHaveCSS('transform', position);
 });

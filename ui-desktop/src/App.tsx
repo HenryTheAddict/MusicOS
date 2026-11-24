@@ -1210,7 +1210,7 @@ export default function App() {
           </button>
           <div className="now-playing-info">
             <strong className="now-playing-title" title={player.track?.title}>
-              <button className="now-playing-title-action" disabled={!player.track} aria-label="Open lyrics" aria-description={player.track?.title} onClick={()=>openPlayer('lyrics')}><span className="overflow-label">{player.track?.title??(loading?'':'Nothing playing yet')}</span></button>
+              <button className="now-playing-title-action" disabled={!player.track} aria-label="Open lyrics" aria-description={player.track?.title} onClick={()=>openPlayer('lyrics')}><OverflowLabel text={player.track?.title??(loading?'':'Nothing playing yet')}/></button>
               {player.track&&<FavoriteButton track={player.track} bpm={tempos.get(player.track.id)} playing={!expandedPresent&&player.is_playing} onFavorite={favorite} className="now-playing-heart" label={player.track.favorited?'Unfavorite playing song':'Favorite playing song'}/>}
             </strong>
             <span className="now-playing-credits">{player.track?<><span className="now-playing-artists">{trackCredits(player.track).map((name,index)=><span key={name}>{index>0&&<i aria-hidden="true"> + </i>}<button onClick={()=>void showPlaying('artist',name)} title={name}>{name}</button></span>)}</span><i aria-hidden="true"> · </i><button className="now-playing-album" onClick={()=>void showPlaying('album')} title={player.track.album}><OverflowLabel text={player.track.album}/></button></>:""}</span>
