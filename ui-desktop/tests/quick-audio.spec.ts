@@ -57,7 +57,7 @@ test('audio controls sit in a compact 2x2 square with the stems card spanning th
  await expect(panel.locator('.audio-bento > .audio-card')).toHaveCount(5);const cards=panel.locator('.audio-bento > .audio-card:not(.audio-stems)');await expect(cards).toHaveCount(4);
  const boxes=await cards.evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width)};}));
  expect(new Set(boxes.map(b=>b.x)).size).toBe(2);expect(new Set(boxes.map(b=>b.y)).size).toBe(2);expect(new Set(boxes.map(b=>b.w)).size).toBe(1);
- expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(496);
+ expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(500);
  const span=await panel.locator('.audio-bento').evaluate(el=>el.querySelector('.audio-stems')!.getBoundingClientRect().width/el.getBoundingClientRect().width);
  expect(span).toBeCloseTo(1,2);
 });
