@@ -32,10 +32,12 @@ test('selected Settings category keeps a readable paired surface in adaptive pin
 test('compact Audio fits scales and readable theme surfaces',async({page})=>{
  test.setTimeout(120000);
  const palettes={blue:['#cbf1ff','#111820','#0064df'],light:['#fffaf5','#161616','#765c45'],dark:['#202329','#f3f6ff','#97baff'],vivid:['#ffdfeb','#251124','#b00070'],adaptive:['#eedcdd','#14222b','#481515']};
- for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150])for(const [name,colors]of Object.entries(palettes)){
-  await page.setViewportSize(size);await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});await panel.evaluate((el,p)=>{['--surface-color','--ink','--accent'].forEach((key,i)=>(el as HTMLElement).style.setProperty(key,p[i]));},colors);
+ for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150]){
+  await page.setViewportSize(size);await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});
+  for(const [name,colors]of Object.entries(palettes)){await panel.evaluate((el,p)=>{['--surface-color','--ink','--accent'].forEach((key,i)=>(el as HTMLElement).style.setProperty(key,p[i]));},colors);
   const box=(await panel.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.y).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(size.width);expect(box.y+box.height).toBeLessThanOrEqual(size.height);expect(await panel.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
   if(scale===100&&size.width===1280)await panel.screenshot({path:`out/rebuild-qa/audio-panel-${name}.png`,animations:'disabled'});
+  }
  }
 });
 
