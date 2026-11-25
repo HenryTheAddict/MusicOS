@@ -61,3 +61,21 @@ test('audio controls sit in a compact 2x2 square with room for a full-width fift
  const span=await panel.locator('.audio-bento').evaluate(el=>{const card=document.createElement('section');card.className='audio-card';el.append(card);const width=card.getBoundingClientRect().width,full=el.getBoundingClientRect().width;card.remove();return width/full;});
  expect(span).toBeCloseTo(1,2);
 });
+
+test('audio controls apply to all songs or only the playing song',async({page})=>{
+ await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();
+ await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();
+ const panel=page.getByRole('dialog',{name:'Audio controls'}),scope=panel.getByRole('group',{name:'Apply audio controls to'});
+ const all=scope.getByRole('button',{name:'All songs'}),song=scope.getByRole('button',{name:'This song'}),reverb=panel.getByRole('switch',{name:'Reverb',exact:true});
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}'));
+ await expect(all).toHaveAttribute('aria-pressed','true');await expect(song).toHaveAttribute('aria-pressed','false');
+ await song.click();await expect(song).toHaveAttribute('aria-pressed','true');
+ await reverb.check();
+ await expect.poll(async()=>Object.values((await saved()).song_listening??{}).map((l:any)=>l.reverb)).toEqual([.45]);
+ expect((await saved()).listening?.reverb??0).toBe(0);
+ await panel.getByRole('button',{name:'Reset audio'}).click();await expect(reverb).not.toBeChecked();await expect(song).toHaveAttribute('aria-pressed','true');
+ await reverb.check();
+ await all.focus();await page.keyboard.press('Enter');await expect(all).toHaveAttribute('aria-pressed','true');await expect(reverb).not.toBeChecked();
+ await expect.poll(async()=>Object.keys((await saved()).song_listening??{})).toEqual([]);
+});

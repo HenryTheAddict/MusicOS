@@ -41,6 +41,7 @@ pub struct Preferences {
     pub copy_only_non_library_drops: bool,
     pub library_filters: LibraryFilters,
     pub listening:musicos_desktop::local::listening::Listening,
+    pub song_listening:std::collections::BTreeMap<i64,musicos_desktop::local::listening::Listening>,
     pub dj_config: crate::dj_plan::Config,
 }
 impl Default for Preferences {
@@ -70,10 +71,13 @@ impl Default for Preferences {
             library_filters: Default::default(),
             dj_config: Default::default(),
             listening:Default::default(),
+            song_listening:Default::default(),
         }
     }
 }
 impl Preferences {
+    /// Listening for a song: its own settings when it has them, otherwise the all-songs settings.
+    pub fn listening_for(&self,track:Option<i64>)->musicos_desktop::local::listening::Listening{track.and_then(|id|self.song_listening.get(&id)).unwrap_or(&self.listening).clone()}
     pub fn normalize(mut self) -> Self {
         self.version = 1;
         if !["solid","flowing"].contains(&self.player_background.as_str()){self.player_background="flowing".into();}
@@ -82,6 +86,8 @@ impl Preferences {
         if self.mini_player_view != "queue" {self.mini_player_view="artwork".into();}
         if !["album","mini_player","artwork"].contains(&self.now_playing_artwork_action.as_str()){self.now_playing_artwork_action="album".into();}
         self.listening=self.listening.normalize();
+        let bands=self.listening.bands;
+        self.song_listening=std::mem::take(&mut self.song_listening).into_iter().map(|(id,l)|(id,musicos_desktop::local::listening::Listening{bands,..l}.normalize())).collect();
         self.dj_config.mode = crate::dj_plan::Mode::SmartTransition;
         self.dj_config.preserve_energy = true;
         self.appearance=self.appearance.normalize();
@@ -157,6 +163,7 @@ pub fn load_from(path: &Path, legacy: Option<&Path>) -> Preferences {
                 p.audio_presentation = value.into();
             }
             if let Some(value)=v.get("listening"){if let Ok(value)=serde_json::from_value(value.clone()){p.listening=value;}}
+            if let Some(value)=v.get("song_listening"){if let Ok(value)=serde_json::from_value(value.clone()){p.song_listening=value;}}
             if let Some(value) = v.get("dj_config") {
                 if let Ok(config) = serde_json::from_value(value.clone()) {
                     p.dj_config = config;
@@ -219,6 +226,13 @@ pub fn save(p: &Preferences) -> anyhow::Result<Preferences> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test] fn song_listening_overrides_one_song_and_follows_global_bands(){
+        let tmp=tempfile::tempdir().unwrap();let path=tmp.path().join("prefs.json");
+        let mut prefs=Preferences::default();prefs.listening.bands=8;prefs.song_listening.insert(7,musicos_desktop::local::listening::Listening{reverb:0.45,..Default::default()});
+        atomic_write_json(&path,&prefs).unwrap();let loaded=load_from(&path,None);
+        assert_eq!(loaded.listening_for(Some(7)).reverb,0.45);assert_eq!(loaded.listening_for(Some(7)).bands,8);
+        assert_eq!(loaded.listening_for(Some(8)),loaded.listening);assert_eq!(loaded.listening_for(None),loaded.listening);
+    }
     #[test] fn artwork_action_defaults_and_round_trips(){
         let dir=tempfile::tempdir().unwrap();let path=dir.path().join("prefs.json");
         std::fs::write(&path,r#"{"display_name":"Listener","mini_player_view":"queue"}"#).unwrap();
