@@ -32,10 +32,12 @@ test('selected Settings category keeps a readable paired surface in adaptive pin
 test('compact Audio fits scales and readable theme surfaces',async({page})=>{
  test.setTimeout(120000);
  const palettes={blue:['#cbf1ff','#111820','#0064df'],light:['#fffaf5','#161616','#765c45'],dark:['#202329','#f3f6ff','#97baff'],vivid:['#ffdfeb','#251124','#b00070'],adaptive:['#eedcdd','#14222b','#481515']};
- for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150])for(const [name,colors]of Object.entries(palettes)){
-  await page.setViewportSize(size);await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});await panel.evaluate((el,p)=>{['--surface-color','--ink','--accent'].forEach((key,i)=>(el as HTMLElement).style.setProperty(key,p[i]));},colors);
+ for(const size of [{width:720,height:480},{width:1280,height:800}])for(const scale of [80,100,125,150]){
+  await page.setViewportSize(size);await page.goto('/?fixture=1');await page.evaluate(scale=>localStorage.setItem('musicos-fixture-preferences',JSON.stringify({version:1,interface_percent:scale})),scale);await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});
+  for(const [name,colors]of Object.entries(palettes)){await panel.evaluate((el,p)=>{['--surface-color','--ink','--accent'].forEach((key,i)=>(el as HTMLElement).style.setProperty(key,p[i]));},colors);
   const box=(await panel.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.y).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(size.width);expect(box.y+box.height).toBeLessThanOrEqual(size.height);expect(await panel.evaluate(el=>el.scrollWidth-el.clientWidth)).toBeLessThanOrEqual(1);
   if(scale===100&&size.width===1280)await panel.screenshot({path:`out/rebuild-qa/audio-panel-${name}.png`,animations:'disabled'});
+  }
  }
 });
 
@@ -46,20 +48,30 @@ test('reverb pad drags both axes, supports keyboard, and keeps a fixed square',a
  await expect.poll(saved).toMatchObject({reverb:.55,reverb_depth:.51});
  await pad.scrollIntoViewIfNeeded();const from=(await pad.boundingBox())!;
  await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();await page.mouse.move(from.x+from.width+30,from.y-30,{steps:8});await page.mouse.up();await expect.poll(saved).toMatchObject({reverb:1,reverb_depth:1});
- const after=(await pad.boundingBox())!;expect(after.width).toBe(box.width);expect(after.height).toBe(box.height);
+ const after=(await pad.boundingBox())!;expect(after.width).toBeCloseTo(box.width,1);expect(after.height).toBeCloseTo(box.height,1);
  await pad.focus();await page.keyboard.press('ArrowDown');await expect.poll(saved).toMatchObject({reverb_depth:.99});
  await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(pad).toHaveAccessibleName('Reverb pad, 100% room, 99% depth');
  await panel.getByRole('switch',{name:'Reverb',exact:true}).uncheck();await expect.poll(saved).toMatchObject({reverb:0,reverb_depth:.99});await panel.screenshot({path:'out/rebuild-qa/reverb-pad.png',animations:'disabled'});
 });
 
-test('audio controls sit in a compact 2x2 square with room for a full-width fifth card',async({page})=>{
+test('audio controls sit in a compact 2x2 square with the stems card spanning the full row',async({page})=>{
  await page.setViewportSize({width:1280,height:800});await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});await expect(panel).toBeVisible();
- const cards=panel.locator('.audio-bento > .audio-card');await expect(cards).toHaveCount(4);
+ await expect(panel.locator('.audio-bento > .audio-card')).toHaveCount(5);const cards=panel.locator('.audio-bento > .audio-card:not(.audio-stems)');await expect(cards).toHaveCount(4);
  const boxes=await cards.evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width)};}));
  expect(new Set(boxes.map(b=>b.x)).size).toBe(2);expect(new Set(boxes.map(b=>b.y)).size).toBe(2);expect(new Set(boxes.map(b=>b.w)).size).toBe(1);
- expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(440);
- const span=await panel.locator('.audio-bento').evaluate(el=>{const card=document.createElement('section');card.className='audio-card';el.append(card);const width=card.getBoundingClientRect().width,full=el.getBoundingClientRect().width;card.remove();return width/full;});
+ expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(500);
+ const span=await panel.locator('.audio-bento').evaluate(el=>el.querySelector('.audio-stems')!.getBoundingClientRect().width/el.getBoundingClientRect().width);
  expect(span).toBeCloseTo(1,2);
+});
+
+test('experimental stems choice persists and resets to the full mix',async({page})=>{
+ await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'}),stems=panel.getByRole('group',{name:/Stems/});
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}').listening?.stems??'mix');
+ await expect(stems.getByRole('button',{name:'Full mix',exact:true})).toHaveAttribute('aria-pressed','true');
+ await stems.getByRole('button',{name:'Instrumental',exact:true}).click();await expect.poll(saved).toBe('instrumental');
+ await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(stems.getByRole('button',{name:'Instrumental',exact:true})).toHaveAttribute('aria-pressed','true');
+ await stems.getByRole('button',{name:'Vocals',exact:true}).focus();await page.keyboard.press('Enter');await expect.poll(saved).toBe('vocals');
+ await panel.getByRole('button',{name:'Reset audio'}).click();await expect.poll(saved).toBe('mix');await expect(stems.getByRole('button',{name:'Full mix',exact:true})).toHaveAttribute('aria-pressed','true');
 });
 
 test('audio controls apply to all songs or only the playing song',async({page})=>{

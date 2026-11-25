@@ -1,4 +1,5 @@
 import {contrast} from '../src/appearance';
+import {cssColorHex} from '../src/colorValue';
 import {test,expect} from '@playwright/test';
 import {openPlaylistCreator,settleAnimations} from './support/ui';
 const look={mode:'dark',source:'blue',accent:'#0064df',saturation:100,tint:15};
@@ -49,4 +50,29 @@ test('Sketch collection controls keep fixed geometry and artwork-owned shading',
  await page.screenshot({path:'out/rebuild-qa/name-menu-home.png',animations:'disabled'});
  const oldSurface=style.surface;await page.evaluate(()=>{document.documentElement.style.setProperty('--surface-color','color(srgb 0.6 0.4 0.5)');});await page.waitForTimeout(50);expect(await button.evaluate(el=>getComputedStyle(el).backgroundColor)).toBe(oldSurface);await page.evaluate(()=>{document.documentElement.style.setProperty('--surface-color','color(srgb 0.1 0.12 0.2)');document.documentElement.style.setProperty('--ink','color(srgb 0.87 0.88 0.89)');});await expect.poll(()=>button.evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe(oldSurface);
  const refreshed=await button.evaluate(el=>({surface:getComputedStyle(el).backgroundColor,fill:getComputedStyle(el).getPropertyValue('--collection-transport-top').trim(),stroke:getComputedStyle(el).getPropertyValue('--collection-transport-stroke').trim()}));const nextSurface='#'+(refreshed.surface.match(/[\d.]+/g)??[]).slice(0,3).map(v=>Math.round(Number(v)).toString(16).padStart(2,'0')).join('');expect(contrast(refreshed.fill,nextSurface)).toBeGreaterThanOrEqual(4.49);expect(contrast(refreshed.stroke,nextSurface)).toBeGreaterThanOrEqual(2.99);
+});
+
+for(const hasTouch of [false,true])test.describe(hasTouch?'Touch collection':'Keyboard collection',()=>{
+ test.use({hasTouch});
+ test('visible Play retains its artwork contrast without hover',async({page})=>{
+  await page.addInitScript(()=>localStorage.setItem('musicos-fixture-collections',JSON.stringify([{id:'audio/1',name:'Test mix',kind:'audio',track_ids:[1,2],artwork_choice:'auto/1'}])));
+  await page.goto('/?fixture=1&sparkReady=1');
+  await page.getByRole('button',{name:'Show Sparklists',exact:true}).click();
+  await page.mouse.move(0,0);
+  const card=page.locator('.home-collection-grid [data-action-surface]').filter({has:page.getByRole('button',{name:'Play Test mix',exact:true})});
+  const play=card.getByRole('button',{name:'Play Test mix',exact:true});
+  expect(await page.evaluate(()=>matchMedia('(hover:none)').matches)).toBe(hasTouch);
+  if(!hasTouch){const open=card.locator('.home-collection-open');await open.focus();await expect(open).toBeFocused();}
+  await expect(play).toHaveCSS('opacity','1');
+  await expect(card.locator(':scope > button:hover')).toHaveCount(0);
+  await expect.poll(()=>card.evaluate(el=>el.style.getPropertyValue('--collection-control-surface'))).not.toBe('');
+  const {surface,plate,fill,stroke}=await play.evaluate(el=>{
+   const style=getComputedStyle(el);
+   return {surface:style.backgroundColor,plate:style.getPropertyValue('--collection-control-surface').trim(),fill:style.getPropertyValue('--collection-transport-top').trim(),stroke:style.getPropertyValue('--collection-transport-stroke').trim()};
+  });
+  expect(surface).not.toBe('rgba(0, 0, 0, 0)');
+  expect(cssColorHex(surface,'')).toBe(plate);
+  expect(contrast(fill,plate)).toBeGreaterThanOrEqual(4.49);
+  expect(contrast(stroke,plate)).toBeGreaterThanOrEqual(2.99);
+ });
 });
