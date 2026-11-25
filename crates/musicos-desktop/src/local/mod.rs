@@ -3,6 +3,7 @@ pub mod deck_playback;
 pub mod decoded_audio;
 pub mod dj_audio;
 pub mod listening;
+pub mod stems;
 pub mod dj_diagnostics;
 pub mod artist_artwork;
 pub mod artwork;

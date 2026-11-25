@@ -141,6 +141,7 @@ pub struct Mixer {
     gap_ramp_from: [f32; 2],
     clock: Arc<Clock>,
     eq: super::listening::EqProcessor,
+    stems: super::stems::StemSeparator,
     room:super::listening::Reverb,
     meter: Producer<[f32; 2]>,
 }
@@ -221,6 +222,7 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
             clock,
             meter,
             eq: Default::default(),
+            stems: Default::default(),
             room:Default::default(),
         },
     )
@@ -283,7 +285,7 @@ impl Mixer {
                 }
                 Command::Cancel => self.cancel(),
                 Command::Pause(paused) => self.paused = paused,
-                Command::Equalizer(coeff,revision)=>{self.eq.set(coeff);self.room.set(coeff.reverb);self.room.set_depth(coeff.reverb_depth);self.clock.applied_reverb_depth.store(coeff.reverb_depth.to_bits(),Ordering::Release);self.clock.applied_reverb.store(coeff.reverb.to_bits(),Ordering::Release);self.clock.listening_revision.store(revision,Ordering::Release);}
+                Command::Equalizer(coeff,revision)=>{self.eq.set(coeff);self.stems.set(coeff.stems);self.room.set(coeff.reverb);self.room.set_depth(coeff.reverb_depth);self.clock.applied_reverb_depth.store(coeff.reverb_depth.to_bits(),Ordering::Release);self.clock.applied_reverb.store(coeff.reverb.to_bits(),Ordering::Release);self.clock.listening_revision.store(revision,Ordering::Release);}
                 Command::Volume(volume) => {
                     if volume.is_finite() {
                         self.volume = volume.clamp(0., 1.);
@@ -405,7 +407,7 @@ impl Mixer {
         self.process_output(output)
     }
     fn process_output(&mut self,output:[f32;2])->[f32;2]{
-        let equalized=self.eq.process(output);
+        let equalized=self.eq.process(self.stems.process(output));
         let processed=self.room.process(equalized);
         if processed.iter().zip(equalized).any(|(a,b)|(a-b).abs()>0.000001){self.clock.reverb_processed_frames.fetch_add(1,Ordering::Relaxed);}
         let output = processed.map(|v| limit(v * self.volume));
