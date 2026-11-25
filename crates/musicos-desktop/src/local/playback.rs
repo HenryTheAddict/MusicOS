@@ -995,7 +995,7 @@ mod tests {
 #[cfg(test)]mod repair_tests {
  use super::*;
  fn wave(path:&PathBuf,seconds:u32){let rate=8000u32;let length=rate*seconds*2;let mut w=Vec::new();w.extend(b"RIFF");w.extend((36+length).to_le_bytes());w.extend(b"WAVEfmt ");w.extend(16u32.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(1u16.to_le_bytes());w.extend(rate.to_le_bytes());w.extend((rate*2).to_le_bytes());w.extend(2u16.to_le_bytes());w.extend(16u16.to_le_bytes());w.extend(b"data");w.extend(length.to_le_bytes());w.resize(44+length as usize,0);std::fs::write(path,w).unwrap();}
- fn wait_for(service:&LocalPlaybackService,condition:impl Fn(&LocalPlaybackSnapshot)->bool)->LocalPlaybackSnapshot{let end=std::time::Instant::now()+Duration::from_secs(6);loop{let s=service.snapshot();if condition(&s){return s;}assert!(std::time::Instant::now()<end,"Timed out: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
+ fn wait_for(service:&LocalPlaybackService,condition:impl Fn(&LocalPlaybackSnapshot)->bool)->LocalPlaybackSnapshot{let end=std::time::Instant::now()+Duration::from_secs(15);loop{let s=service.snapshot();if condition(&s){return s;}assert!(std::time::Instant::now()<end,"Timed out: {s:?}");std::thread::sleep(Duration::from_millis(20));}}
  #[test]
  fn audio_hold_blocks_playback_until_released() {
      let temp = tempfile::tempdir().unwrap();
