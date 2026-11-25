@@ -681,7 +681,10 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
         std::mem::replace(&mut *current, normalized.clone())
     };
     if previous.sparklist_beta && !normalized.sparklist_beta {let _=state.analysis.control("cancel");crate::spark_install::cancel();}
-    if previous.listening != normalized.listening || {let s=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();s.listening!=normalized.listening||!s.listening_applied||(s.applied_reverb-normalized.listening.reverb).abs()>0.001||(s.applied_reverb_depth-normalized.listening.reverb_depth).abs()>0.001} {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
+    let snapshot=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
+    let track=snapshot.track.as_ref().map(|t|t.id);
+    let listening=normalized.listening_for(track);
+    if previous.listening_for(track) != listening || snapshot.listening!=listening||!snapshot.listening_applied||(snapshot.applied_reverb-listening.reverb).abs()>0.001||(snapshot.applied_reverb_depth-listening.reverb_depth).abs()>0.001 {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(listening)).map_err(AppError::from)?;}
     Ok(normalized)
 }
 fn analyzed_dj_track(duration:f32,f:Option<&crate::analysis::Features>)->crate::dj_plan::Track<'_>{
@@ -2119,6 +2122,7 @@ pub fn run() {
                 let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
                 let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
                 let mut last_snapshot=None;
+                let mut listening_track=None;
                 #[cfg(target_os="macos")]
                 let mut media_update=crate::system_media::Publication::default();
                 loop {
@@ -2126,6 +2130,12 @@ pub fn run() {
                     let Some(s)=client.wait_for_snapshot(last_snapshot,Duration::from_secs(1))else{continue;};
                     last_snapshot=Some(s.revision);
                     let state=handle.state::<AppState>();
+                    let track=s.track.as_ref().map(|t|t.id);
+                    if track!=listening_track {
+                        listening_track=track;
+                        let listening=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening_for(track);
+                        if listening!=s.listening {let _=client.send(LocalPlaybackCommand::SetListening(listening));}
+                    }
                     #[cfg(target_os="macos")]
                     {
                         let artwork=s.track.as_ref().and_then(|track|state.album_artwork.lock().unwrap_or_else(|e|e.into_inner()).get(&track.id).cloned());
