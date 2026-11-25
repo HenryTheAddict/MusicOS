@@ -20,9 +20,9 @@ test('collection play reveals beside the menu without covering the art',async({p
  expect(button!.x).toBeGreaterThan(art!.x+art!.width);
  expect(button!.x+button!.width).toBeLessThanOrEqual(menu!.x+1);
  expect(button!.y+button!.height/2).toBeCloseTo(menu!.y+menu!.height/2);
- const base=await play.evaluate(button=>getComputedStyle(button).backgroundColor);
+ const base=await play.evaluate(button=>getComputedStyle(button).boxShadow);
  await play.hover();
- await expect.poll(()=>play.evaluate(button=>getComputedStyle(button).backgroundColor)).not.toBe(base);
+ await expect.poll(()=>play.evaluate(button=>getComputedStyle(button).boxShadow)).not.toBe(base);
 });
 test('Home action glyphs lift without moving the control and respect Reduced Motion',async({page})=>{
  await page.goto('/?fixture=1');
