@@ -744,12 +744,14 @@ test("playlists persist and rule playlists follow favorite changes",async({page}
  const create=page.getByRole('dialog',{name:'Create playlist',exact:true});await create.getByRole('textbox',{name:'Name',exact:true}).fill('Night drive');
  await create.getByRole('button',{name:'Create playlist',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Night drive',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Edit details',exact:true}).click();
+ const hero=page.locator('.playlist-hero');
+ await hero.getByRole('button',{name:'More actions',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Edit details',exact:true}).click();
  await page.getByRole('textbox',{name:'Playlist description'}).fill('After dark');
  await page.getByRole('dialog',{name:'Edit playlist details',exact:true}).getByRole('button',{name:'Done',exact:true}).click();
- await expect(page.locator('.playlist-hero')).toContainText('After dark');
+ await expect(hero).toContainText('After dark');
  await addPlaylistSongs(page,[1]);
- await expect(page.locator('.playlist-hero')).toContainText('1 songs');
+ await expect(hero).toContainText('1 song ·');
  await page.getByRole('button',{name:'Favorite Opening',exact:true}).click();
  await expect(page.getByRole('button',{name:'Unfavorite Opening',exact:true})).toHaveAttribute('aria-pressed','true');
  await openCollections(page);await page.getByRole('tab',{name:/Smart playlists/}).click();await page.getByRole('button',{name:'Create Smart playlist',exact:true}).click();

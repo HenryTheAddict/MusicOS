@@ -14,6 +14,25 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('the now-playing bar shares the workspace right edge as the window resizes', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?fixture=1');
+  const shell = page.locator('.adaptive-shell');
+  const bar = page.getByRole('region', { name: 'Now playing', exact: true });
+  const workspace = shell.locator('.page-frame');
+  await expect(bar.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
+
+  for (const [width, layout] of [[1280, 'wide'], [1000, 'wide'], [480, 'compact']] as const) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(shell).toHaveAttribute('data-layout', layout);
+    const [playerEdge, workspaceEdge] = await Promise.all([
+      bar.evaluate(el => el.getBoundingClientRect().right),
+      workspace.evaluate(el => el.getBoundingClientRect().right),
+    ]);
+    expect(playerEdge, `${width}px window`).toBe(workspaceEdge);
+  }
+});
+
 test('wide secondary controls reveal without shifting transport and are usable from the keyboard', async ({ page }) => {
   await page.goto('/?fixture=1');
   const bar = page.getByRole('region', { name: 'Now playing', exact: true });
