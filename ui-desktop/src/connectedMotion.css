@@ -14,16 +14,20 @@
  position:static;inset:auto;translate:none;align-self:center;justify-self:center;
  display:grid;place-items:center;width:var(--home-collection-control);height:var(--home-collection-control);
  padding:0;border:0;border-radius:.55rem;background:transparent;
- transition:opacity 140ms ease-out,transform 180ms cubic-bezier(.2,.7,.2,1),background-color 160ms ease-out;
+ transition:opacity 140ms ease-out;
 }
-.personal-home .home-collection-grid>[data-action-surface]>.icon-button{transform:translateX(.25rem) scale(.7);}
+.personal-home .home-collection-grid>[data-action-surface]>.icon-button{
+ background:var(--collection-control-surface,var(--control-surface));
+}
 .personal-home .home-collection-grid>[data-action-surface]>.icon-button>.icon{width:1.375rem;height:1.375rem;}
-.personal-home .home-collection-grid>[data-action-surface]:is(:hover,:focus-within)>.icon-button{transform:none;}
-.personal-home .home-collection-grid>[data-action-surface]>:is(.icon-button,.menu-trigger):is(:hover,:focus-visible,[data-state=open]):not(:disabled){
+.personal-home .home-collection-grid>[data-action-surface]>.icon-button:is(:hover,:focus-visible):not(:disabled){
+ box-shadow:inset 0 0 0 1px var(--collection-transport-stroke,var(--control-border));
+}
+.personal-home .home-collection-grid>[data-action-surface]>.menu-trigger{transition:opacity 140ms ease-out,background-color 160ms ease-out;}
+.personal-home .home-collection-grid>[data-action-surface]>.menu-trigger:is(:hover,:focus-visible,[data-state=open]):not(:disabled){
  background:color-mix(in srgb,var(--accent) 23%,var(--control-surface));
 }
-@media(hover:none){.personal-home .home-collection-grid>[data-action-surface]>.icon-button{transform:none;}}
-@media(prefers-reduced-motion:reduce){.personal-home .home-collection-grid>[data-action-surface]>:is(.icon-button,.menu-trigger){transform:none;transition:none!important;}}
+@media(prefers-reduced-motion:reduce){.personal-home .home-collection-grid>[data-action-surface]>:is(.icon-button,.menu-trigger){transition:none!important;}}
 .personal-home [data-action-surface]>.icon-button,.personal-home .home-resume-action{opacity:0;pointer-events:none;}
 .personal-home [data-action-surface]:is(:hover,:focus-within)>.icon-button,.personal-home .home-resume:is(:hover,:focus-within)>.home-resume-action{opacity:var(--home-play-opacity,1);pointer-events:auto;}
 @media(hover:none){.personal-home [data-action-surface]>.icon-button,.personal-home .home-resume-action{opacity:var(--home-play-opacity,1);pointer-events:auto;}}

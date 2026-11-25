@@ -18,7 +18,7 @@
 .now-playing .transport { order: 4; }
 .now-playing .mini-controls { order: 3; }
 .transport .icon-button, .transport .icon { width: 2rem; height: 2rem; }
-.workspace { padding: .125rem .25rem .125rem .125rem; grid-template-columns: 12.25rem minmax(0,1fr); gap: .125rem; }
+.workspace { padding: .125rem var(--shell-side-inset,.25rem) .125rem .125rem; grid-template-columns: 12.25rem minmax(0,1fr); gap: .125rem; }
 .workspace.full-width { grid-template-columns: minmax(0,1fr); }
 .library-sidebar { background: #a8e7ff; border-radius: 1.125rem; }
 .sidebar-label { background: #d4f2ff; height: 1.25rem; flex: 0 0 1.25rem; color: #000; }
