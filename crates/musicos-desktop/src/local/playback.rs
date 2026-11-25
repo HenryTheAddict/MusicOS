@@ -17,6 +17,9 @@ pub enum LocalPlaybackCommand {
     PlayTrack(i64),
     PlayTracks { ids: Vec<i64>, start_index: usize },
     Audition(i64),
+    /// A preview played with its own song's effects. The mixer's effects are shared by both decks,
+    /// and a separate `SetListening` would end a running preview without resuming the main song.
+    AuditionWith(i64, super::listening::Listening),
     EndAudition,
     PlayPause,
     Pause,
@@ -495,6 +498,7 @@ fn apply_command(db: &Db, player: &mut AudioPlayer, command: LocalPlaybackComman
     if matches!(&command,LocalPlaybackCommand::PlayTrack(_)|LocalPlaybackCommand::PlayTracks{..}|LocalPlaybackCommand::PlayPause|LocalPlaybackCommand::Pause|LocalPlaybackCommand::Previous|LocalPlaybackCommand::Next|LocalPlaybackCommand::SeekAbsolute(_)|LocalPlaybackCommand::SeekRelative(_)|LocalPlaybackCommand::SelectQueueIndex(_)|LocalPlaybackCommand::SetListening(_)|LocalPlaybackCommand::ClearQueue|LocalPlaybackCommand::RefreshPaths) {player.end_audition(false);}
     match command {
         LocalPlaybackCommand::Audition(id)=>{let track=db.get_track_by_id(id)?.context("Song not found")?;anyhow::ensure!(std::path::Path::new(&track.path).is_file(),"This song is unavailable");player.audition(track)?;}
+        LocalPlaybackCommand::AuditionWith(id,listening)=>{let track=db.get_track_by_id(id)?.context("Song not found")?;anyhow::ensure!(std::path::Path::new(&track.path).is_file(),"This song is unavailable");player.end_audition(true);if listening.clone().normalize()!=player.listening{player.set_listening(listening)?;}player.audition(track)?;}
         LocalPlaybackCommand::EndAudition=>player.end_audition(true),
         LocalPlaybackCommand::PlayTrack(id) => {
             let track = db
@@ -1027,6 +1031,16 @@ mod tests {
   service.send(LocalPlaybackCommand::PlanTransition(Transition{request_id:700,outgoing:entries[0],incoming:entries[1],outgoing_cue:10.,incoming_cue:0.,duration:2.,tempo:1.,effect:String::new()})).unwrap();let still=wait_for(&service,|s|s.audition.as_ref().is_some_and(|a|a.position>0.5));assert!(still.error.is_none());
   let restored=wait_for(&service,|s|s.audition.is_none()&&s.is_playing);assert_eq!(restored.queue_entry_ids,entries);assert!((restored.position-frozen).abs()<0.35);
   service.send(LocalPlaybackCommand::Pause).unwrap();wait_for(&service,|s|!s.is_playing);service.send(LocalPlaybackCommand::Audition(preview)).unwrap();wait_for(&service,|s|s.audition.is_some());service.send(LocalPlaybackCommand::EndAudition).unwrap();let stopped=wait_for(&service,|s|s.audition.is_none());assert!(!stopped.is_playing);assert_eq!(stopped.queue_entry_ids,entries);assert_eq!(stopped.queue_index,Some(0));
+ }
+ #[test]fn previews_play_with_their_own_effects_and_keep_the_main_song_resuming(){
+  use super::super::listening::Listening;
+  let temp=tempfile::tempdir().unwrap();let path=temp.path().join("audition.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let main=temp.path().join("main.wav");let excerpt=temp.path().join("excerpt.wav");wave(&main,12);wave(&excerpt,3);
+  let id=db.insert_track(main.to_str().unwrap(),"Main","Artist","Album",12,100,0).unwrap();let preview=db.insert_track(excerpt.to_str().unwrap(),"Preview","Artist","Other",3,100,1).unwrap();drop(db);
+  let service=LocalPlaybackService::start_with_preferences(path,PlaybackPreferences{volume:0.,..Default::default()}).unwrap();let song=Listening{reverb:0.45,..Default::default()};
+  service.send(LocalPlaybackCommand::SetListening(song.clone())).unwrap();service.send(LocalPlaybackCommand::PlayTrack(id)).unwrap();wait_for(&service,|s|s.position>0.25&&s.is_playing&&s.listening==song);
+  service.send(LocalPlaybackCommand::AuditionWith(preview,song.clone())).unwrap();wait_for(&service,|s|s.audition.as_ref().is_some_and(|a|a.position>0.1));
+  service.send(LocalPlaybackCommand::AuditionWith(preview,Listening::default())).unwrap();let during=wait_for(&service,|s|s.audition.as_ref().is_some_and(|a|a.position>0.1)&&s.listening==Listening::default());assert!(during.error.is_none());
+  let restored=wait_for(&service,|s|s.audition.is_none()&&s.is_playing);assert_eq!(restored.track.as_ref().unwrap().id,id);
  }
  #[test]fn automatic_promotions_skip_corrupt_incoming_without_mutating_queue(){
   let temp=tempfile::tempdir().unwrap();let path=temp.path().join("test.sqlite");let db=Db::open(path.to_str().unwrap()).unwrap();let mut ids=Vec::new();
