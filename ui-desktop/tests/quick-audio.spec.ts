@@ -89,3 +89,16 @@ test('audio controls apply to all songs or only the playing song',async({page})=
  await all.focus();await page.keyboard.press('Enter');await expect(all).toHaveAttribute('aria-pressed','true');await expect(reverb).not.toBeChecked();
  await expect.poll(async()=>Object.keys((await saved()).song_listening??{})).toEqual([]);
 });
+test('EQ curve passes through the slider handles and the status region stays announced',async({page})=>{
+ await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();
+ await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});
+ await panel.getByRole('slider',{name:'Bass gain'}).focus();await page.keyboard.press('End');await panel.getByRole('slider',{name:'Treble gain'}).focus();await page.keyboard.press('Home');
+ const offsets=await panel.evaluate(root=>{
+  const svg=root.querySelector<SVGSVGElement>('.eq-connections')!,box=svg.getBoundingClientRect(),scale=box.height/svg.viewBox.baseVal.height;
+  const ys=[...svg.querySelector('path')!.getAttribute('d')!.matchAll(/(?:M|,) [\d.]+ ([\d.]+)/g)].map(m=>Number(m[1])).filter((_,i)=>i%2===0);
+  const radius=parseFloat(getComputedStyle(document.documentElement).fontSize)*.375;
+  return [...root.querySelectorAll<HTMLInputElement>('.eq-bands input')].map((input,i)=>{const r=input.getBoundingClientRect(),min=Number(input.min),max=Number(input.max);return box.top+ys[i]*scale-(r.top+radius+(max-Number(input.value))/(max-min)*(r.height-2*radius));});
+ });
+ expect(offsets).toHaveLength(3);for(const offset of offsets)expect(Math.abs(offset)).toBeLessThan(1);
+ const status=panel.locator('footer [role=status]');await expect(status).toBeAttached();expect(await status.evaluate(e=>getComputedStyle(e).display)).not.toBe('none');
+});
