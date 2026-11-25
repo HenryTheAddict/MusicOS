@@ -13,7 +13,7 @@ pub struct Frame {
     pub samples: [f32; 2],
     pub source_frame: f64,
     pub generation: u64,
-    pub listening_revision:u64,
+    pub listening_revision: u64,
 }
 #[derive(Clone, Copy, Debug)]
 pub enum Tail {
@@ -24,8 +24,8 @@ pub enum Tail {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Schedule {
-    pub cancel_revision:u64,
-    pub id:u64,
+    pub cancel_revision: u64,
+    pub id: u64,
     pub cue: f64,
     pub frames: u64,
     pub incoming: usize,
@@ -42,27 +42,27 @@ pub enum Command {
     Plan(Schedule),
     Cancel,
     Volume(f32),
-    Equalizer(super::listening::Equalizer,u64),
+    Equalizer(super::listening::Equalizer, u64),
     Pause(bool),
 }
 #[derive(Default)]
 pub struct Clock {
     pub visualizer: Arc<super::visualizer_audio::Tap>,
     pub listening_revision: AtomicU64,
-    pub applied_reverb:AtomicU32,
-    pub applied_reverb_depth:AtomicU32,
-    pub room_active:AtomicBool,
-    pub reverb_processed_frames:AtomicU64,
-    pub failed:[AtomicU64;2],
-    pub generations:[AtomicU64;2],
-    pub parameter_revision:[AtomicU64;2],
+    pub applied_reverb: AtomicU32,
+    pub applied_reverb_depth: AtomicU32,
+    pub room_active: AtomicBool,
+    pub reverb_processed_frames: AtomicU64,
+    pub failed: [AtomicU64; 2],
+    pub generations: [AtomicU64; 2],
+    pub parameter_revision: [AtomicU64; 2],
     pub levels: [AtomicU32; 3],
     pub audible_frames: [AtomicU64; 2],
     pub finished: [AtomicU64; 2],
     pub drained: [AtomicBool; 2],
     pub failed_schedule: AtomicU64,
-    pub schedule_id:AtomicU64,
-    pub cancel_revision:AtomicU64,
+    pub schedule_id: AtomicU64,
+    pub cancel_revision: AtomicU64,
     pub source_frames: [AtomicU64; 2],
     pub rendered_frames: AtomicU64,
     pub active: AtomicU64,
@@ -131,10 +131,10 @@ pub struct Mixer {
     paused: bool,
     volume: f32,
     right: Option<f32>,
-    history:[[f32;2];960],
-    history_at:usize,
-    fade_at:usize,
-    fade_left:usize,
+    history: [[f32; 2]; 960],
+    history_at: usize,
+    fade_at: usize,
+    fade_left: usize,
     output_gap: bool,
     previous_gap: bool,
     gap_ramp_left: usize,
@@ -142,7 +142,7 @@ pub struct Mixer {
     clock: Arc<Clock>,
     eq: super::listening::EqProcessor,
     stems: super::stems::StemSeparator,
-    room:super::listening::Reverb,
+    room: super::listening::Reverb,
     meter: Producer<[f32; 2]>,
 }
 pub struct Control {
@@ -150,10 +150,19 @@ pub struct Control {
     pub commands: Producer<Command>,
     pub clock: Arc<Clock>,
 }
-fn display_level(previous:f32,rms:f32,band:usize)->f32 {
- let target=if rms<0.0001 {0.} else {(rms*[2.2,3.2,5.0][band]).sqrt().clamp(0.,1.)};
- let rate=if target>previous {0.7} else {0.25};let next=previous+(target-previous)*rate;
- if target==0. && next<0.01 {0.} else {next}
+fn display_level(previous: f32, rms: f32, band: usize) -> f32 {
+    let target = if rms < 0.0001 {
+        0.
+    } else {
+        (rms * [2.2, 3.2, 5.0][band]).sqrt().clamp(0., 1.)
+    };
+    let rate = if target > previous { 0.7 } else { 0.25 };
+    let next = previous + (target - previous) * rate;
+    if target == 0. && next < 0.01 {
+        0.
+    } else {
+        next
+    }
 }
 pub fn create(buffer_frames: usize) -> (Control, Mixer) {
     let (a, ar) = RingBuffer::new(buffer_frames.max(1));
@@ -165,33 +174,56 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
     // The meter does its homework here. If its ring fills up, drop telemetry
     // and let the audio keep going.
     std::thread::spawn(move || {
-        let mut low = 0_f32; let mut high_cut = 0_f32; let mut smoothed=[0_f32;3];
+        let mut low = 0_f32;
+        let mut high_cut = 0_f32;
+        let mut smoothed = [0_f32; 3];
         let low_alpha = 1. - (-2. * std::f32::consts::PI * 250. / RATE as f32).exp();
         let high_alpha = 1. - (-2. * std::f32::consts::PI * 2500. / RATE as f32).exp();
-        let mut analyzer=super::visualizer_audio::Analyzer::default();
-        let mut was_active=false;
+        let mut analyzer = super::visualizer_audio::Analyzer::default();
+        let mut was_active = false;
         loop {
-            let Some(live)=meter_clock.upgrade() else {break};
-            let active=live.visualizer.active();
-            if active!=was_active{analyzer.reset_history();was_active=active;}
-            let mut energy = [0_f32; 3]; let mut count = 0_u32;
+            let Some(live) = meter_clock.upgrade() else {
+                break;
+            };
+            let active = live.visualizer.active();
+            if active != was_active {
+                analyzer.reset_history();
+                was_active = active;
+            }
+            let mut energy = [0_f32; 3];
+            let mut count = 0_u32;
             while let Ok(frame) = samples.pop() {
-                if active {analyzer.push(frame);}
+                if active {
+                    analyzer.push(frame);
+                }
                 let x = (frame[0] + frame[1]) * 0.5;
-                low += low_alpha * (x - low); high_cut += high_alpha * (x - high_cut);
-                for (sum, band) in energy.iter_mut().zip([low, high_cut - low, x - high_cut]) { *sum += band * band; }
+                low += low_alpha * (x - low);
+                high_cut += high_alpha * (x - high_cut);
+                for (sum, band) in energy.iter_mut().zip([low, high_cut - low, x - high_cut]) {
+                    *sum += band * band;
+                }
                 count += 1;
             }
             if let Some(clock) = meter_clock.upgrade() {
                 for (i, (target, sum)) in clock.levels.iter().zip(energy).enumerate() {
-                    let rms=if count==0 {0.} else {(sum/count as f32).sqrt()};
-                    smoothed[i]=display_level(smoothed[i],rms,i);
+                    let rms = if count == 0 {
+                        0.
+                    } else {
+                        (sum / count as f32).sqrt()
+                    };
+                    smoothed[i] = display_level(smoothed[i], rms, i);
                     target.store(smoothed[i].to_bits(), Ordering::Relaxed);
                 }
-            } else { break; }
-            if active && count>0 {analyzer.publish(&live.visualizer,0.05);}
+            } else {
+                break;
+            }
+            if active && count > 0 {
+                analyzer.publish(&live.visualizer, 0.05);
+            }
             drop(live);
-            if samples.is_abandoned() { break; }
+            if samples.is_abandoned() {
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
     });
@@ -214,7 +246,10 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
             paused: true,
             volume: 1.,
             right: None,
-            history:[[0.;2];960],history_at:0,fade_at:0,fade_left:0,
+            history: [[0.; 2]; 960],
+            history_at: 0,
+            fade_at: 0,
+            fade_left: 0,
             output_gap: false,
             previous_gap: false,
             gap_ramp_left: 0,
@@ -223,7 +258,7 @@ pub fn create(buffer_frames: usize) -> (Control, Mixer) {
             meter,
             eq: Default::default(),
             stems: Default::default(),
-            room:Default::default(),
+            room: Default::default(),
         },
     )
 }
@@ -231,14 +266,16 @@ impl Mixer {
     pub(super) fn service_parked(&mut self) {
         self.commands();
         if self.paused {
-            self.right=None;
-            self.fade_left=0;
+            self.right = None;
+            self.fade_left = 0;
         }
     }
     fn cancel(&mut self) {
-        self.clock.dominant.store(self.active as u64,Ordering::Release);
+        self.clock
+            .dominant
+            .store(self.active as u64, Ordering::Release);
         self.plan = None;
-        self.clock.schedule_id.store(0,Ordering::Release);
+        self.clock.schedule_id.store(0, Ordering::Release);
         self.elapsed = None;
         self.effects.clear();
         self.clock.mixing.store(false, Ordering::Relaxed);
@@ -252,11 +289,17 @@ impl Mixer {
                     source_frame,
                 } => {
                     if deck < 2 {
-                        if deck==self.active {self.fade_at=self.history_at;self.fade_left=960;}
+                        if deck == self.active {
+                            self.fade_at = self.history_at;
+                            self.fade_left = 960;
+                        }
                         self.pending[deck] = None;
-                        if deck==self.active {self.room.clear();}
+                        if deck == self.active {
+                            self.room.clear();
+                            self.stems.reset();
+                        }
                         self.generations[deck] = generation;
-                        self.clock.generations[deck].store(generation,Ordering::Release);
+                        self.clock.generations[deck].store(generation, Ordering::Release);
                         self.clock.drained[deck].store(false, Ordering::Relaxed);
                         self.clock.ready[deck].store(false, Ordering::Release);
                         self.positions[deck] = source_frame.max(0.);
@@ -280,12 +323,26 @@ impl Mixer {
                         && plan.cue.is_finite()
                     {
                         self.plan = Some(plan);
-                        self.clock.schedule_id.store(plan.id,Ordering::Release);
+                        self.clock.schedule_id.store(plan.id, Ordering::Release);
                     }
                 }
                 Command::Cancel => self.cancel(),
                 Command::Pause(paused) => self.paused = paused,
-                Command::Equalizer(coeff,revision)=>{self.eq.set(coeff);self.stems.set(coeff.stems);self.room.set(coeff.reverb);self.room.set_depth(coeff.reverb_depth);self.clock.applied_reverb_depth.store(coeff.reverb_depth.to_bits(),Ordering::Release);self.clock.applied_reverb.store(coeff.reverb.to_bits(),Ordering::Release);self.clock.listening_revision.store(revision,Ordering::Release);}
+                Command::Equalizer(coeff, revision) => {
+                    self.eq.set(coeff);
+                    self.stems.set(coeff.stems);
+                    self.room.set(coeff.reverb);
+                    self.room.set_depth(coeff.reverb_depth);
+                    self.clock
+                        .applied_reverb_depth
+                        .store(coeff.reverb_depth.to_bits(), Ordering::Release);
+                    self.clock
+                        .applied_reverb
+                        .store(coeff.reverb.to_bits(), Ordering::Release);
+                    self.clock
+                        .listening_revision
+                        .store(revision, Ordering::Release);
+                }
                 Command::Volume(volume) => {
                     if volume.is_finite() {
                         self.volume = volume.clamp(0., 1.);
@@ -295,7 +352,11 @@ impl Mixer {
         }
         // A full command ring still has to respect cancellation.
         // Retire old plans and let work from the current epoch through.
-        if self.plan.is_some_and(|p|p.cancel_revision!=self.clock.cancel_revision.load(Ordering::Acquire)){self.cancel();}
+        if self.plan.is_some_and(|p| {
+            p.cancel_revision != self.clock.cancel_revision.load(Ordering::Acquire)
+        }) {
+            self.cancel();
+        }
     }
     fn read(&mut self, deck: usize) -> Option<Frame> {
         if let Some(frame) = self.pending[deck].take() {
@@ -320,7 +381,8 @@ impl Mixer {
         if let Some(plan) = self.plan {
             if self.pending[plan.incoming].is_none() {
                 self.pending[plan.incoming] = self.read(plan.incoming);
-                self.clock.ready[plan.incoming].store(self.pending[plan.incoming].is_some(), Ordering::Release);
+                self.clock.ready[plan.incoming]
+                    .store(self.pending[plan.incoming].is_some(), Ordering::Release);
             }
         }
         let outgoing = match self.read(self.active) {
@@ -344,10 +406,11 @@ impl Mixer {
                 }
                 self.output_gap = true;
                 self.clock.underruns.fetch_add(1, Ordering::Relaxed);
-                return self.process_output([0.;2]);
+                return self.process_output([0.; 2]);
             }
         };
-        self.clock.parameter_revision[self.active].store(outgoing.listening_revision,Ordering::Release);
+        self.clock.parameter_revision[self.active]
+            .store(outgoing.listening_revision, Ordering::Release);
         self.positions[self.active] = outgoing.source_frame;
         self.clock.source_frames[self.active]
             .store(outgoing.source_frame.max(0.) as u64, Ordering::Relaxed);
@@ -385,7 +448,11 @@ impl Mixer {
                 for c in 0..2 {
                     output[c] = tail[c] * outgoing_gain + incoming.samples[c] * incoming_gain;
                 }
-                if progress>=0.5 {self.clock.dominant.store(plan.incoming as u64,Ordering::Release);}
+                if progress >= 0.5 {
+                    self.clock
+                        .dominant
+                        .store(plan.incoming as u64, Ordering::Release);
+                }
                 if elapsed >= plan.frames {
                     self.active = plan.incoming;
                     self.clock
@@ -406,12 +473,22 @@ impl Mixer {
         self.clock.rendered_frames.fetch_add(1, Ordering::Relaxed);
         self.process_output(output)
     }
-    fn process_output(&mut self,output:[f32;2])->[f32;2]{
-        let equalized=self.eq.process(self.stems.process(output));
-        let processed=self.room.process(equalized);
-        if processed.iter().zip(equalized).any(|(a,b)|(a-b).abs()>0.000001){self.clock.reverb_processed_frames.fetch_add(1,Ordering::Relaxed);}
+    fn process_output(&mut self, output: [f32; 2]) -> [f32; 2] {
+        let equalized = self.eq.process(self.stems.process(output));
+        let processed = self.room.process(equalized);
+        if processed
+            .iter()
+            .zip(equalized)
+            .any(|(a, b)| (a - b).abs() > 0.000001)
+        {
+            self.clock
+                .reverb_processed_frames
+                .fetch_add(1, Ordering::Relaxed);
+        }
         let output = processed.map(|v| limit(v * self.volume));
-        self.clock.room_active.store(self.room.active(),Ordering::Relaxed);
+        self.clock
+            .room_active
+            .store(self.room.active(), Ordering::Relaxed);
         output
     }
 }
@@ -434,10 +511,16 @@ impl Iterator for Mixer {
         }
         self.output_gap = false;
         let mut frame = self.frame();
-        if self.paused {self.fade_left=0;}else if self.fade_left>0 {
-            let old=self.history[self.fade_at];self.fade_at=(self.fade_at+1)%960;
-            let progress=1.-self.fade_left as f32/960.;self.fade_left-=1;
-            for c in 0..2{frame[c]=old[c]*(1.-progress)+frame[c]*progress;}
+        if self.paused {
+            self.fade_left = 0;
+        } else if self.fade_left > 0 {
+            let old = self.history[self.fade_at];
+            self.fade_at = (self.fade_at + 1) % 960;
+            let progress = 1. - self.fade_left as f32 / 960.;
+            self.fade_left -= 1;
+            for c in 0..2 {
+                frame[c] = old[c] * (1. - progress) + frame[c] * progress;
+            }
         }
         if self.paused {
             self.previous_gap = false;
@@ -447,7 +530,8 @@ impl Iterator for Mixer {
             // the last output in either direction to avoid a discontinuity.
             if self.output_gap != self.previous_gap {
                 self.previous_gap = self.output_gap;
-                self.gap_ramp_from = self.history[(self.history_at + self.history.len() - 1) % self.history.len()];
+                self.gap_ramp_from =
+                    self.history[(self.history_at + self.history.len() - 1) % self.history.len()];
                 self.gap_ramp_left = OUTPUT_RAMP_FRAMES;
             }
             if self.gap_ramp_left > 0 {
@@ -458,8 +542,9 @@ impl Iterator for Mixer {
                 self.gap_ramp_left -= 1;
             }
         }
-        let _=self.meter.push(frame);
-        self.history[self.history_at]=frame;self.history_at=(self.history_at+1)%960;
+        let _ = self.meter.push(frame);
+        self.history[self.history_at] = frame;
+        self.history_at = (self.history_at + 1) % 960;
         self.right = Some(frame[1]);
         Some(frame[0])
     }
@@ -504,21 +589,35 @@ mod tests {
     fn decoder_gap_ramps_out_and_back_without_advancing_source_time() {
         let (mut control, mut mixer) = create(2048);
         control.commands.push(Command::Pause(false)).unwrap();
-        control.decks[0].push(Frame { samples: [0.5; 2], ..Default::default() }).unwrap();
+        control.decks[0]
+            .push(Frame {
+                samples: [0.5; 2],
+                ..Default::default()
+            })
+            .unwrap();
         let mut next = || [mixer.next().unwrap(), mixer.next().unwrap()];
         assert_eq!(next(), [0.5; 2]);
         assert_eq!(next(), [0.5; 2]);
-        for _ in 0..OUTPUT_RAMP_FRAMES { next(); }
+        for _ in 0..OUTPUT_RAMP_FRAMES {
+            next();
+        }
         assert_eq!(next(), [0.; 2]);
         assert_eq!(control.clock.audible_frames[0].load(Ordering::Relaxed), 1);
 
         for _ in 0..=OUTPUT_RAMP_FRAMES {
-            control.decks[0].push(Frame { samples: [-0.5; 2], ..Default::default() }).unwrap();
+            control.decks[0]
+                .push(Frame {
+                    samples: [-0.5; 2],
+                    ..Default::default()
+                })
+                .unwrap();
         }
         assert_eq!(next(), [0.; 2]);
         let resumed = next();
         assert!(resumed[0] < 0. && resumed[0] > -0.02);
-        for _ in 2..OUTPUT_RAMP_FRAMES { next(); }
+        for _ in 2..OUTPUT_RAMP_FRAMES {
+            next();
+        }
         assert_eq!(next(), [-0.5; 2]);
     }
 
@@ -526,16 +625,41 @@ mod tests {
     fn zero_overlap_promotes_at_eof_and_retains_trimmed_incoming_position() {
         let (mut c, mut mixer) = create(2048);
         for (deck, start) in [(0, 0.), (1, 96000.)] {
-            c.commands.push(Command::Reset { deck, generation: 1, source_frame: start }).unwrap();
+            c.commands
+                .push(Command::Reset {
+                    deck,
+                    generation: 1,
+                    source_frame: start,
+                })
+                .unwrap();
             let count = if deck == 0 { 1200 } else { 16 };
             for n in 0..count {
-                c.decks[deck].push(Frame { samples: [if deck == 0 { 0.25 } else { 0.5 }; 2], source_frame: start + n as f64, generation: 1, listening_revision: 0 }).unwrap();
+                c.decks[deck]
+                    .push(Frame {
+                        samples: [if deck == 0 { 0.25 } else { 0.5 }; 2],
+                        source_frame: start + n as f64,
+                        generation: 1,
+                        listening_revision: 0,
+                    })
+                    .unwrap();
             }
         }
         c.clock.finished[0].store(1, Ordering::Release);
-        c.commands.push(Command::Plan(Schedule { cancel_revision: 0, id: 1, cue: 1300., frames: 0, incoming: 1, tail: Tail::Clean })).unwrap();
+        c.commands
+            .push(Command::Plan(Schedule {
+                cancel_revision: 0,
+                id: 1,
+                cue: 1300.,
+                frames: 0,
+                incoming: 1,
+                tail: Tail::Clean,
+            }))
+            .unwrap();
         c.commands.push(Command::Pause(false)).unwrap();
-        for _ in 0..1200 { mixer.next(); mixer.next(); }
+        for _ in 0..1200 {
+            mixer.next();
+            mixer.next();
+        }
         assert_eq!(c.clock.active.load(Ordering::Acquire), 0);
         assert!(c.clock.ready[1].load(Ordering::Acquire));
         assert!(!c.clock.mixing.load(Ordering::Acquire));
@@ -551,24 +675,92 @@ mod tests {
                     samples: [value; 2],
                     source_frame: (start + i) as f64,
                     generation: 0,
-                    listening_revision:0,
+                    listening_revision: 0,
                 })
                 .unwrap();
         }
     }
     #[test]
-    fn rendered_automix_keeps_energy_and_reports_dominant_deck_at_midpoint(){
-        let n=RATE as usize;let(mut c,mut mixer)=create(n*3);
-        for deck in 0..2 {for i in 0..n*3 {let hz=if deck==0{220.}else{330.};let sample=(i as f32*hz*std::f32::consts::TAU/RATE as f32).sin()*0.2;c.decks[deck].push(Frame{samples:[sample;2],source_frame:i as f64,generation:0,listening_revision:0}).unwrap();}}
-        c.commands.push(Command::Plan(Schedule{cancel_revision:0,id:1,cue:n as f64/2.,frames:n as u64,incoming:1,tail:Tail::Clean})).unwrap();c.commands.push(Command::Pause(false)).unwrap();
-        let mut samples=Vec::new();let mut first=None;for frame in 0..n*2 {let left=mixer.next().unwrap();let right=mixer.next().unwrap();samples.extend([left,right]);if c.clock.dominant.load(Ordering::Acquire)==1&&first.is_none(){first=Some(frame);}}
-        assert!(first.is_some_and(|at|at.abs_diff(n)<=1));
-        let rms=|a:usize,b:usize|{let slice=&samples[a*2..b*2];(slice.iter().map(|v|v*v).sum::<f32>()/slice.len() as f32).sqrt()};let solo=rms(n/4,n/2);let middle=rms(n*9/10,n*11/10);assert!((middle/solo-1.).abs()<0.04,"blend energy changed: {solo} -> {middle}");assert_eq!(c.clock.active.load(Ordering::Acquire),1);
-        let bytes=(samples.len()*2) as u32;let mut wav=Vec::new();wav.extend(b"RIFF");wav.extend((36+bytes).to_le_bytes());wav.extend(b"WAVEfmt ");wav.extend(16u32.to_le_bytes());wav.extend(1u16.to_le_bytes());wav.extend(2u16.to_le_bytes());wav.extend(RATE.to_le_bytes());wav.extend((RATE*4).to_le_bytes());wav.extend(4u16.to_le_bytes());wav.extend(16u16.to_le_bytes());wav.extend(b"data");wav.extend(bytes.to_le_bytes());for sample in samples {wav.extend(((sample.clamp(-1.,1.)*32767.) as i16).to_le_bytes());}std::fs::write(std::env::temp_dir().join("musicos-automix-render.wav"),wav).unwrap();
+    fn rendered_automix_keeps_energy_and_reports_dominant_deck_at_midpoint() {
+        let n = RATE as usize;
+        let (mut c, mut mixer) = create(n * 3);
+        for deck in 0..2 {
+            for i in 0..n * 3 {
+                let hz = if deck == 0 { 220. } else { 330. };
+                let sample = (i as f32 * hz * std::f32::consts::TAU / RATE as f32).sin() * 0.2;
+                c.decks[deck]
+                    .push(Frame {
+                        samples: [sample; 2],
+                        source_frame: i as f64,
+                        generation: 0,
+                        listening_revision: 0,
+                    })
+                    .unwrap();
+            }
+        }
+        c.commands
+            .push(Command::Plan(Schedule {
+                cancel_revision: 0,
+                id: 1,
+                cue: n as f64 / 2.,
+                frames: n as u64,
+                incoming: 1,
+                tail: Tail::Clean,
+            }))
+            .unwrap();
+        c.commands.push(Command::Pause(false)).unwrap();
+        let mut samples = Vec::new();
+        let mut first = None;
+        for frame in 0..n * 2 {
+            let left = mixer.next().unwrap();
+            let right = mixer.next().unwrap();
+            samples.extend([left, right]);
+            if c.clock.dominant.load(Ordering::Acquire) == 1 && first.is_none() {
+                first = Some(frame);
+            }
+        }
+        assert!(first.is_some_and(|at| at.abs_diff(n) <= 1));
+        let rms = |a: usize, b: usize| {
+            let slice = &samples[a * 2..b * 2];
+            (slice.iter().map(|v| v * v).sum::<f32>() / slice.len() as f32).sqrt()
+        };
+        let solo = rms(n / 4, n / 2);
+        let middle = rms(n * 9 / 10, n * 11 / 10);
+        assert!(
+            (middle / solo - 1.).abs() < 0.04,
+            "blend energy changed: {solo} -> {middle}"
+        );
+        assert_eq!(c.clock.active.load(Ordering::Acquire), 1);
+        let bytes = (samples.len() * 2) as u32;
+        let mut wav = Vec::new();
+        wav.extend(b"RIFF");
+        wav.extend((36 + bytes).to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16u32.to_le_bytes());
+        wav.extend(1u16.to_le_bytes());
+        wav.extend(2u16.to_le_bytes());
+        wav.extend(RATE.to_le_bytes());
+        wav.extend((RATE * 4).to_le_bytes());
+        wav.extend(4u16.to_le_bytes());
+        wav.extend(16u16.to_le_bytes());
+        wav.extend(b"data");
+        wav.extend(bytes.to_le_bytes());
+        for sample in samples {
+            wav.extend(((sample.clamp(-1., 1.) * 32767.) as i16).to_le_bytes());
+        }
+        std::fs::write(std::env::temp_dir().join("musicos-automix-render.wav"), wav).unwrap();
     }
-    #[test] fn visual_bands_are_calibrated_bounded_and_decay_to_silence(){
-        assert!(display_level(0.,0.04,2)>display_level(0.,0.04,0));
-        for band in 0..3 {assert!(display_level(0.,100.,band)<=1.);let mut value=display_level(0.,0.1,band);for _ in 0..40 {value=display_level(value,0.,band);}assert_eq!(value,0.);}
+    #[test]
+    fn visual_bands_are_calibrated_bounded_and_decay_to_silence() {
+        assert!(display_level(0., 0.04, 2) > display_level(0., 0.04, 0));
+        for band in 0..3 {
+            assert!(display_level(0., 100., band) <= 1.);
+            let mut value = display_level(0., 0.1, band);
+            for _ in 0..40 {
+                value = display_level(value, 0., band);
+            }
+            assert_eq!(value, 0.);
+        }
     }
     #[test]
     fn pause_freezes_decks_clock_and_effect_tails() {
@@ -591,8 +783,8 @@ mod tests {
         push(&mut c, 1, 100, 1000, 0.9);
         c.commands
             .push(Command::Plan(Schedule {
-                cancel_revision:0,
-                id:1,
+                cancel_revision: 0,
+                id: 1,
                 cue: 10.,
                 frames: 20,
                 incoming: 1,
@@ -609,9 +801,17 @@ mod tests {
     fn missed_cue_reports_its_schedule_without_cutting_the_outgoing_track() {
         let (mut control, mut mixer) = create(100);
         push(&mut control, 0, 100, 0, 0.2);
-        control.commands.push(Command::Plan(Schedule {
-            cancel_revision: 0, id: 42, cue: 12., frames: 36, incoming: 1, tail: Tail::Clean,
-        })).unwrap();
+        control
+            .commands
+            .push(Command::Plan(Schedule {
+                cancel_revision: 0,
+                id: 42,
+                cue: 12.,
+                frames: 36,
+                incoming: 1,
+                tail: Tail::Clean,
+            }))
+            .unwrap();
         control.commands.push(Command::Pause(false)).unwrap();
         assert!(mixer.by_ref().take(150).all(|sample| sample == 0.2));
         assert_eq!(control.clock.failed_schedule.load(Ordering::Acquire), 42);
@@ -627,8 +827,8 @@ mod tests {
         push(&mut c, 1, 100, 0, 0.4);
         c.commands
             .push(Command::Plan(Schedule {
-                cancel_revision:0,
-                id:1,
+                cancel_revision: 0,
+                id: 1,
                 cue: 0.,
                 frames: 80,
                 incoming: 1,
@@ -672,36 +872,141 @@ mod tests {
 
 /// Deterministic capture of the production mixer, for output-level regression QA.
 /// Feed source frames off-thread; this uses the same processing as the device sink.
-pub fn capture(input:&[[f32;2]],listening:super::listening::Listening,tail_frames:usize)->Vec<[f32;2]>{
- let(mut control,mut mixer)=create(4096);
- control.commands.push(Command::Equalizer(listening.normalize().coefficients(),1)).unwrap();
- control.commands.push(Command::Pause(false)).unwrap();
- let mut output=Vec::with_capacity(input.len()+tail_frames);
- for (i,samples) in input.iter().enumerate(){control.decks[0].push(Frame{samples:*samples,source_frame:i as f64,generation:0,listening_revision:0}).unwrap();output.push([mixer.next().unwrap(),mixer.next().unwrap()]);}
- // No invented decoder frames: this also verifies that EOF renders room tails.
- for _ in 0..tail_frames {output.push([mixer.next().unwrap(),mixer.next().unwrap()]);}
- output
+pub fn capture(
+    input: &[[f32; 2]],
+    listening: super::listening::Listening,
+    tail_frames: usize,
+) -> Vec<[f32; 2]> {
+    let (mut control, mut mixer) = create(4096);
+    control
+        .commands
+        .push(Command::Equalizer(listening.normalize().coefficients(), 1))
+        .unwrap();
+    control.commands.push(Command::Pause(false)).unwrap();
+    let mut output = Vec::with_capacity(input.len() + tail_frames);
+    for (i, samples) in input.iter().enumerate() {
+        control.decks[0]
+            .push(Frame {
+                samples: *samples,
+                source_frame: i as f64,
+                generation: 0,
+                listening_revision: 0,
+            })
+            .unwrap();
+        output.push([mixer.next().unwrap(), mixer.next().unwrap()]);
+    }
+    // No invented decoder frames: this also verifies that EOF renders room tails.
+    for _ in 0..tail_frames {
+        output.push([mixer.next().unwrap(), mixer.next().unwrap()]);
+    }
+    output
 }
-#[cfg(test)]mod output_tests {
- use super::*;
- #[test]fn actual_output_has_reverb_tail_and_dry_bypass(){
-  let mut input=vec![[0.;2];4800];input[2400]=[0.5,0.25];
-  let dry=capture(&input,Default::default(),48000);
-  assert_eq!(&dry[..input.len()],input.as_slice());assert!(dry[input.len()..].iter().all(|x|*x==[0.;2]));
-  let wet=capture(&input,super::super::listening::Listening{reverb:0.45,..Default::default()},48000);
-  let energy: f32=wet[input.len()..].iter().flatten().map(|v|v*v).sum();assert!(energy>0.00001,"No wet tail in actual output: {energy}");assert_ne!(dry,wet);assert!(wet.iter().flatten().all(|v|v.is_finite()&&v.abs()<=1.));
- }
- #[test]fn pause_freezes_room_and_effect_changes_are_acknowledged(){
-  let(mut c,mut m)=create(4096);c.commands.push(Command::Pause(false)).unwrap();c.commands.push(Command::Equalizer(super::super::listening::Listening{reverb:0.8,..Default::default()}.coefficients(),7)).unwrap();
-  for i in 0..3000 {c.decks[0].push(Frame{samples:if i==2000{[0.5;2]}else{[0.;2]},..Default::default()}).unwrap();m.next();m.next();}
-  assert_eq!(c.clock.listening_revision.load(Ordering::Acquire),7);assert_eq!(f32::from_bits(c.clock.applied_reverb.load(Ordering::Acquire)),0.8);
-  c.commands.push(Command::Pause(true)).unwrap();for _ in 0..10000{assert_eq!(m.next(),Some(0.));}
-  c.commands.push(Command::Pause(false)).unwrap();let energy:f32=(0..10000).map(|_|m.next().unwrap().powi(2)).sum();assert!(energy>0.00001);
-  c.commands.push(Command::Equalizer(Default::default(),8)).unwrap();m.next();m.next();assert_eq!(c.clock.listening_revision.load(Ordering::Acquire),8);
- }
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    #[test]
+    fn actual_output_has_reverb_tail_and_dry_bypass() {
+        let mut input = vec![[0.; 2]; 4800];
+        input[2400] = [0.5, 0.25];
+        let dry = capture(&input, Default::default(), 48000);
+        assert_eq!(&dry[..input.len()], input.as_slice());
+        assert!(dry[input.len()..].iter().all(|x| *x == [0.; 2]));
+        let wet = capture(
+            &input,
+            super::super::listening::Listening {
+                reverb: 0.45,
+                ..Default::default()
+            },
+            48000,
+        );
+        let energy: f32 = wet[input.len()..].iter().flatten().map(|v| v * v).sum();
+        assert!(energy > 0.00001, "No wet tail in actual output: {energy}");
+        assert_ne!(dry, wet);
+        assert!(wet.iter().flatten().all(|v| v.is_finite() && v.abs() <= 1.));
+    }
+    #[test]
+    fn pause_freezes_room_and_effect_changes_are_acknowledged() {
+        let (mut c, mut m) = create(4096);
+        c.commands.push(Command::Pause(false)).unwrap();
+        c.commands
+            .push(Command::Equalizer(
+                super::super::listening::Listening {
+                    reverb: 0.8,
+                    ..Default::default()
+                }
+                .coefficients(),
+                7,
+            ))
+            .unwrap();
+        for i in 0..3000 {
+            c.decks[0]
+                .push(Frame {
+                    samples: if i == 2000 { [0.5; 2] } else { [0.; 2] },
+                    ..Default::default()
+                })
+                .unwrap();
+            m.next();
+            m.next();
+        }
+        assert_eq!(c.clock.listening_revision.load(Ordering::Acquire), 7);
+        assert_eq!(
+            f32::from_bits(c.clock.applied_reverb.load(Ordering::Acquire)),
+            0.8
+        );
+        c.commands.push(Command::Pause(true)).unwrap();
+        for _ in 0..10000 {
+            assert_eq!(m.next(), Some(0.));
+        }
+        c.commands.push(Command::Pause(false)).unwrap();
+        let energy: f32 = (0..10000).map(|_| m.next().unwrap().powi(2)).sum();
+        assert!(energy > 0.00001);
+        c.commands
+            .push(Command::Equalizer(Default::default(), 8))
+            .unwrap();
+        m.next();
+        m.next();
+        assert_eq!(c.clock.listening_revision.load(Ordering::Acquire), 8);
+    }
 }
-#[cfg(test)]mod cancellation_tests {
- use super::*;
- #[test]fn cancellation_epoch_invalidates_a_queued_plan_without_a_command_slot(){let(mut c,mut m)=create(4);c.commands.push(Command::Plan(Schedule{cancel_revision:0,id:9,cue:100.,frames:96000,incoming:1,tail:Tail::Clean})).unwrap();while c.commands.slots()>0 {c.commands.push(Command::Volume(1.)).unwrap();}c.clock.cancel_revision.fetch_add(1,Ordering::AcqRel);m.next();assert_eq!(c.clock.schedule_id.load(Ordering::Acquire),0);assert!(!c.clock.mixing.load(Ordering::Relaxed));}
- #[test]fn new_plan_in_current_epoch_survives_cancellation_of_old_work(){let(mut c,mut m)=create(4);c.clock.cancel_revision.store(2,Ordering::Release);c.commands.push(Command::Plan(Schedule{cancel_revision:2,id:10,cue:100.,frames:96000,incoming:1,tail:Tail::Clean})).unwrap();m.next();assert_eq!(c.clock.schedule_id.load(Ordering::Acquire),10);}
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    #[test]
+    fn cancellation_epoch_invalidates_a_queued_plan_without_a_command_slot() {
+        let (mut c, mut m) = create(4);
+        c.commands
+            .push(Command::Plan(Schedule {
+                cancel_revision: 0,
+                id: 9,
+                cue: 100.,
+                frames: 96000,
+                incoming: 1,
+                tail: Tail::Clean,
+            }))
+            .unwrap();
+        while c.commands.slots() > 0 {
+            c.commands.push(Command::Volume(1.)).unwrap();
+        }
+        c.clock.cancel_revision.fetch_add(1, Ordering::AcqRel);
+        m.next();
+        assert_eq!(c.clock.schedule_id.load(Ordering::Acquire), 0);
+        assert!(!c.clock.mixing.load(Ordering::Relaxed));
+    }
+    #[test]
+    fn new_plan_in_current_epoch_survives_cancellation_of_old_work() {
+        let (mut c, mut m) = create(4);
+        c.clock.cancel_revision.store(2, Ordering::Release);
+        c.commands
+            .push(Command::Plan(Schedule {
+                cancel_revision: 2,
+                id: 10,
+                cue: 100.,
+                frames: 96000,
+                incoming: 1,
+                tail: Tail::Clean,
+            }))
+            .unwrap();
+        m.next();
+        assert_eq!(c.clock.schedule_id.load(Ordering::Acquire), 10);
+    }
 }

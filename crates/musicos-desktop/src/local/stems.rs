@@ -18,6 +18,10 @@ const SIZE: usize = 2048;
 const HOP: usize = SIZE / 4;
 const BINS: usize = SIZE / 2 + 1;
 const FADE: usize = 1024;
+// The overlap-add pipeline emits each input frame exactly this many frames later.
+const LATENCY: usize = SIZE;
+// Entering separation from the undelayed path dips briefly instead of replaying audio.
+const DIP: usize = 256;
 const SAMPLE_RATE: f32 = 48_000.;
 const VOCAL_LOW_HZ: f32 = 120.;
 const VOCAL_HIGH_HZ: f32 = 12_000.;
@@ -26,7 +30,10 @@ pub struct StemSeparator {
     target: Stems,
     mode: Stems,
     mix: f32,
-    warmup: usize,
+    delayed: bool,
+    entering: Option<usize>,
+    dry: [Vec<f32>; 2],
+    dry_at: usize,
     forward: Arc<dyn Fft<f32>>,
     inverse: Arc<dyn Fft<f32>>,
     window: Vec<f32>,
@@ -59,7 +66,10 @@ impl Default for StemSeparator {
             target: Stems::Mix,
             mode: Stems::Mix,
             mix: 0.,
-            warmup: 0,
+            delayed: false,
+            entering: None,
+            dry: [vec![0.; LATENCY], vec![0.; LATENCY]],
+            dry_at: 0,
             forward,
             inverse,
             window,
@@ -87,39 +97,60 @@ impl StemSeparator {
         if stems == Stems::Mix {
             return;
         }
-        if self.mix == 0. {
-            self.clear();
-            self.warmup = SIZE;
-        }
         self.mode = stems;
+        if !self.delayed {
+            self.enter();
+        }
     }
+    /// Once separation has run, output stays on the delayed timeline until the
+    /// next seek, so every later switch is a crossfade between two copies of
+    /// the same moment instead of a jump between two moments.
     pub fn active(&self) -> bool {
-        self.target != Stems::Mix || self.mix > 0.
+        self.delayed
+    }
+    /// Drops buffered audio after a seek or a new source.
+    pub fn reset(&mut self) {
+        self.clear();
+        self.delayed = false;
+        self.entering = None;
+        self.mix = 0.;
+        if self.target != Stems::Mix {
+            self.enter();
+        }
+    }
+    fn enter(&mut self) {
+        self.clear();
+        self.delayed = true;
+        self.entering = Some(0);
+        self.mix = 1.;
     }
     fn clear(&mut self) {
         for c in 0..2 {
             self.input[c].fill(0.);
             self.output[c].fill(0.);
             self.ready[c].fill(0.);
+            self.dry[c].fill(0.);
         }
         self.mask.fill(0.);
         self.at = 0;
+        self.dry_at = 0;
     }
     pub fn process(&mut self, x: [f32; 2]) -> [f32; 2] {
-        if !self.active() {
+        if !self.delayed {
             return x;
         }
         let separated = [self.ready[0][self.at], self.ready[1][self.at]];
+        let slot = self.dry_at;
+        let dry = [self.dry[0][slot], self.dry[1][slot]];
+        self.dry[0][slot] = x[0];
+        self.dry[1][slot] = x[1];
+        self.dry_at = (slot + 1) % LATENCY;
         self.input[0][SIZE - HOP + self.at] = x[0];
         self.input[1][SIZE - HOP + self.at] = x[1];
         self.at += 1;
         if self.at == HOP {
             self.at = 0;
             self.separate();
-        }
-        if self.warmup > 0 {
-            self.warmup -= 1;
-            return x;
         }
         let step = 1. / FADE as f32;
         self.mix = if self.target == Stems::Mix {
@@ -128,10 +159,23 @@ impl StemSeparator {
             (self.mix + step).min(1.)
         };
         let t = self.mix;
-        [
-            x[0] * (1. - t) + separated[0] * t,
-            x[1] * (1. - t) + separated[1] * t,
-        ]
+        let out = [
+            dry[0] * (1. - t) + separated[0] * t,
+            dry[1] * (1. - t) + separated[1] * t,
+        ];
+        let Some(n) = self.entering else {
+            return out;
+        };
+        self.entering = (n + 1 < DIP + LATENCY + DIP).then_some(n + 1);
+        if n < DIP {
+            let g = 1. - n as f32 / DIP as f32;
+            [x[0] * g, x[1] * g]
+        } else if n < DIP + LATENCY {
+            [0.; 2]
+        } else {
+            let g = (n - DIP - LATENCY) as f32 / DIP as f32;
+            [out[0] * g, out[1] * g]
+        }
     }
     fn separate(&mut self) {
         // Pack both channels into one complex transform: left in re, right in im.
@@ -269,16 +313,55 @@ mod tests {
         assert!((power(&frames, 0) - 0.08).abs() < 0.01);
     }
     #[test]
-    fn returning_to_mix_fades_out_and_bypasses() {
+    fn switching_modes_never_repeats_or_skips_audio() {
+        // A mono ramp passes the separator unchanged, so each output frame must
+        // be exactly the input from LATENCY frames earlier, across every switch.
+        let ramp = |i: usize| [i as f32 / 100_000.; 2];
+        let mut separator = StemSeparator::default();
+        for i in 0..40_000 {
+            match i {
+                1_000 => separator.set(Stems::Instrumental),
+                12_000 => separator.set(Stems::Mix),
+                20_000 => separator.set(Stems::Vocals),
+                30_000 => separator.set(Stems::Mix),
+                _ => {}
+            }
+            let out = separator.process(ramp(i))[0];
+            if i < 1_000 {
+                assert_eq!(out, ramp(i)[0]);
+            } else if i >= 1_000 + DIP + LATENCY + DIP {
+                let expected = ramp(i - LATENCY)[0];
+                assert!(
+                    (out - expected).abs() < 1e-4,
+                    "frame {i}: {out} vs {expected}"
+                );
+            } else if (1_000 + DIP..1_000 + DIP + LATENCY).contains(&i) {
+                assert_eq!(out, 0., "frame {i} replayed buffered audio");
+            }
+        }
+        assert!(separator.active());
+    }
+    #[test]
+    fn seeking_drops_buffered_audio() {
+        let mut separator = StemSeparator::default();
+        separator.set(Stems::Instrumental);
+        for i in 0..8_000 {
+            separator.process(song(i));
+        }
+        separator.reset();
+        for _ in 0..8_000 {
+            assert!(separator.process([0.; 2]).iter().all(|v| v.abs() < 1e-6));
+        }
+    }
+    #[test]
+    fn seeking_in_full_mix_returns_to_bypass() {
         let mut separator = StemSeparator::default();
         separator.set(Stems::Vocals);
         for i in 0..8_000 {
             separator.process(song(i));
         }
         separator.set(Stems::Mix);
-        for i in 0..FADE {
-            assert!(separator.process(song(i)).iter().all(|v| v.is_finite()));
-        }
+        separator.reset();
         assert!(!separator.active());
         assert_eq!(separator.process(song(3)), song(3));
     }
