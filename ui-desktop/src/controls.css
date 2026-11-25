@@ -831,3 +831,36 @@ input[type=color]::-webkit-color-swatch{border:0;border-radius:.375rem;}
 .playlist-empty-drop p{margin:.25rem 0 0;font-size:.8125rem;color:var(--secondary-ink);}
 .playlist-empty-drop>button{display:inline-flex;align-items:center;gap:.375rem;min-height:2.5rem;padding:.375rem .75rem;}
 .playlist-empty-drop>button>.icon{width:1.125rem;height:1.125rem;}
+/* Audio popover: volume, reverb, equalizer and speed/pitch as one compact 2x2 square; a fifth card spans the full row. */
+.quick-audio .listening-panel-current{margin:.5rem 0;}
+.quick-audio .audio-bento{grid-template-columns:repeat(2,minmax(0,1fr));gap:.375rem;}
+.quick-audio .audio-card{padding:.625rem;border-radius:.875rem;background:color-mix(in srgb,var(--ink) 4%,var(--surface-color));}
+.quick-audio .audio-bento>.audio-card:last-child:nth-child(odd){grid-column:1/-1;}
+.quick-audio .audio-card-title,.quick-audio .quick-eq legend,.quick-audio .audio-reverb .themed-switch>span:first-child{font-size:.75rem;font-weight:650;line-height:1.25;}
+.quick-audio .audio-volume{grid-column:auto;display:grid;grid-template-columns:1.5rem minmax(0,1fr);grid-template-rows:auto 1fr;align-items:center;gap:.25rem;width:auto;margin:0;}
+.quick-audio .audio-volume>.audio-card-title{grid-column:1;grid-row:1;white-space:nowrap;}
+.quick-audio .audio-volume .volume-control{display:contents;}
+.quick-audio .audio-volume .volume-mute{grid-column:1;grid-row:2;width:1.5rem;height:1.5rem;padding:.125rem;margin-left:-.125rem;}
+.quick-audio .audio-volume input{grid-column:2;grid-row:2;height:1.5rem;}
+.quick-audio .audio-volume output{grid-column:2;grid-row:1;justify-self:end;min-width:0;font-size:.75rem;}
+.quick-audio .audio-volume .volume-error{grid-column:1/-1;}
+.quick-audio .audio-reverb{grid-column:auto;display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.625rem;}
+.quick-audio .audio-reverb .themed-switch{flex-direction:column;align-items:flex-start;justify-content:center;gap:.375rem;width:auto;min-height:0;margin:0;}
+.quick-audio .audio-reverb .themed-switch>input{top:auto;bottom:0;right:auto;left:0;}
+.quick-audio .reverb-pad-wrap{width:2.75rem;}
+.quick-audio .reverb-pad-cross{inset:8px;}
+.quick-audio .quick-eq{padding-top:2rem;}
+.quick-audio .quick-eq legend{top:.625rem;left:.625rem;}
+.quick-audio .quick-eq input[type=range]{height:3.75rem;}
+.quick-audio .eq-bands>label{gap:.25rem;}
+.quick-audio .quick-eq>.themed-switch,.quick-audio .audio-link .themed-switch{min-height:1.25rem;margin:.375rem 0 0;gap:.25rem;font-size:.6875rem;}
+.quick-audio .audio-reverb .switch-track,.quick-audio .quick-eq .switch-track,.quick-audio .audio-link .switch-track{width:1.75rem;height:1rem;padding:.125rem;}
+.quick-audio .audio-reverb .switch-track::after,.quick-audio .quick-eq .switch-track::after,.quick-audio .audio-link .switch-track::after{width:.75rem;height:.75rem;}
+.quick-audio .audio-reverb .themed-switch input:checked+.switch-track::after,.quick-audio .quick-eq .themed-switch input:checked+.switch-track::after,.quick-audio .audio-link .themed-switch input:checked+.switch-track::after{transform:translateX(.75rem);}
+.quick-audio .audio-reverb .themed-switch>input,.quick-audio .quick-eq .themed-switch>input,.quick-audio .audio-link .themed-switch>input{width:1.75rem;height:1rem;}
+.quick-audio .audio-rate{gap:.375rem;}
+.quick-audio .audio-rate output{font-size:.875rem;}
+.quick-audio .audio-link .themed-switch{margin:0;}
+.quick-audio .audio-bento[data-bands="8"] .quick-eq input[type=range]{height:3.5rem;}
+.quick-audio footer{margin-top:.5rem;}
+.quick-audio .audio-application-details{margin-top:.5rem;padding-top:.375rem;}

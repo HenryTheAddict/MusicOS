@@ -51,3 +51,13 @@ test('reverb pad drags both axes, supports keyboard, and keeps a fixed square',a
  await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(pad).toHaveAccessibleName('Reverb pad, 100% room, 99% depth');
  await panel.getByRole('switch',{name:'Reverb',exact:true}).uncheck();await expect.poll(saved).toMatchObject({reverb:0,reverb_depth:.99});await panel.screenshot({path:'out/rebuild-qa/reverb-pad.png',animations:'disabled'});
 });
+
+test('audio controls sit in a compact 2x2 square with room for a full-width fifth card',async({page})=>{
+ await page.setViewportSize({width:1280,height:800});await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});await expect(panel).toBeVisible();
+ const cards=panel.locator('.audio-bento > .audio-card');await expect(cards).toHaveCount(4);
+ const boxes=await cards.evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width)};}));
+ expect(new Set(boxes.map(b=>b.x)).size).toBe(2);expect(new Set(boxes.map(b=>b.y)).size).toBe(2);expect(new Set(boxes.map(b=>b.w)).size).toBe(1);
+ expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(440);
+ const span=await panel.locator('.audio-bento').evaluate(el=>{const card=document.createElement('section');card.className='audio-card';el.append(card);const width=card.getBoundingClientRect().width,full=el.getBoundingClientRect().width;card.remove();return width/full;});
+ expect(span).toBeCloseTo(1,2);
+});
