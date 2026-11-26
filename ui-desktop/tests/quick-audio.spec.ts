@@ -51,3 +51,44 @@ test('reverb pad drags both axes, supports keyboard, and keeps a fixed square',a
  await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();await expect(pad).toHaveAccessibleName('Reverb pad, 100% room, 99% depth');
  await panel.getByRole('switch',{name:'Reverb',exact:true}).uncheck();await expect.poll(saved).toMatchObject({reverb:0,reverb_depth:.99});await panel.screenshot({path:'out/rebuild-qa/reverb-pad.png',animations:'disabled'});
 });
+
+test('audio controls sit in a compact 2x2 square with room for a full-width fifth card',async({page})=>{
+ await page.setViewportSize({width:1280,height:800});await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});await expect(panel).toBeVisible();
+ const cards=panel.locator('.audio-bento > .audio-card');await expect(cards).toHaveCount(4);
+ const boxes=await cards.evaluateAll(els=>els.map(el=>{const r=el.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width)};}));
+ expect(new Set(boxes.map(b=>b.x)).size).toBe(2);expect(new Set(boxes.map(b=>b.y)).size).toBe(2);expect(new Set(boxes.map(b=>b.w)).size).toBe(1);
+ expect((await panel.boundingBox())!.height).toBeLessThanOrEqual(440);
+ const span=await panel.locator('.audio-bento').evaluate(el=>{const card=document.createElement('section');card.className='audio-card';el.append(card);const width=card.getBoundingClientRect().width,full=el.getBoundingClientRect().width;card.remove();return width/full;});
+ expect(span).toBeCloseTo(1,2);
+});
+
+test('audio controls apply to all songs or only the playing song',async({page})=>{
+ await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();
+ await page.getByRole('button',{name:'Albums',exact:true}).click();await page.getByRole('button',{name:'Open Teacup Parade',exact:true}).click();await page.getByRole('button',{name:'Play collection',exact:true}).click();
+ await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();
+ const panel=page.getByRole('dialog',{name:'Audio controls'}),scope=panel.getByRole('group',{name:'Apply audio controls to'});
+ const all=scope.getByRole('button',{name:'All songs'}),song=scope.getByRole('button',{name:'This song'}),reverb=panel.getByRole('switch',{name:'Reverb',exact:true});
+ const saved=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('musicos-fixture-preferences')??'{}'));
+ await expect(all).toHaveAttribute('aria-pressed','true');await expect(song).toHaveAttribute('aria-pressed','false');
+ await song.click();await expect(song).toHaveAttribute('aria-pressed','true');
+ await reverb.check();
+ await expect.poll(async()=>Object.values((await saved()).song_listening??{}).map((l:any)=>l.reverb)).toEqual([.45]);
+ expect((await saved()).listening?.reverb??0).toBe(0);
+ await panel.getByRole('button',{name:'Reset audio'}).click();await expect(reverb).not.toBeChecked();await expect(song).toHaveAttribute('aria-pressed','true');
+ await reverb.check();
+ await all.focus();await page.keyboard.press('Enter');await expect(all).toHaveAttribute('aria-pressed','true');await expect(reverb).not.toBeChecked();
+ await expect.poll(async()=>Object.keys((await saved()).song_listening??{})).toEqual([]);
+});
+test('EQ curve passes through the slider handles and the status region stays announced',async({page})=>{
+ await page.goto('/?fixture=1');await page.evaluate(()=>localStorage.removeItem('musicos-fixture-preferences'));await page.reload();
+ await page.locator('.now-playing').getByRole('button',{name:/Audio quality/}).click();const panel=page.getByRole('dialog',{name:'Audio controls'});
+ await panel.getByRole('slider',{name:'Bass gain'}).focus();await page.keyboard.press('End');await panel.getByRole('slider',{name:'Treble gain'}).focus();await page.keyboard.press('Home');
+ const offsets=await panel.evaluate(root=>{
+  const svg=root.querySelector<SVGSVGElement>('.eq-connections')!,box=svg.getBoundingClientRect(),scale=box.height/svg.viewBox.baseVal.height;
+  const ys=[...svg.querySelector('path')!.getAttribute('d')!.matchAll(/(?:M|,) [\d.]+ ([\d.]+)/g)].map(m=>Number(m[1])).filter((_,i)=>i%2===0);
+  const radius=parseFloat(getComputedStyle(document.documentElement).fontSize)*.375;
+  return [...root.querySelectorAll<HTMLInputElement>('.eq-bands input')].map((input,i)=>{const r=input.getBoundingClientRect(),min=Number(input.min),max=Number(input.max);return box.top+ys[i]*scale-(r.top+radius+(max-Number(input.value))/(max-min)*(r.height-2*radius));});
+ });
+ expect(offsets).toHaveLength(3);for(const offset of offsets)expect(Math.abs(offset)).toBeLessThan(1);
+ const status=panel.locator('footer [role=status]');await expect(status).toBeAttached();expect(await status.evaluate(e=>getComputedStyle(e).display)).not.toBe('none');
+});

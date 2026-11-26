@@ -79,6 +79,7 @@ export interface Preferences {
   appearance?:Appearance;
   artists_album_only?:boolean;
   listening?:Listening;
+  song_listening?:Record<string,Listening>;
   library_filters?:LibraryFilters;
   copy_only_non_library_drops?:boolean;
   version: number;

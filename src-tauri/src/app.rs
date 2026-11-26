@@ -681,7 +681,10 @@ fn save_preferences(state: State<AppState>, preferences: Preferences) -> ApiResu
         std::mem::replace(&mut *current, normalized.clone())
     };
     if previous.sparklist_beta && !normalized.sparklist_beta {let _=state.analysis.control("cancel");crate::spark_install::cancel();}
-    if previous.listening != normalized.listening || {let s=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();s.listening!=normalized.listening||!s.listening_applied||(s.applied_reverb-normalized.listening.reverb).abs()>0.001||(s.applied_reverb_depth-normalized.listening.reverb_depth).abs()>0.001} {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(normalized.listening.clone())).map_err(AppError::from)?;}
+    let snapshot=state.playback.lock().unwrap_or_else(|e|e.into_inner()).snapshot();
+    let track=snapshot.track.as_ref().map(|t|t.id);
+    let listening=normalized.listening_for(track);
+    if previous.listening_for(track) != listening || snapshot.listening!=listening||!snapshot.listening_applied||(snapshot.applied_reverb-listening.reverb).abs()>0.001||(snapshot.applied_reverb_depth-listening.reverb_depth).abs()>0.001 {state.playback.lock().unwrap_or_else(|e|e.into_inner()).send(LocalPlaybackCommand::SetListening(listening)).map_err(AppError::from)?;}
     Ok(normalized)
 }
 fn analyzed_dj_track(duration:f32,f:Option<&crate::analysis::Features>)->crate::dj_plan::Track<'_>{
@@ -792,9 +795,14 @@ fn publish_dj_queue(app: &tauri::AppHandle, state: &AppState, mixes: &[QueueMix]
 
 #[tauri::command]
 async fn audition(state:tauri::State<'_,AppState>,action:String,track_id:Option<i64>)->ApiResult<Value>{
+    let preview_listening=track_id.map(|id|state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening_for(Some(id)));
     let service=state.playback.lock().unwrap_or_else(|e|e.into_inner());
     match action.as_str(){
-        "start"=>service.send(LocalPlaybackCommand::Audition(track_id.ok_or_else(||AppError::from(anyhow::anyhow!("Choose a song to preview")))?)).map_err(AppError::from)?,
+        "start"=>{
+            let id=track_id.ok_or_else(||AppError::from(anyhow::anyhow!("Choose a song to preview")))?;
+            let listening=preview_listening.unwrap_or_default();
+            service.send(LocalPlaybackCommand::AuditionWith(id,listening)).map_err(AppError::from)?
+        },
         "stop"=>service.send(LocalPlaybackCommand::EndAudition).map_err(AppError::from)?,
         "status"=>{},_=>return Err(AppError::from(anyhow::anyhow!("Unknown preview action")))
     }
@@ -2119,6 +2127,8 @@ pub fn run() {
                 let mut analysis_requested=std::collections::BTreeMap::<i64,String>::new();
                 let mut analysis_check=std::time::Instant::now()-Duration::from_secs(1);
                 let mut last_snapshot=None;
+                let mut listening_track=None;
+                let mut listening_sent=None;
                 #[cfg(target_os="macos")]
                 let mut media_update=crate::system_media::Publication::default();
                 loop {
@@ -2126,6 +2136,10 @@ pub fn run() {
                     let Some(s)=client.wait_for_snapshot(last_snapshot,Duration::from_secs(1))else{continue;};
                     last_snapshot=Some(s.revision);
                     let state=handle.state::<AppState>();
+                    let track=s.track.as_ref().map(|t|t.id);
+                    if track!=listening_track||s.audition.is_some() {listening_track=track;listening_sent=None;}
+                    let wanted=state.preferences.lock().unwrap_or_else(|e|e.into_inner()).listening_for(track);
+                    if let Some(listening)=listening_to_send(&s,wanted,listening_sent.as_ref()) {listening_sent=Some(listening.clone());let _=client.send(LocalPlaybackCommand::SetListening(listening));}
                     #[cfg(target_os="macos")]
                     {
                         let artwork=s.track.as_ref().and_then(|track|state.album_artwork.lock().unwrap_or_else(|e|e.into_inner()).get(&track.id).cloned());
@@ -2263,9 +2277,34 @@ pub(crate) fn save_playback_session(handle: &tauri::AppHandle) {
         eprintln!("Could not save playback session: {error:#}");
     }
 }
+/// The playing song's settings when playback still lacks them. Waits out a DJ crossfade or a
+/// preview (which carries its own song's settings), because `SetListening` would cut either
+/// short, and never repeats the last send.
+fn listening_to_send(snapshot:&LocalPlaybackSnapshot,wanted:musicos_desktop::local::listening::Listening,sent:Option<&musicos_desktop::local::listening::Listening>)->Option<musicos_desktop::local::listening::Listening> {
+    let busy=snapshot.audition.is_some()||snapshot.dj_transition.as_ref().is_some_and(|t|t.active);
+    (!busy&&snapshot.listening!=wanted&&sent!=Some(&wanted)).then_some(wanted)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn song_listening_waits_for_crossfades_and_previews_and_retries_after_restore() {
+        use musicos_desktop::local::listening::Listening;
+        let wanted=Listening{reverb:0.45,..Default::default()};
+        let mut snapshot=LocalPlaybackSnapshot::default();
+        assert_eq!(listening_to_send(&snapshot,wanted.clone(),None),Some(wanted.clone()));
+        assert_eq!(listening_to_send(&snapshot,wanted.clone(),Some(&wanted)),None);
+        snapshot.listening=Listening{reverb:0.2,..Default::default()};
+        assert_eq!(listening_to_send(&snapshot,wanted.clone(),Some(&Listening::default())),Some(wanted.clone()));
+        snapshot.dj_transition=Some(musicos_desktop::local::deck_playback::TransitionStatus{outgoing_entry:1,plan_id:1,incoming_entry:2,active:true,status:"active",outgoing_cue:0.,incoming_cue:0.,seconds:8.,source_seconds:8.,tempo:1.});
+        assert_eq!(listening_to_send(&snapshot,wanted.clone(),None),None);
+        snapshot.dj_transition=None;
+        snapshot.audition=Some(musicos_desktop::local::deck_playback::AuditionStatus{track_id:9,position:0.,duration:30.,preparing:false});
+        assert_eq!(listening_to_send(&snapshot,wanted.clone(),None),None);
+        snapshot.audition=None;snapshot.listening=wanted.clone();
+        assert_eq!(listening_to_send(&snapshot,wanted,None),None);
+    }
     #[test]
     fn playback_session_retains_source_position() {
         let mut snapshot=musicos_desktop::local::LocalPlaybackSnapshot::default();
